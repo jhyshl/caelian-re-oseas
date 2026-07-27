@@ -1,0 +1,130 @@
+import type { AiProjection } from '@/domain/types';
+
+type TavernEventHandler = (eventName: string) => void | Promise<void>;
+
+export class TavernAdapter {
+  readonly host: Window;
+  private readonly disposers: Array<() => void> = [];
+
+  constructor(sourceWindow: Window = window) {
+    this.host = this.resolveHost(sourceWindow);
+  }
+
+  async context(): Promise<TavernContext> {
+    try {
+      return (
+        (await Promise.resolve(this.host.SillyTavern?.getContext?.())) ?? {}
+      );
+    } catch {
+      return {};
+    }
+  }
+
+  async identity(): Promise<{ chatId: string; playerName?: string }> {
+    const context = await this.context();
+    const direct =
+      context.chatId ??
+      context.chat_id ??
+      context.chatID ??
+      context.chatFile ??
+      context.chatName ??
+      context.groupId ??
+      context.characterId ??
+      'default';
+    return {
+      chatId: String(direct),
+      playerName: context.name1,
+    };
+  }
+
+  hasLegacyRuntime(): boolean {
+    return Boolean(this.host.__CaelianRuntime);
+  }
+
+  hasMvu(): boolean {
+    const mvu = this.host.Mvu;
+    return Boolean(
+      mvu &&
+        typeof mvu.getMvuData === 'function' &&
+        typeof mvu.replaceMvuData === 'function',
+    );
+  }
+
+  async writeProjection(projection: AiProjection): Promise<boolean> {
+    const mvu = this.host.Mvu;
+    if (!mvu || !this.hasMvu()) return false;
+
+    const option: MvuOption = { type: 'message', message_id: 'latest' };
+    const current = mvu.getMvuData(option) ?? {};
+    const next = this.clone(current);
+    const statData = this.asRecord(next.stat_data);
+
+    next.stat_data = {
+      ...statData,
+      caelian: projection,
+    };
+
+    await Promise.resolve(mvu.replaceMvuData(next, option));
+    return true;
+  }
+
+  subscribe(handler: TavernEventHandler): void {
+    const eventOn = this.host.eventOn;
+    const events = this.host.tavern_events;
+    if (typeof eventOn !== 'function' || !events) return;
+
+    for (const eventName of [
+      'CHAT_CHANGED',
+      'MESSAGE_RECEIVED',
+      'MESSAGE_UPDATED',
+    ]) {
+      const event = events[eventName];
+      if (event === undefined) continue;
+      const possibleDisposer = eventOn(event, () => void handler(eventName));
+      if (typeof possibleDisposer === 'function') {
+        this.disposers.push(possibleDisposer as () => void);
+      }
+    }
+  }
+
+  unsubscribeAll(): void {
+    for (const dispose of this.disposers.splice(0)) {
+      try {
+        dispose();
+      } catch {
+        // Tavern event adapters are allowed to expose best-effort disposers.
+      }
+    }
+  }
+
+  notify(
+    level: 'info' | 'success' | 'warning' | 'error',
+    message: string,
+  ): void {
+    this.host.toastr?.[level]?.(message, 'Re∞：欧西亚斯 Alpha');
+  }
+
+  private resolveHost(sourceWindow: Window): Window {
+    try {
+      return sourceWindow.parent && sourceWindow.parent.document
+        ? sourceWindow.parent
+        : sourceWindow;
+    } catch {
+      return sourceWindow;
+    }
+  }
+
+  private clone(value: Record<string, unknown>): Record<string, unknown> {
+    try {
+      return structuredClone(value);
+    } catch {
+      return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+    }
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    return typeof value === 'object' && value !== null
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+}

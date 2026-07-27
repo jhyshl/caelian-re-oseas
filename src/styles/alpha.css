@@ -1,0 +1,63 @@
+.caelian-panel-host,
+.caelian-panel-host *,
+.caelian-panel-host *::before,
+.caelian-panel-host *::after {
+  box-sizing: border-box;
+}
+
+.caelian-panel-host {
+  position: fixed;
+  z-index: 2147482000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  pointer-events: none;
+}
+
+.caelian-panel-host > * {
+  pointer-events: auto;
+}
+
+.caelian-shell-host {
+  inset: auto 22px 22px auto;
+  display: block;
+  padding: 0;
+}
+
+.caelian-demo {
+  width: min(720px, calc(100% - 48px));
+  margin: 15vh auto;
+  padding: 44px;
+  border: 1px solid #5f4d76;
+  border-radius: 28px;
+  color: #f8f3ff;
+  background: #191323;
+  box-shadow: 0 28px 90px rgba(8, 4, 14, 0.5);
+  font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
+}
+
+html {
+  min-height: 100%;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(126, 88, 161, 0.28), transparent 36%),
+    #100c17;
+}
+
+.caelian-demo h1 {
+  margin: 4px 0 12px;
+  font-size: clamp(36px, 8vw, 72px);
+}
+
+.caelian-demo__eyebrow {
+  color: #cba9ef;
+  letter-spacing: 0.16em;
+}
+
+#caelian-demo-status {
+  margin-top: 24px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  color: #cfe8da;
+  background: rgba(66, 130, 97, 0.16);
+}
