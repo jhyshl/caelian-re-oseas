@@ -1,20 +1,38 @@
-# Re∞：欧西亚斯重写
+# Re∞：欧西亚斯 Alpha
 
-这是 Re∞：欧西亚斯的全新重写仓库，与旧版线上仓库隔离。
+这是 Re∞：欧西亚斯的浏览器本地优先重写仓库，与旧版线上仓库完全隔离。
 
-## 重写目标
+当前版本实现第一条可运行 Alpha 纵切片：
 
-- 以浏览器 IndexedDB 作为唯一权威游戏存档；
-- MVU 只保留 AI 确实需要读取的精简投影；
-- 人物、牌组、背包、装备、任务、地图、市场、合成、战斗等板块使用独立 Vue 应用；
-- 通过固定 Bridge 接入酒馆助手，业务代码和内容由 GitHub 托管；
-- 使用 Alpha、Beta、Release 三个独立发布通道，并由通道 manifest 自动更新；
-- 保留旧数据和规则，废弃多权威状态、全量 MVU 镜像和补丁式全局脚本结构。
+- 固定酒馆助手 Bridge 自动读取 Alpha 通道，不需要玩家修改版本号；
+- `caelian-alpha` IndexedDB 是唯一权威状态；
+- MVU 只接收人物、世界、任务和战斗的精简摘要；
+- 所有写入经过 Zod 白名单命令、幂等检查和 Dexie 事务；
+- Shell、人物、背包和诊断是四个独立 Vue 应用与独立 Pinia；
+- 面板按需加载并在关闭时完整卸载；
+- GitHub Actions 验证后发布不可变构建，并移动 Alpha manifest 指针。
 
-## 当前状态
+## 文档
 
-当前处于 **Architecture Alpha Draft** 阶段，仓库内暂未提供可运行版本，请勿将其作为 Alpha 玩家入口导入。
+- [Alpha v0.1 需求冻结](docs/alpha-v0.1-scope.md)
+- [完整重写架构方案](docs/rewrite-architecture.md)
 
-完整审计与重写方案见：[docs/rewrite-architecture.md](docs/rewrite-architecture.md)。
+## 本地验证
 
-后续将先完成规则冻结、内容抽取、存档样本与测试基线，再建设新内核和独立 Vue 模块。
+```powershell
+npm install
+npm run check
+npm test
+npm run build:alpha
+npm run preview
+```
+
+构建结果：
+
+```text
+dist/channels/alpha.json
+dist/builds/<build-id>/
+dist/tavern-helper/caelian-alpha.json
+```
+
+> Alpha 目前用于验证新内核、存储边界、更新链路和独立 Vue 生命周期，尚未迁移旧版全部玩法数据。
