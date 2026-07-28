@@ -221,10 +221,34 @@ const folder = {
   ],
 };
 
+const standaloneScript = {
+  type: 'script',
+  enabled: true,
+  name: 'Re∞：欧西亚斯Alpha',
+  id: 'f56df46e-b198-4d84-9e94-269079a31e17',
+  content: bridge,
+  info: '固定读取公网 Alpha 通道；发布新版本后，各终端会在下次加载时自动更新。',
+  button: {
+    enabled: true,
+    buttons: [],
+  },
+  data: {},
+  export_with: {
+    data: true,
+    button: true,
+  },
+};
+
 await mkdir(path.join(distRoot, 'tavern-helper'), { recursive: true });
 await writeFile(
   path.join(distRoot, 'tavern-helper', 'caelian-alpha.json'),
   `${JSON.stringify(folder, null, 2)}\n`,
+  'utf8',
+);
+
+await writeFile(
+  path.join(distRoot, 'tavern-helper', 'caelian-alpha-script.json'),
+  `${JSON.stringify(standaloneScript, null, 2)}\n`,
   'utf8',
 );
 
