@@ -41,6 +41,11 @@
   pointer-events: none;
 }
 
+.caelian-feedback-host {
+  /* Feedback is modal: keep the draggable shell from covering form controls. */
+  z-index: 2147483647;
+}
+
 .caelian-demo {
   width: min(720px, calc(100% - 48px));
   margin: 15vh auto;

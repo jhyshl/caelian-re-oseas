@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /* global Window, window */
-import { computed, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import {
   FEEDBACK_LIMITS,
   submitFeedback,
@@ -30,6 +30,8 @@ const submitting = ref(false);
 const submittedId = ref('');
 const serviceError = ref('');
 const isBug = computed(() => draft.kind === 'bug');
+let previousBodyOverflow = '';
+let previousRootOverflow = '';
 
 const writingTips = computed(() =>
   isBug.value
@@ -109,6 +111,20 @@ async function submit(): Promise<void> {
     submitting.value = false;
   }
 }
+
+onMounted(() => {
+  const document = props.context.document;
+  previousBodyOverflow = document.body.style.overflow;
+  previousRootOverflow = document.documentElement.style.overflow;
+  document.body.style.overflow = 'hidden';
+  document.documentElement.style.overflow = 'hidden';
+});
+
+onUnmounted(() => {
+  const document = props.context.document;
+  document.body.style.overflow = previousBodyOverflow;
+  document.documentElement.style.overflow = previousRootOverflow;
+});
 </script>
 
 <template>
