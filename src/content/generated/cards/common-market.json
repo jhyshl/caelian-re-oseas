@@ -1,0 +1,479 @@
+{
+  "cm_practice_slash": {
+    "id": "cm_practice_slash",
+    "name": "练习斩",
+    "type": "attack",
+    "cost": 1,
+    "mpCost": 0,
+    "rarity": "common",
+    "description": "AP 1｜造成 7 点伤害",
+    "brief": "造成 7 点伤害",
+    "effects": [
+      {
+        "type": "damage",
+        "value": 7,
+        "target": "enemy"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_armor_break": {
+    "id": "cm_armor_break",
+    "name": "破甲击",
+    "type": "attack",
+    "cost": 2,
+    "mpCost": 0,
+    "rarity": "uncommon",
+    "description": "AP 2｜造成 11 点伤害，施加易伤 1 回合",
+    "brief": "造成 11 点伤害，施加易伤 1 回合",
+    "effects": [
+      {
+        "type": "damage",
+        "value": 11,
+        "target": "enemy"
+      },
+      {
+        "type": "apply_debuff",
+        "debuff": "vulnerable",
+        "value": 1,
+        "turns": 1,
+        "target": "enemy"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_double_strike": {
+    "id": "cm_double_strike",
+    "name": "双重打击",
+    "type": "attack",
+    "cost": 2,
+    "mpCost": 0,
+    "rarity": "uncommon",
+    "description": "AP 2｜造成 6 点伤害 ×2",
+    "brief": "造成 6 点伤害 ×2",
+    "effects": [
+      {
+        "type": "damage",
+        "value": 6,
+        "target": "enemy"
+      },
+      {
+        "type": "damage",
+        "value": 6,
+        "target": "enemy"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_sweeping_arc": {
+    "id": "cm_sweeping_arc",
+    "name": "横扫弧光",
+    "type": "attack",
+    "cost": 3,
+    "mpCost": 0,
+    "rarity": "rare",
+    "description": "AP 3｜对所有敌人造成 9 点伤害",
+    "brief": "对所有敌人造成 9 点伤害",
+    "effects": [
+      {
+        "type": "damage",
+        "value": 9,
+        "target": "all_enemies"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_finishing_blow": {
+    "id": "cm_finishing_blow",
+    "name": "决胜重击",
+    "type": "attack",
+    "cost": 5,
+    "mpCost": 0,
+    "rarity": "legendary",
+    "description": "AP 5｜造成 34 点伤害，施加易伤 1 回合",
+    "brief": "造成 34 点伤害，施加易伤 1 回合",
+    "effects": [
+      {
+        "type": "damage",
+        "value": 34,
+        "target": "enemy"
+      },
+      {
+        "type": "apply_debuff",
+        "debuff": "vulnerable",
+        "value": 1,
+        "turns": 1,
+        "target": "enemy"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_bandage": {
+    "id": "cm_bandage",
+    "name": "旅行绷带",
+    "type": "skill",
+    "cost": 1,
+    "mpCost": 0,
+    "rarity": "common",
+    "description": "AP 1｜回复 10 HP",
+    "brief": "回复 10 HP",
+    "effects": [
+      {
+        "type": "heal",
+        "value": 10,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_first_aid": {
+    "id": "cm_first_aid",
+    "name": "应急治疗",
+    "type": "skill",
+    "cost": 2,
+    "mpCost": 0,
+    "rarity": "uncommon",
+    "description": "AP 2｜回复 18 HP",
+    "brief": "回复 18 HP",
+    "effects": [
+      {
+        "type": "heal",
+        "value": 18,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_purifying_tonic": {
+    "id": "cm_purifying_tonic",
+    "name": "净化药剂",
+    "type": "skill",
+    "cost": 3,
+    "mpCost": 0,
+    "rarity": "rare",
+    "description": "AP 3｜回复 16 HP，清除 1 个 debuff",
+    "brief": "回复 16 HP，清除 1 个 debuff",
+    "effects": [
+      {
+        "type": "heal",
+        "value": 16,
+        "target": "self"
+      },
+      {
+        "type": "cleanse",
+        "target": "self",
+        "amount": 1
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_makeshift_barrier": {
+    "id": "cm_makeshift_barrier",
+    "name": "临时壁垒",
+    "type": "defense",
+    "cost": 1,
+    "mpCost": 0,
+    "rarity": "common",
+    "description": "AP 1｜获得 11 护盾",
+    "brief": "获得 11 护盾",
+    "effects": [
+      {
+        "type": "shield",
+        "value": 11,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_meditation": {
+    "id": "cm_meditation",
+    "name": "短暂冥想",
+    "type": "skill",
+    "cost": 0,
+    "mpCost": 0,
+    "rarity": "common",
+    "description": "AP 0｜回复 2 魔力",
+    "brief": "回复 2 魔力",
+    "effects": [
+      {
+        "type": "gain_mp",
+        "value": 2,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_mana_return": {
+    "id": "cm_mana_return",
+    "name": "魔力回流",
+    "type": "skill",
+    "cost": 1,
+    "mpCost": 0,
+    "rarity": "uncommon",
+    "description": "AP 1｜回复 5 魔力",
+    "brief": "回复 5 魔力",
+    "effects": [
+      {
+        "type": "gain_mp",
+        "value": 5,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_mana_conversion": {
+    "id": "cm_mana_conversion",
+    "name": "魔能转换",
+    "type": "skill",
+    "cost": 0,
+    "mpCost": 4,
+    "rarity": "uncommon",
+    "description": "AP 0 / MP 4｜获得 1 AP",
+    "brief": "消耗 4 魔力，获得 1 AP",
+    "effects": [
+      {
+        "type": "gain_ap",
+        "value": 1,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_overload_supply": {
+    "id": "cm_overload_supply",
+    "name": "超载供能",
+    "type": "skill",
+    "cost": 1,
+    "mpCost": 7,
+    "rarity": "epic",
+    "description": "AP 1 / MP 7｜获得 2 AP",
+    "brief": "消耗 7 魔力，获得 2 AP",
+    "effects": [
+      {
+        "type": "gain_ap",
+        "value": 2,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_quick_scan": {
+    "id": "cm_quick_scan",
+    "name": "快速检视",
+    "type": "skill",
+    "cost": 0,
+    "mpCost": 0,
+    "rarity": "common",
+    "description": "AP 0｜抽 1 张牌",
+    "brief": "抽 1 张牌",
+    "effects": [
+      {
+        "type": "draw",
+        "value": 1,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_sort_hand": {
+    "id": "cm_sort_hand",
+    "name": "整理手牌",
+    "type": "skill",
+    "cost": 1,
+    "mpCost": 0,
+    "rarity": "uncommon",
+    "description": "AP 1｜抽 2 张牌",
+    "brief": "抽 2 张牌",
+    "effects": [
+      {
+        "type": "draw",
+        "value": 2,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_tactical_preview": {
+    "id": "cm_tactical_preview",
+    "name": "战术预演",
+    "type": "skill",
+    "cost": 2,
+    "mpCost": 0,
+    "rarity": "rare",
+    "description": "AP 2｜抽 3 张牌，然后弃掉最后抽到的 1 张牌",
+    "brief": "抽 3 张牌，然后弃掉最后抽到的 1 张牌",
+    "effects": [
+      {
+        "type": "draw",
+        "value": 3,
+        "target": "self"
+      },
+      {
+        "type": "discard_last_drawn",
+        "amount": 1,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_rally": {
+    "id": "cm_rally",
+    "name": "鼓舞士气",
+    "type": "skill",
+    "cost": 1,
+    "mpCost": 0,
+    "rarity": "uncommon",
+    "description": "AP 1｜获得力量 +2，持续 2 回合",
+    "brief": "获得力量 +2，持续 2 回合",
+    "effects": [
+      {
+        "type": "apply_buff",
+        "buff": "strength",
+        "value": 2,
+        "turns": 2,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_steady_stance": {
+    "id": "cm_steady_stance",
+    "name": "稳固架势",
+    "type": "defense",
+    "cost": 1,
+    "mpCost": 0,
+    "rarity": "uncommon",
+    "description": "AP 1｜获得坚韧 +2，持续 2 回合",
+    "brief": "获得坚韧 +2，持续 2 回合",
+    "effects": [
+      {
+        "type": "apply_buff",
+        "buff": "fortitude",
+        "value": 2,
+        "turns": 2,
+        "target": "self"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_distracting_dust": {
+    "id": "cm_distracting_dust",
+    "name": "扰乱粉尘",
+    "type": "skill",
+    "cost": 1,
+    "mpCost": 0,
+    "rarity": "common",
+    "description": "AP 1｜施加虚弱 1 回合",
+    "brief": "施加虚弱 1 回合",
+    "effects": [
+      {
+        "type": "apply_debuff",
+        "debuff": "weak",
+        "value": 1,
+        "turns": 1,
+        "target": "enemy"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  },
+  "cm_opening_mark": {
+    "id": "cm_opening_mark",
+    "name": "破绽标记",
+    "type": "skill",
+    "cost": 2,
+    "mpCost": 0,
+    "rarity": "uncommon",
+    "description": "AP 2｜施加易伤 2 回合",
+    "brief": "施加易伤 2 回合",
+    "effects": [
+      {
+        "type": "apply_debuff",
+        "debuff": "vulnerable",
+        "value": 2,
+        "turns": 2,
+        "target": "enemy"
+      }
+    ],
+    "cat": "common",
+    "cls": "common",
+    "marketOnly": true,
+    "rewardEligible": false,
+    "source": "caelian_common_market_v1"
+  }
+}

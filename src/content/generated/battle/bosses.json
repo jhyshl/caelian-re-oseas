@@ -1,0 +1,1104 @@
+{
+  "boss_academy_arcane_golem": {
+    "id": "boss_academy_arcane_golem",
+    "name": "失控教学魔像",
+    "boss": true,
+    "is_boss": true,
+    "boss_mechanic": "academy_exam",
+    "region": "圣德里安学院",
+    "regions": [
+      "圣德里安学院"
+    ],
+    "hp": 180,
+    "attack": 9,
+    "defense": 6,
+    "speed": 3,
+    "difficulty": "hard",
+    "stat_variance": [
+      0.96,
+      1.06
+    ],
+    "level_range": [
+      3,
+      18
+    ],
+    "tags": [
+      "boss",
+      "construct",
+      "arcane",
+      "academy"
+    ],
+    "xp": 260,
+    "gold": [
+      120,
+      260
+    ],
+    "loot": [
+      {
+        "id": "mat_arcane_core",
+        "name": "失控魔导核心",
+        "chance": 0.75
+      }
+    ],
+    "battle_start_buffs": [
+      {
+        "buff": "damage_resist",
+        "value": 6,
+        "turns": 99,
+        "undispellable": true,
+        "source": "战斗考试"
+      }
+    ],
+    "patterns": [
+      "attack",
+      "debuff_weak",
+      "defend"
+    ],
+    "skills": {
+      "actions": [
+        {
+          "name": "符文冲拳",
+          "intent": "攻击",
+          "weight": 35,
+          "desc": "以符文铁拳攻击。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 0.525,
+              "roll_min": 0.92,
+              "roll_max": 1.14
+            }
+          ]
+        },
+        {
+          "name": "错误示范",
+          "intent": "虚弱",
+          "weight": 25,
+          "desc": "指出你的破绽。",
+          "effects": [
+            {
+              "type": "debuff",
+              "debuff": "weak",
+              "turns": 1
+            }
+          ]
+        },
+        {
+          "name": "魔导护栏",
+          "intent": "防御",
+          "weight": 20,
+          "desc": "展开教学护栏。",
+          "effects": [
+            {
+              "type": "shield",
+              "defense_ratio": 1.2,
+              "roll_min": 0.9,
+              "roll_max": 1.12
+            }
+          ]
+        },
+        {
+          "name": "考场电流",
+          "intent": "群压",
+          "weight": 20,
+          "desc": "释放失控电弧。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 0.36,
+              "hits": 2,
+              "roll_min": 0.88,
+              "roll_max": 1.12
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "boss_ilaya_grave_warden": {
+    "id": "boss_ilaya_grave_warden",
+    "name": "墓园守望者",
+    "boss": true,
+    "is_boss": true,
+    "boss_mechanic": "soul_balance",
+    "region": "伊拉亚城",
+    "regions": [
+      "伊拉亚城"
+    ],
+    "hp": 420,
+    "attack": 20,
+    "defense": 10,
+    "speed": 7,
+    "difficulty": "hard",
+    "stat_variance": [
+      0.95,
+      1.08
+    ],
+    "level_range": [
+      4,
+      20
+    ],
+    "tags": [
+      "boss",
+      "undead",
+      "spirit",
+      "grave"
+    ],
+    "xp": 300,
+    "gold": [
+      150,
+      300
+    ],
+    "loot": [
+      {
+        "id": "mat_soul_lantern",
+        "name": "魂火灯芯",
+        "chance": 0.7
+      }
+    ],
+    "patterns": [
+      "attack",
+      "debuff_vulnerable",
+      "attack_heavy"
+    ],
+    "skills": {
+      "actions": [
+        {
+          "name": "守墓镰影",
+          "intent": "攻击",
+          "weight": 35,
+          "desc": "镰影横扫。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 1.12,
+              "roll_min": 0.9,
+              "roll_max": 1.15
+            }
+          ]
+        },
+        {
+          "name": "怨魂低语",
+          "intent": "诅咒",
+          "weight": 25,
+          "desc": "用墓地怨念标记目标。",
+          "effects": [
+            {
+              "type": "debuff",
+              "debuff": "curse_mark",
+              "value": 3,
+              "turns": 2,
+              "uncleanseable": true
+            }
+          ]
+        },
+        {
+          "name": "墓土护身",
+          "intent": "防御",
+          "weight": 20,
+          "desc": "以墓土构成护盾。",
+          "effects": [
+            {
+              "type": "shield",
+              "defense_ratio": 2.6,
+              "roll_min": 0.9,
+              "roll_max": 1.1
+            }
+          ]
+        },
+        {
+          "name": "安魂反噬",
+          "intent": "反噬",
+          "weight": 20,
+          "desc": "若目标有诅咒则伤害提高。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 0.84,
+              "exploit_bleed": true,
+              "roll_min": 0.9,
+              "roll_max": 1.18
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "boss_solavia_hollow_saint": {
+    "id": "boss_solavia_hollow_saint",
+    "name": "空心圣像",
+    "boss": true,
+    "is_boss": true,
+    "boss_mechanic": "three_evidence_judgement",
+    "region": "索拉维亚",
+    "regions": [
+      "索拉维亚"
+    ],
+    "hp": 520,
+    "attack": 24,
+    "defense": 16,
+    "speed": 5,
+    "difficulty": "nightmare",
+    "stat_variance": [
+      0.97,
+      1.06
+    ],
+    "level_range": [
+      6,
+      24
+    ],
+    "tags": [
+      "boss",
+      "holy",
+      "construct",
+      "trial"
+    ],
+    "xp": 420,
+    "gold": [
+      220,
+      420
+    ],
+    "loot": [
+      {
+        "id": "mat_false_halo",
+        "name": "伪圣辉碎片",
+        "chance": 0.75
+      }
+    ],
+    "battle_start_buffs": [
+      {
+        "buff": "damage_resist",
+        "value": 60,
+        "turns": 99,
+        "undispellable": true,
+        "source": "三证审判"
+      }
+    ],
+    "patterns": [
+      "attack",
+      "debuff_vulnerable",
+      "defend"
+    ],
+    "skills": {
+      "actions": [
+        {
+          "name": "圣像凝视",
+          "intent": "审判",
+          "weight": 30,
+          "desc": "圣像凝视使目标暴露破绽。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 0.82,
+              "roll_min": 0.9,
+              "roll_max": 1.12
+            },
+            {
+              "type": "debuff",
+              "debuff": "vulnerable",
+              "turns": 1
+            }
+          ]
+        },
+        {
+          "name": "空洞祝祷",
+          "intent": "防御",
+          "weight": 25,
+          "desc": "伪圣辉再次流转。",
+          "effects": [
+            {
+              "type": "shield",
+              "defense_ratio": 2.8,
+              "roll_min": 0.9,
+              "roll_max": 1.08
+            },
+            {
+              "type": "buff",
+              "buff": "damage_resist",
+              "value": 12,
+              "turns": 1,
+              "undispellable": true
+            }
+          ]
+        },
+        {
+          "name": "金白裁光",
+          "intent": "强攻",
+          "weight": 25,
+          "desc": "发出刺目的裁决光。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 1.35,
+              "roll_min": 0.92,
+              "roll_max": 1.14
+            }
+          ]
+        },
+        {
+          "name": "伪神谕令",
+          "intent": "驱散",
+          "weight": 20,
+          "desc": "驱散玩家的强化。",
+          "effects": [
+            {
+              "type": "dispel_player_buff",
+              "amount": 1
+            },
+            {
+              "type": "damage",
+              "attack_ratio": 0.65
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "boss_naiathos_tide_queen": {
+    "id": "boss_naiathos_tide_queen",
+    "name": "潮汐歌后",
+    "boss": true,
+    "is_boss": true,
+    "boss_mechanic": "tide_rhythm",
+    "region": "奈亚索斯城",
+    "regions": [
+      "奈亚索斯城"
+    ],
+    "hp": 500,
+    "attack": 23,
+    "defense": 12,
+    "speed": 9,
+    "difficulty": "nightmare",
+    "stat_variance": [
+      0.96,
+      1.07
+    ],
+    "level_range": [
+      8,
+      26
+    ],
+    "tags": [
+      "boss",
+      "water",
+      "siren",
+      "tide"
+    ],
+    "xp": 430,
+    "gold": [
+      240,
+      460
+    ],
+    "loot": [
+      {
+        "id": "mat_tide_pearl",
+        "name": "潮声珍珠",
+        "chance": 0.72
+      }
+    ],
+    "patterns": [
+      "attack",
+      "debuff_weak",
+      "attack_heavy"
+    ],
+    "skills": {
+      "actions": [
+        {
+          "name": "潮声咏叹",
+          "intent": "水歌",
+          "weight": 30,
+          "desc": "歌声裹挟潮水袭来。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 0.95,
+              "hits": 2,
+              "roll_min": 0.88,
+              "roll_max": 1.12
+            }
+          ]
+        },
+        {
+          "name": "溺音魅惑",
+          "intent": "弱化",
+          "weight": 25,
+          "desc": "用溺音削弱目标。",
+          "effects": [
+            {
+              "type": "debuff",
+              "debuff": "weak",
+              "turns": 1
+            },
+            {
+              "type": "debuff",
+              "debuff": "vulnerable",
+              "turns": 1
+            }
+          ]
+        },
+        {
+          "name": "浪冠护体",
+          "intent": "防御",
+          "weight": 20,
+          "desc": "潮浪形成护盾。",
+          "effects": [
+            {
+              "type": "shield",
+              "defense_ratio": 2.4
+            }
+          ]
+        },
+        {
+          "name": "碎潮高音",
+          "intent": "强攻",
+          "weight": 25,
+          "desc": "高音震裂护盾。",
+          "effects": [
+            {
+              "type": "strip_player_shield"
+            },
+            {
+              "type": "damage",
+              "attack_ratio": 0.82,
+              "roll_min": 0.9,
+              "roll_max": 1.15
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "boss_aethera_dream_stag": {
+    "id": "boss_aethera_dream_stag",
+    "name": "梦境白鹿",
+    "boss": true,
+    "is_boss": true,
+    "boss_mechanic": "dream_layers",
+    "region": "艾瑟拉森林",
+    "regions": [
+      "艾瑟拉森林"
+    ],
+    "hp": 470,
+    "attack": 21,
+    "defense": 11,
+    "speed": 11,
+    "difficulty": "hard",
+    "stat_variance": [
+      0.96,
+      1.1
+    ],
+    "level_range": [
+      8,
+      24
+    ],
+    "tags": [
+      "boss",
+      "nature",
+      "dream",
+      "beast"
+    ],
+    "xp": 390,
+    "gold": [
+      200,
+      390
+    ],
+    "loot": [
+      {
+        "id": "mat_dream_antler",
+        "name": "梦枝鹿角",
+        "chance": 0.72
+      }
+    ],
+    "patterns": [
+      "attack",
+      "debuff_weak",
+      "defend"
+    ],
+    "skills": {
+      "actions": [
+        {
+          "name": "鹿角星辉",
+          "intent": "攻击",
+          "weight": 30,
+          "desc": "鹿角洒落星辉。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 1.02,
+              "roll_min": 0.9,
+              "roll_max": 1.15
+            }
+          ]
+        },
+        {
+          "name": "沉眠花粉",
+          "intent": "迷梦",
+          "weight": 28,
+          "desc": "使目标陷入迷梦。",
+          "effects": [
+            {
+              "type": "debuff",
+              "debuff": "dream",
+              "value": 1,
+              "turns": 3,
+              "uncleanseable": true
+            },
+            {
+              "type": "debuff",
+              "debuff": "weak",
+              "turns": 1
+            }
+          ]
+        },
+        {
+          "name": "林间再生",
+          "intent": "恢复",
+          "weight": 20,
+          "desc": "借森林气息恢复。",
+          "effects": [
+            {
+              "type": "heal",
+              "attack_ratio": 0.45,
+              "value": 8
+            }
+          ]
+        },
+        {
+          "name": "梦踏",
+          "intent": "强攻",
+          "weight": 22,
+          "desc": "踏碎梦境造成伤害。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 1.24,
+              "roll_min": 0.88,
+              "roll_max": 1.12
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "boss_silvermoon_mirror_duchess": {
+    "id": "boss_silvermoon_mirror_duchess",
+    "name": "镜中女公爵",
+    "boss": true,
+    "is_boss": true,
+    "boss_mechanic": "mirror_record",
+    "region": "银月之城",
+    "regions": [
+      "银月之城"
+    ],
+    "hp": 530,
+    "attack": 25,
+    "defense": 13,
+    "speed": 12,
+    "difficulty": "nightmare",
+    "stat_variance": [
+      0.96,
+      1.06
+    ],
+    "level_range": [
+      10,
+      28
+    ],
+    "tags": [
+      "boss",
+      "mirror",
+      "moon",
+      "illusion"
+    ],
+    "xp": 480,
+    "gold": [
+      260,
+      520
+    ],
+    "loot": [
+      {
+        "id": "mat_moon_mirror_shard",
+        "name": "月镜碎片",
+        "chance": 0.74
+      }
+    ],
+    "patterns": [
+      "attack",
+      "debuff_vulnerable",
+      "buff_strength"
+    ],
+    "skills": {
+      "actions": [
+        {
+          "name": "银镜刺击",
+          "intent": "攻击",
+          "weight": 30,
+          "desc": "银镜折射成刺。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 1.08,
+              "roll_min": 0.9,
+              "roll_max": 1.12
+            }
+          ]
+        },
+        {
+          "name": "映身步",
+          "intent": "闪避",
+          "weight": 22,
+          "desc": "进入镜中步伐。",
+          "effects": [
+            {
+              "type": "buff",
+              "buff": "agility",
+              "value": 18,
+              "turns": 1,
+              "undispellable": true
+            }
+          ]
+        },
+        {
+          "name": "月面折光",
+          "intent": "反制",
+          "weight": 22,
+          "desc": "为自身添加减伤。",
+          "effects": [
+            {
+              "type": "buff",
+              "buff": "damage_resist",
+              "value": 22,
+              "turns": 1,
+              "undispellable": true
+            }
+          ]
+        },
+        {
+          "name": "贵族审视",
+          "intent": "破绽",
+          "weight": 26,
+          "desc": "看穿目标套路。",
+          "effects": [
+            {
+              "type": "debuff",
+              "debuff": "vulnerable",
+              "turns": 1
+            },
+            {
+              "type": "damage",
+              "attack_ratio": 0.72
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "boss_hearthforge_overcore": {
+    "id": "boss_hearthforge_overcore",
+    "name": "过载炉心",
+    "boss": true,
+    "is_boss": true,
+    "boss_mechanic": "heat_gauge",
+    "region": "炉心城",
+    "regions": [
+      "炉心城"
+    ],
+    "hp": 620,
+    "attack": 27,
+    "defense": 18,
+    "speed": 4,
+    "difficulty": "nightmare",
+    "stat_variance": [
+      0.98,
+      1.05
+    ],
+    "level_range": [
+      12,
+      30
+    ],
+    "tags": [
+      "boss",
+      "fire",
+      "construct",
+      "furnace"
+    ],
+    "xp": 560,
+    "gold": [
+      300,
+      600
+    ],
+    "loot": [
+      {
+        "id": "mat_overcore_slag",
+        "name": "过载炉渣",
+        "chance": 0.78
+      }
+    ],
+    "battle_start_buffs": [
+      {
+        "buff": "damage_resist",
+        "value": 10,
+        "turns": 99,
+        "undispellable": true,
+        "source": "稳定炉壳"
+      }
+    ],
+    "patterns": [
+      "attack",
+      "attack_heavy",
+      "defend"
+    ],
+    "skills": {
+      "actions": [
+        {
+          "name": "炉火喷涌",
+          "intent": "火焰",
+          "weight": 32,
+          "desc": "炉火从裂缝喷涌。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 1.02,
+              "roll_min": 0.9,
+              "roll_max": 1.15
+            },
+            {
+              "type": "debuff",
+              "debuff": "burn",
+              "value": 5,
+              "turns": 2
+            }
+          ]
+        },
+        {
+          "name": "熔钢护壳",
+          "intent": "防御",
+          "weight": 24,
+          "desc": "熔钢覆盖外壳。",
+          "effects": [
+            {
+              "type": "shield",
+              "defense_ratio": 2.8
+            },
+            {
+              "type": "buff",
+              "buff": "damage_resist",
+              "value": 12,
+              "turns": 1,
+              "undispellable": true
+            }
+          ]
+        },
+        {
+          "name": "蒸汽冲击",
+          "intent": "破盾",
+          "weight": 22,
+          "desc": "高压蒸汽击碎护盾。",
+          "effects": [
+            {
+              "type": "strip_player_shield"
+            },
+            {
+              "type": "damage",
+              "attack_ratio": 0.84
+            }
+          ]
+        },
+        {
+          "name": "燃炉过载",
+          "intent": "强攻",
+          "weight": 22,
+          "desc": "热量越高越危险。",
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 1.28,
+              "roll_min": 0.92,
+              "roll_max": 1.16
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "boss_abyssal_leviathan_fragment": {
+    "id": "boss_abyssal_leviathan_fragment",
+    "name": "利维坦残影",
+    "boss": true,
+    "is_boss": true,
+    "boss_mechanic": "leviathan_parts",
+    "region": "阿必塞海",
+    "regions": [
+      "阿必塞海"
+    ],
+    "hp": 780,
+    "attack": 30,
+    "defense": 16,
+    "speed": 6,
+    "difficulty": "nightmare",
+    "stat_variance": [
+      0.98,
+      1.04
+    ],
+    "level_range": [
+      10,
+      32
+    ],
+    "tags": [
+      "boss",
+      "abyss",
+      "leviathan",
+      "parts"
+    ],
+    "xp": 650,
+    "gold": [
+      360,
+      720
+    ],
+    "loot": [
+      {
+        "id": "mat_leviathan_scale",
+        "name": "利维坦残鳞",
+        "chance": 0.8
+      }
+    ],
+    "patterns": [
+      "attack"
+    ],
+    "skills": {
+      "actions": [
+        {
+          "name": "深渊咬合",
+          "intent": "主攻",
+          "weight": 1,
+          "effects": [
+            {
+              "type": "damage",
+              "attack_ratio": 1.18
+            }
+          ]
+        }
+      ]
+    },
+    "parts": [
+      {
+        "id": "boss_leviathan_head",
+        "name": "利维坦头颅",
+        "role": "head",
+        "hp_ratio": 1,
+        "attack_ratio": 1,
+        "defense_ratio": 1,
+        "speed_ratio": 0.8,
+        "skills": {
+          "actions": [
+            {
+              "name": "深渊咬合",
+              "intent": "主攻",
+              "weight": 40,
+              "effects": [
+                {
+                  "type": "damage",
+                  "attack_ratio": 1.18,
+                  "roll_min": 0.9,
+                  "roll_max": 1.15
+                }
+              ]
+            },
+            {
+              "name": "深海凝视",
+              "intent": "标记",
+              "weight": 30,
+              "effects": [
+                {
+                  "type": "debuff",
+                  "debuff": "abyss_mark",
+                  "value": 3,
+                  "turns": 2,
+                  "uncleanseable": true
+                }
+              ]
+            },
+            {
+              "name": "吞潮",
+              "intent": "恢复",
+              "weight": 30,
+              "effects": [
+                {
+                  "type": "heal",
+                  "attack_ratio": 0.42,
+                  "value": 8
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "boss_leviathan_left_tentacle",
+        "name": "左触须",
+        "role": "left_tentacle",
+        "hp_ratio": 0.42,
+        "attack_ratio": 0.72,
+        "defense_ratio": 0.75,
+        "speed_ratio": 1.15,
+        "skills": {
+          "actions": [
+            {
+              "name": "缠绕",
+              "intent": "缠绕",
+              "weight": 35,
+              "effects": [
+                {
+                  "type": "damage",
+                  "attack_ratio": 0.68
+                },
+                {
+                  "type": "debuff",
+                  "debuff": "deep_pressure",
+                  "value": 1,
+                  "turns": 3,
+                  "uncleanseable": true
+                }
+              ]
+            },
+            {
+              "name": "拖入海沟",
+              "intent": "深压",
+              "weight": 35,
+              "effects": [
+                {
+                  "type": "hp_percent_damage",
+                  "percent": 6,
+                  "cap": 38
+                },
+                {
+                  "type": "debuff",
+                  "debuff": "weak",
+                  "turns": 1
+                }
+              ]
+            },
+            {
+              "name": "绞杀",
+              "intent": "强攻",
+              "weight": 30,
+              "effects": [
+                {
+                  "type": "damage",
+                  "attack_ratio": 1.05,
+                  "roll_min": 0.9,
+                  "roll_max": 1.15
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "boss_leviathan_right_tentacle",
+        "name": "右触须",
+        "role": "right_tentacle",
+        "hp_ratio": 0.46,
+        "attack_ratio": 0.66,
+        "defense_ratio": 0.95,
+        "speed_ratio": 0.95,
+        "skills": {
+          "actions": [
+            {
+              "name": "鳞膜覆盖",
+              "intent": "护主",
+              "weight": 35,
+              "effects": [
+                {
+                  "type": "shield",
+                  "defense_ratio": 2.8
+                }
+              ]
+            },
+            {
+              "name": "替首护幕",
+              "intent": "减伤",
+              "weight": 35,
+              "effects": [
+                {
+                  "type": "buff",
+                  "buff": "damage_resist",
+                  "value": 18,
+                  "turns": 1,
+                  "undispellable": true
+                }
+              ]
+            },
+            {
+              "name": "侧扫",
+              "intent": "攻击",
+              "weight": 30,
+              "effects": [
+                {
+                  "type": "damage",
+                  "attack_ratio": 0.82,
+                  "roll_min": 0.9,
+                  "roll_max": 1.12
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": "boss_leviathan_tail",
+        "name": "巨尾",
+        "role": "tail",
+        "hp_ratio": 0.56,
+        "attack_ratio": 0.92,
+        "defense_ratio": 1.05,
+        "speed_ratio": 0.65,
+        "skills": {
+          "actions": [
+            {
+              "name": "海沟扫尾",
+              "intent": "重击",
+              "weight": 40,
+              "effects": [
+                {
+                  "type": "damage",
+                  "attack_ratio": 1.22,
+                  "roll_min": 0.9,
+                  "roll_max": 1.18
+                }
+              ]
+            },
+            {
+              "name": "深压脉动",
+              "intent": "深压",
+              "weight": 30,
+              "effects": [
+                {
+                  "type": "debuff",
+                  "debuff": "deep_pressure",
+                  "value": 1,
+                  "turns": 4,
+                  "uncleanseable": true
+                }
+              ]
+            },
+            {
+              "name": "下潜扰流",
+              "intent": "扰流",
+              "weight": 30,
+              "effects": [
+                {
+                  "type": "debuff",
+                  "debuff": "vulnerable",
+                  "turns": 1
+                },
+                {
+                  "type": "damage",
+                  "attack_ratio": 0.72
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

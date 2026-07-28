@@ -1,0 +1,50 @@
+{
+  "boss_academy_arcane_golem": {
+    "id": "academy_exam",
+    "name": "战斗考试",
+    "region": "圣德里安学院",
+    "desc": "每隔数回合进入考核：防御、牌型轮换、保留AP爆发、净化/护盾等要求。"
+  },
+  "boss_ilaya_grave_warden": {
+    "id": "soul_balance",
+    "name": "魂火天平",
+    "region": "伊拉亚城",
+    "desc": "攻击提高怨念，防御/治疗/净化提高安魂。"
+  },
+  "boss_solavia_hollow_saint": {
+    "id": "three_evidence_judgement",
+    "name": "三证审判",
+    "region": "索拉维亚",
+    "desc": "三回合内凑齐武证、守证、术证可剥离伪圣辉。"
+  },
+  "boss_naiathos_tide_queen": {
+    "id": "tide_rhythm",
+    "name": "潮声节拍",
+    "region": "奈亚索斯城",
+    "desc": "潮涨、高潮、潮落、静潮循环。"
+  },
+  "boss_aethera_dream_stag": {
+    "id": "dream_layers",
+    "name": "迷梦层数",
+    "region": "艾瑟拉森林",
+    "desc": "迷梦会叠加，控制在合适范围会让白鹿易伤。"
+  },
+  "boss_silvermoon_mirror_duchess": {
+    "id": "mirror_record",
+    "name": "镜面记录",
+    "region": "银月之城",
+    "desc": "记录上一回合牌型，重复套路会镜返。"
+  },
+  "boss_hearthforge_overcore": {
+    "id": "heat_gauge",
+    "name": "热量条",
+    "region": "炉心城",
+    "desc": "热量随回合变化，过热会爆炸并暴露破绽。"
+  },
+  "boss_abyssal_leviathan_fragment": {
+    "id": "leviathan_parts",
+    "name": "部位战",
+    "region": "阿必塞海",
+    "desc": "头颅为胜利目标，触须和尾部改变战斗节奏。"
+  }
+}

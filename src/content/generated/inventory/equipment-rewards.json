@@ -1,0 +1,328 @@
+{
+  "eq_iron_sword": {
+    "id": "eq_iron_sword",
+    "name": "铁剑",
+    "slot": "weapon",
+    "rarity": "common",
+    "stats": {
+      "attack": 3
+    },
+    "description": "攻击+3"
+  },
+  "eq_steel_sword": {
+    "id": "eq_steel_sword",
+    "name": "钢剑",
+    "slot": "weapon",
+    "rarity": "uncommon",
+    "stats": {
+      "attack": 5
+    },
+    "description": "攻击+5"
+  },
+  "eq_silver_saber": {
+    "id": "eq_silver_saber",
+    "name": "银刃军刀",
+    "slot": "weapon",
+    "rarity": "rare",
+    "stats": {
+      "attack": 7,
+      "speed": 1
+    },
+    "description": "攻击+7，速度+1"
+  },
+  "eq_mage_staff": {
+    "id": "eq_mage_staff",
+    "name": "橡木法杖",
+    "slot": "weapon",
+    "rarity": "common",
+    "stats": {
+      "attack": 2,
+      "mp_max": 10
+    },
+    "description": "攻击+2，魔力上限+10"
+  },
+  "eq_abyss_blade": {
+    "id": "eq_abyss_blade",
+    "name": "深渊短刃",
+    "slot": "weapon",
+    "rarity": "epic",
+    "stats": {
+      "attack": 9,
+      "speed": 2
+    },
+    "description": "攻击+9，速度+2"
+  },
+  "eq_leather_armor": {
+    "id": "eq_leather_armor",
+    "name": "皮甲",
+    "slot": "armor",
+    "rarity": "common",
+    "stats": {
+      "defense": 2,
+      "hp_max": 10
+    },
+    "description": "防御+2，生命上限+10"
+  },
+  "eq_chain_mail": {
+    "id": "eq_chain_mail",
+    "name": "锁子甲",
+    "slot": "armor",
+    "rarity": "uncommon",
+    "stats": {
+      "defense": 4,
+      "hp_max": 18
+    },
+    "description": "防御+4，生命上限+18"
+  },
+  "eq_knight_plate": {
+    "id": "eq_knight_plate",
+    "name": "骑士板甲",
+    "slot": "armor",
+    "rarity": "rare",
+    "stats": {
+      "defense": 6,
+      "hp_max": 25
+    },
+    "description": "防御+6，生命上限+25"
+  },
+  "eq_silk_robe": {
+    "id": "eq_silk_robe",
+    "name": "秘法丝袍",
+    "slot": "armor",
+    "rarity": "rare",
+    "stats": {
+      "defense": 2,
+      "mp_max": 25,
+      "speed": 1
+    },
+    "description": "防御+2，魔力上限+25，速度+1"
+  },
+  "eq_dragon_scale": {
+    "id": "eq_dragon_scale",
+    "name": "幼龙鳞甲",
+    "slot": "armor",
+    "rarity": "epic",
+    "stats": {
+      "defense": 8,
+      "hp_max": 35
+    },
+    "description": "防御+8，生命上限+35"
+  },
+  "eq_amulet_hp": {
+    "id": "eq_amulet_hp",
+    "name": "生命护符",
+    "slot": "accessory",
+    "rarity": "common",
+    "stats": {
+      "hp_max": 15
+    },
+    "description": "生命上限+15"
+  },
+  "eq_ring_power": {
+    "id": "eq_ring_power",
+    "name": "力量之戒",
+    "slot": "accessory",
+    "rarity": "uncommon",
+    "stats": {
+      "attack": 3
+    },
+    "description": "攻击+3"
+  },
+  "eq_boots_wind": {
+    "id": "eq_boots_wind",
+    "name": "风行靴",
+    "slot": "accessory",
+    "rarity": "uncommon",
+    "stats": {
+      "speed": 3
+    },
+    "description": "速度+3"
+  },
+  "eq_ap_gem": {
+    "id": "eq_ap_gem",
+    "name": "行动宝石",
+    "slot": "accessory",
+    "rarity": "rare",
+    "stats": {
+      "ap_per_turn": 1
+    },
+    "description": "每回合AP+1"
+  },
+  "eq_guardian_badge": {
+    "id": "eq_guardian_badge",
+    "name": "守护徽章",
+    "slot": "accessory",
+    "rarity": "rare",
+    "stats": {
+      "defense": 3,
+      "hp_max": 20
+    },
+    "description": "防御+3，生命上限+20"
+  },
+  "eq_mermaid_crown": {
+    "id": "eq_mermaid_crown",
+    "name": "人鱼珍珠冠",
+    "slot": "accessory",
+    "rarity": "epic",
+    "stats": {
+      "mp_max": 30,
+      "speed": 2
+    },
+    "description": "魔力上限+30，速度+2"
+  },
+  "eq_berserker_charm": {
+    "id": "eq_berserker_charm",
+    "name": "狂战护符",
+    "slot": "accessory",
+    "rarity": "epic",
+    "stats": {
+      "attack": 6,
+      "hp_max": 10
+    },
+    "description": "攻击+6，生命上限+10"
+  },
+  "eq_saint_relic": {
+    "id": "eq_saint_relic",
+    "name": "圣辉遗物",
+    "slot": "accessory",
+    "rarity": "legendary",
+    "stats": {
+      "attack": 4,
+      "defense": 4,
+      "hp_max": 30
+    },
+    "description": "攻击+4，防御+4，生命上限+30"
+  },
+  "eq_training_spear": {
+    "id": "eq_training_spear",
+    "name": "训练长枪",
+    "slot": "weapon",
+    "rarity": "common",
+    "stats": {
+      "attack": 2,
+      "speed": 1
+    },
+    "description": "攻击+2，速度+1"
+  },
+  "eq_priest_mace": {
+    "id": "eq_priest_mace",
+    "name": "祝祷权杖",
+    "slot": "weapon",
+    "rarity": "uncommon",
+    "stats": {
+      "attack": 3,
+      "mp_max": 8
+    },
+    "description": "攻击+3，魔力上限+8"
+  },
+  "eq_arcane_focus": {
+    "id": "eq_arcane_focus",
+    "name": "奥术聚焦器",
+    "slot": "weapon",
+    "rarity": "rare",
+    "stats": {
+      "attack": 4,
+      "mp_max": 18
+    },
+    "description": "攻击+4，魔力上限+18"
+  },
+  "eq_duelist_rapier": {
+    "id": "eq_duelist_rapier",
+    "name": "决斗细剑",
+    "slot": "weapon",
+    "rarity": "rare",
+    "stats": {
+      "attack": 6,
+      "speed": 2
+    },
+    "description": "攻击+6，速度+2"
+  },
+  "eq_apprentice_robe": {
+    "id": "eq_apprentice_robe",
+    "name": "学徒长袍",
+    "slot": "armor",
+    "rarity": "common",
+    "stats": {
+      "defense": 1,
+      "mp_max": 12
+    },
+    "description": "防御+1，魔力上限+12"
+  },
+  "eq_hunter_coat": {
+    "id": "eq_hunter_coat",
+    "name": "猎手外套",
+    "slot": "armor",
+    "rarity": "uncommon",
+    "stats": {
+      "defense": 3,
+      "speed": 1
+    },
+    "description": "防御+3，速度+1"
+  },
+  "eq_sun_plate": {
+    "id": "eq_sun_plate",
+    "name": "日辉胸甲",
+    "slot": "armor",
+    "rarity": "rare",
+    "stats": {
+      "defense": 5,
+      "hp_max": 18,
+      "mp_max": 8
+    },
+    "description": "防御+5，生命上限+18，魔力上限+8"
+  },
+  "eq_shadow_mail": {
+    "id": "eq_shadow_mail",
+    "name": "影缝轻甲",
+    "slot": "armor",
+    "rarity": "epic",
+    "stats": {
+      "defense": 5,
+      "speed": 3
+    },
+    "description": "防御+5，速度+3"
+  },
+  "eq_mana_ring": {
+    "id": "eq_mana_ring",
+    "name": "魔力指环",
+    "slot": "accessory",
+    "rarity": "common",
+    "stats": {
+      "mp_max": 12
+    },
+    "description": "魔力上限+12"
+  },
+  "eq_guild_badge": {
+    "id": "eq_guild_badge",
+    "name": "协会徽章",
+    "slot": "accessory",
+    "rarity": "uncommon",
+    "stats": {
+      "hp_max": 8,
+      "attack": 1,
+      "defense": 1
+    },
+    "description": "生命上限+8，攻击+1，防御+1"
+  },
+  "eq_swift_charm": {
+    "id": "eq_swift_charm",
+    "name": "迅捷坠饰",
+    "slot": "accessory",
+    "rarity": "rare",
+    "stats": {
+      "speed": 4
+    },
+    "description": "速度+4"
+  },
+  "eq_star_medal": {
+    "id": "eq_star_medal",
+    "name": "星辉奖章",
+    "slot": "accessory",
+    "rarity": "epic",
+    "stats": {
+      "ap_per_turn": 1,
+      "mp_max": 12
+    },
+    "description": "每回合AP+1，魔力上限+12"
+  }
+}

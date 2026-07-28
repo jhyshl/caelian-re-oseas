@@ -28,6 +28,7 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
   const manifestUrl = ${JSON.stringify(manifestUrl)};
   const allowedBase = ${JSON.stringify(`${publicBase}/`)};
   const cacheKey = 'caelian:bridge:last-manifest:alpha';
+  const previousCacheKey = 'caelian:bridge:previous-manifest:alpha';
   const notify = (level, message) => {
     try {
       root.toastr?.[level]?.(message, 'Re∞：欧西亚斯 Alpha');
@@ -48,52 +49,151 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
     return manifest;
   };
 
-  let manifest;
-  try {
-    const response = await fetch(manifestUrl, {
+  const fetchManifest = async (url) => {
+    const response = await fetch(url, {
       cache: 'no-store',
       credentials: 'omit',
     });
     if (!response.ok) throw new Error('HTTP ' + response.status);
-    manifest = validate(await response.json());
+    return validate(await response.json());
+  };
+
+  const readCached = (key) => {
     try {
-      root.localStorage.setItem(cacheKey, JSON.stringify(manifest));
-    } catch {}
-  } catch (error) {
-    try {
-      manifest = validate(JSON.parse(root.localStorage.getItem(cacheKey) || 'null'));
-      notify('warning', 'Alpha 更新清单暂时不可用，已加载上一次成功构建。');
+      return validate(JSON.parse(root.localStorage.getItem(key) || 'null'));
     } catch {
+      return null;
+    }
+  };
+
+  const writeCached = (key, manifest) => {
+    try {
+      root.localStorage.setItem(key, JSON.stringify(manifest));
+    } catch {}
+  };
+
+  const installStyles = async (manifest) => {
+    const installed = [];
+    for (const style of manifest.modules.runtime.css || []) {
+      if (!style?.url || !style.url.startsWith(allowedBase)) continue;
+      const existing = root.document.querySelector(
+        'link[data-caelian-style="' + style.url + '"]',
+      );
+      if (existing) continue;
+
+      const link = root.document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = style.url;
+      link.dataset.caelianStyle = style.url;
+      link.dataset.caelianBuild = manifest.buildId;
+      if (style.integrity) {
+        link.integrity = style.integrity;
+        link.crossOrigin = 'anonymous';
+      }
+      await new Promise((resolve, reject) => {
+        link.addEventListener('load', resolve, { once: true });
+        link.addEventListener(
+          'error',
+          () => reject(new Error('样式加载失败：' + style.url)),
+          { once: true },
+        );
+        root.document.head.appendChild(link);
+      });
+      installed.push(link);
+    }
+    return installed;
+  };
+
+  const activate = async (manifest, recovery = false) => {
+    if (root.Caelian?.buildId === manifest.buildId) return;
+    const installedStyles = await installStyles(manifest);
+    try {
+      const runtimeUrl = recovery
+        ? manifest.modules.runtime.url +
+          (manifest.modules.runtime.url.includes('?') ? '&' : '?') +
+          'caelian-recovery=' + Date.now()
+        : manifest.modules.runtime.url;
+      const runtimeModule = await import(runtimeUrl);
+      if (typeof runtimeModule.bootstrapCaelian === 'function') {
+        await runtimeModule.bootstrapCaelian();
+      }
+      if (root.Caelian?.buildId !== manifest.buildId) {
+        throw new Error('运行时构建与 Alpha manifest 不一致');
+      }
+      for (const oldStyle of root.document.querySelectorAll(
+        'link[data-caelian-build]',
+      )) {
+        if (oldStyle.dataset.caelianBuild !== manifest.buildId) oldStyle.remove();
+      }
+    } catch (error) {
+      for (const style of installedStyles) style.remove();
+      throw error;
+    }
+  };
+
+  const cachedGood = readCached(cacheKey);
+  const cachedPrevious = readCached(previousCacheKey);
+  let requested;
+  try {
+    requested = await fetchManifest(manifestUrl);
+  } catch (error) {
+    if (!cachedGood) {
       throw new Error('无法取得 Alpha 更新清单：' + String(error));
     }
+    requested = cachedGood;
+    notify('warning', 'Alpha 更新清单暂时不可用，已加载上一次成功构建。');
   }
 
-  if (root.Caelian?.buildId === manifest.buildId) return;
-  if (typeof root.Caelian?.shutdown === 'function') {
-    await root.Caelian.shutdown();
+  if (root.Caelian?.buildId === requested.buildId) {
+    writeCached(cacheKey, requested);
+    return;
   }
 
-  for (const style of manifest.modules.runtime.css || []) {
-    if (!style?.url || !style.url.startsWith(allowedBase)) continue;
-    if (root.document.querySelector('link[data-caelian-style="' + style.url + '"]')) {
-      continue;
+  try {
+    await activate(requested);
+    if (cachedGood && cachedGood.buildId !== requested.buildId) {
+      writeCached(previousCacheKey, cachedGood);
     }
-    const link = root.document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = style.url;
-    link.dataset.caelianStyle = style.url;
-    if (style.integrity) {
-      link.integrity = style.integrity;
-      link.crossOrigin = 'anonymous';
+    writeCached(cacheKey, requested);
+    notify('success', 'Alpha ' + requested.version + ' 已加载');
+    return;
+  } catch (updateError) {
+    const recoveryCandidates = [];
+    if (cachedGood && cachedGood.buildId !== requested.buildId) {
+      recoveryCandidates.push(cachedGood);
     }
-    root.document.head.appendChild(link);
-  }
+    if (cachedPrevious && cachedPrevious.buildId !== requested.buildId) {
+      recoveryCandidates.push(cachedPrevious);
+    }
+    if (requested.previous?.url?.startsWith(allowedBase)) {
+      try {
+        const publishedPrevious = await fetchManifest(requested.previous.url);
+        if (publishedPrevious.buildId !== requested.buildId) {
+          recoveryCandidates.push(publishedPrevious);
+        }
+      } catch {}
+    }
 
-  await import(manifest.modules.runtime.url);
-  if (root.Caelian?.buildId !== manifest.buildId) {
-    throw new Error('运行时构建与 Alpha manifest 不一致');
+    const attempted = new Set();
+    for (const fallback of recoveryCandidates) {
+      if (attempted.has(fallback.buildId)) continue;
+      attempted.add(fallback.buildId);
+      try {
+        await activate(fallback, true);
+        writeCached(cacheKey, fallback);
+        notify(
+          'warning',
+          'Alpha 更新失败，已自动回退到 ' + fallback.version +
+            '（' + fallback.buildId.slice(0, 8) + '）',
+        );
+        return;
+      } catch {}
+    }
+    throw new Error(
+      'Alpha 更新失败且无法恢复上一个版本：' +
+        (updateError instanceof Error ? updateError.message : String(updateError)),
+    );
   }
-  notify('success', 'Alpha ' + manifest.version + ' 已加载');
 })().catch((error) => {
   const message = error instanceof Error ? error.message : String(error);
   try {
@@ -125,6 +225,12 @@ await mkdir(path.join(distRoot, 'tavern-helper'), { recursive: true });
 await writeFile(
   path.join(distRoot, 'tavern-helper', 'caelian-alpha.json'),
   `${JSON.stringify(folder, null, 2)}\n`,
+  'utf8',
+);
+
+await writeFile(
+  path.join(distRoot, 'tavern-helper', 'caelian-alpha-bridge.js'),
+  `${bridge}\n`,
   'utf8',
 );
 

@@ -7,7 +7,18 @@ import type {
 } from '@/domain/types';
 import type { KernelEventMap } from '@/kernel/event-bus';
 
-export type PanelName = 'shell' | 'character' | 'inventory' | 'diagnostics';
+export type PanelName =
+  | 'shell'
+  | 'character'
+  | 'deck'
+  | 'inventory'
+  | 'guild'
+  | 'map'
+  | 'battle'
+  | 'achievements'
+  | 'settings'
+  | 'feedback'
+  | 'diagnostics';
 export type QueryName = 'runtime' | 'state' | 'inventory' | 'events';
 
 export interface QueryResultMap {
@@ -26,8 +37,10 @@ export interface CaelianPublicApi {
   execute(command: unknown): Promise<CommandResult>;
   query<K extends QueryName>(name: K): Promise<QueryResultMap[K]>;
   openPanel(panel: PanelName): Promise<void>;
+  navigatePanel(panel: PanelName): Promise<void>;
   closePanel(panel: PanelName): Promise<void>;
   listOpenPanels(): PanelName[];
+  setUserInput(text: string): boolean;
   syncProjection(): Promise<boolean>;
   on<K extends keyof KernelEventMap>(
     event: K,
@@ -41,9 +54,11 @@ export type PanelApi = Pick<
   | 'execute'
   | 'query'
   | 'openPanel'
+  | 'navigatePanel'
   | 'closePanel'
   | 'syncProjection'
   | 'getRuntimeInfo'
+  | 'setUserInput'
   | 'on'
 >;
 

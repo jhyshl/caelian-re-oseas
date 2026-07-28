@@ -1,13 +1,15 @@
 {
   "name": "caelian-re-oseas",
-  "version": "0.1.0-alpha.1",
+  "version": "0.2.0-alpha.3",
   "private": true,
   "type": "module",
   "description": "Re∞ Oseas browser-first rewrite for SillyTavern.",
   "scripts": {
-    "build": "vite build && node scripts/package-build.mjs && node scripts/export-tavern-helper.mjs",
+    "build": "vite build && node scripts/package-build.mjs && node scripts/export-tavern-helper.mjs && node scripts/prepare-sites-build.mjs",
     "build:alpha": "npm run build",
     "check": "npm run typecheck && npm run lint",
+    "content:extract": "node scripts/legacy-content.mjs extract",
+    "content:verify": "node scripts/legacy-content.mjs verify",
     "dev": "vite --host 127.0.0.1",
     "lint": "eslint src tests vite.config.ts --max-warnings=0",
     "preview": "vite preview --host 127.0.0.1 --port 4173",

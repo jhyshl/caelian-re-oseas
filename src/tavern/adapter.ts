@@ -2,6 +2,26 @@ import type { AiProjection } from '@/domain/types';
 
 type TavernEventHandler = (eventName: string) => void | Promise<void>;
 
+export function resolveTavernHost(sourceWindow: Window): Window {
+  try {
+    const parent = sourceWindow.parent;
+    if (
+      parent &&
+      parent !== sourceWindow &&
+      (parent.SillyTavern ||
+        parent.Mvu ||
+        parent.tavern_events ||
+        typeof parent.eventOn === 'function' ||
+        parent.__CaelianRuntime)
+    ) {
+      return parent;
+    }
+  } catch {
+    // Cross-origin parents cannot be a supported Tavern host.
+  }
+  return sourceWindow;
+}
+
 export class TavernAdapter {
   readonly host: Window;
   private readonly disposers: Array<() => void> = [];
@@ -97,6 +117,37 @@ export class TavernAdapter {
     }
   }
 
+  setUserInput(text: string): boolean {
+    const value = text.trim();
+    const hostDocument = this.host.document;
+    const input =
+      hostDocument.querySelector<HTMLTextAreaElement>('#send_textarea') ??
+      hostDocument.querySelector<HTMLElement>(
+        '[contenteditable="true"][role="textbox"]',
+      );
+    if (!input) return false;
+    input.focus();
+    if ('value' in input) {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(input, value);
+      if (!setter) (input as HTMLTextAreaElement).value = value;
+    } else {
+      input.textContent = value;
+    }
+    input.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        inputType: 'insertText',
+        data: value,
+      }),
+    );
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }
+
   notify(
     level: 'info' | 'success' | 'warning' | 'error',
     message: string,
@@ -105,13 +156,7 @@ export class TavernAdapter {
   }
 
   private resolveHost(sourceWindow: Window): Window {
-    try {
-      return sourceWindow.parent && sourceWindow.parent.document
-        ? sourceWindow.parent
-        : sourceWindow;
-    } catch {
-      return sourceWindow;
-    }
+    return resolveTavernHost(sourceWindow);
   }
 
   private clone(value: Record<string, unknown>): Record<string, unknown> {

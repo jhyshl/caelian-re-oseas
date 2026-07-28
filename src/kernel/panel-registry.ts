@@ -8,9 +8,28 @@ interface PanelModule {
 const definitions: Record<PanelName, () => Promise<PanelModule>> = {
   shell: () => import('@/modules/shell/mount'),
   character: () => import('@/modules/character/mount'),
+  deck: () => import('@/modules/deck/mount'),
   inventory: () => import('@/modules/inventory/mount'),
+  guild: () => import('@/modules/guild/mount'),
+  map: () => import('@/modules/map/mount'),
+  battle: () => import('@/modules/battle/mount'),
+  achievements: () => import('@/modules/achievements/mount'),
+  settings: () => import('@/modules/settings/mount'),
+  feedback: () => import('@/modules/feedback/mount'),
   diagnostics: () => import('@/modules/diagnostics/mount'),
 };
+
+const gamePanels = new Set<PanelName>([
+  'character',
+  'deck',
+  'inventory',
+  'guild',
+  'map',
+  'battle',
+  'achievements',
+  'settings',
+  'feedback',
+]);
 
 export class PanelRegistry {
   private readonly mounted = new Map<PanelName, () => void>();
@@ -46,6 +65,15 @@ export class PanelRegistry {
     unmount();
     this.mounted.delete(panel);
     await this.events.emit('panel.closed', { panel });
+  }
+
+  async navigate(panel: PanelName): Promise<void> {
+    await this.open(panel);
+    await Promise.all(
+      [...this.mounted.keys()]
+        .filter((name) => name !== panel && gamePanels.has(name))
+        .map((name) => this.close(name)),
+    );
   }
 
   list(): PanelName[] {

@@ -1,0 +1,197 @@
+{
+  "formatVersion": 1,
+  "source": {
+    "fileName": "酒馆助手脚本文件夹-Re∞欧西亚斯1-2.json",
+    "sha256": "f5e591dc7bb5a4851a35578105a7c39186bd2a240fe31e6d668685607a400281",
+    "folderName": "Re∞:欧西亚斯1-2",
+    "cardScriptName": "冒险者面板卡牌数据库 v6.68｜通用卡组显示与实机一致性修正版",
+    "worldScriptName": "冒险者面板地图道具数据库 v6.76｜状态说明深合并版",
+    "achievementScriptName": "冒险者成就系统 v1.12｜经济职业合成与创意工坊成就版｜统一Toast清理版｜共享调度器接入"
+  },
+  "files": {
+    "cards/cards.json": {
+      "entries": 488,
+      "sha256": "71782d612baab74a853e66fb6e038035afdb741b0717140a44f9f13a57894fc3"
+    },
+    "cards/starter-decks.json": {
+      "entries": 24,
+      "sha256": "39dabd00d0f24f2f4cc20013ffdcdf6b4d4abe95e0ed22aae47cf55697a859ea"
+    },
+    "cards/common-market.json": {
+      "entries": 20,
+      "sha256": "ee1b96994eddf87843f73e0c7b7c733f89703291e8793a25c89d9b3ff0d6553e"
+    },
+    "professions/class-names.json": {
+      "entries": 6,
+      "sha256": "f086db999a302f4bea0b8079939cb1d1e2b743945093b11ce421690a7e4352ce"
+    },
+    "professions/subclass-names.json": {
+      "entries": 25,
+      "sha256": "1ce1207b2cd5feaf26aeb056c14459c46fdc63e86a91c3427b32a3d9410bc131"
+    },
+    "professions/class-subclasses.json": {
+      "entries": 4,
+      "sha256": "37097fa31dc6ed623210af3831d6a352b9ed8a7aa15cce4b32a6888130f0417c"
+    },
+    "professions/talents.json": {
+      "entries": 24,
+      "sha256": "b87aca04fbcd7963bccefd8543517b7f09476b8988720c09467b92dc7ef648ed"
+    },
+    "battle/card-type-colors.json": {
+      "entries": 6,
+      "sha256": "32e076a96f8343d9bc62ecfdb02f9bc955649d66d1a74531ed97993d3966723e"
+    },
+    "battle/card-type-names.json": {
+      "entries": 6,
+      "sha256": "ded853a8f1f781189a0b3b6b17d15f68c474c4ba90963dba60d758c94b6c7158"
+    },
+    "battle/card-buff-names.json": {
+      "entries": 54,
+      "sha256": "a2c2585d9d80dc60ba3c0ae95ef9add874bd1d81de7ca780615dc8016293907e"
+    },
+    "battle/card-debuff-names.json": {
+      "entries": 12,
+      "sha256": "f075ce1c759017b90cc9e0e9be44c31b8e2a162b4e4f4cc68878a5d54823c571"
+    },
+    "battle/card-status-descriptions.json": {
+      "entries": 5,
+      "sha256": "2c6cfeb0f0837845d8b6cd3ae3e8c2906f219277ef06616b65dda904b5bf87ca"
+    },
+    "quests/task-pool.json": {
+      "entries": 12,
+      "sha256": "61c7ccda86e504f15c6dc14ea77b2786f398bdceef4272230ba77d6986e5c4a6"
+    },
+    "world/regions.json": {
+      "entries": 10,
+      "sha256": "30c16793f87a2817837e748002a1205394762ca1fc9f7e97472076ed9f2159f5"
+    },
+    "world/region-links.json": {
+      "entries": 9,
+      "sha256": "4384ef130ba0a44ffd616e3393eb0b821969d4d2692fadd9969c2d6fdf5c329f"
+    },
+    "world/region-places.json": {
+      "entries": 10,
+      "sha256": "21dd930d6866c689ae49025e32c3200f1f7ee5c980496f260dd68e183a63d490"
+    },
+    "quests/rank-names.json": {
+      "entries": 8,
+      "sha256": "b41e6c67dbdbe470cfd72cc144fa9f0a62aa862936b337b1405b1689116520a6"
+    },
+    "quests/rank-colors.json": {
+      "entries": 8,
+      "sha256": "d17137baeeda10bcd56da6a89406d62e6849c85b5b15f930ff4635fcfe55f9aa"
+    },
+    "quests/difficulty-colors.json": {
+      "entries": 4,
+      "sha256": "f2bddf21198b058dc3406fe5c58ad1012680f495ecac6cf4c0f3b2893176160b"
+    },
+    "quests/difficulty-names.json": {
+      "entries": 4,
+      "sha256": "d002be99ed32930aa16389e4e862b4e947a1c6ac7795ba4a389a642ecdf773cd"
+    },
+    "quests/type-icons.json": {
+      "entries": 5,
+      "sha256": "d62b43a828330a16431ff9621f78d98be78b19c3cb9b4bea680f9655a6140d9e"
+    },
+    "quests/type-names.json": {
+      "entries": 5,
+      "sha256": "c988b49178f3eb8d0d0198fed963cea6c388e37994adf1db61fce46383200265"
+    },
+    "progression/xp-table.json": {
+      "entries": 20,
+      "sha256": "1bb3d7013ce33ac008398cb7bb79c05f96cbd5b32c3202e8ea5bedc7919985ef"
+    },
+    "progression/guild-rank-requirements.json": {
+      "entries": 7,
+      "sha256": "e4b82aba82f810d135487c40836475b20749ba9987a3774a3278bb41fec64b7e"
+    },
+    "battle/monsters.json": {
+      "entries": 105,
+      "sha256": "57c2ae6c6d54a8fe3fd05523a3253da5864992abb80f8d6865cc6d510cfde009"
+    },
+    "battle/passives.json": {
+      "entries": 10,
+      "sha256": "a28ad8aba6046ddfea68f6ac84277ca5f8f0375281679fccefee4b7b364e68fa"
+    },
+    "battle/monster-skills.json": {
+      "entries": 97,
+      "sha256": "5f95e944740b0efc7022cf637a64da6f4af1474279c5ff4a5cd4d06016726980"
+    },
+    "battle/world-buff-names.json": {
+      "entries": 30,
+      "sha256": "2e45ef4d187850b7b79db3ee6fef8ddfa9f3d6c849f5855e151178cf30f59ee2"
+    },
+    "battle/world-debuff-names.json": {
+      "entries": 19,
+      "sha256": "f31ed970893cc49ee8821ce7d7e9cdbaa9cac3b8487114d94a473aad544990f0"
+    },
+    "battle/world-status-descriptions.json": {
+      "entries": 7,
+      "sha256": "7caf412f780fc819e2e58ec6174ad9757d1934da84e5f7fdfd67459c80f3c6ba"
+    },
+    "inventory/battle-items.json": {
+      "entries": 55,
+      "sha256": "1a32c70b6b1b6ea91d6c538d8fb843d1ce19e0c55635acd0b8e4183754f884f5"
+    },
+    "inventory/relics.json": {
+      "entries": 72,
+      "sha256": "2fd7902a6d76c9d11eb2132a61101a851e1aa6dc5dfc4018e07789e8b3d30b9d"
+    },
+    "inventory/level-reward-relic-ids.json": {
+      "entries": 40,
+      "sha256": "56af6bbd4bc00273f68dc38a13c11375dcae569b78c3c47ae37c6f5717fbf269"
+    },
+    "inventory/market-only-relic-ids.json": {
+      "entries": 26,
+      "sha256": "a6313f2be085e62a3802cb81faff1a7f7948ce7cfc6807b17ade9763b0b486b7"
+    },
+    "inventory/main-quest-only-relic-ids.json": {
+      "entries": 4,
+      "sha256": "d6e3fbe1ccb010b9979af475a3903a705dcf469eccc1761c77230014fb0ec6d0"
+    },
+    "inventory/equipment-rewards.json": {
+      "entries": 30,
+      "sha256": "494f629ea36bed3d9949c817b39b64c8b3ef18124139b084ab9240ce129f490f"
+    },
+    "battle/rules.json": {
+      "entries": 29,
+      "sha256": "eee5128faa360b1e737b7f6d566eb9a88f71ac2e414b59c266e504a041ec01b8"
+    },
+    "inventory/item-prices.json": {
+      "entries": 264,
+      "sha256": "50dd34724cf331566c16973d69ad828e43e78c41bcb745ce523d2b2ddc544d8a"
+    },
+    "market/items-by-region.json": {
+      "entries": 10,
+      "sha256": "df4d5b4914ec900f85f4b947e8c21e316a0d9c299360a4975471ccb10c8d6797"
+    },
+    "market/preferences.json": {
+      "entries": 10,
+      "sha256": "b954fd5564087f3f8c0a5be2bf7dc66bad273019f2716cd4b1e61a2504d493fd"
+    },
+    "crafting/recipes.json": {
+      "entries": 50,
+      "sha256": "6bd4534dd65028b8b701a727ca8aeb2e16bbe67e51d9af0e9daa4c5b603a5281"
+    },
+    "inventory/gather-resources.json": {
+      "entries": 32,
+      "sha256": "343d2ccbb9d86ccd8ab10336a1d5d978c2d0d48618919f3cd5da9ee359d8e9b0"
+    },
+    "world/gather-items-by-region.json": {
+      "entries": 10,
+      "sha256": "a1057fdfb7cced14fcd5b3b9621fba5e15544572e53622b79415adea3f0260a1"
+    },
+    "battle/boss-mechanics.json": {
+      "entries": 8,
+      "sha256": "d0c0bcf7b3f8d24fa02c6781d90a3513e2c1307caa3df5c2a0965c85b36863b4"
+    },
+    "battle/bosses.json": {
+      "entries": 8,
+      "sha256": "9a8c5a4c098b755c4f225e32c2d8f975ad723d043c9ea2a844cbe99bdb0770b9"
+    },
+    "achievements/definitions.json": {
+      "entries": 95,
+      "sha256": "fb2a3ede18e4ed33557c1bdbbd29985a0ae4d6947842187f70d82addfe32bccd"
+    }
+  }
+}

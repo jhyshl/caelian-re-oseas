@@ -20,9 +20,25 @@
 }
 
 .caelian-shell-host {
-  inset: auto 22px 22px auto;
+  /*
+   * Keep the fixed launcher above whichever independently mounted panel is
+   * currently open. All panel hosts share the same base layer and the shell is
+   * mounted first, so without an explicit higher layer later panels cover it.
+   */
+  z-index: 2147483646;
+  /*
+   * The independent shell Vue owns its fixed coordinates. Keeping this host
+   * viewport-sized lets the launcher move freely without coupling it to any
+   * feature panel's DOM or stacking context.
+   */
+  inset: 0;
   display: block;
   padding: 0;
+  pointer-events: none;
+}
+
+.caelian-shell-host > * {
+  pointer-events: none;
 }
 
 .caelian-demo {

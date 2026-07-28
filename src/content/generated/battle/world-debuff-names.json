@@ -1,0 +1,21 @@
+{
+  "weak": "虚弱",
+  "vulnerable": "易伤",
+  "poison": "中毒",
+  "burn": "灼烧",
+  "freeze": "冰冻",
+  "entangle": "缠绕",
+  "trap": "陷阱",
+  "bleed": "流血",
+  "corrosion": "腐蚀",
+  "heal_block": "禁疗",
+  "curse_mark": "诅咒标记",
+  "abyss_mark": "深渊标记",
+  "fear": "恐惧",
+  "uncleanseable": "不可净化",
+  "dream": "迷梦",
+  "deep_pressure": "深压",
+  "false_judgement": "伪审判",
+  "mirror_rebound": "镜返",
+  "exam_failed": "考核失败"
+}

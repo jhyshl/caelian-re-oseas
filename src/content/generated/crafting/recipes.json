@@ -1,0 +1,677 @@
+[
+  {
+    "id": "craft_consumable_01",
+    "name": "小血瓶",
+    "inputs": {
+      "城郊药草": 2,
+      "治愈苔": 1,
+      "空玻璃瓶": 1
+    },
+    "output": "小血瓶",
+    "count": 1,
+    "basePrice": 120,
+    "category": "consumable",
+    "effectText": "回复25HP"
+  },
+  {
+    "id": "craft_consumable_02",
+    "name": "中血瓶",
+    "inputs": {
+      "城郊药草": 5,
+      "治愈苔": 2,
+      "空玻璃瓶": 1
+    },
+    "output": "中血瓶",
+    "count": 1,
+    "basePrice": 280,
+    "category": "consumable",
+    "effectText": "回复55HP"
+  },
+  {
+    "id": "craft_consumable_03",
+    "name": "大血瓶",
+    "inputs": {
+      "城郊药草": 10,
+      "治愈苔": 5,
+      "空玻璃瓶": 1
+    },
+    "output": "大血瓶",
+    "count": 1,
+    "basePrice": 560,
+    "category": "consumable",
+    "effectText": "回复100HP"
+  },
+  {
+    "id": "craft_consumable_04",
+    "name": "小魔药瓶",
+    "inputs": {
+      "月露草": 2,
+      "蓝晶花": 1,
+      "空玻璃瓶": 1
+    },
+    "output": "小魔药瓶",
+    "count": 1,
+    "basePrice": 140,
+    "category": "consumable",
+    "effectText": "回复10MP"
+  },
+  {
+    "id": "craft_consumable_05",
+    "name": "中魔药瓶",
+    "inputs": {
+      "月露草": 5,
+      "蓝晶花": 2,
+      "空玻璃瓶": 1
+    },
+    "output": "中魔药瓶",
+    "count": 1,
+    "basePrice": 320,
+    "category": "consumable",
+    "effectText": "回复22MP"
+  },
+  {
+    "id": "craft_consumable_06",
+    "name": "大魔药瓶",
+    "inputs": {
+      "月露草": 10,
+      "蓝晶花": 5,
+      "空玻璃瓶": 1
+    },
+    "output": "大魔药瓶",
+    "count": 1,
+    "basePrice": 640,
+    "category": "consumable",
+    "effectText": "回复40MP"
+  },
+  {
+    "id": "craft_consumable_07",
+    "name": "复合药剂·小",
+    "inputs": {
+      "晨露花": 2,
+      "学院薄荷": 2,
+      "空玻璃瓶": 1
+    },
+    "output": "复合药剂·小",
+    "count": 1,
+    "basePrice": 220,
+    "category": "consumable",
+    "effectText": "回复18HP与6MP"
+  },
+  {
+    "id": "craft_consumable_08",
+    "name": "复合药剂·中",
+    "inputs": {
+      "海盐珍珠草": 2,
+      "月露草": 3,
+      "空玻璃瓶": 1
+    },
+    "output": "复合药剂·中",
+    "count": 1,
+    "basePrice": 460,
+    "category": "consumable",
+    "effectText": "回复40HP与14MP"
+  },
+  {
+    "id": "craft_consumable_09",
+    "name": "复合药剂·大",
+    "inputs": {
+      "圣山雪莲": 1,
+      "深海荧藻": 2,
+      "空玻璃瓶": 1
+    },
+    "output": "复合药剂·大",
+    "count": 1,
+    "basePrice": 900,
+    "category": "consumable",
+    "effectText": "回复80HP与28MP"
+  },
+  {
+    "id": "craft_consumable_10",
+    "name": "力量秘药",
+    "inputs": {
+      "骑士团磨刀油": 2,
+      "血狼之牙": 1,
+      "空玻璃瓶": 1
+    },
+    "output": "力量秘药",
+    "count": 1,
+    "basePrice": 520,
+    "category": "consumable",
+    "effectText": "下一场战斗开始时获得力量+5，持续3回合"
+  },
+  {
+    "id": "craft_consumable_11",
+    "name": "坚韧秘药",
+    "inputs": {
+      "精炼钢板": 1,
+      "祈祷绷带": 2,
+      "空玻璃瓶": 1
+    },
+    "output": "坚韧秘药",
+    "count": 1,
+    "basePrice": 520,
+    "category": "consumable",
+    "effectText": "下一场战斗开始时获得坚韧+5，持续3回合"
+  },
+  {
+    "id": "craft_consumable_12",
+    "name": "疾风秘药",
+    "inputs": {
+      "风暴羽": 1,
+      "蓝眼泪湖水": 2,
+      "空玻璃瓶": 1
+    },
+    "output": "疾风秘药",
+    "count": 1,
+    "basePrice": 540,
+    "category": "consumable",
+    "effectText": "下一场战斗开始时获得敏捷+45%，持续2回合"
+  },
+  {
+    "id": "craft_consumable_13",
+    "name": "护盾药膏",
+    "inputs": {
+      "日光树脂": 2,
+      "光明祭台苔藓": 1,
+      "祈祷绷带": 1
+    },
+    "output": "护盾药膏",
+    "count": 1,
+    "basePrice": 460,
+    "category": "consumable",
+    "effectText": "下一场战斗开始时获得18护盾"
+  },
+  {
+    "id": "craft_consumable_14",
+    "name": "灵感糖丸",
+    "inputs": {
+      "初级魔法墨水": 2,
+      "魔法粉尘": 3,
+      "森林蜂蜡": 1
+    },
+    "output": "灵感糖丸",
+    "count": 1,
+    "basePrice": 520,
+    "category": "consumable",
+    "effectText": "下一场战斗开局额外抽2张牌"
+  },
+  {
+    "id": "craft_consumable_15",
+    "name": "聚能丸",
+    "inputs": {
+      "炉心红宝石": 1,
+      "魔导线圈": 1,
+      "蒸汽冷凝水": 2
+    },
+    "output": "聚能丸",
+    "count": 1,
+    "basePrice": 760,
+    "category": "consumable",
+    "effectText": "下一场战斗开局额外获得1AP"
+  },
+  {
+    "id": "craft_consumable_16",
+    "name": "再生药水",
+    "inputs": {
+      "古树新芽": 1,
+      "治愈苔": 3,
+      "空玻璃瓶": 1
+    },
+    "output": "再生药水",
+    "count": 1,
+    "basePrice": 560,
+    "category": "consumable",
+    "effectText": "下一场战斗开始时获得再生6，持续3回合"
+  },
+  {
+    "id": "craft_consumable_17",
+    "name": "荆棘药油",
+    "inputs": {
+      "藤蔓纤维": 3,
+      "蛛丝弓弦": 1,
+      "森林蜂蜡": 1
+    },
+    "output": "荆棘药油",
+    "count": 1,
+    "basePrice": 600,
+    "category": "consumable",
+    "effectText": "下一场战斗开始时获得反伤5，持续3回合"
+  },
+  {
+    "id": "craft_consumable_18",
+    "name": "战斗兴奋剂",
+    "inputs": {
+      "黑潮残片": 1,
+      "龙息草": 2,
+      "空玻璃瓶": 1
+    },
+    "output": "战斗兴奋剂",
+    "count": 1,
+    "basePrice": 680,
+    "category": "consumable",
+    "effectText": "下一场战斗伤害提高4，持续3回合"
+  },
+  {
+    "id": "craft_consumable_19",
+    "name": "法术增幅剂",
+    "inputs": {
+      "魔法粉尘": 5,
+      "月露草": 3,
+      "蓝晶花": 2
+    },
+    "output": "法术增幅剂",
+    "count": 1,
+    "basePrice": 700,
+    "category": "consumable",
+    "effectText": "下一场战斗法术强化5，持续3回合"
+  },
+  {
+    "id": "craft_consumable_20",
+    "name": "减伤护符油",
+    "inputs": {
+      "极寒苔": 2,
+      "日光树脂": 2,
+      "祈祷绷带": 1
+    },
+    "output": "减伤护符油",
+    "count": 1,
+    "basePrice": 700,
+    "category": "consumable",
+    "effectText": "下一场战斗减伤4，持续3回合"
+  },
+  {
+    "id": "craft_consumable_21",
+    "name": "售卖香膏",
+    "inputs": {
+      "贵族香料": 2,
+      "商队布匹": 2,
+      "空玻璃瓶": 1
+    },
+    "output": "售卖香膏",
+    "count": 1,
+    "basePrice": 480,
+    "category": "consumable",
+    "effectText": "30分钟内出售物品价格提高20%"
+  },
+  {
+    "id": "craft_consumable_22",
+    "name": "商会折扣券",
+    "inputs": {
+      "地下黑市情报卷": 1,
+      "商队布匹": 3,
+      "初级魔法墨水": 1
+    },
+    "output": "商会折扣券",
+    "count": 1,
+    "basePrice": 520,
+    "category": "consumable",
+    "effectText": "30分钟内购买普通商品价格降低12%"
+  },
+  {
+    "id": "craft_consumable_23",
+    "name": "金叶话术茶",
+    "inputs": {
+      "皇宫茶叶": 2,
+      "贵族香料": 2,
+      "黑珍珠": 1
+    },
+    "output": "金叶话术茶",
+    "count": 1,
+    "basePrice": 900,
+    "category": "consumable",
+    "effectText": "20分钟内出售物品价格提高35%"
+  },
+  {
+    "id": "craft_consumable_24",
+    "name": "黑市议价墨",
+    "inputs": {
+      "地下黑市情报卷": 2,
+      "海渊墨囊": 1,
+      "初级魔法墨水": 2
+    },
+    "output": "黑市议价墨",
+    "count": 1,
+    "basePrice": 950,
+    "category": "consumable",
+    "effectText": "20分钟内购买普通商品价格降低20%"
+  },
+  {
+    "id": "craft_consumable_25",
+    "name": "龙息醒神剂",
+    "inputs": {
+      "龙息草": 1,
+      "魔法粉尘": 3,
+      "空玻璃瓶": 1
+    },
+    "output": "龙息醒神剂",
+    "count": 1,
+    "basePrice": 620,
+    "category": "consumable",
+    "effectText": "回复24HP与12MP，下一场战斗获得力量+2"
+  },
+  {
+    "id": "craft_consumable_26",
+    "name": "月露凝剂",
+    "inputs": {
+      "月露草": 4,
+      "蓝晶花": 2,
+      "空玻璃瓶": 1
+    },
+    "output": "月露凝剂",
+    "count": 1,
+    "basePrice": 520,
+    "category": "consumable",
+    "effectText": "回复18MP，下一场战斗额外抽1张"
+  },
+  {
+    "id": "craft_consumable_27",
+    "name": "深海镇定剂",
+    "inputs": {
+      "深海荧藻": 1,
+      "海渊盐晶": 1,
+      "潮汐贝壳": 2
+    },
+    "output": "深海镇定剂",
+    "count": 1,
+    "basePrice": 600,
+    "category": "consumable",
+    "effectText": "回复24HP与10MP，下一场战斗获得10护盾"
+  },
+  {
+    "id": "craft_consumable_28",
+    "name": "炉心兴奋剂",
+    "inputs": {
+      "煤晶粉": 4,
+      "铜齿轮": 2,
+      "蒸汽冷凝水": 2
+    },
+    "output": "炉心兴奋剂",
+    "count": 1,
+    "basePrice": 860,
+    "category": "consumable",
+    "effectText": "下一场战斗获得1AP与力量+2"
+  },
+  {
+    "id": "craft_consumable_29",
+    "name": "圣辉净露",
+    "inputs": {
+      "圣心百合": 2,
+      "日光树脂": 1,
+      "空玻璃瓶": 1
+    },
+    "output": "圣辉净露",
+    "count": 1,
+    "basePrice": 640,
+    "category": "consumable",
+    "effectText": "回复45HP，下一场战斗获得12护盾"
+  },
+  {
+    "id": "craft_consumable_30",
+    "name": "星图灵药",
+    "inputs": {
+      "蓝晶花": 3,
+      "魔法粉尘": 4,
+      "旧图书馆残页": 1
+    },
+    "output": "星图灵药",
+    "count": 1,
+    "basePrice": 780,
+    "category": "consumable",
+    "effectText": "回复24MP，下一场战斗额外抽2张"
+  },
+  {
+    "id": "craft_material_01",
+    "name": "酸性黏胶",
+    "inputs": {
+      "史莱姆凝液": 3,
+      "酸液瓶": 1
+    },
+    "output": "酸性黏胶",
+    "count": 1,
+    "basePrice": 180,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_02",
+    "name": "净化绷带",
+    "inputs": {
+      "祈祷绷带": 3,
+      "圣烛": 1
+    },
+    "output": "净化绷带",
+    "count": 1,
+    "basePrice": 220,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_03",
+    "name": "毒性涂层",
+    "inputs": {
+      "花妖粉囊": 2,
+      "曼德拉草根须": 1,
+      "黑市银针": 1
+    },
+    "output": "毒性涂层",
+    "count": 1,
+    "basePrice": 260,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_04",
+    "name": "铜矿合金",
+    "inputs": {
+      "奇怪的铜矿石": 4,
+      "铜齿轮": 2
+    },
+    "output": "铜矿合金",
+    "count": 1,
+    "basePrice": 300,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_05",
+    "name": "蛛丝弓弦",
+    "inputs": {
+      "强韧的蜘蛛丝": 3,
+      "精灵藤蔓": 1
+    },
+    "output": "蛛丝弓弦",
+    "count": 1,
+    "basePrice": 360,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_06",
+    "name": "狼皮革片",
+    "inputs": {
+      "完整的狼皮": 2,
+      "精制皮革": 1
+    },
+    "output": "狼皮革片",
+    "count": 1,
+    "basePrice": 340,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_07",
+    "name": "圣辉护符坯",
+    "inputs": {
+      "圣心玻璃珠": 1,
+      "日光树脂": 2,
+      "空白符文纸": 1
+    },
+    "output": "圣辉护符坯",
+    "count": 1,
+    "basePrice": 420,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_08",
+    "name": "黑潮封瓶",
+    "inputs": {
+      "黑潮残片": 2,
+      "空玻璃瓶": 2,
+      "深渊低语瓶": 1
+    },
+    "output": "黑潮封瓶",
+    "count": 1,
+    "basePrice": 720,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_09",
+    "name": "光明结晶粉",
+    "inputs": {
+      "纯净光明结晶": 1,
+      "魔法粉尘": 5
+    },
+    "output": "光明结晶粉",
+    "count": 1,
+    "basePrice": 680,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_10",
+    "name": "魔导机关核心",
+    "inputs": {
+      "魔导线圈": 2,
+      "铜齿轮": 4,
+      "炉心红宝石": 1
+    },
+    "output": "魔导机关核心",
+    "count": 1,
+    "basePrice": 820,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_11",
+    "name": "潮汐凝珠",
+    "inputs": {
+      "潮汐贝壳": 3,
+      "蓝珊瑚碎": 1,
+      "海盐珍珠草": 1
+    },
+    "output": "潮汐凝珠",
+    "count": 1,
+    "basePrice": 480,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_12",
+    "name": "森林护符线",
+    "inputs": {
+      "藤蔓纤维": 4,
+      "森林蜂蜡": 2,
+      "精灵银叶": 1
+    },
+    "output": "森林护符线",
+    "count": 1,
+    "basePrice": 450,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_13",
+    "name": "银月封蜡",
+    "inputs": {
+      "银月香水": 1,
+      "维兰瑟红酒封蜡": 2,
+      "血蔷薇花瓣": 1
+    },
+    "output": "银月封蜡",
+    "count": 1,
+    "basePrice": 520,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_14",
+    "name": "龙鳞砂坯",
+    "inputs": {
+      "金鳞砂": 2,
+      "古龙鳞粉": 1,
+      "云顶香木": 1
+    },
+    "output": "龙鳞砂坯",
+    "count": 1,
+    "basePrice": 760,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_15",
+    "name": "极寒封片",
+    "inputs": {
+      "极寒苔": 3,
+      "寒铁矿砂": 2,
+      "冻裂符石": 1
+    },
+    "output": "极寒封片",
+    "count": 1,
+    "basePrice": 640,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_16",
+    "name": "海渊共鸣珠",
+    "inputs": {
+      "海渊盐晶": 2,
+      "深海荧藻": 2,
+      "古城贝币": 2
+    },
+    "output": "海渊共鸣珠",
+    "count": 1,
+    "basePrice": 900,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_17",
+    "name": "贤者试剂",
+    "inputs": {
+      "圣山雪莲": 1,
+      "黑潮残片": 1,
+      "蓝珊瑚碎": 2,
+      "空玻璃瓶": 1
+    },
+    "output": "贤者试剂",
+    "count": 1,
+    "basePrice": 980,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_18",
+    "name": "秘银缝线",
+    "inputs": {
+      "夜色丝绸": 2,
+      "精灵银叶": 1,
+      "强韧的蜘蛛丝": 2
+    },
+    "output": "秘银缝线",
+    "count": 1,
+    "basePrice": 860,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_19",
+    "name": "深渊抗性药基",
+    "inputs": {
+      "黑潮结晶": 1,
+      "极寒苔": 2,
+      "日光树脂": 1
+    },
+    "output": "深渊抗性药基",
+    "count": 1,
+    "basePrice": 740,
+    "category": "material"
+  },
+  {
+    "id": "craft_material_20",
+    "name": "终极炼金秘晶",
+    "inputs": {
+      "贤者试剂": 1,
+      "魔导机关核心": 1,
+      "海渊共鸣珠": 1
+    },
+    "output": "终极炼金秘晶",
+    "count": 1,
+    "basePrice": 1600,
+    "category": "material"
+  }
+]

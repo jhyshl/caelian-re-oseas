@@ -43,7 +43,12 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: true,
     manifest: true,
-    cssCodeSplit: true,
+    // Tavern Helper executes the bridge inside a sandboxed script context while
+    // panels mount into the parent SillyTavern document. Lazy chunk styles would
+    // otherwise be injected into the sandbox instead of the visible host page.
+    // Keep JavaScript panels independently lazy-loaded, but publish one explicit
+    // stylesheet that the fixed bridge can attach to the host document.
+    cssCodeSplit: false,
     rollupOptions: {
       input: {
         demo: fileURLToPath(new URL('./index.html', import.meta.url)),

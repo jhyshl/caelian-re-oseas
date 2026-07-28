@@ -1,0 +1,76 @@
+import { loadRegions } from '@/content/catalogs/world';
+import type { ProfileRecord, RegionAccessRecord } from '@/domain/types';
+import type { CaelianDatabase } from '@/storage/database';
+import {
+  defaultGuild,
+  defaultLoadout,
+  defaultPlayer,
+  defaultSettings,
+  defaultStatAllocations,
+  defaultWorld,
+} from '@/storage/defaults';
+
+export class ProfileRepository {
+  constructor(private readonly db: CaelianDatabase) {}
+
+  async ensure(
+    chatId: string,
+    defaults: { playerName?: string } = {},
+  ): Promise<ProfileRecord> {
+    const existing = await this.db.profiles.where('chatId').equals(chatId).first();
+    if (existing) return existing;
+
+    const now = Date.now();
+    const id = `profile:${encodeURIComponent(chatId)}`;
+    const profile: ProfileRecord = {
+      id,
+      chatId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const regions = await loadRegions();
+    const access: RegionAccessRecord[] = regions.map((region) => ({
+      id: `${id}:${region.id}`,
+      profileId: id,
+      regionId: region.id,
+      accessible: !['abyss_sea', 'holy_mt', 'north'].includes(
+        region.id,
+      ),
+      unlockCondition:
+        region.id === 'abyss_sea'
+          ? '完成奈亚索斯城所有剧情任务'
+          : ['holy_mt', 'north'].includes(region.id)
+            ? '当前区域暂未开放，请等待版本更新。'
+            : '',
+      updatedAt: now,
+    }));
+
+    await this.db.transaction(
+      'rw',
+      [
+        this.db.profiles,
+        this.db.playerStates,
+        this.db.statAllocations,
+        this.db.worldStates,
+        this.db.regionAccess,
+        this.db.guildStates,
+        this.db.equipmentLoadouts,
+        this.db.settings,
+      ],
+      async () => {
+        await this.db.profiles.add(profile);
+        await this.db.playerStates.add(
+          defaultPlayer(id, defaults.playerName ?? '', now),
+        );
+        await this.db.statAllocations.add(defaultStatAllocations(id, now));
+        await this.db.worldStates.add(defaultWorld(id, now));
+        await this.db.regionAccess.bulkAdd(access);
+        await this.db.guildStates.add(defaultGuild(id, now));
+        await this.db.equipmentLoadouts.add(defaultLoadout(id, now));
+        await this.db.settings.add(defaultSettings(id, now));
+      },
+    );
+
+    return profile;
+  }
+}

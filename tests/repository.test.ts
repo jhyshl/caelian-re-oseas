@@ -66,4 +66,50 @@ describe('GameRepository', () => {
 
     expect(await database.commandInbox.get('negative-1')).toBeUndefined();
   });
+
+  it('接受中文协会委托并写入独立任务表', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-alpha-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:guild', {
+      playerName: '测试冒险者',
+    });
+    await repository.execute(profile.id, {
+      id: 'create-adventurer',
+      type: 'player.create',
+      payload: {
+        name: '测试冒险者',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+
+    const result = await repository.execute(profile.id, {
+      id: 'accept-chinese-commission',
+      type: 'quest.accept',
+      payload: {
+        taskId: '清理学院附近的哥布林营地:圣德里安学院',
+        title: '清理学院附近的哥布林营地',
+        region: '圣德里安学院',
+        objective: '圣德里安学院东侧森林边缘发现哥布林聚集',
+        totalStages: 5,
+        rewardExperience: 120,
+        rewardGold: 120,
+        rewardGuildExperience: 22,
+        minimumLevel: 1,
+      },
+    });
+
+    expect(result.status).toBe('applied');
+    const snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.quests).toHaveLength(1);
+    expect(snapshot.quests[0]).toMatchObject({
+      title: '清理学院附近的哥布林营地',
+      kind: 'commission',
+      totalStages: 5,
+    });
+  });
 });

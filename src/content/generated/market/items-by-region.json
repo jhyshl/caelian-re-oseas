@@ -1,0 +1,1130 @@
+{
+  "圣德里安学院": [
+    {
+      "id": "mk_练习木剑",
+      "name": "练习木剑",
+      "basePrice": 18,
+      "rarity": "common",
+      "stockMin": 6,
+      "stockMax": 12
+    },
+    {
+      "id": "mk_初级魔法墨水",
+      "name": "初级魔法墨水",
+      "basePrice": 25,
+      "rarity": "common",
+      "stockMin": 5,
+      "stockMax": 10
+    },
+    {
+      "id": "mk_课堂草药包",
+      "name": "课堂草药包",
+      "basePrice": 22,
+      "rarity": "common",
+      "stockMin": 6,
+      "stockMax": 12
+    },
+    {
+      "id": "mk_空白符文纸",
+      "name": "空白符文纸",
+      "basePrice": 28,
+      "rarity": "common",
+      "stockMin": 5,
+      "stockMax": 10
+    },
+    {
+      "id": "mk_学生便当",
+      "name": "学生便当",
+      "basePrice": 12,
+      "rarity": "common",
+      "stockMin": 10,
+      "stockMax": 20
+    },
+    {
+      "id": "mk_精制面包",
+      "name": "精制面包",
+      "basePrice": 10,
+      "rarity": "common",
+      "stockMin": 10,
+      "stockMax": 24
+    },
+    {
+      "id": "mk_曼德拉草根须",
+      "name": "曼德拉草根须",
+      "basePrice": 55,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_炼金玻璃瓶",
+      "name": "炼金玻璃瓶",
+      "basePrice": 40,
+      "rarity": "common",
+      "stockMin": 4,
+      "stockMax": 8
+    },
+    {
+      "id": "mk_学院徽章复制品",
+      "name": "学院徽章复制品",
+      "basePrice": 75,
+      "rarity": "uncommon",
+      "stockMin": 1,
+      "stockMax": 4
+    },
+    {
+      "id": "mk_训练场护腕",
+      "name": "训练场护腕",
+      "basePrice": 95,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_旧图书馆残页",
+      "name": "旧图书馆残页",
+      "basePrice": 130,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 2
+    },
+    {
+      "id": "mk_unique_r_silver_compass",
+      "name": "银星罗盘",
+      "basePrice": 820,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_silver_compass",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_eq_boots_wind",
+      "name": "风行靴",
+      "basePrice": 360,
+      "rarity": "uncommon",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "equipment",
+      "refId": "eq_boots_wind",
+      "unique": true,
+      "stockLocked": true
+    }
+  ],
+  "伊拉亚城": [
+    {
+      "id": "mk_小麦啤酒",
+      "name": "小麦啤酒",
+      "basePrice": 14,
+      "rarity": "common",
+      "stockMin": 10,
+      "stockMax": 24
+    },
+    {
+      "id": "mk_精制面包",
+      "name": "精制面包",
+      "basePrice": 10,
+      "rarity": "common",
+      "stockMin": 10,
+      "stockMax": 24
+    },
+    {
+      "id": "mk_城郊药草",
+      "name": "城郊药草",
+      "basePrice": 24,
+      "rarity": "common",
+      "stockMin": 8,
+      "stockMax": 16
+    },
+    {
+      "id": "mk_黑市银针",
+      "name": "黑市银针",
+      "basePrice": 60,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_幽灯草",
+      "name": "幽灯草",
+      "basePrice": 70,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_帕德里湖水珠",
+      "name": "帕德里湖水珠",
+      "basePrice": 85,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 5
+    },
+    {
+      "id": "mk_商队布匹",
+      "name": "商队布匹",
+      "basePrice": 48,
+      "rarity": "common",
+      "stockMin": 5,
+      "stockMax": 10
+    },
+    {
+      "id": "mk_精制皮革",
+      "name": "精制皮革",
+      "basePrice": 90,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 4
+    },
+    {
+      "id": "mk_地下黑市情报卷",
+      "name": "地下黑市情报卷",
+      "basePrice": 160,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 2
+    },
+    {
+      "id": "mk_附魔龙骨碎片",
+      "name": "附魔龙骨碎片",
+      "basePrice": 360,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_unique_r_lucky_coin",
+      "name": "幸运古币",
+      "basePrice": 1100,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_lucky_coin",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_eq_ring_power",
+      "name": "力量之戒",
+      "basePrice": 420,
+      "rarity": "uncommon",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "equipment",
+      "refId": "eq_ring_power",
+      "unique": true,
+      "stockLocked": true
+    }
+  ],
+  "索拉维亚": [
+    {
+      "id": "mk_皇家印花信纸",
+      "name": "皇家印花信纸",
+      "basePrice": 42,
+      "rarity": "common",
+      "stockMin": 4,
+      "stockMax": 8
+    },
+    {
+      "id": "mk_骑士团磨刀油",
+      "name": "骑士团磨刀油",
+      "basePrice": 65,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_圣烛",
+      "name": "圣烛",
+      "basePrice": 58,
+      "rarity": "common",
+      "stockMin": 4,
+      "stockMax": 10
+    },
+    {
+      "id": "mk_贵族香料",
+      "name": "贵族香料",
+      "basePrice": 95,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 5
+    },
+    {
+      "id": "mk_旧墓碎银",
+      "name": "旧墓碎银",
+      "basePrice": 120,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 4
+    },
+    {
+      "id": "mk_圣心玻璃珠",
+      "name": "圣心玻璃珠",
+      "basePrice": 140,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_祈祷绷带",
+      "name": "祈祷绷带",
+      "basePrice": 80,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_皇宫茶叶",
+      "name": "皇宫茶叶",
+      "basePrice": 180,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 2
+    },
+    {
+      "id": "mk_玛利亚教堂圣灰",
+      "name": "玛利亚教堂圣灰",
+      "basePrice": 260,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_骑士团退役徽章",
+      "name": "骑士团退役徽章",
+      "basePrice": 320,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_unique_r_holy_ash",
+      "name": "圣灰瓶",
+      "basePrice": 1350,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_holy_ash",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_eq_knight_plate",
+      "name": "骑士板甲",
+      "basePrice": 980,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "equipment",
+      "refId": "eq_knight_plate",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_eq_saint_relic",
+      "name": "圣辉遗物",
+      "basePrice": 2600,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "equipment",
+      "refId": "eq_saint_relic",
+      "unique": true,
+      "stockLocked": true
+    }
+  ],
+  "奈亚索斯城": [
+    {
+      "id": "mk_海盐",
+      "name": "海盐",
+      "basePrice": 10,
+      "rarity": "common",
+      "stockMin": 12,
+      "stockMax": 30
+    },
+    {
+      "id": "mk_新鲜海胆",
+      "name": "新鲜海胆",
+      "basePrice": 35,
+      "rarity": "common",
+      "stockMin": 6,
+      "stockMax": 12
+    },
+    {
+      "id": "mk_珊瑚碎片",
+      "name": "珊瑚碎片",
+      "basePrice": 70,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_人鱼珍珠粉",
+      "name": "人鱼珍珠粉",
+      "basePrice": 150,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_椰子酒",
+      "name": "椰子酒",
+      "basePrice": 48,
+      "rarity": "common",
+      "stockMin": 4,
+      "stockMax": 10
+    },
+    {
+      "id": "mk_荧光海藻",
+      "name": "荧光海藻",
+      "basePrice": 85,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_风味海胆卷",
+      "name": "风味海胆卷",
+      "basePrice": 65,
+      "rarity": "uncommon",
+      "stockMin": 3,
+      "stockMax": 8
+    },
+    {
+      "id": "mk_潮汐贝壳",
+      "name": "潮汐贝壳",
+      "basePrice": 95,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 5
+    },
+    {
+      "id": "mk_塞壬羽鳞",
+      "name": "塞壬羽鳞",
+      "basePrice": 240,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_黑珍珠",
+      "name": "黑珍珠",
+      "basePrice": 420,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_unique_r_mermaid_shell",
+      "name": "人鱼贝壳",
+      "basePrice": 900,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_mermaid_shell",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_r_shark_tooth",
+      "name": "鲨齿项链",
+      "basePrice": 1280,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_shark_tooth",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_eq_mermaid_crown",
+      "name": "人鱼珍珠冠",
+      "basePrice": 1600,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "equipment",
+      "refId": "eq_mermaid_crown",
+      "unique": true,
+      "stockLocked": true
+    }
+  ],
+  "艾瑟拉森林": [
+    {
+      "id": "mk_橡木枝",
+      "name": "橡木枝",
+      "basePrice": 18,
+      "rarity": "common",
+      "stockMin": 8,
+      "stockMax": 18
+    },
+    {
+      "id": "mk_蓝眼泪湖水",
+      "name": "蓝眼泪湖水",
+      "basePrice": 85,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_精灵藤蔓",
+      "name": "精灵藤蔓",
+      "basePrice": 70,
+      "rarity": "uncommon",
+      "stockMin": 3,
+      "stockMax": 8
+    },
+    {
+      "id": "mk_晨露花瓣",
+      "name": "晨露花瓣",
+      "basePrice": 42,
+      "rarity": "common",
+      "stockMin": 6,
+      "stockMax": 12
+    },
+    {
+      "id": "mk_焦木炭",
+      "name": "焦木炭",
+      "basePrice": 55,
+      "rarity": "common",
+      "stockMin": 4,
+      "stockMax": 10
+    },
+    {
+      "id": "mk_光明祭台苔藓",
+      "name": "光明祭台苔藓",
+      "basePrice": 130,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 4
+    },
+    {
+      "id": "mk_森林蜂蜡",
+      "name": "森林蜂蜡",
+      "basePrice": 60,
+      "rarity": "uncommon",
+      "stockMin": 3,
+      "stockMax": 8
+    },
+    {
+      "id": "mk_古树种子",
+      "name": "古树种子",
+      "basePrice": 190,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 2
+    },
+    {
+      "id": "mk_精灵银叶",
+      "name": "精灵银叶",
+      "basePrice": 300,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_纯净光明结晶",
+      "name": "纯净光明结晶",
+      "basePrice": 520,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_unique_r_oak_seed",
+      "name": "古橡树种",
+      "basePrice": 760,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_oak_seed",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_r_guardian_leaf",
+      "name": "守林叶片",
+      "basePrice": 980,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_guardian_leaf",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_eq_silk_robe",
+      "name": "秘法丝袍",
+      "basePrice": 1120,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "equipment",
+      "refId": "eq_silk_robe",
+      "unique": true,
+      "stockLocked": true
+    }
+  ],
+  "炉心城": [
+    {
+      "id": "mk_蒸汽螺栓",
+      "name": "蒸汽螺栓",
+      "basePrice": 16,
+      "rarity": "common",
+      "stockMin": 12,
+      "stockMax": 24
+    },
+    {
+      "id": "mk_铜齿轮",
+      "name": "铜齿轮",
+      "basePrice": 26,
+      "rarity": "common",
+      "stockMin": 8,
+      "stockMax": 16
+    },
+    {
+      "id": "mk_机油饮",
+      "name": "机油饮",
+      "basePrice": 18,
+      "rarity": "common",
+      "stockMin": 8,
+      "stockMax": 16
+    },
+    {
+      "id": "mk_矮人铁锭",
+      "name": "矮人铁锭",
+      "basePrice": 90,
+      "rarity": "uncommon",
+      "stockMin": 3,
+      "stockMax": 8
+    },
+    {
+      "id": "mk_幽晶石碎片",
+      "name": "幽晶石碎片",
+      "basePrice": 170,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 4
+    },
+    {
+      "id": "mk_火山煤",
+      "name": "火山煤",
+      "basePrice": 58,
+      "rarity": "common",
+      "stockMin": 4,
+      "stockMax": 10
+    },
+    {
+      "id": "mk_魔导线圈",
+      "name": "魔导线圈",
+      "basePrice": 130,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_精炼钢板",
+      "name": "精炼钢板",
+      "basePrice": 150,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_城防炮零件",
+      "name": "城防炮零件",
+      "basePrice": 360,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_炉心红宝石",
+      "name": "炉心红宝石",
+      "basePrice": 580,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_unique_r_steel_core",
+      "name": "蒸汽钢芯",
+      "basePrice": 1450,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_steel_core",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_r_clockwork_heart",
+      "name": "发条心脏",
+      "basePrice": 1500,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_clockwork_heart",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_eq_dragon_scale",
+      "name": "幼龙鳞甲",
+      "basePrice": 1850,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "equipment",
+      "refId": "eq_dragon_scale",
+      "unique": true,
+      "stockLocked": true
+    }
+  ],
+  "远古圣山": [
+    {
+      "id": "mk_云雾草",
+      "name": "云雾草",
+      "basePrice": 50,
+      "rarity": "common",
+      "stockMin": 4,
+      "stockMax": 10
+    },
+    {
+      "id": "mk_龙道石片",
+      "name": "龙道石片",
+      "basePrice": 95,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_圣山雪水",
+      "name": "圣山雪水",
+      "basePrice": 80,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_风暴羽",
+      "name": "风暴羽",
+      "basePrice": 150,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_古龙鳞粉",
+      "name": "古龙鳞粉",
+      "basePrice": 260,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 2
+    },
+    {
+      "id": "mk_山脚坚果",
+      "name": "山脚坚果",
+      "basePrice": 18,
+      "rarity": "common",
+      "stockMin": 8,
+      "stockMax": 16
+    },
+    {
+      "id": "mk_云顶香木",
+      "name": "云顶香木",
+      "basePrice": 170,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_雷鸣矿砂",
+      "name": "雷鸣矿砂",
+      "basePrice": 190,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_龙族旧币",
+      "name": "龙族旧币",
+      "basePrice": 320,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_圣山晨星",
+      "name": "圣山晨星",
+      "basePrice": 650,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_unique_r_dragon_spark",
+      "name": "幼龙火星",
+      "basePrice": 1500,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_dragon_spark",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_r_sun_fragment",
+      "name": "日辉碎片",
+      "basePrice": 880,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_sun_fragment",
+      "unique": true,
+      "stockLocked": true
+    }
+  ],
+  "银月之城": [
+    {
+      "id": "mk_仿制血浆",
+      "name": "仿制血浆",
+      "basePrice": 24,
+      "rarity": "common",
+      "stockMin": 8,
+      "stockMax": 18
+    },
+    {
+      "id": "mk_月光玫瑰",
+      "name": "月光玫瑰",
+      "basePrice": 75,
+      "rarity": "uncommon",
+      "stockMin": 3,
+      "stockMax": 8
+    },
+    {
+      "id": "mk_银月香水",
+      "name": "银月香水",
+      "basePrice": 110,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 5
+    },
+    {
+      "id": "mk_维兰瑟红酒封蜡",
+      "name": "维兰瑟红酒封蜡",
+      "basePrice": 95,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 5
+    },
+    {
+      "id": "mk_蒙莱安眠香",
+      "name": "蒙莱安眠香",
+      "basePrice": 160,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_猎人银钉",
+      "name": "猎人银钉",
+      "basePrice": 130,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 4
+    },
+    {
+      "id": "mk_夜色丝绸",
+      "name": "夜色丝绸",
+      "basePrice": 180,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_吸血鬼贵族请柬",
+      "name": "吸血鬼贵族请柬",
+      "basePrice": 260,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_红蔷薇徽记",
+      "name": "红蔷薇徽记",
+      "basePrice": 300,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_永夜月髓",
+      "name": "永夜月髓",
+      "basePrice": 620,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_unique_r_shadow_cloak",
+      "name": "影纹披风",
+      "basePrice": 1320,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_shadow_cloak",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_r_blood_ring",
+      "name": "赤血戒指",
+      "basePrice": 980,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_blood_ring",
+      "unique": true,
+      "stockLocked": true
+    }
+  ],
+  "极北之地": [
+    {
+      "id": "mk_寒铁矿砂",
+      "name": "寒铁矿砂",
+      "basePrice": 90,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_冻土苔藓",
+      "name": "冻土苔藓",
+      "basePrice": 40,
+      "rarity": "common",
+      "stockMin": 4,
+      "stockMax": 10
+    },
+    {
+      "id": "mk_黑潮结晶",
+      "name": "黑潮结晶",
+      "basePrice": 240,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 2
+    },
+    {
+      "id": "mk_旧哨站火药",
+      "name": "旧哨站火药",
+      "basePrice": 120,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_极北兽皮",
+      "name": "极北兽皮",
+      "basePrice": 150,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_暗潮残片",
+      "name": "暗潮残片",
+      "basePrice": 260,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 2
+    },
+    {
+      "id": "mk_霜狼骨",
+      "name": "霜狼骨",
+      "basePrice": 110,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 5
+    },
+    {
+      "id": "mk_冻裂符石",
+      "name": "冻裂符石",
+      "basePrice": 180,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 2
+    },
+    {
+      "id": "mk_深渊低语瓶",
+      "name": "深渊低语瓶",
+      "basePrice": 460,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_禁区地图碎片",
+      "name": "禁区地图碎片",
+      "basePrice": 520,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_unique_r_void_talisman",
+      "name": "虚空护符",
+      "basePrice": 2400,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_void_talisman",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_eq_abyss_blade",
+      "name": "深渊短刃",
+      "basePrice": 1900,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "equipment",
+      "refId": "eq_abyss_blade",
+      "unique": true,
+      "stockLocked": true
+    }
+  ],
+  "阿必塞海": [
+    {
+      "id": "mk_深海盐晶",
+      "name": "深海盐晶",
+      "basePrice": 75,
+      "rarity": "uncommon",
+      "stockMin": 3,
+      "stockMax": 8
+    },
+    {
+      "id": "mk_亚特兰蒂斯石片",
+      "name": "亚特兰蒂斯石片",
+      "basePrice": 160,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_人鱼骸骨碎片",
+      "name": "人鱼骸骨碎片",
+      "basePrice": 220,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 2
+    },
+    {
+      "id": "mk_破碎蛇蛋壳",
+      "name": "破碎蛇蛋壳",
+      "basePrice": 300,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_金色骨剑残片",
+      "name": "金色骨剑残片",
+      "basePrice": 520,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_海渊墨囊",
+      "name": "海渊墨囊",
+      "basePrice": 130,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 3
+    },
+    {
+      "id": "mk_深海荧藻",
+      "name": "深海荧藻",
+      "basePrice": 95,
+      "rarity": "uncommon",
+      "stockMin": 2,
+      "stockMax": 6
+    },
+    {
+      "id": "mk_古城贝币",
+      "name": "古城贝币",
+      "basePrice": 150,
+      "rarity": "rare",
+      "stockMin": 1,
+      "stockMax": 4
+    },
+    {
+      "id": "mk_失落壁画拓片",
+      "name": "失落壁画拓片",
+      "basePrice": 260,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_海渊王冠碎片",
+      "name": "海渊王冠碎片",
+      "basePrice": 720,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1
+    },
+    {
+      "id": "mk_unique_r_crystal_eye",
+      "name": "水晶眼",
+      "basePrice": 2200,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_crystal_eye",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_r_sage_candle",
+      "name": "贤者烛台",
+      "basePrice": 2600,
+      "rarity": "legendary",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "relic",
+      "refId": "r_sage_candle",
+      "unique": true,
+      "stockLocked": true
+    },
+    {
+      "id": "mk_unique_eq_abyss_blade",
+      "name": "深渊短刃",
+      "basePrice": 1900,
+      "rarity": "epic",
+      "stockMin": 1,
+      "stockMax": 1,
+      "marketKind": "equipment",
+      "refId": "eq_abyss_blade",
+      "unique": true,
+      "stockLocked": true
+    }
+  ]
+}

@@ -1,12 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  cp,
-  mkdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
+  cp, mkdir, readFile, rm, stat, writeFile,
 } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,13 +55,90 @@ const alphaEntry = viteManifest[alphaKey];
 const buildId = resolveBuildId().replace(/[^a-zA-Z0-9._-]/g, '-');
 const immutableRoot = path.join(distRoot, 'builds', buildId);
 
-await rm(distRoot, { recursive: true, force: true });
+let previousChannelManifest = null;
+const rebaseManifest = (manifest) => {
+  const rebaseUrl = (value) => {
+    if (typeof value !== 'string') return value;
+    const buildPath = value.match(/\/builds\/[^/]+\/.+$/)?.[0];
+    return buildPath ? `${publicBase}${buildPath}` : value;
+  };
+  const { previous: _discardedPrevious, ...singlePrevious } = manifest;
+  return {
+    ...singlePrevious,
+    modules: {
+      ...manifest.modules,
+      runtime: {
+        ...manifest.modules?.runtime,
+        url: rebaseUrl(manifest.modules?.runtime?.url),
+        css: (manifest.modules?.runtime?.css ?? []).map((style) => ({
+          ...style,
+          url: rebaseUrl(style.url),
+        })),
+      },
+    },
+  };
+};
+try {
+  const previous = JSON.parse(
+    await readFile(path.join(distRoot, 'channels', 'alpha.json'), 'utf8'),
+  );
+  const previousBuildRoot = path.join(
+    distRoot,
+    'builds',
+    String(previous.buildId ?? ''),
+  );
+  await stat(previousBuildRoot);
+  if (previous.buildId && previous.buildId !== buildId) {
+    previousChannelManifest = rebaseManifest(previous);
+  } else if (previous.buildId === buildId) {
+    const archived = JSON.parse(
+      await readFile(
+        path.join(distRoot, 'channels', 'alpha.previous.json'),
+        'utf8',
+      ),
+    );
+    const archivedBuildRoot = path.join(
+      distRoot,
+      'builds',
+      String(archived.buildId ?? ''),
+    );
+    await stat(archivedBuildRoot);
+    if (archived.buildId && archived.buildId !== buildId) {
+      previousChannelManifest = rebaseManifest(archived);
+    }
+  }
+} catch {
+  // A clean checkout has no previous deployment to retain.
+}
+
+/*
+ * Builds are immutable and must survive subsequent channel publications.
+ * Removing all of dist made a manifest rollback point at files that no longer
+ * existed. Replace only a same-id local rebuild and keep every other build.
+ */
+await mkdir(path.join(distRoot, 'builds'), { recursive: true });
+await rm(immutableRoot, { recursive: true, force: true });
 await mkdir(immutableRoot, { recursive: true });
 await cp(buildRoot, immutableRoot, { recursive: true });
 await rm(path.join(immutableRoot, '.vite'), { recursive: true, force: true });
 
+const cssFiles = [
+  ...new Set(
+    [
+      ...(alphaEntry.css ?? []),
+      viteManifest['style.css']?.file,
+    ].filter((file) => typeof file === 'string' && file.endsWith('.css')),
+  ),
+];
+
+if (cssFiles.length === 0) {
+  throw new Error(
+    'Alpha runtime does not expose a host stylesheet for the Tavern bridge.',
+  );
+}
+
 const css = await Promise.all(
-  (alphaEntry.css ?? []).map(async (file) => ({
+  cssFiles.map(async (file) => ({
     url: `${publicBase}/builds/${buildId}/${file}`,
     integrity: await sri(file),
   })),
@@ -86,9 +158,25 @@ const channelManifest = {
       css,
     },
   },
+  ...(previousChannelManifest
+    ? {
+        previous: {
+          buildId: previousChannelManifest.buildId,
+          version: previousChannelManifest.version,
+          url: `${publicBase}/channels/alpha.previous.json`,
+        },
+      }
+    : {}),
 };
 
 await mkdir(path.join(distRoot, 'channels'), { recursive: true });
+if (previousChannelManifest) {
+  await writeFile(
+    path.join(distRoot, 'channels', 'alpha.previous.json'),
+    `${JSON.stringify(previousChannelManifest, null, 2)}\n`,
+    'utf8',
+  );
+}
 await writeFile(
   path.join(distRoot, 'channels', 'alpha.json'),
   `${JSON.stringify(channelManifest, null, 2)}\n`,

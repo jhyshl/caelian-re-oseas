@@ -7,25 +7,79 @@ const commandBase = {
 export const domainCommandSchema = z.discriminatedUnion('type', [
   z.object({
     ...commandBase,
-    type: z.literal('character.update'),
+    type: z.literal('player.create'),
+    payload: z.object({
+      name: z.string().trim().min(1).max(80),
+      classMain: z.string().trim().min(1).max(80),
+      subclass: z.string().trim().min(1).max(80),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('player.update'),
     payload: z
       .object({
         name: z.string().trim().min(1).max(80).optional(),
-        className: z.string().trim().min(1).max(80).optional(),
-        subclass: z.string().trim().max(80).optional(),
         level: z.number().int().min(1).max(999).optional(),
+        experience: z.number().int().min(0).optional(),
+        gold: z.number().int().min(0).optional(),
       })
       .refine((value) => Object.keys(value).length > 0, {
-        message: '至少需要修改一个人物字段',
+        message: '至少需要修改一个玩家字段',
       }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('player.reclass'),
+    payload: z.object({
+      classMain: z.string().trim().min(1).max(80),
+      subclass: z.string().trim().min(1).max(80),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('player.allocate-stat'),
+    payload: z.object({
+      stat: z.enum([
+        'hpMax',
+        'mpMax',
+        'attack',
+        'defense',
+        'speed',
+        'actionPointsPerTurn',
+      ]),
+      direction: z.enum(['add', 'remove']),
+    }),
   }),
   z.object({
     ...commandBase,
     type: z.literal('world.move'),
     payload: z.object({
       region: z.string().trim().min(1).max(120),
-      location: z.string().trim().min(1).max(120),
-      gameDate: z.string().trim().max(80).optional(),
+      place: z.string().trim().max(120).default(''),
+      location: z.string().trim().min(1).max(180),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('quest.accept'),
+    payload: z.object({
+      taskId: z.string().trim().min(1).max(160),
+      title: z.string().trim().min(1).max(160),
+      region: z.string().trim().min(1).max(120),
+      objective: z.string().trim().min(1).max(500),
+      totalStages: z.number().int().min(1).max(9999),
+      rewardExperience: z.number().int().min(0),
+      rewardGold: z.number().int().min(0),
+      rewardGuildExperience: z.number().int().min(0),
+      minimumLevel: z.number().int().min(1).max(999),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('quest.abandon'),
+    payload: z.object({
+      questId: z.string().trim().min(1).max(220),
     }),
   }),
   z.object({
@@ -34,8 +88,110 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     payload: z.object({
       itemId: z.string().trim().min(1).max(120),
       name: z.string().trim().min(1).max(120).optional(),
-      delta: z.number().int().min(-999999).max(999999).refine((value) => value !== 0),
+      delta: z
+        .number()
+        .int()
+        .min(-999999)
+        .max(999999)
+        .refine((value) => value !== 0),
     }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('deck.update'),
+    payload: z.object({
+      cardIds: z.array(z.string().trim().min(1).max(160)).min(1).max(30),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('equipment.equip'),
+    payload: z.object({
+      instanceId: z.string().trim().min(1).max(180),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('equipment.unequip'),
+    payload: z.object({
+      slot: z.enum(['weapon', 'armor', 'accessory']),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('relic.set-carried'),
+    payload: z.object({
+      relicId: z.string().trim().min(1).max(180),
+      carried: z.boolean(),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('battle.start'),
+    payload: z.object({
+      monsterId: z.string().trim().min(1).max(160),
+      count: z.number().int().min(1).max(12).optional(),
+      source: z.string().trim().min(1).max(180).optional(),
+      relatedQuestId: z.string().trim().max(220).optional(),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('battle.explore'),
+    payload: z.object({
+      relatedQuestId: z.string().trim().max(220).optional(),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('battle.play-card'),
+    payload: z.object({
+      battleId: z.string().trim().min(1).max(220),
+      handIndex: z.number().int().min(0).max(99),
+      targetIndex: z.number().int().min(0).max(20).optional(),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('battle.end-turn'),
+    payload: z.object({
+      battleId: z.string().trim().min(1).max(220),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('battle.discard-hand'),
+    payload: z.object({
+      battleId: z.string().trim().min(1).max(220),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('battle.surrender'),
+    payload: z.object({
+      battleId: z.string().trim().min(1).max(220),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('battle.finish'),
+    payload: z.object({
+      battleId: z.string().trim().min(1).max(220),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('settings.update'),
+    payload: z
+      .object({
+        preserveAdventureSave: z.boolean().optional(),
+        battleDifficulty: z
+          .enum(['easy', 'normal', 'hard', 'hell'])
+          .optional(),
+      })
+      .refine((value) => Object.keys(value).length > 0, {
+        message: '至少需要修改一个设置字段',
+      }),
   }),
 ]);
 

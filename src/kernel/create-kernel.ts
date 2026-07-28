@@ -13,7 +13,10 @@ import type {
   QueryResultMap,
 } from '@/kernel/public-api';
 import { createAiProjection } from '@/mvu/projection';
-import { CaelianDatabase } from '@/storage/database';
+import {
+  CaelianDatabase,
+  DATABASE_SCHEMA_VERSION,
+} from '@/storage/database';
 import { GameRepository } from '@/storage/repository';
 import { TavernAdapter } from '@/tavern/adapter';
 
@@ -52,7 +55,7 @@ export class CaelianKernel {
     this.adapter = new TavernAdapter(options.sourceWindow);
     this.db = new CaelianDatabase(
       this.channel,
-      options.databaseName ?? `caelian-${this.channel}`,
+      options.databaseName ?? `caelian-${this.channel}-v2`,
     );
     this.repository = new GameRepository(this.db, this.events);
 
@@ -107,6 +110,7 @@ export class CaelianKernel {
       version: this.version,
       buildId: this.buildId,
       databaseName: this.db.name,
+      databaseVersion: DATABASE_SCHEMA_VERSION,
       status: this.status,
       profileId: this.profileId,
       mvuAvailable: this.adapter.hasMvu(),
@@ -197,8 +201,10 @@ export class CaelianKernel {
       execute: (command) => this.execute(command),
       query: (name) => this.query(name),
       openPanel: (panel) => this.panels.open(panel),
+      navigatePanel: (panel) => this.panels.navigate(panel),
       closePanel: (panel) => this.panels.close(panel),
       listOpenPanels: () => this.panels.list(),
+      setUserInput: (text) => this.adapter.setUserInput(text),
       syncProjection: () => this.syncProjection(),
       on: (event, handler) => this.events.on(event, handler),
       shutdown: () => this.shutdown(),
@@ -211,7 +217,9 @@ export class CaelianKernel {
       execute: (command) => this.execute(command),
       query: (name) => this.query(name),
       openPanel: (panel) => this.panels.open(panel),
+      navigatePanel: (panel) => this.panels.navigate(panel),
       closePanel: (panel) => this.panels.close(panel),
+      setUserInput: (text) => this.adapter.setUserInput(text),
       syncProjection: () => this.syncProjection(),
       on: (event, handler) => this.events.on(event, handler),
     };

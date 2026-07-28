@@ -1,0 +1,30 @@
+{
+  "copper": {
+    "xp": 0,
+    "tasks": 0
+  },
+  "iron": {
+    "xp": 200,
+    "tasks": 0
+  },
+  "silver": {
+    "xp": 600,
+    "tasks": 0
+  },
+  "gold": {
+    "xp": 1500,
+    "tasks": 0
+  },
+  "platinum": {
+    "xp": 3500,
+    "tasks": 0
+  },
+  "mythril": {
+    "xp": 7000,
+    "tasks": 0
+  },
+  "adamantite": {
+    "xp": 15000,
+    "tasks": 0
+  }
+}

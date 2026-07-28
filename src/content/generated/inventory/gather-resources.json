@@ -1,0 +1,379 @@
+{
+  "学院薄荷": {
+    "name": "学院薄荷",
+    "regions": [
+      "圣德里安学院"
+    ],
+    "category": "consumable",
+    "desc": "清醒提神的薄荷叶，可少量回复魔力。",
+    "effect": {
+      "type": "gain_mp",
+      "value": 3
+    },
+    "basePrice": 28,
+    "rarity": "common"
+  },
+  "晨露花": {
+    "name": "晨露花",
+    "regions": [
+      "圣德里安学院"
+    ],
+    "category": "consumable",
+    "desc": "带露水的白花，可少量回复生命。",
+    "effect": {
+      "type": "heal",
+      "value": 8
+    },
+    "basePrice": 28,
+    "rarity": "common"
+  },
+  "空玻璃瓶": {
+    "name": "空玻璃瓶",
+    "regions": [
+      "圣德里安学院",
+      "伊拉亚城",
+      "索拉维亚",
+      "奈亚索斯城",
+      "炉心城"
+    ],
+    "category": "material",
+    "desc": "常见炼金容器，用于制作血瓶和魔药瓶。",
+    "basePrice": 16,
+    "rarity": "common"
+  },
+  "魔法粉尘": {
+    "name": "魔法粉尘",
+    "regions": [
+      "圣德里安学院"
+    ],
+    "category": "material",
+    "desc": "低阶施法练习留下的粉尘，可用于合成魔药。",
+    "basePrice": 36,
+    "rarity": "common"
+  },
+  "城郊药草": {
+    "name": "城郊药草",
+    "regions": [
+      "伊拉亚城"
+    ],
+    "category": "material",
+    "desc": "常见治愈草药，血瓶基础材料。",
+    "basePrice": 24,
+    "rarity": "common"
+  },
+  "治愈苔": {
+    "name": "治愈苔",
+    "regions": [
+      "伊拉亚城"
+    ],
+    "category": "material",
+    "desc": "潮湿树根旁的苔藓，可稳定药性。",
+    "basePrice": 34,
+    "rarity": "common"
+  },
+  "幽灯草": {
+    "name": "幽灯草",
+    "regions": [
+      "伊拉亚城",
+      "艾瑟拉森林"
+    ],
+    "category": "material",
+    "desc": "夜间发出蓝光的草，可用于恢复类合成。",
+    "basePrice": 70,
+    "rarity": "uncommon"
+  },
+  "帕德里湖水珠": {
+    "name": "帕德里湖水珠",
+    "regions": [
+      "伊拉亚城"
+    ],
+    "category": "consumable",
+    "desc": "清澈湖水凝成的水珠，直接使用回复魔力。",
+    "effect": {
+      "type": "gain_mp",
+      "value": 6
+    },
+    "basePrice": 85,
+    "rarity": "uncommon"
+  },
+  "圣心百合": {
+    "name": "圣心百合",
+    "regions": [
+      "伊拉亚城",
+      "索拉维亚"
+    ],
+    "category": "consumable",
+    "desc": "圣教会庭院中的百合，使用后回复生命。",
+    "effect": {
+      "type": "heal",
+      "value": 14
+    },
+    "basePrice": 80,
+    "rarity": "uncommon"
+  },
+  "祈祷绷带": {
+    "name": "祈祷绷带",
+    "regions": [
+      "索拉维亚"
+    ],
+    "category": "material",
+    "desc": "被祝祷过的绷带，可用于净化与治疗合成。",
+    "basePrice": 64,
+    "rarity": "common"
+  },
+  "日光树脂": {
+    "name": "日光树脂",
+    "regions": [
+      "索拉维亚",
+      "远古圣山"
+    ],
+    "category": "material",
+    "desc": "含光元素的树脂，常用于防护合成。",
+    "basePrice": 105,
+    "rarity": "uncommon"
+  },
+  "海盐珍珠草": {
+    "name": "海盐珍珠草",
+    "regions": [
+      "奈亚索斯城"
+    ],
+    "category": "consumable",
+    "desc": "海风中生长的草，使用后回复生命与少量魔力。",
+    "effect": {
+      "type": "heal_mp",
+      "heal": 10,
+      "mp": 3
+    },
+    "basePrice": 92,
+    "rarity": "uncommon"
+  },
+  "潮汐贝壳": {
+    "name": "潮汐贝壳",
+    "regions": [
+      "奈亚索斯城",
+      "阿必塞海"
+    ],
+    "category": "material",
+    "desc": "带有潮汐魔力的贝壳，可用于水系合成。",
+    "basePrice": 78,
+    "rarity": "common"
+  },
+  "蓝珊瑚碎": {
+    "name": "蓝珊瑚碎",
+    "regions": [
+      "奈亚索斯城",
+      "阿必塞海"
+    ],
+    "category": "material",
+    "desc": "蓝珊瑚碎片，是中高阶魔药材料。",
+    "basePrice": 126,
+    "rarity": "rare"
+  },
+  "月露草": {
+    "name": "月露草",
+    "regions": [
+      "艾瑟拉森林",
+      "银月之城"
+    ],
+    "category": "material",
+    "desc": "吸收月露的草药，魔药瓶基础材料。",
+    "basePrice": 56,
+    "rarity": "common"
+  },
+  "蓝晶花": {
+    "name": "蓝晶花",
+    "regions": [
+      "艾瑟拉森林"
+    ],
+    "category": "material",
+    "desc": "花瓣呈蓝晶状，用于稳定魔力。",
+    "basePrice": 72,
+    "rarity": "uncommon"
+  },
+  "古树新芽": {
+    "name": "古树新芽",
+    "regions": [
+      "艾瑟拉森林"
+    ],
+    "category": "consumable",
+    "desc": "古树上新生的嫩芽，使用后回复生命。",
+    "effect": {
+      "type": "heal",
+      "value": 18
+    },
+    "basePrice": 140,
+    "rarity": "rare"
+  },
+  "藤蔓纤维": {
+    "name": "藤蔓纤维",
+    "regions": [
+      "艾瑟拉森林"
+    ],
+    "category": "material",
+    "desc": "坚韧纤维，可用于合成束缚与防具材料。",
+    "basePrice": 66,
+    "rarity": "common"
+  },
+  "煤晶粉": {
+    "name": "煤晶粉",
+    "regions": [
+      "炉心城"
+    ],
+    "category": "material",
+    "desc": "炉心城常见能源粉末，用于机械合成。",
+    "basePrice": 58,
+    "rarity": "common"
+  },
+  "铜齿轮": {
+    "name": "铜齿轮",
+    "regions": [
+      "炉心城"
+    ],
+    "category": "material",
+    "desc": "标准机械齿轮，可用于大量合成配方。",
+    "basePrice": 70,
+    "rarity": "common"
+  },
+  "蒸汽冷凝水": {
+    "name": "蒸汽冷凝水",
+    "regions": [
+      "炉心城"
+    ],
+    "category": "consumable",
+    "desc": "矮人工坊冷凝出的水汽，使用后回复魔力。",
+    "effect": {
+      "type": "gain_mp",
+      "value": 8
+    },
+    "basePrice": 90,
+    "rarity": "uncommon"
+  },
+  "银月草": {
+    "name": "银月草",
+    "regions": [
+      "银月之城"
+    ],
+    "category": "material",
+    "desc": "银月城夜间生长的草，可用于血月相关合成。",
+    "basePrice": 88,
+    "rarity": "uncommon"
+  },
+  "血蔷薇花瓣": {
+    "name": "血蔷薇花瓣",
+    "regions": [
+      "银月之城"
+    ],
+    "category": "material",
+    "desc": "红蔷薇据点常用材料，带有微弱血魔力。",
+    "basePrice": 128,
+    "rarity": "rare"
+  },
+  "夜光菇": {
+    "name": "夜光菇",
+    "regions": [
+      "银月之城",
+      "极北之地"
+    ],
+    "category": "consumable",
+    "desc": "暗处发光的蘑菇，使用后回复魔力。",
+    "effect": {
+      "type": "gain_mp",
+      "value": 10
+    },
+    "basePrice": 150,
+    "rarity": "rare"
+  },
+  "龙息草": {
+    "name": "龙息草",
+    "regions": [
+      "远古圣山"
+    ],
+    "category": "material",
+    "desc": "在龙息影响下变异的草，可用于高阶炼制。",
+    "basePrice": 160,
+    "rarity": "rare"
+  },
+  "圣山雪莲": {
+    "name": "圣山雪莲",
+    "regions": [
+      "远古圣山"
+    ],
+    "category": "consumable",
+    "desc": "圣山寒风中盛开的雪莲，使用后大量回复生命。",
+    "effect": {
+      "type": "heal",
+      "value": 28
+    },
+    "basePrice": 220,
+    "rarity": "epic"
+  },
+  "金鳞砂": {
+    "name": "金鳞砂",
+    "regions": [
+      "远古圣山"
+    ],
+    "category": "material",
+    "desc": "山石中混有的金色鳞状砂，可用于装备合成。",
+    "basePrice": 180,
+    "rarity": "rare"
+  },
+  "极寒苔": {
+    "name": "极寒苔",
+    "regions": [
+      "极北之地"
+    ],
+    "category": "material",
+    "desc": "极寒环境中的苔藓，常用于抗性药。",
+    "basePrice": 110,
+    "rarity": "uncommon"
+  },
+  "黑潮残片": {
+    "name": "黑潮残片",
+    "regions": [
+      "极北之地"
+    ],
+    "category": "material",
+    "desc": "深渊暗潮残留的碎片，危险但有价值。",
+    "basePrice": 240,
+    "rarity": "epic"
+  },
+  "冰晶花": {
+    "name": "冰晶花",
+    "regions": [
+      "极北之地"
+    ],
+    "category": "consumable",
+    "desc": "冰晶般透明的花，使用后回复生命与魔力。",
+    "effect": {
+      "type": "heal_mp",
+      "heal": 16,
+      "mp": 8
+    },
+    "basePrice": 200,
+    "rarity": "rare"
+  },
+  "深海荧藻": {
+    "name": "深海荧藻",
+    "regions": [
+      "阿必塞海"
+    ],
+    "category": "consumable",
+    "desc": "深海发光藻类，使用后回复魔力。",
+    "effect": {
+      "type": "gain_mp",
+      "value": 14
+    },
+    "basePrice": 190,
+    "rarity": "rare"
+  },
+  "海渊盐晶": {
+    "name": "海渊盐晶",
+    "regions": [
+      "阿必塞海"
+    ],
+    "category": "material",
+    "desc": "阿必塞海深处凝结的盐晶，可用于高阶合成。",
+    "basePrice": 210,
+    "rarity": "rare"
+  }
+}

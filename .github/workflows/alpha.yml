@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: alpha-${{ github.ref }}
@@ -25,6 +26,43 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - name: Restore previous immutable Pages builds
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          previous_run="$(
+            gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow alpha.yml \
+              --branch main \
+              --status success \
+              --limit 1 \
+              --json databaseId \
+              --jq '.[0].databaseId // empty'
+          )"
+          if [[ -z "$previous_run" ]]; then
+            echo "No previous successful Pages artifact is available."
+            exit 0
+          fi
+          mkdir -p .previous-artifact .previous-site
+          if ! gh run download "$previous_run" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name github-pages \
+            --dir .previous-artifact; then
+            echo "Previous Pages artifact has expired; continuing without history."
+            exit 0
+          fi
+          archive="$(find .previous-artifact -name artifact.tar -print -quit)"
+          if [[ -z "$archive" ]]; then
+            echo "Previous Pages artifact did not contain artifact.tar."
+            exit 0
+          fi
+          tar -xf "$archive" -C .previous-site
+          mkdir -p dist
+          cp -a .previous-site/. dist/
       - run: npm run build:alpha
         env:
           CAELIAN_BUILD_ID: ${{ github.sha }}
@@ -32,6 +70,7 @@ jobs:
         if: github.event_name != 'pull_request'
         with:
           path: dist
+          retention-days: 30
 
   deploy:
     if: github.event_name != 'pull_request'

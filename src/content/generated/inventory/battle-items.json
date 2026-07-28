@@ -1,0 +1,467 @@
+{
+  "小型生命药水": {
+    "name": "小型生命药水",
+    "desc": "回复20HP",
+    "effect": {
+      "type": "heal",
+      "value": 20
+    }
+  },
+  "中型生命药水": {
+    "name": "中型生命药水",
+    "desc": "回复50HP",
+    "effect": {
+      "type": "heal",
+      "value": 50
+    }
+  },
+  "力量药水": {
+    "name": "力量药水",
+    "desc": "力量+5，持续3回合",
+    "effect": {
+      "type": "buff",
+      "buff": "strength",
+      "value": 5,
+      "turns": 3
+    }
+  },
+  "解毒药水": {
+    "name": "解毒药水",
+    "desc": "清除中毒",
+    "effect": {
+      "type": "cleanse_specific",
+      "debuff": "poison"
+    }
+  },
+  "火焰卷轴": {
+    "name": "火焰卷轴",
+    "desc": "造成25伤害",
+    "effect": {
+      "type": "damage",
+      "value": 25
+    }
+  },
+  "小血瓶": {
+    "name": "小血瓶",
+    "desc": "回复25HP",
+    "effect": {
+      "type": "heal",
+      "value": 25
+    }
+  },
+  "中血瓶": {
+    "name": "中血瓶",
+    "desc": "回复55HP",
+    "effect": {
+      "type": "heal",
+      "value": 55
+    }
+  },
+  "大血瓶": {
+    "name": "大血瓶",
+    "desc": "回复100HP",
+    "effect": {
+      "type": "heal",
+      "value": 100
+    }
+  },
+  "小魔药瓶": {
+    "name": "小魔药瓶",
+    "desc": "回复10MP",
+    "effect": {
+      "type": "gain_mp",
+      "value": 10
+    }
+  },
+  "中魔药瓶": {
+    "name": "中魔药瓶",
+    "desc": "回复22MP",
+    "effect": {
+      "type": "gain_mp",
+      "value": 22
+    }
+  },
+  "大魔药瓶": {
+    "name": "大魔药瓶",
+    "desc": "回复40MP",
+    "effect": {
+      "type": "gain_mp",
+      "value": 40
+    }
+  },
+  "复合药剂·小": {
+    "name": "复合药剂·小",
+    "desc": "回复18HP与6MP",
+    "effect": {
+      "type": "heal_mp",
+      "heal": 18,
+      "mp": 6
+    }
+  },
+  "复合药剂·中": {
+    "name": "复合药剂·中",
+    "desc": "回复40HP与14MP",
+    "effect": {
+      "type": "heal_mp",
+      "heal": 40,
+      "mp": 14
+    }
+  },
+  "复合药剂·大": {
+    "name": "复合药剂·大",
+    "desc": "回复80HP与28MP",
+    "effect": {
+      "type": "heal_mp",
+      "heal": 80,
+      "mp": 28
+    }
+  },
+  "力量秘药": {
+    "name": "力量秘药",
+    "desc": "下一场战斗开始时获得力量+5，持续3回合",
+    "effect": {
+      "type": "next_battle_buff",
+      "buff": "strength",
+      "value": 5,
+      "turns": 3
+    }
+  },
+  "坚韧秘药": {
+    "name": "坚韧秘药",
+    "desc": "下一场战斗开始时获得坚韧+5，持续3回合",
+    "effect": {
+      "type": "next_battle_buff",
+      "buff": "fortitude",
+      "value": 5,
+      "turns": 3
+    }
+  },
+  "疾风秘药": {
+    "name": "疾风秘药",
+    "desc": "下一场战斗开始时获得敏捷+45%，持续2回合",
+    "effect": {
+      "type": "next_battle_buff",
+      "buff": "agility",
+      "value": 45,
+      "turns": 2
+    }
+  },
+  "护盾药膏": {
+    "name": "护盾药膏",
+    "desc": "下一场战斗开始时获得18护盾",
+    "effect": {
+      "type": "next_battle_shield",
+      "value": 18
+    }
+  },
+  "灵感糖丸": {
+    "name": "灵感糖丸",
+    "desc": "下一场战斗开局额外抽2张牌",
+    "effect": {
+      "type": "next_battle_draw",
+      "value": 2
+    }
+  },
+  "聚能丸": {
+    "name": "聚能丸",
+    "desc": "下一场战斗开局额外获得1AP",
+    "effect": {
+      "type": "next_battle_ap",
+      "value": 1
+    }
+  },
+  "再生药水": {
+    "name": "再生药水",
+    "desc": "下一场战斗开始时获得再生6，持续3回合",
+    "effect": {
+      "type": "next_battle_buff",
+      "buff": "regen",
+      "value": 6,
+      "turns": 3
+    }
+  },
+  "荆棘药油": {
+    "name": "荆棘药油",
+    "desc": "下一场战斗开始时获得反伤5，持续3回合",
+    "effect": {
+      "type": "next_battle_buff",
+      "buff": "thorns",
+      "value": 5,
+      "turns": 3
+    }
+  },
+  "战斗兴奋剂": {
+    "name": "战斗兴奋剂",
+    "desc": "下一场战斗伤害提高4，持续3回合",
+    "effect": {
+      "type": "next_battle_buff",
+      "buff": "damage_bonus",
+      "value": 4,
+      "turns": 3
+    }
+  },
+  "法术增幅剂": {
+    "name": "法术增幅剂",
+    "desc": "下一场战斗法术强化5，持续3回合",
+    "effect": {
+      "type": "next_battle_buff",
+      "buff": "spell_damage_bonus",
+      "value": 5,
+      "turns": 3
+    }
+  },
+  "减伤护符油": {
+    "name": "减伤护符油",
+    "desc": "下一场战斗减伤4，持续3回合",
+    "effect": {
+      "type": "next_battle_buff",
+      "buff": "damage_reduce",
+      "value": 4,
+      "turns": 3
+    }
+  },
+  "售卖香膏": {
+    "name": "售卖香膏",
+    "desc": "30分钟内出售物品价格提高20%",
+    "effect": {
+      "type": "sell_bonus_timed",
+      "value": 0.2,
+      "durationMinutes": 30
+    }
+  },
+  "商会折扣券": {
+    "name": "商会折扣券",
+    "desc": "30分钟内购买普通商品价格降低12%",
+    "effect": {
+      "type": "buy_discount_timed",
+      "value": 0.12,
+      "durationMinutes": 30
+    }
+  },
+  "金叶话术茶": {
+    "name": "金叶话术茶",
+    "desc": "20分钟内出售物品价格提高35%",
+    "effect": {
+      "type": "sell_bonus_timed",
+      "value": 0.35,
+      "durationMinutes": 20
+    }
+  },
+  "黑市议价墨": {
+    "name": "黑市议价墨",
+    "desc": "20分钟内购买普通商品价格降低20%",
+    "effect": {
+      "type": "buy_discount_timed",
+      "value": 0.2,
+      "durationMinutes": 20
+    }
+  },
+  "龙息醒神剂": {
+    "name": "龙息醒神剂",
+    "desc": "回复24HP与12MP，下一场战斗获得力量+2",
+    "effect": {
+      "type": "multi",
+      "effects": [
+        {
+          "type": "heal_mp",
+          "heal": 24,
+          "mp": 12
+        },
+        {
+          "type": "next_battle_buff",
+          "buff": "strength",
+          "value": 2,
+          "turns": 2
+        }
+      ]
+    }
+  },
+  "月露凝剂": {
+    "name": "月露凝剂",
+    "desc": "回复18MP，下一场战斗额外抽1张",
+    "effect": {
+      "type": "multi",
+      "effects": [
+        {
+          "type": "gain_mp",
+          "value": 18
+        },
+        {
+          "type": "next_battle_draw",
+          "value": 1
+        }
+      ]
+    }
+  },
+  "深海镇定剂": {
+    "name": "深海镇定剂",
+    "desc": "回复24HP与10MP，下一场战斗获得10护盾",
+    "effect": {
+      "type": "multi",
+      "effects": [
+        {
+          "type": "heal_mp",
+          "heal": 24,
+          "mp": 10
+        },
+        {
+          "type": "next_battle_shield",
+          "value": 10
+        }
+      ]
+    }
+  },
+  "炉心兴奋剂": {
+    "name": "炉心兴奋剂",
+    "desc": "下一场战斗获得1AP与力量+2",
+    "effect": {
+      "type": "multi",
+      "effects": [
+        {
+          "type": "next_battle_ap",
+          "value": 1
+        },
+        {
+          "type": "next_battle_buff",
+          "buff": "strength",
+          "value": 2,
+          "turns": 2
+        }
+      ]
+    }
+  },
+  "圣辉净露": {
+    "name": "圣辉净露",
+    "desc": "回复45HP，下一场战斗获得12护盾",
+    "effect": {
+      "type": "multi",
+      "effects": [
+        {
+          "type": "heal",
+          "value": 45
+        },
+        {
+          "type": "next_battle_shield",
+          "value": 12
+        }
+      ]
+    }
+  },
+  "星图灵药": {
+    "name": "星图灵药",
+    "desc": "回复24MP，下一场战斗额外抽2张",
+    "effect": {
+      "type": "multi",
+      "effects": [
+        {
+          "type": "gain_mp",
+          "value": 24
+        },
+        {
+          "type": "next_battle_draw",
+          "value": 2
+        }
+      ]
+    }
+  },
+  "酸性黏胶": {
+    "name": "酸性黏胶",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "净化绷带": {
+    "name": "净化绷带",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "毒性涂层": {
+    "name": "毒性涂层",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "铜矿合金": {
+    "name": "铜矿合金",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "蛛丝弓弦": {
+    "name": "蛛丝弓弦",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "狼皮革片": {
+    "name": "狼皮革片",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "圣辉护符坯": {
+    "name": "圣辉护符坯",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "黑潮封瓶": {
+    "name": "黑潮封瓶",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "光明结晶粉": {
+    "name": "光明结晶粉",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "魔导机关核心": {
+    "name": "魔导机关核心",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "潮汐凝珠": {
+    "name": "潮汐凝珠",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "森林护符线": {
+    "name": "森林护符线",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "银月封蜡": {
+    "name": "银月封蜡",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "龙鳞砂坯": {
+    "name": "龙鳞砂坯",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "极寒封片": {
+    "name": "极寒封片",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "海渊共鸣珠": {
+    "name": "海渊共鸣珠",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "贤者试剂": {
+    "name": "贤者试剂",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "秘银缝线": {
+    "name": "秘银缝线",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "深渊抗性药基": {
+    "name": "深渊抗性药基",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  },
+  "终极炼金秘晶": {
+    "name": "终极炼金秘晶",
+    "desc": "合成材料，可用于更高阶合成或在集市出售。",
+    "category": "material"
+  }
+}

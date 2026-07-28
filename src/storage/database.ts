@@ -1,69 +1,127 @@
 import Dexie, { type Table } from 'dexie';
 import type {
-  CharacterRecord,
+  AchievementProgressRecord,
+  BattleRewardRecord,
+  BattleSessionRecord,
   CommandInboxRecord,
   ContentVersionRecord,
+  CraftingDraftRecord,
+  DeckRecord,
+  EquipmentInstanceRecord,
+  EquipmentLoadoutRecord,
   EventLogRecord,
+  GuildRecord,
   InventoryStackRecord,
+  LegacySnapshotRecord,
+  MarketStateRecord,
+  OwnedCardRecord,
+  OwnedRelicRecord,
+  PassiveTalentRecord,
+  PlayerRecord,
   ProfileRecord,
+  QuestHistoryRecord,
   QuestRecord,
+  RegionAccessRecord,
   ReleaseChannel,
+  RollbackSnapshotRecord,
   SettingsRecord,
-  StoredJsonRecord,
+  SocialProgressRecord,
+  SpecialCollectibleRecord,
+  StatAllocationRecord,
+  StoryFlagRecord,
+  TutorialProgressRecord,
   WorldStateRecord,
 } from '@/domain/types';
 
+export const DATABASE_SCHEMA_VERSION = 2;
+
 export class CaelianDatabase extends Dexie {
   profiles!: Table<ProfileRecord, string>;
-  characters!: Table<CharacterRecord, string>;
+
+  playerStates!: Table<PlayerRecord, string>;
+  statAllocations!: Table<StatAllocationRecord, string>;
+
   worldStates!: Table<WorldStateRecord, string>;
+  regionAccess!: Table<RegionAccessRecord, string>;
+  storyFlags!: Table<StoryFlagRecord, string>;
+
+  guildStates!: Table<GuildRecord, string>;
   questRecords!: Table<QuestRecord, string>;
+  questHistory!: Table<QuestHistoryRecord, string>;
+
   inventoryStacks!: Table<InventoryStackRecord, string>;
-  equipmentInstances!: Table<StoredJsonRecord, string>;
-  ownedCards!: Table<StoredJsonRecord, string>;
-  decks!: Table<StoredJsonRecord, string>;
-  ownedRelics!: Table<StoredJsonRecord, string>;
-  battleSessions!: Table<StoredJsonRecord, string>;
-  rewardClaims!: Table<StoredJsonRecord, string>;
-  marketStates!: Table<StoredJsonRecord, string>;
-  achievementProgress!: Table<StoredJsonRecord, string>;
-  socialProgress!: Table<StoredJsonRecord, string>;
-  tutorialProgress!: Table<StoredJsonRecord, string>;
-  rollbackSnapshots!: Table<StoredJsonRecord, string>;
+  equipmentInstances!: Table<EquipmentInstanceRecord, string>;
+  equipmentLoadouts!: Table<EquipmentLoadoutRecord, string>;
+  ownedRelics!: Table<OwnedRelicRecord, string>;
+  specialCollectibles!: Table<SpecialCollectibleRecord, string>;
+  passiveTalents!: Table<PassiveTalentRecord, string>;
+
+  ownedCards!: Table<OwnedCardRecord, string>;
+  decks!: Table<DeckRecord, string>;
+
+  battleSessions!: Table<BattleSessionRecord, string>;
+  battleRewards!: Table<BattleRewardRecord, string>;
+
+  achievementProgress!: Table<AchievementProgressRecord, string>;
+  marketStates!: Table<MarketStateRecord, string>;
+  craftingDrafts!: Table<CraftingDraftRecord, string>;
+  socialProgress!: Table<SocialProgressRecord, string>;
+  tutorialProgress!: Table<TutorialProgressRecord, string>;
+
+  rollbackSnapshots!: Table<RollbackSnapshotRecord, string>;
   commandInbox!: Table<CommandInboxRecord, string>;
   eventLog!: Table<EventLogRecord, number>;
   settings!: Table<SettingsRecord, string>;
   contentVersions!: Table<ContentVersionRecord, string>;
-  legacySnapshots!: Table<StoredJsonRecord, string>;
+  legacySnapshots!: Table<LegacySnapshotRecord, string>;
 
   constructor(
     channel: ReleaseChannel,
-    databaseName = `caelian-${channel}`,
+    databaseName = `caelian-${channel}-v2`,
   ) {
     super(databaseName);
 
-    this.version(1).stores({
+    this.version(DATABASE_SCHEMA_VERSION).stores({
       profiles: 'id, &chatId, updatedAt',
-      characters: 'profileId, updatedAt',
-      worldStates: 'profileId, updatedAt',
-      questRecords: 'id, profileId, kind, status, updatedAt',
+
+      playerStates: 'profileId, created, classMain, subclass, level, updatedAt',
+      statAllocations: 'profileId, updatedAt',
+
+      worldStates: 'profileId, region, location, updatedAt',
+      regionAccess: 'id, profileId, regionId, accessible, updatedAt',
+      storyFlags: 'id, profileId, key, value, updatedAt',
+
+      guildStates: 'profileId, rank, updatedAt',
+      questRecords: 'id, profileId, kind, status, region, updatedAt',
+      questHistory: 'id, profileId, kind, completedDate, updatedAt',
+
       inventoryStacks: 'id, profileId, itemId, updatedAt',
-      equipmentInstances: 'id, profileId, updatedAt',
-      ownedCards: 'id, profileId, updatedAt',
-      decks: 'id, profileId, updatedAt',
-      ownedRelics: 'id, profileId, updatedAt',
-      battleSessions: 'id, profileId, updatedAt',
-      rewardClaims: 'id, profileId, updatedAt',
-      marketStates: 'id, profileId, updatedAt',
-      achievementProgress: 'id, profileId, updatedAt',
-      socialProgress: 'id, profileId, updatedAt',
-      tutorialProgress: 'id, profileId, updatedAt',
-      rollbackSnapshots: 'id, profileId, updatedAt',
+      equipmentInstances: 'id, profileId, baseId, slot, rarity, stars, updatedAt',
+      equipmentLoadouts: 'profileId, updatedAt',
+      ownedRelics: 'id, profileId, relicId, carried, acquiredAt, updatedAt',
+      specialCollectibles:
+        'id, profileId, collectibleId, acquiredDate, updatedAt',
+      passiveTalents: 'id, profileId, passiveId, updatedAt',
+
+      ownedCards: 'id, profileId, cardId, quantity, source, updatedAt',
+      decks: 'id, profileId, active, updatedAt',
+
+      battleSessions: 'id, profileId, active, relatedQuestId, updatedAt',
+      battleRewards: 'id, profileId, battleId, claimed, updatedAt',
+
+      achievementProgress:
+        'id, profileId, achievementId, unlocked, updatedAt',
+      marketStates: 'id, profileId, regionId, refreshKey, updatedAt',
+      craftingDrafts: 'id, profileId, kind, updatedAt',
+      socialProgress: 'id, profileId, characterId, updatedAt',
+      tutorialProgress: 'id, profileId, step, completed, updatedAt',
+
+      rollbackSnapshots: 'id, profileId, reason, createdAt',
       commandInbox: 'id, profileId, type, appliedAt',
       eventLog: '++id, profileId, type, createdAt',
-      settings: 'id, updatedAt',
-      contentVersions: 'id, version, buildId, updatedAt',
-      legacySnapshots: 'id, profileId, updatedAt',
+      settings: 'id, profileId, updatedAt',
+      contentVersions: 'id, version, buildId, sourceHash, updatedAt',
+      legacySnapshots: 'id, profileId, source, createdAt',
     });
   }
 }

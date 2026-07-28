@@ -1,0 +1,5051 @@
+{
+  "mon_slime": {
+    "actions": [
+      {
+        "name": "弹跳撞击",
+        "intent": "攻击",
+        "desc": "身体高高弹起后砸向目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.45
+          }
+        ]
+      },
+      {
+        "name": "酸性凝液",
+        "intent": "腐蚀",
+        "desc": "喷射带腐蚀性的黏液，削减护盾并持续伤害。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "corrosion",
+            "turns": 2,
+            "value": 3
+          },
+          {
+            "type": "damage",
+            "value": 1,
+            "attack_ratio": 0.2
+          }
+        ]
+      },
+      {
+        "name": "包裹窒息",
+        "intent": "虚弱",
+        "desc": "试图包裹目标，干扰呼吸与行动。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "weak",
+            "turns": 1
+          }
+        ]
+      }
+    ]
+  },
+  "mon_goblin": {
+    "actions": [
+      {
+        "name": "淬毒匕首",
+        "intent": "中毒",
+        "desc": "贴身刺击并在伤口留下毒素。",
+        "weight": 38,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.45
+          },
+          {
+            "type": "debuff",
+            "debuff": "poison",
+            "turns": 2,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "投石牵制",
+        "intent": "攻击",
+        "desc": "从远处投掷尖锐石块。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "群体偷袭",
+        "intent": "连击",
+        "desc": "从死角连续偷袭，护盾较低时更危险。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 1,
+            "hits": 2,
+            "attack_ratio": 0.35,
+            "pierce": 0.1
+          }
+        ]
+      }
+    ]
+  },
+  "mon_giant_rat": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_skeleton": {
+    "actions": [
+      {
+        "name": "死寒挥击",
+        "intent": "攻击",
+        "desc": "带着寒意的攻击落向目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "怨念缠身",
+        "intent": "诅咒",
+        "desc": "亡者怨念附着在目标身上。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "curse_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "亡骸护壁",
+        "intent": "防御",
+        "desc": "散落的骨片或怨灵聚成护壁。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 8
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2,
+            "undispellable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_dire_wolf": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_rafflesia": {
+    "actions": [
+      {
+        "name": "藤刺抽击",
+        "intent": "攻击",
+        "desc": "大王花妖用藤蔓或枝条抽击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "根须缠绕",
+        "intent": "缠绕",
+        "desc": "根须缠住目标，限制攻击动作。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "entangle",
+            "turns": 1,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "孢毒雾息",
+        "intent": "中毒",
+        "desc": "释放带毒孢子，持续侵蚀生命。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "poison",
+            "turns": 3,
+            "value": 3,
+            "uncleanseable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_kobold": {
+    "actions": [
+      {
+        "name": "武器攻击",
+        "intent": "攻击",
+        "desc": "用手中的武器发动攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "战术压制",
+        "intent": "易伤",
+        "desc": "制造破绽并压低目标防线。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "vulnerable",
+            "turns": 1
+          }
+        ]
+      },
+      {
+        "name": "防御姿态",
+        "intent": "防御",
+        "desc": "举盾或后撤，获得护盾与短暂坚韧。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2
+          }
+        ]
+      }
+    ]
+  },
+  "mon_zombie": {
+    "actions": [
+      {
+        "name": "死寒挥击",
+        "intent": "攻击",
+        "desc": "带着寒意的攻击落向目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "怨念缠身",
+        "intent": "诅咒",
+        "desc": "亡者怨念附着在目标身上。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "curse_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "亡骸护壁",
+        "intent": "防御",
+        "desc": "散落的骨片或怨灵聚成护壁。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 8
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2,
+            "undispellable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_giant_spider": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_bandit": {
+    "actions": [
+      {
+        "name": "武器攻击",
+        "intent": "攻击",
+        "desc": "用手中的武器发动攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "战术压制",
+        "intent": "易伤",
+        "desc": "制造破绽并压低目标防线。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "vulnerable",
+            "turns": 1
+          }
+        ]
+      },
+      {
+        "name": "防御姿态",
+        "intent": "防御",
+        "desc": "举盾或后撤，获得护盾与短暂坚韧。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2
+          }
+        ]
+      }
+    ]
+  },
+  "mon_giant_bat": {
+    "actions": [
+      {
+        "name": "撞击",
+        "intent": "攻击",
+        "desc": "巨型蝙蝠发动直接攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.5
+          }
+        ]
+      },
+      {
+        "name": "腐蚀附着",
+        "intent": "腐蚀",
+        "desc": "留下腐蚀性负面状态。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "corrosion",
+            "turns": 2,
+            "value": 3
+          }
+        ]
+      },
+      {
+        "name": "收缩防御",
+        "intent": "防御",
+        "desc": "收缩身体或架势防御。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          }
+        ]
+      }
+    ]
+  },
+  "mon_orc": {
+    "actions": [
+      {
+        "name": "武器攻击",
+        "intent": "攻击",
+        "desc": "用手中的武器发动攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "战术压制",
+        "intent": "易伤",
+        "desc": "制造破绽并压低目标防线。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "vulnerable",
+            "turns": 1
+          }
+        ]
+      },
+      {
+        "name": "防御姿态",
+        "intent": "防御",
+        "desc": "举盾或后撤，获得护盾与短暂坚韧。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2
+          }
+        ]
+      }
+    ]
+  },
+  "mon_mimic": {
+    "actions": [
+      {
+        "name": "撞击",
+        "intent": "攻击",
+        "desc": "宝箱怪发动直接攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.5
+          }
+        ]
+      },
+      {
+        "name": "腐蚀附着",
+        "intent": "腐蚀",
+        "desc": "留下腐蚀性负面状态。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "corrosion",
+            "turns": 2,
+            "value": 3
+          }
+        ]
+      },
+      {
+        "name": "收缩防御",
+        "intent": "防御",
+        "desc": "收缩身体或架势防御。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          }
+        ]
+      }
+    ]
+  },
+  "mon_ghost": {
+    "actions": [
+      {
+        "name": "死寒挥击",
+        "intent": "攻击",
+        "desc": "带着寒意的攻击落向目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "怨念缠身",
+        "intent": "诅咒",
+        "desc": "亡者怨念附着在目标身上。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "curse_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "亡骸护壁",
+        "intent": "防御",
+        "desc": "散落的骨片或怨灵聚成护壁。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 8
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2,
+            "undispellable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_stone_golem": {
+    "actions": [
+      {
+        "name": "机械重击",
+        "intent": "攻击",
+        "desc": "沉重结构件砸向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "装甲闭合",
+        "intent": "防御",
+        "desc": "装甲结构闭合，获得不可驱散减伤。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 9
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "破盾冲撞",
+        "intent": "破盾",
+        "desc": "精准撞击护盾薄弱处。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45,
+            "pierce": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "mon_gargoyle": {
+    "actions": [
+      {
+        "name": "机械重击",
+        "intent": "攻击",
+        "desc": "沉重结构件砸向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "装甲闭合",
+        "intent": "防御",
+        "desc": "装甲结构闭合，获得不可驱散减伤。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 9
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "破盾冲撞",
+        "intent": "破盾",
+        "desc": "精准撞击护盾薄弱处。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45,
+            "pierce": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "mon_ogre": {
+    "actions": [
+      {
+        "name": "巨力挥砸",
+        "intent": "强攻",
+        "desc": "以巨大力量砸向目标。",
+        "weight": 45,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 8,
+            "attack_ratio": 0.8
+          }
+        ]
+      },
+      {
+        "name": "震地冲击",
+        "intent": "破盾",
+        "desc": "震荡地面击碎护盾。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45
+          }
+        ]
+      },
+      {
+        "name": "厚皮硬化",
+        "intent": "防御",
+        "desc": "厚重皮肤绷紧，短暂减伤。",
+        "weight": 25,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_shadow_horror": {
+    "actions": [
+      {
+        "name": "异质抽打",
+        "intent": "攻击",
+        "desc": "不可名状的肢体抽向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "深渊标记",
+        "intent": "诅咒",
+        "desc": "留下难以净化的深渊印记。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "abyss_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "虚空壳膜",
+        "intent": "强化",
+        "desc": "虚空壳膜展开，获得不可驱散减伤。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 35,
+            "undispellable": true
+          },
+          {
+            "type": "shield",
+            "value": 8
+          }
+        ]
+      }
+    ]
+  },
+  "mon_living_armor": {
+    "actions": [
+      {
+        "name": "机械重击",
+        "intent": "攻击",
+        "desc": "沉重结构件砸向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "装甲闭合",
+        "intent": "防御",
+        "desc": "装甲结构闭合，获得不可驱散减伤。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 9
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "破盾冲撞",
+        "intent": "破盾",
+        "desc": "精准撞击护盾薄弱处。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45,
+            "pierce": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "mon_werewolf": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_basilisk": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_troll": {
+    "actions": [
+      {
+        "name": "巨力挥砸",
+        "intent": "强攻",
+        "desc": "以巨大力量砸向目标。",
+        "weight": 45,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 8,
+            "attack_ratio": 0.8
+          }
+        ]
+      },
+      {
+        "name": "震地冲击",
+        "intent": "破盾",
+        "desc": "震荡地面击碎护盾。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45
+          }
+        ]
+      },
+      {
+        "name": "厚皮硬化",
+        "intent": "防御",
+        "desc": "厚重皮肤绷紧，短暂减伤。",
+        "weight": 25,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_wyvern": {
+    "actions": [
+      {
+        "name": "撞击",
+        "intent": "攻击",
+        "desc": "双足飞龙发动直接攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.5
+          }
+        ]
+      },
+      {
+        "name": "腐蚀附着",
+        "intent": "腐蚀",
+        "desc": "留下腐蚀性负面状态。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "corrosion",
+            "turns": 2,
+            "value": 3
+          }
+        ]
+      },
+      {
+        "name": "收缩防御",
+        "intent": "防御",
+        "desc": "收缩身体或架势防御。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          }
+        ]
+      }
+    ]
+  },
+  "mon_chimera": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_evil_eye": {
+    "actions": [
+      {
+        "name": "异质抽打",
+        "intent": "攻击",
+        "desc": "不可名状的肢体抽向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "深渊标记",
+        "intent": "诅咒",
+        "desc": "留下难以净化的深渊印记。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "abyss_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "虚空壳膜",
+        "intent": "强化",
+        "desc": "虚空壳膜展开，获得不可驱散减伤。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 35,
+            "undispellable": true
+          },
+          {
+            "type": "shield",
+            "value": 8
+          }
+        ]
+      }
+    ]
+  },
+  "mon_tumble_crab": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_murloc": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_water_sprite": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_siren": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_kraken_baby": {
+    "actions": [
+      {
+        "name": "触须绞缠",
+        "intent": "缠绕",
+        "desc": "触须缠住身体，限制行动。",
+        "weight": 36,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          },
+          {
+            "type": "debuff",
+            "debuff": "entangle",
+            "turns": 1,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "深海压迫",
+        "intent": "深压",
+        "desc": "水压直接碾过护盾，造成真实伤害。",
+        "weight": 34,
+        "effects": [
+          {
+            "type": "true_damage",
+            "value": 5,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 30,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "再生黏液",
+        "intent": "回复",
+        "desc": "分泌黏液愈合伤口并获得减伤。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "heal",
+            "value": 8,
+            "attack_ratio": 0.2
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 25,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_wraith": {
+    "actions": [
+      {
+        "name": "死寒挥击",
+        "intent": "攻击",
+        "desc": "带着寒意的攻击落向目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "怨念缠身",
+        "intent": "诅咒",
+        "desc": "亡者怨念附着在目标身上。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "curse_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "亡骸护壁",
+        "intent": "防御",
+        "desc": "散落的骨片或怨灵聚成护壁。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 8
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2,
+            "undispellable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_dark_knight": {
+    "actions": [
+      {
+        "name": "死寒挥击",
+        "intent": "攻击",
+        "desc": "带着寒意的攻击落向目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "怨念缠身",
+        "intent": "诅咒",
+        "desc": "亡者怨念附着在目标身上。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "curse_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "亡骸护壁",
+        "intent": "防御",
+        "desc": "散落的骨片或怨灵聚成护壁。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 8
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_abyss_spawn": {
+    "actions": [
+      {
+        "name": "异质抽打",
+        "intent": "攻击",
+        "desc": "不可名状的肢体抽向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "深渊标记",
+        "intent": "诅咒",
+        "desc": "留下难以净化的深渊印记。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "abyss_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "虚空壳膜",
+        "intent": "强化",
+        "desc": "虚空壳膜展开，获得不可驱散减伤。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 35,
+            "undispellable": true
+          },
+          {
+            "type": "shield",
+            "value": 8
+          }
+        ]
+      }
+    ]
+  },
+  "mon_training_dummy": {
+    "actions": [
+      {
+        "name": "机械重击",
+        "intent": "攻击",
+        "desc": "沉重结构件砸向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "装甲闭合",
+        "intent": "防御",
+        "desc": "装甲结构闭合，获得不可驱散减伤。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 9
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "破盾冲撞",
+        "intent": "破盾",
+        "desc": "精准撞击护盾薄弱处。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45,
+            "pierce": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "mon_mandrake_root": {
+    "actions": [
+      {
+        "name": "藤刺抽击",
+        "intent": "攻击",
+        "desc": "曼德拉草根用藤蔓或枝条抽击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "根须缠绕",
+        "intent": "缠绕",
+        "desc": "根须缠住目标，限制攻击动作。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "entangle",
+            "turns": 1,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "孢毒雾息",
+        "intent": "中毒",
+        "desc": "释放带毒孢子，持续侵蚀生命。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "poison",
+            "turns": 3,
+            "value": 3,
+            "uncleanseable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_arcane_bat": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_runic_rat": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_failed_homunculus": {
+    "actions": [
+      {
+        "name": "机械重击",
+        "intent": "攻击",
+        "desc": "沉重结构件砸向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "装甲闭合",
+        "intent": "防御",
+        "desc": "装甲结构闭合，获得不可驱散减伤。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 9
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "破盾冲撞",
+        "intent": "破盾",
+        "desc": "精准撞击护盾薄弱处。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45,
+            "pierce": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "mon_library_mimic": {
+    "actions": [
+      {
+        "name": "撞击",
+        "intent": "攻击",
+        "desc": "图书馆拟态书发动直接攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.5
+          }
+        ]
+      },
+      {
+        "name": "腐蚀附着",
+        "intent": "腐蚀",
+        "desc": "留下腐蚀性负面状态。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "corrosion",
+            "turns": 2,
+            "value": 3
+          }
+        ]
+      },
+      {
+        "name": "收缩防御",
+        "intent": "防御",
+        "desc": "收缩身体或架势防御。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          }
+        ]
+      }
+    ]
+  },
+  "mon_potion_slime": {
+    "actions": [
+      {
+        "name": "撞击",
+        "intent": "攻击",
+        "desc": "魔药史莱姆发动直接攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.5
+          }
+        ]
+      },
+      {
+        "name": "腐蚀附着",
+        "intent": "腐蚀",
+        "desc": "留下腐蚀性负面状态。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "corrosion",
+            "turns": 2,
+            "value": 3
+          }
+        ]
+      },
+      {
+        "name": "收缩防御",
+        "intent": "防御",
+        "desc": "收缩身体或架势防御。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          }
+        ]
+      }
+    ]
+  },
+  "mon_clockwork_spider": {
+    "actions": [
+      {
+        "name": "机械重击",
+        "intent": "攻击",
+        "desc": "沉重结构件砸向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "装甲闭合",
+        "intent": "防御",
+        "desc": "装甲结构闭合，获得不可驱散减伤。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 9
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "破盾冲撞",
+        "intent": "破盾",
+        "desc": "精准撞击护盾薄弱处。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45,
+            "pierce": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "mon_goblin_archer": {
+    "actions": [
+      {
+        "name": "武器攻击",
+        "intent": "攻击",
+        "desc": "用手中的武器发动攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "战术压制",
+        "intent": "易伤",
+        "desc": "制造破绽并压低目标防线。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "vulnerable",
+            "turns": 1
+          }
+        ]
+      },
+      {
+        "name": "防御姿态",
+        "intent": "防御",
+        "desc": "举盾或后撤，获得护盾与短暂坚韧。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2
+          }
+        ]
+      }
+    ]
+  },
+  "mon_urban_thief": {
+    "actions": [
+      {
+        "name": "武器攻击",
+        "intent": "攻击",
+        "desc": "用手中的武器发动攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "战术压制",
+        "intent": "易伤",
+        "desc": "制造破绽并压低目标防线。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "vulnerable",
+            "turns": 1
+          }
+        ]
+      },
+      {
+        "name": "防御姿态",
+        "intent": "防御",
+        "desc": "举盾或后撤，获得护盾与短暂坚韧。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2
+          }
+        ]
+      }
+    ]
+  },
+  "mon_blackmarket_hound": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_grave_crow": {
+    "actions": [
+      {
+        "name": "死寒挥击",
+        "intent": "攻击",
+        "desc": "带着寒意的攻击落向目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "怨念缠身",
+        "intent": "诅咒",
+        "desc": "亡者怨念附着在目标身上。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "curse_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "亡骸护壁",
+        "intent": "防御",
+        "desc": "散落的骨片或怨灵聚成护壁。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 8
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2,
+            "undispellable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_luminous_wolf": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_lake_sprite": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_flower_mite": {
+    "actions": [
+      {
+        "name": "藤刺抽击",
+        "intent": "攻击",
+        "desc": "食蜜花螨用藤蔓或枝条抽击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "根须缠绕",
+        "intent": "缠绕",
+        "desc": "根须缠住目标，限制攻击动作。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "entangle",
+            "turns": 1,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "孢毒雾息",
+        "intent": "中毒",
+        "desc": "释放带毒孢子，持续侵蚀生命。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "poison",
+            "turns": 3,
+            "value": 3,
+            "uncleanseable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_moss_boar": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_solar_guard": {
+    "actions": [
+      {
+        "name": "武器攻击",
+        "intent": "攻击",
+        "desc": "用手中的武器发动攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "战术压制",
+        "intent": "易伤",
+        "desc": "制造破绽并压低目标防线。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "vulnerable",
+            "turns": 1
+          }
+        ]
+      },
+      {
+        "name": "防御姿态",
+        "intent": "防御",
+        "desc": "举盾或后撤，获得护盾与短暂坚韧。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2
+          }
+        ]
+      }
+    ]
+  },
+  "mon_church_inquisitor": {
+    "actions": [
+      {
+        "name": "武器攻击",
+        "intent": "攻击",
+        "desc": "用手中的武器发动攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "战术压制",
+        "intent": "易伤",
+        "desc": "制造破绽并压低目标防线。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "vulnerable",
+            "turns": 1
+          }
+        ]
+      },
+      {
+        "name": "防御姿态",
+        "intent": "防御",
+        "desc": "举盾或后撤，获得护盾与短暂坚韧。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2
+          }
+        ]
+      }
+    ]
+  },
+  "mon_false_priest": {
+    "actions": [
+      {
+        "name": "武器攻击",
+        "intent": "攻击",
+        "desc": "用手中的武器发动攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "战术压制",
+        "intent": "易伤",
+        "desc": "制造破绽并压低目标防线。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "vulnerable",
+            "turns": 1
+          }
+        ]
+      },
+      {
+        "name": "防御姿态",
+        "intent": "防御",
+        "desc": "举盾或后撤，获得护盾与短暂坚韧。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2
+          }
+        ]
+      }
+    ]
+  },
+  "mon_cathedral_shade": {
+    "actions": [
+      {
+        "name": "幽影触碰",
+        "intent": "攻击",
+        "desc": "虚幻的影子穿过防线。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55,
+            "pierce": 0.25
+          }
+        ]
+      },
+      {
+        "name": "灵体化",
+        "intent": "免疫",
+        "desc": "身体短暂虚化，免疫下一次伤害。",
+        "weight": 24,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_immune",
+            "turns": 1,
+            "value": 1,
+            "charges": 1,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "幻惑低语",
+        "intent": "虚弱",
+        "desc": "低语扰乱精神，难以用普通净化解除。",
+        "weight": 34,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "weak",
+            "turns": 2,
+            "uncleanseable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_silver_automaton": {
+    "actions": [
+      {
+        "name": "机械重击",
+        "intent": "攻击",
+        "desc": "沉重结构件砸向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "装甲闭合",
+        "intent": "防御",
+        "desc": "装甲结构闭合，获得不可驱散减伤。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 9
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "破盾冲撞",
+        "intent": "破盾",
+        "desc": "精准撞击护盾薄弱处。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45,
+            "pierce": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "mon_lab_chimera": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_blood_candle": {
+    "actions": [
+      {
+        "name": "灼热扑击",
+        "intent": "攻击",
+        "desc": "血烛灵裹挟火星扑击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.65
+          },
+          {
+            "type": "debuff",
+            "debuff": "burn",
+            "turns": 2,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "过热护焰",
+        "intent": "强化",
+        "desc": "火焰在外壳上凝结，形成难以驱散的护焰。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 25,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "熔火爆裂",
+        "intent": "强攻",
+        "desc": "压缩热量后爆裂，部分伤害无视护盾。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 7,
+            "attack_ratio": 0.75,
+            "pierce": 0.35
+          }
+        ]
+      }
+    ]
+  },
+  "mon_royal_duelist": {
+    "actions": [
+      {
+        "name": "武器攻击",
+        "intent": "攻击",
+        "desc": "用手中的武器发动攻击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "战术压制",
+        "intent": "易伤",
+        "desc": "制造破绽并压低目标防线。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "vulnerable",
+            "turns": 1
+          }
+        ]
+      },
+      {
+        "name": "防御姿态",
+        "intent": "防御",
+        "desc": "举盾或后撤，获得护盾与短暂坚韧。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2
+          }
+        ]
+      }
+    ]
+  },
+  "mon_murloc_tidecaller": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_coral_serpent": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_pearl_eye": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_reef_guardian": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_drowned_singer": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_thorn_sprite": {
+    "actions": [
+      {
+        "name": "藤刺抽击",
+        "intent": "攻击",
+        "desc": "荆棘精用藤蔓或枝条抽击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "根须缠绕",
+        "intent": "缠绕",
+        "desc": "根须缠住目标，限制攻击动作。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "entangle",
+            "turns": 1,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "孢毒雾息",
+        "intent": "中毒",
+        "desc": "释放带毒孢子，持续侵蚀生命。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "poison",
+            "turns": 3,
+            "value": 3,
+            "uncleanseable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_oldroot_treant": {
+    "actions": [
+      {
+        "name": "藤刺抽击",
+        "intent": "攻击",
+        "desc": "老根树人用藤蔓或枝条抽击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "根须缠绕",
+        "intent": "缠绕",
+        "desc": "根须缠住目标，限制攻击动作。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "entangle",
+            "turns": 1,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "孢毒雾息",
+        "intent": "中毒",
+        "desc": "释放带毒孢子，持续侵蚀生命。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "poison",
+            "turns": 3,
+            "value": 3,
+            "uncleanseable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_dream_moth": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_spore_deer": {
+    "actions": [
+      {
+        "name": "藤刺抽击",
+        "intent": "攻击",
+        "desc": "孢子鹿用藤蔓或枝条抽击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "根须缠绕",
+        "intent": "缠绕",
+        "desc": "根须缠住目标，限制攻击动作。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "entangle",
+            "turns": 1,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "孢毒雾息",
+        "intent": "中毒",
+        "desc": "释放带毒孢子，持续侵蚀生命。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "poison",
+            "turns": 3,
+            "value": 3,
+            "uncleanseable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_venom_vine": {
+    "actions": [
+      {
+        "name": "藤刺抽击",
+        "intent": "攻击",
+        "desc": "毒藤用藤蔓或枝条抽击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "根须缠绕",
+        "intent": "缠绕",
+        "desc": "根须缠住目标，限制攻击动作。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "entangle",
+            "turns": 1,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "孢毒雾息",
+        "intent": "中毒",
+        "desc": "释放带毒孢子，持续侵蚀生命。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "poison",
+            "turns": 3,
+            "value": 3,
+            "uncleanseable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_forest_stalker": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_moonlit_panther": {
+    "actions": [
+      {
+        "name": "幽影触碰",
+        "intent": "攻击",
+        "desc": "虚幻的影子穿过防线。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55,
+            "pierce": 0.25
+          }
+        ]
+      },
+      {
+        "name": "灵体化",
+        "intent": "免疫",
+        "desc": "身体短暂虚化，免疫下一次伤害。",
+        "weight": 24,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_immune",
+            "turns": 1,
+            "value": 1,
+            "charges": 1,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "幻惑低语",
+        "intent": "虚弱",
+        "desc": "低语扰乱精神，难以用普通净化解除。",
+        "weight": 34,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "weak",
+            "turns": 2,
+            "uncleanseable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_ancient_beetle": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_moon_mirror": {
+    "actions": [
+      {
+        "name": "幽影触碰",
+        "intent": "攻击",
+        "desc": "虚幻的影子穿过防线。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55,
+            "pierce": 0.25
+          }
+        ]
+      },
+      {
+        "name": "灵体化",
+        "intent": "免疫",
+        "desc": "身体短暂虚化，免疫下一次伤害。",
+        "weight": 24,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_immune",
+            "turns": 1,
+            "value": 1,
+            "charges": 1,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "幻惑低语",
+        "intent": "虚弱",
+        "desc": "低语扰乱精神，难以用普通净化解除。",
+        "weight": 34,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "weak",
+            "turns": 2,
+            "uncleanseable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_silver_blood_bat": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_lunar_duelist": {
+    "actions": [
+      {
+        "name": "幽影触碰",
+        "intent": "攻击",
+        "desc": "虚幻的影子穿过防线。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55,
+            "pierce": 0.25
+          }
+        ]
+      },
+      {
+        "name": "灵体化",
+        "intent": "免疫",
+        "desc": "身体短暂虚化，免疫下一次伤害。",
+        "weight": 24,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_immune",
+            "turns": 1,
+            "value": 1,
+            "charges": 1,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "幻惑低语",
+        "intent": "虚弱",
+        "desc": "低语扰乱精神，难以用普通净化解除。",
+        "weight": 34,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "weak",
+            "turns": 2,
+            "uncleanseable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_illusion_servant": {
+    "actions": [
+      {
+        "name": "幽影触碰",
+        "intent": "攻击",
+        "desc": "虚幻的影子穿过防线。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55,
+            "pierce": 0.25
+          }
+        ]
+      },
+      {
+        "name": "灵体化",
+        "intent": "免疫",
+        "desc": "身体短暂虚化，免疫下一次伤害。",
+        "weight": 24,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_immune",
+            "turns": 1,
+            "value": 1,
+            "charges": 1,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "幻惑低语",
+        "intent": "虚弱",
+        "desc": "低语扰乱精神，难以用普通净化解除。",
+        "weight": 34,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "weak",
+            "turns": 2,
+            "uncleanseable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_moonlit_wraith": {
+    "actions": [
+      {
+        "name": "死寒挥击",
+        "intent": "攻击",
+        "desc": "带着寒意的攻击落向目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "怨念缠身",
+        "intent": "诅咒",
+        "desc": "亡者怨念附着在目标身上。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "curse_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "亡骸护壁",
+        "intent": "防御",
+        "desc": "散落的骨片或怨灵聚成护壁。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 8
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2,
+            "undispellable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_glass_hound": {
+    "actions": [
+      {
+        "name": "机械重击",
+        "intent": "攻击",
+        "desc": "沉重结构件砸向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "装甲闭合",
+        "intent": "防御",
+        "desc": "装甲结构闭合，获得不可驱散减伤。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 9
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "破盾冲撞",
+        "intent": "破盾",
+        "desc": "精准撞击护盾薄弱处。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45,
+            "pierce": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "mon_silver_eye": {
+    "actions": [
+      {
+        "name": "异质抽打",
+        "intent": "攻击",
+        "desc": "不可名状的肢体抽向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "深渊标记",
+        "intent": "诅咒",
+        "desc": "留下难以净化的深渊印记。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "abyss_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "虚空壳膜",
+        "intent": "强化",
+        "desc": "虚空壳膜展开，获得不可驱散减伤。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 35,
+            "undispellable": true
+          },
+          {
+            "type": "shield",
+            "value": 8
+          }
+        ]
+      }
+    ]
+  },
+  "mon_mirror_knight": {
+    "actions": [
+      {
+        "name": "镜刃斩",
+        "intent": "攻击",
+        "desc": "镜面长剑反射月光后斩下。",
+        "weight": 38,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "镜盾闭合",
+        "intent": "免疫",
+        "desc": "镜盾闭合，免疫下一次伤害。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_immune",
+            "turns": 1,
+            "value": 1,
+            "charges": 1,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "反照破绽",
+        "intent": "易伤",
+        "desc": "镜面照出目标破绽。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "vulnerable",
+            "turns": 1
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.35,
+            "pierce": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "mon_furnace_imp": {
+    "actions": [
+      {
+        "name": "灼热扑击",
+        "intent": "攻击",
+        "desc": "炉火小鬼裹挟火星扑击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.65
+          },
+          {
+            "type": "debuff",
+            "debuff": "burn",
+            "turns": 2,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "过热护焰",
+        "intent": "强化",
+        "desc": "火焰在外壳上凝结，形成难以驱散的护焰。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 25,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "熔火爆裂",
+        "intent": "强攻",
+        "desc": "压缩热量后爆裂，部分伤害无视护盾。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 7,
+            "attack_ratio": 0.75,
+            "pierce": 0.35
+          }
+        ]
+      }
+    ]
+  },
+  "mon_iron_mite": {
+    "actions": [
+      {
+        "name": "撕咬",
+        "intent": "攻击",
+        "desc": "迅猛撕咬目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.6
+          }
+        ]
+      },
+      {
+        "name": "裂伤追击",
+        "intent": "流血",
+        "desc": "撕开伤口造成持续流血。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "bleed",
+            "turns": 3,
+            "value": 2
+          }
+        ]
+      },
+      {
+        "name": "野性扑杀",
+        "intent": "强攻",
+        "desc": "趁目标露出破绽时猛扑。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.75,
+            "pierce": 0.15
+          }
+        ],
+        "condition": "player_no_shield"
+      }
+    ]
+  },
+  "mon_steam_guard": {
+    "actions": [
+      {
+        "name": "机械重击",
+        "intent": "攻击",
+        "desc": "沉重结构件砸向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "装甲闭合",
+        "intent": "防御",
+        "desc": "装甲结构闭合，获得不可驱散减伤。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 9
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "破盾冲撞",
+        "intent": "破盾",
+        "desc": "精准撞击护盾薄弱处。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45,
+            "pierce": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "mon_magma_hound": {
+    "actions": [
+      {
+        "name": "灼热扑击",
+        "intent": "攻击",
+        "desc": "熔岩猎犬裹挟火星扑击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.65
+          },
+          {
+            "type": "debuff",
+            "debuff": "burn",
+            "turns": 2,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "过热护焰",
+        "intent": "强化",
+        "desc": "火焰在外壳上凝结，形成难以驱散的护焰。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 25,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "熔火爆裂",
+        "intent": "强攻",
+        "desc": "压缩热量后爆裂，部分伤害无视护盾。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 7,
+            "attack_ratio": 0.75,
+            "pierce": 0.35
+          }
+        ]
+      }
+    ]
+  },
+  "mon_mine_golem": {
+    "actions": [
+      {
+        "name": "机械重击",
+        "intent": "攻击",
+        "desc": "沉重结构件砸向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "装甲闭合",
+        "intent": "防御",
+        "desc": "装甲结构闭合，获得不可驱散减伤。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 9
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 30,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "破盾冲撞",
+        "intent": "破盾",
+        "desc": "精准撞击护盾薄弱处。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "strip_player_shield"
+          },
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.45,
+            "pierce": 0.25
+          }
+        ]
+      }
+    ]
+  },
+  "mon_heat_core": {
+    "actions": [
+      {
+        "name": "热核射线",
+        "intent": "灼烧",
+        "desc": "高温射线灼穿防线。",
+        "weight": 38,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.6,
+            "pierce": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "burn",
+            "turns": 2,
+            "value": 3,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "过载升温",
+        "intent": "强化",
+        "desc": "热核进入过载状态。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "strength",
+            "turns": 2,
+            "value": 3,
+            "undispellable": true
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "炉心喷发",
+        "intent": "真实伤害",
+        "desc": "喷发热流绕过护盾造成伤害。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "true_damage",
+            "value": 5,
+            "attack_ratio": 0.45
+          }
+        ]
+      }
+    ]
+  },
+  "mon_blast_dwarf": {
+    "actions": [
+      {
+        "name": "灼热扑击",
+        "intent": "攻击",
+        "desc": "爆破矮人亡魂裹挟火星扑击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.65
+          },
+          {
+            "type": "debuff",
+            "debuff": "burn",
+            "turns": 2,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "过热护焰",
+        "intent": "强化",
+        "desc": "火焰在外壳上凝结，形成难以驱散的护焰。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 25,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "熔火爆裂",
+        "intent": "强攻",
+        "desc": "压缩热量后爆裂，部分伤害无视护盾。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 7,
+            "attack_ratio": 0.75,
+            "pierce": 0.35
+          }
+        ]
+      }
+    ]
+  },
+  "mon_furnace_serpent": {
+    "actions": [
+      {
+        "name": "灼热扑击",
+        "intent": "攻击",
+        "desc": "炉蛇裹挟火星扑击。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.65
+          },
+          {
+            "type": "debuff",
+            "debuff": "burn",
+            "turns": 2,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "过热护焰",
+        "intent": "强化",
+        "desc": "火焰在外壳上凝结，形成难以驱散的护焰。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 6
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 25,
+            "undispellable": true
+          }
+        ]
+      },
+      {
+        "name": "熔火爆裂",
+        "intent": "强攻",
+        "desc": "压缩热量后爆裂，部分伤害无视护盾。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 7,
+            "attack_ratio": 0.75,
+            "pierce": 0.35
+          }
+        ]
+      }
+    ]
+  },
+  "mon_black_tide_eel": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_void_anemone": {
+    "actions": [
+      {
+        "name": "藤刺抽击",
+        "intent": "攻击",
+        "desc": "虚空海葵用藤蔓或枝条抽击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "根须缠绕",
+        "intent": "缠绕",
+        "desc": "根须缠住目标，限制攻击动作。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "entangle",
+            "turns": 1,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "孢毒雾息",
+        "intent": "中毒",
+        "desc": "释放带毒孢子，持续侵蚀生命。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "poison",
+            "turns": 3,
+            "value": 3,
+            "uncleanseable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_sunken_armor": {
+    "actions": [
+      {
+        "name": "死寒挥击",
+        "intent": "攻击",
+        "desc": "带着寒意的攻击落向目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "怨念缠身",
+        "intent": "诅咒",
+        "desc": "亡者怨念附着在目标身上。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "curse_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "亡骸护壁",
+        "intent": "防御",
+        "desc": "散落的骨片或怨灵聚成护壁。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 8
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_deep_eye": {
+    "actions": [
+      {
+        "name": "异质抽打",
+        "intent": "攻击",
+        "desc": "不可名状的肢体抽向目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 6,
+            "attack_ratio": 0.65
+          }
+        ]
+      },
+      {
+        "name": "深渊标记",
+        "intent": "诅咒",
+        "desc": "留下难以净化的深渊印记。",
+        "weight": 32,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "abyss_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "虚空壳膜",
+        "intent": "强化",
+        "desc": "虚空壳膜展开，获得不可驱散减伤。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 35,
+            "undispellable": true
+          },
+          {
+            "type": "shield",
+            "value": 8
+          }
+        ]
+      }
+    ]
+  },
+  "mon_abyssal_murloc": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_pressure_crab": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_dread_coral": {
+    "actions": [
+      {
+        "name": "藤刺抽击",
+        "intent": "攻击",
+        "desc": "恐惧珊瑚用藤蔓或枝条抽击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "根须缠绕",
+        "intent": "缠绕",
+        "desc": "根须缠住目标，限制攻击动作。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "entangle",
+            "turns": 1,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "孢毒雾息",
+        "intent": "中毒",
+        "desc": "释放带毒孢子，持续侵蚀生命。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "poison",
+            "turns": 3,
+            "value": 3,
+            "uncleanseable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_leviathan_larva": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_saltbone_sailor": {
+    "actions": [
+      {
+        "name": "潮水拍击",
+        "intent": "攻击",
+        "desc": "卷起水浪拍击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "深潮压迫",
+        "intent": "深压",
+        "desc": "水压侵入胸腔，降低治疗效果。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 3,
+            "attack_ratio": 0.35
+          },
+          {
+            "type": "debuff",
+            "debuff": "heal_block",
+            "turns": 2,
+            "value": 35,
+            "uncleanseable": false
+          }
+        ]
+      },
+      {
+        "name": "水幕护身",
+        "intent": "防御",
+        "desc": "水幕环绕身体，形成难以驱散的保护。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 7
+          },
+          {
+            "type": "buff",
+            "buff": "damage_resist",
+            "turns": 2,
+            "value": 20,
+            "undispellable": true
+          }
+        ]
+      }
+    ]
+  },
+  "mon_withered_treant": {
+    "actions": [
+      {
+        "name": "藤刺抽击",
+        "intent": "攻击",
+        "desc": "枯萎树人用藤蔓或枝条抽击目标。",
+        "weight": 40,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 4,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "根须缠绕",
+        "intent": "缠绕",
+        "desc": "根须缠住目标，限制攻击动作。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 2,
+            "attack_ratio": 0.25
+          },
+          {
+            "type": "debuff",
+            "debuff": "entangle",
+            "turns": 1,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "孢毒雾息",
+        "intent": "中毒",
+        "desc": "释放带毒孢子，持续侵蚀生命。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "poison",
+            "turns": 3,
+            "value": 3,
+            "uncleanseable": false
+          }
+        ]
+      }
+    ]
+  },
+  "mon_rampaging_vampire": {
+    "actions": [
+      {
+        "name": "死寒挥击",
+        "intent": "攻击",
+        "desc": "带着寒意的攻击落向目标。",
+        "weight": 42,
+        "effects": [
+          {
+            "type": "damage",
+            "value": 5,
+            "attack_ratio": 0.55
+          }
+        ]
+      },
+      {
+        "name": "怨念缠身",
+        "intent": "诅咒",
+        "desc": "亡者怨念附着在目标身上。",
+        "weight": 30,
+        "effects": [
+          {
+            "type": "debuff",
+            "debuff": "curse_mark",
+            "turns": 3,
+            "value": 2,
+            "uncleanseable": true
+          }
+        ]
+      },
+      {
+        "name": "亡骸护壁",
+        "intent": "防御",
+        "desc": "散落的骨片或怨灵聚成护壁。",
+        "weight": 28,
+        "effects": [
+          {
+            "type": "shield",
+            "value": 8
+          },
+          {
+            "type": "buff",
+            "buff": "fortitude",
+            "turns": 2,
+            "value": 2,
+            "undispellable": false
+          }
+        ]
+      }
+    ]
+  }
+}

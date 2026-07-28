@@ -1,0 +1,34 @@
+{
+  "knight": [
+    "holy_knight",
+    "shadow_knight",
+    "dragon_knight"
+  ],
+  "mage": [
+    "elementalist",
+    "fire_mage",
+    "water_mage",
+    "wind_mage",
+    "thunder_mage",
+    "wood_mage",
+    "light_mage",
+    "dark_mage",
+    "arcane_mage",
+    "summoner"
+  ],
+  "artisan": [
+    "alchemist",
+    "apothecary",
+    "blacksmith",
+    "mechanic"
+  ],
+  "freelance": [
+    "priest",
+    "nun",
+    "astrologer",
+    "vampire_hunter",
+    "weapon_master",
+    "merchant",
+    "dark_priest"
+  ]
+}
