@@ -8,6 +8,7 @@ interface PanelModule {
 const definitions: Record<PanelName, () => Promise<PanelModule>> = {
   shell: () => import('@/modules/shell/mount'),
   character: () => import('@/modules/character/mount'),
+  affinity: () => import('@/modules/affinity/mount'),
   deck: () => import('@/modules/deck/mount'),
   inventory: () => import('@/modules/inventory/mount'),
   guild: () => import('@/modules/guild/mount'),
@@ -22,6 +23,7 @@ const definitions: Record<PanelName, () => Promise<PanelModule>> = {
 
 const gamePanels = new Set<PanelName>([
   'character',
+  'affinity',
   'deck',
   'inventory',
   'guild',

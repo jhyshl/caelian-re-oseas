@@ -15,6 +15,56 @@ afterEach(async () => {
 });
 
 describe('CaelianKernel integration', () => {
+  it('双击悬浮入口直接打开独立的凯利安状态栏', async () => {
+    const databaseName = `caelian-alpha-affinity-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'affinity-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    const orb = document.querySelector<HTMLButtonElement>('.caelian-shell-host .orb');
+    expect(orb).not.toBeNull();
+
+    const activate = () => {
+      orb?.dispatchEvent(
+        new MouseEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          clientX: 100,
+          clientY: 100,
+        }),
+      );
+      orb?.dispatchEvent(
+        new MouseEvent('pointerup', {
+          bubbles: true,
+          button: 0,
+          clientX: 100,
+          clientY: 100,
+        }),
+      );
+    };
+
+    activate();
+    activate();
+
+    await expect
+      .poll(() =>
+        document.querySelector('[data-caelian-panel="affinity"]'),
+      )
+      .not.toBeNull();
+    expect(
+      document.querySelector('[data-caelian-panel="character"]'),
+    ).toBeNull();
+    expect(document.body.textContent).toContain('凯利安状态栏');
+
+    await kernel.api.shutdown();
+  });
+
   it('初始化本地档案，并按需挂载和卸载独立 Vue 面板', async () => {
     const databaseName = `caelian-alpha-kernel-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);

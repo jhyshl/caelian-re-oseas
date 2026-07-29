@@ -10,6 +10,7 @@ import type { KernelEventMap } from '@/kernel/event-bus';
 export type PanelName =
   | 'shell'
   | 'character'
+  | 'affinity'
   | 'deck'
   | 'inventory'
   | 'guild'

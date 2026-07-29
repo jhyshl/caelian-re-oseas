@@ -20,6 +20,7 @@ const navigation: Array<{
   label: string;
 }> = [
   { id: 'character', icon: '♙', label: '角色' },
+  { id: 'affinity', icon: '♡', label: '凯利安' },
   { id: 'deck', icon: '▱', label: '牌组' },
   { id: 'inventory', icon: '◇', label: '背包' },
   { id: 'guild', icon: '⚔', label: '协会' },

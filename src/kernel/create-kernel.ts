@@ -101,12 +101,12 @@ export class CaelianKernel {
         ) {
           return;
         }
-        await this.events.emit('tavern.changed', { event: eventName });
         if (eventName === 'CHAT_CHANGED') {
           await this.activateCurrentProfile();
         }
         await this.ingestMvuNarrative();
         await this.syncProjection();
+        await this.events.emit('tavern.changed', { event: eventName });
       });
       this.status = 'ready';
       await this.syncProjection();

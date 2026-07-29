@@ -14,7 +14,7 @@ const busyStat = ref('');
 const statEditMode = ref(false);
 const professionDialog = ref<'create' | 'reclass'>();
 const notice = ref('');
-let disposeStateListener: (() => void) | undefined;
+const disposers: Array<() => void> = [];
 
 const player = computed(() => snapshot.value?.player);
 const profession = computed(() =>
@@ -25,6 +25,9 @@ const experiencePercent = computed(() => {
   if (!value || value.experienceToNext <= 0) return 0;
   return Math.round((value.experience / value.experienceToNext) * 100);
 });
+const affinityPercent = computed(() =>
+  Math.max(0, Math.min(100, Math.round(snapshot.value?.social.affinity ?? 0))),
+);
 const allocationTotal = computed(() => {
   const allocation = snapshot.value?.statAllocations;
   if (!allocation) return 0;
@@ -99,9 +102,14 @@ async function professionApplied() {
 
 onMounted(async () => {
   await refresh();
-  disposeStateListener = props.context.api.on('state.changed', refresh);
+  disposers.push(
+    props.context.api.on('state.changed', refresh),
+    props.context.api.on('tavern.changed', refresh),
+  );
 });
-onUnmounted(() => disposeStateListener?.());
+onUnmounted(() => {
+  for (const dispose of disposers.splice(0)) dispose();
+});
 </script>
 
 <template>
@@ -160,6 +168,32 @@ onUnmounted(() => disposeStateListener?.());
             :max="snapshot.player.experienceToNext"
           />
         </div>
+      </section>
+
+      <section class="ca-section companion-summary">
+        <div class="companion-copy">
+          <span class="companion-kicker">同行者</span>
+          <h2>凯利安</h2>
+          <p>
+            {{ snapshot.social.mood || '平静' }} ·
+            {{ snapshot.social.relationshipStage || '陌生人' }}
+          </p>
+        </div>
+        <div class="companion-affinity">
+          <div>
+            <span>好感度</span>
+            <strong>{{ snapshot.social.affinity }}</strong>
+            <small>/100</small>
+          </div>
+          <i><b :style="{ width: `${affinityPercent}%` }"></b></i>
+        </div>
+        <button
+          type="button"
+          class="ca-button"
+          @click="context.api.navigatePanel('affinity')"
+        >
+          查看状态栏
+        </button>
       </section>
 
       <section class="ca-section">
@@ -408,6 +442,72 @@ onUnmounted(() => disposeStateListener?.());
   gap: 12px;
 }
 
+.companion-summary {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.7fr) minmax(180px, 1.3fr) auto;
+  align-items: center;
+  gap: 18px;
+  border-color: rgba(212, 168, 67, 0.28);
+  background:
+    radial-gradient(circle at 0 50%, rgba(212, 168, 67, 0.11), transparent 32%),
+    var(--ca-surface);
+}
+
+.companion-kicker {
+  color: var(--ca-gold);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+}
+
+.companion-copy h2 {
+  margin: 4px 0 3px;
+  color: var(--ca-text-bright);
+  font: 700 20px/1 var(--ca-serif);
+}
+
+.companion-copy p {
+  margin: 0;
+  color: var(--ca-muted);
+  font-size: 10px;
+}
+
+.companion-affinity > div {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.companion-affinity span {
+  color: var(--ca-muted);
+  font-size: 10px;
+}
+
+.companion-affinity strong {
+  color: var(--ca-gold-light);
+  font: 700 22px/1 var(--ca-serif);
+}
+
+.companion-affinity small {
+  color: #746d62;
+  font-size: 9px;
+}
+
+.companion-affinity > i {
+  height: 6px;
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(212, 168, 67, 0.12);
+}
+
+.companion-affinity > i > b {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--ca-gold-dark), var(--ca-gold-light));
+}
+
 .profession-title {
   margin: 0 0 6px;
   color: var(--ca-text-bright);
@@ -566,6 +666,16 @@ onUnmounted(() => disposeStateListener?.());
 }
 
 @media (max-width: 560px) {
+  .companion-summary {
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+  }
+
+  .companion-affinity {
+    grid-column: 1 / 3;
+    grid-row: 2;
+  }
+
   .vitals {
     grid-template-columns: 1fr 1fr;
   }

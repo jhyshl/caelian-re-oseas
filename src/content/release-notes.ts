@@ -9,6 +9,17 @@ const MAX_VISIBLE_RELEASES = 5;
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.9',
+    label: 'Alpha 9',
+    releasedAt: '2026-07-29',
+    changes: [
+      '新增独立的凯利安状态栏，接入好感度、情绪、关系、位置、衣着和内心想法等角色卡叙事变量。',
+      '玩家面板新增凯利安好感度摘要；点击状态栏入口可查看完整内容。',
+      '悬浮入口支持双击直达凯利安状态栏，同时保留单击轮盘、自由拖动、贴边收纳和三秒休眠。',
+      '聊天切换与 MVU 更新完成后会刷新玩家及好感度面板，避免显示上一段聊天的旧数据。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.8',
     label: 'Alpha 8',
     releasedAt: '2026-07-29',

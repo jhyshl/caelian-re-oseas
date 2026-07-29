@@ -18,6 +18,7 @@ const props = defineProps<{ context: PanelContext }>();
 const STORAGE_KEY = 'caelian_floating_wheel_position_v2';
 const IDLE_DELAY = 3000;
 const DRAG_THRESHOLD = 5;
+const DOUBLE_ACTIVATION_DELAY = 280;
 
 const viewport = ref(readViewport());
 const launcherSize = ref(launcherSizeForViewport(viewport.value.width));
@@ -32,6 +33,7 @@ const shellElement = ref<HTMLElement | null>(null);
 const info = computed(() => props.context.api.getRuntimeInfo());
 
 let idleTimer: number | undefined;
+let activationTimer: number | undefined;
 let dragSession:
   | {
       pointerId: number;
@@ -47,6 +49,7 @@ let dragSession:
 
 const primary: Array<{ panel: PanelName; icon: string; label: string }> = [
   { panel: 'character', icon: '♙', label: '角色' },
+  { panel: 'affinity', icon: '♡', label: '凯利安' },
   { panel: 'deck', icon: '▱', label: '牌组' },
   { panel: 'inventory', icon: '◇', label: '背包' },
   { panel: 'guild', icon: '⚔', label: '协会' },
@@ -98,7 +101,7 @@ const launcherLabel = computed(() => {
   }
   return expanded.value
     ? '关闭 Re∞：欧西亚斯冒险者面板'
-    : '打开或拖动 Re∞：欧西亚斯悬浮入口';
+    : '打开或拖动 Re∞：欧西亚斯悬浮入口；双击查看凯利安状态';
 });
 
 function hostWindow(): Window {
@@ -207,6 +210,12 @@ function clearIdleTimer(): void {
   idleTimer = undefined;
 }
 
+function clearActivationTimer(): void {
+  if (activationTimer === undefined) return;
+  hostWindow().clearTimeout(activationTimer);
+  activationTimer = undefined;
+}
+
 function wake(): void {
   clearIdleTimer();
   idle.value = false;
@@ -243,6 +252,20 @@ function closeWheel(): void {
 function toggleWheel(): void {
   if (expanded.value) closeWheel();
   else openWheel();
+}
+
+function activateLauncher(wasExpanded: boolean): void {
+  if (activationTimer !== undefined) {
+    clearActivationTimer();
+    open('affinity');
+    return;
+  }
+
+  activationTimer = hostWindow().setTimeout(() => {
+    activationTimer = undefined;
+    if (wasExpanded) closeWheel();
+    else openWheel();
+  }, DOUBLE_ACTIVATION_DELAY);
 }
 
 function open(panel: PanelName): void {
@@ -283,6 +306,7 @@ function handlePointerMove(event: PointerEvent): void {
     session.moved = true;
   }
   if (session.moved) {
+    clearActivationTimer();
     expanded.value = false;
     dockSide.value = null;
     retracted.value = false;
@@ -322,10 +346,8 @@ function handlePointerUp(event: PointerEvent): void {
     expanded.value = false;
     persistPlacement();
     scheduleIdle();
-  } else if (session.wasExpanded) {
-    closeWheel();
   } else {
-    openWheel();
+    activateLauncher(session.wasExpanded);
   }
   event.preventDefault();
   event.stopPropagation();
@@ -339,13 +361,17 @@ function handlePointerCancel(event: PointerEvent): void {
   retracted.value = session.startDockSide !== null;
   dragging.value = false;
   dragSession = undefined;
+  clearActivationTimer();
   scheduleIdle();
 }
 
 function handleClick(event: MouseEvent): void {
   event.preventDefault();
   event.stopPropagation();
-  if (event.detail === 0) toggleWheel();
+  if (event.detail === 0) {
+    clearActivationTimer();
+    toggleWheel();
+  }
 }
 
 function handleOutsidePointerDown(event: Event): void {
@@ -401,6 +427,7 @@ onMounted(() => {
 onUnmounted(() => {
   const win = hostWindow();
   clearIdleTimer();
+  clearActivationTimer();
   props.context.document.removeEventListener(
     'pointerdown',
     handleOutsidePointerDown,
