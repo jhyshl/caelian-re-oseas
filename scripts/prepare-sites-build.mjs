@@ -1,9 +1,10 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverRoot = path.join(root, 'dist', 'server');
+const hostingRoot = path.join(root, 'dist', '.openai');
 const statusPage = (
   await readFile(path.join(root, 'dist', 'index.html'), 'utf8')
 ).replaceAll(
@@ -62,3 +63,8 @@ export default {
 
 await mkdir(serverRoot, { recursive: true });
 await writeFile(path.join(serverRoot, 'index.js'), worker, 'utf8');
+await mkdir(hostingRoot, { recursive: true });
+await copyFile(
+  path.join(root, '.openai', 'hosting.json'),
+  path.join(hostingRoot, 'hosting.json'),
+);
