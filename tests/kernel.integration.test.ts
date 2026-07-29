@@ -60,21 +60,21 @@ describe('CaelianKernel integration', () => {
         sourceWindow: window,
       });
 
-    const firstKernel = createReleaseKernel('0.2.0-alpha.5');
+    const firstKernel = createReleaseKernel('0.2.0-alpha.6');
     await firstKernel.initialize();
     expect(
       document.querySelector('[data-caelian-panel="release-notes"]'),
     ).not.toBeNull();
     await firstKernel.api.shutdown();
 
-    const upgradedKernel = createReleaseKernel('0.2.0-alpha.6');
+    const upgradedKernel = createReleaseKernel('0.2.0-alpha.7');
     await upgradedKernel.initialize();
     expect(
       document.querySelector('[data-caelian-panel="release-notes"]'),
     ).not.toBeNull();
     await upgradedKernel.api.shutdown();
 
-    const repeatedKernel = createReleaseKernel('0.2.0-alpha.6');
+    const repeatedKernel = createReleaseKernel('0.2.0-alpha.7');
     await repeatedKernel.initialize();
     expect(
       document.querySelector('[data-caelian-panel="release-notes"]'),

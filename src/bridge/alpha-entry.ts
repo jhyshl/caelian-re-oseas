@@ -3,8 +3,9 @@ import { createKernel } from '@/kernel/create-kernel';
 import { resolveTavernHost } from '@/tavern/adapter';
 
 const host = resolveTavernHost(window);
+let bootstrapTask: Promise<void> | undefined;
 
-export async function bootstrapCaelian(): Promise<void> {
+async function initializeCaelian(): Promise<void> {
   const existing = host.Caelian;
 
   if (existing?.buildId === __CAELIAN_BUILD_ID__) return;
@@ -26,6 +27,21 @@ export async function bootstrapCaelian(): Promise<void> {
   }
 }
 
-// Keep old fixed bridges compatible; the new bridge also calls this export
-// explicitly when it needs to recover a cached build.
-await bootstrapCaelian();
+export function bootstrapCaelian(): Promise<void> {
+  if (host.Caelian?.buildId === __CAELIAN_BUILD_ID__) {
+    return bootstrapTask ?? Promise.resolve();
+  }
+  if (bootstrapTask) return bootstrapTask;
+
+  bootstrapTask = initializeCaelian().catch((error: unknown) => {
+    bootstrapTask = undefined;
+    throw error;
+  });
+  return bootstrapTask;
+}
+
+// Keep old fixed bridges compatible without blocking this module's evaluation.
+// The current bridge calls bootstrapCaelian() again and receives the same task.
+void bootstrapCaelian().catch((error: unknown) => {
+  console.error('[Caelian Alpha]', error);
+});
