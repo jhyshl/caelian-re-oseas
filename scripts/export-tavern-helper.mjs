@@ -41,7 +41,7 @@ const allowedBases = [
 ];
 
 const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
-// 每次启动读取 Alpha manifest；主线路不可达时自动切换独立公网镜像。
+// 启动后持续检查 Alpha manifest；发现新版本时无需刷新酒馆即可提醒并安全更新。
 (async function loadCaelianAlpha() {
   'use strict';
 
@@ -56,6 +56,9 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
   const allowedBases = ${JSON.stringify(allowedBases)};
   const cacheKey = 'caelian:bridge:last-manifest:alpha';
   const previousCacheKey = 'caelian:bridge:previous-manifest:alpha';
+  const reminderKey = 'caelian:bridge:update-reminder:alpha';
+  const watcherKey = '__CaelianAlphaUpdateWatcher';
+  const previousWatcher = root[watcherKey];
   const showBridgeToast = (level, message) => {
     const d = root.document;
     if (!d || typeof d.createElement !== 'function' || !d.body) return false;
@@ -111,6 +114,109 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
     }
     setTimeout(remove, level === 'error' ? 7000 : 5000);
     return true;
+  };
+
+  const showBridgeUpdatePrompt = (manifest, actions) => {
+    const d = root.document;
+    if (!d || typeof d.createElement !== 'function' || !d.body) return null;
+    const styleId = 'caelian-bridge-update-style-v1';
+    if (!d.getElementById?.(styleId)) {
+      const style = d.createElement('style');
+      style.id = styleId;
+      style.textContent = '.caelian-bridge-toast-host{position:fixed;z-index:2147483647;top:max(12px,env(safe-area-inset-top));left:50%;width:min(540px,calc(100vw - 20px));display:grid;gap:8px;transform:translateX(-50%);pointer-events:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.caelian-bridge-update{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;padding:13px;overflow:hidden;border:1px solid rgba(224,184,93,.72);border-radius:17px;color:#f9eed8;background:radial-gradient(circle at 12% 0,rgba(244,207,119,.18),transparent 34%),linear-gradient(135deg,rgba(36,31,55,.985),rgba(49,29,58,.985));box-shadow:0 20px 56px rgba(0,0,0,.48),inset 0 1px rgba(255,255,255,.08);backdrop-filter:blur(16px) saturate(145%);opacity:0;transform:translateY(-14px) scale(.98);transition:opacity .28s ease,transform .28s cubic-bezier(.2,.8,.2,1);pointer-events:auto}.caelian-bridge-update.show{opacity:1;transform:none}.caelian-bridge-update::after{position:absolute;inset:0;content:"";background:linear-gradient(105deg,transparent 25%,rgba(255,232,170,.12) 45%,transparent 64%);transform:translateX(-115%);animation:caelianBridgeUpdateSweep 2.8s ease .45s both;pointer-events:none}.caelian-bridge-update-icon{display:grid;width:43px;height:43px;place-items:center;border:1px solid rgba(255,232,165,.72);border-radius:14px;color:#2b1806;background:linear-gradient(145deg,#ffe5a1,#bc7821);box-shadow:0 8px 22px rgba(190,122,34,.28);font-size:21px;font-weight:900}.caelian-bridge-update-copy{min-width:0}.caelian-bridge-update-copy>span{display:block;color:#eacb76;font-size:9px;font-weight:900;letter-spacing:.16em}.caelian-bridge-update-copy>strong{display:block;margin-top:3px;color:#fff3d7;font-size:14px;line-height:1.35}.caelian-bridge-update-copy>p{margin:5px 0 0;color:#d6c9d8;font-size:11px;line-height:1.5}.caelian-bridge-update-copy>small{display:block;margin-top:5px;color:#a99cb4;font-size:9px}.caelian-bridge-update-close{width:25px;height:25px;padding:0;border:0;border-radius:8px;color:#ded1bf;background:rgba(255,255,255,.08);font-size:17px;cursor:pointer}.caelian-bridge-update-actions{grid-column:2/4;display:flex;flex-wrap:wrap;gap:7px}.caelian-bridge-update-actions button{min-height:31px;padding:6px 11px;border:1px solid rgba(231,198,119,.32);border-radius:9px;color:#e8dccb;background:rgba(255,255,255,.07);font-size:10px;font-weight:750;cursor:pointer;transition:transform .16s ease,background .16s ease}.caelian-bridge-update-actions button:hover{background:rgba(255,255,255,.13);transform:translateY(-1px)}.caelian-bridge-update-actions button.primary{border-color:rgba(255,226,153,.72);color:#271706;background:linear-gradient(135deg,#ffe39b,#c7872d)}.caelian-bridge-update-actions button.ignore{margin-left:auto;color:#b9adbd;border-color:transparent;background:transparent}@keyframes caelianBridgeUpdateSweep{to{transform:translateX(115%)}}@media(max-width:460px){.caelian-bridge-update{grid-template-columns:auto minmax(0,1fr) auto;padding:11px}.caelian-bridge-update-icon{width:38px;height:38px}.caelian-bridge-update-actions{grid-column:1/4}.caelian-bridge-update-actions button{flex:1}.caelian-bridge-update-actions button.ignore{margin-left:0;flex-basis:100%}}@media(prefers-reduced-motion:reduce){.caelian-bridge-update{transition:none}.caelian-bridge-update::after{animation:none}}';
+      (d.head || d.documentElement).appendChild(style);
+    }
+
+    let host = d.querySelector?.('.caelian-bridge-toast-host');
+    if (!host) {
+      host = d.createElement('div');
+      host.className = 'caelian-bridge-toast-host';
+      d.body.appendChild(host);
+    }
+    host.querySelector?.('[data-caelian-update-prompt]')?.remove();
+
+    const prompt = d.createElement('section');
+    prompt.className = 'caelian-bridge-update';
+    prompt.dataset.caelianUpdatePrompt = manifest.buildId;
+    prompt.setAttribute('role', 'status');
+    prompt.setAttribute('aria-live', 'polite');
+
+    const icon = d.createElement('div');
+    icon.className = 'caelian-bridge-update-icon';
+    icon.textContent = '↥';
+
+    const copy = d.createElement('div');
+    copy.className = 'caelian-bridge-update-copy';
+    const eyebrow = d.createElement('span');
+    eyebrow.textContent = 'UPDATE AVAILABLE';
+    const title = d.createElement('strong');
+    title.textContent = '发现新版本 ' + manifest.version;
+    const description = d.createElement('p');
+    description.textContent = '新内容已经发布。无需刷新酒馆，可直接安全更新欧西亚斯界面。';
+    const meta = d.createElement('small');
+    meta.textContent = '构建 ' + manifest.buildId.slice(0, 8) + ' · Alpha 通道';
+    copy.append(eyebrow, title, description, meta);
+
+    const close = d.createElement('button');
+    close.type = 'button';
+    close.className = 'caelian-bridge-update-close';
+    close.setAttribute('aria-label', '稍后提醒');
+    close.textContent = '×';
+
+    const actionRow = d.createElement('div');
+    actionRow.className = 'caelian-bridge-update-actions';
+    const update = d.createElement('button');
+    update.type = 'button';
+    update.className = 'primary';
+    update.textContent = '立即更新';
+    const later = d.createElement('button');
+    later.type = 'button';
+    later.textContent = '2 小时后提醒';
+    const ignore = d.createElement('button');
+    ignore.type = 'button';
+    ignore.className = 'ignore';
+    ignore.textContent = '忽略此版本';
+    actionRow.append(update, later, ignore);
+    prompt.append(icon, copy, close, actionRow);
+    host.appendChild(prompt);
+
+    let settled = false;
+    let autoLaterTimer = null;
+    const remove = () => {
+      settled = true;
+      if (autoLaterTimer !== null && typeof root.clearTimeout === 'function') {
+        root.clearTimeout(autoLaterTimer);
+      }
+      prompt.classList.remove('show');
+      setTimeout(() => {
+        prompt.remove();
+        if (!host.childElementCount) host.remove();
+      }, 280);
+    };
+    const settle = (action) => {
+      if (settled) return;
+      settled = true;
+      remove();
+      action();
+    };
+    close.addEventListener('click', () => settle(actions.later));
+    later.addEventListener('click', () => settle(actions.later));
+    ignore.addEventListener('click', () => settle(actions.ignore));
+    update.addEventListener('click', () => settle(actions.update));
+    try {
+      (root.requestAnimationFrame || requestAnimationFrame)(() => {
+        prompt.classList.add('show');
+      });
+    } catch {
+      setTimeout(() => prompt.classList.add('show'), 20);
+    }
+    if (typeof root.setTimeout === 'function') {
+      autoLaterTimer = root.setTimeout(
+        () => settle(actions.later),
+        30_000,
+      );
+    }
+    return { buildId: manifest.buildId, remove };
   };
 
   const notify = (level, message) => {
@@ -235,6 +341,349 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
     }
   };
 
+  const checkIntervalMs = 10 * 60 * 1000;
+  const backgroundIntervalMs = 30 * 60 * 1000;
+  const reminderDelayMs = 2 * 60 * 60 * 1000;
+  const focusCooldownMs = 30 * 1000;
+  const setTimer =
+    typeof root.setTimeout === 'function'
+      ? root.setTimeout.bind(root)
+      : typeof setTimeout === 'function'
+        ? setTimeout
+        : null;
+  const clearTimer =
+    typeof root.clearTimeout === 'function'
+      ? root.clearTimeout.bind(root)
+      : typeof clearTimeout === 'function'
+        ? clearTimeout
+        : null;
+  let watchTimer = null;
+  let deferredTimer = null;
+  let checking = false;
+  let installing = false;
+  let stopped = false;
+  let lastCheckAt = Date.now();
+  let updatePrompt = null;
+  let deferredManifest = null;
+  let disposeBattleWatch = null;
+  let broadcast = null;
+
+  const readReminder = () => {
+    try {
+      const value = JSON.parse(root.localStorage.getItem(reminderKey) || 'null');
+      if (!value || typeof value.buildId !== 'string') return null;
+      return {
+        buildId: value.buildId,
+        nextReminderAt: Number(value.nextReminderAt || 0),
+        ignored: value.ignored === true,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const writeReminder = (value) => {
+    try {
+      root.localStorage.setItem(reminderKey, JSON.stringify(value));
+    } catch {}
+  };
+
+  const fetchLatestManifest = async () => {
+    for (let index = 0; index < manifestSources.length; index += 1) {
+      try {
+        return {
+          manifest: await fetchManifest(manifestSources[index]),
+          sourceIndex: index,
+        };
+      } catch {}
+    }
+    return null;
+  };
+
+  const isBattleRunning = async () => {
+    try {
+      const snapshot = await root.Caelian?.query?.('state');
+      return snapshot?.battle?.state?.status === 'ongoing';
+    } catch {
+      return false;
+    }
+  };
+
+  const preferredOpenPanel = () => {
+    try {
+      const panels = root.Caelian?.listOpenPanels?.() || [];
+      return panels.find(
+        (panel) =>
+          panel !== 'shell' &&
+          panel !== 'release-notes' &&
+          panel !== 'achievement-letter',
+      );
+    } catch {
+      return null;
+    }
+  };
+
+  const restorePanel = async (panel) => {
+    if (!panel || typeof root.Caelian?.navigatePanel !== 'function') return;
+    try {
+      await root.Caelian.navigatePanel(panel);
+    } catch {}
+  };
+
+  const installAvailableUpdate = async (requested) => {
+    if (installing || root.Caelian?.buildId === requested.buildId) return;
+    installing = true;
+    updatePrompt?.remove?.();
+    updatePrompt = null;
+    const cachedGood = readCached(cacheKey);
+    const oldPanel = preferredOpenPanel();
+    notify('info', '正在安全更新到 ' + requested.version + '……');
+
+    const candidates = [requested];
+    const candidateUrls = new Set([requested.modules.runtime.url]);
+    for (const source of manifestSources) {
+      try {
+        const alternate = await fetchManifest(source);
+        if (
+          alternate.buildId === requested.buildId &&
+          !candidateUrls.has(alternate.modules.runtime.url)
+        ) {
+          candidates.push(alternate);
+          candidateUrls.add(alternate.modules.runtime.url);
+        }
+      } catch {}
+    }
+
+    let lastError = null;
+    for (let index = 0; index < candidates.length; index += 1) {
+      const candidate = candidates[index];
+      try {
+        await activate(candidate, index > 0);
+        if (cachedGood && cachedGood.buildId !== candidate.buildId) {
+          writeCached(previousCacheKey, cachedGood);
+        }
+        writeCached(cacheKey, candidate);
+        writeReminder({
+          buildId: candidate.buildId,
+          nextReminderAt: Number.MAX_SAFE_INTEGER,
+          ignored: true,
+        });
+        await restorePanel(oldPanel);
+        notify('success', 'Alpha ' + candidate.version + ' 更新完成');
+        try {
+          broadcast?.postMessage({
+            type: 'installed',
+            buildId: candidate.buildId,
+          });
+        } catch {}
+        installing = false;
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    if (cachedGood && cachedGood.buildId !== requested.buildId) {
+      try {
+        await activate(cachedGood, true);
+        await restorePanel(oldPanel);
+        notify('warning', '更新未完成，已恢复到上一个可用版本。');
+        installing = false;
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    installing = false;
+    notify(
+      'error',
+      '更新失败：' +
+        (lastError instanceof Error ? lastError.message : String(lastError)),
+    );
+  };
+
+  const stopDeferredWatch = () => {
+    disposeBattleWatch?.();
+    disposeBattleWatch = null;
+    if (deferredTimer !== null && clearTimer) clearTimer(deferredTimer);
+    deferredTimer = null;
+  };
+
+  const tryDeferredUpdate = async () => {
+    if (!deferredManifest || installing || (await isBattleRunning())) return;
+    const manifest = deferredManifest;
+    deferredManifest = null;
+    stopDeferredWatch();
+    await installAvailableUpdate(manifest);
+  };
+
+  const scheduleDeferredCheck = () => {
+    if (!setTimer || stopped || !deferredManifest) return;
+    if (deferredTimer !== null && clearTimer) clearTimer(deferredTimer);
+    deferredTimer = setTimer(async () => {
+      deferredTimer = null;
+      await tryDeferredUpdate();
+      if (deferredManifest) scheduleDeferredCheck();
+    }, 15_000);
+  };
+
+  const requestInstall = async (manifest) => {
+    if (await isBattleRunning()) {
+      deferredManifest = manifest;
+      stopDeferredWatch();
+      if (typeof root.Caelian?.on === 'function') {
+        disposeBattleWatch = root.Caelian.on('state.changed', () => {
+          void tryDeferredUpdate();
+        });
+      }
+      scheduleDeferredCheck();
+      notify('warning', '检测到进行中的战斗，将在战斗结束后自动更新。');
+      return;
+    }
+    await installAvailableUpdate(manifest);
+  };
+
+  const snoozeManifest = (manifest) => {
+    writeReminder({
+      buildId: manifest.buildId,
+      nextReminderAt: Date.now() + reminderDelayMs,
+      ignored: false,
+    });
+  };
+
+  const ignoreManifest = (manifest) => {
+    writeReminder({
+      buildId: manifest.buildId,
+      nextReminderAt: Number.MAX_SAFE_INTEGER,
+      ignored: true,
+    });
+  };
+
+  const promptForUpdate = (manifest) => {
+    const reminder = readReminder();
+    if (
+      reminder?.buildId === manifest.buildId &&
+      (reminder.ignored || Date.now() < reminder.nextReminderAt)
+    ) {
+      return;
+    }
+    snoozeManifest(manifest);
+    try {
+      broadcast?.postMessage({
+        type: 'prompted',
+        buildId: manifest.buildId,
+        nextReminderAt: Date.now() + reminderDelayMs,
+      });
+    } catch {}
+    updatePrompt?.remove?.();
+    updatePrompt = showBridgeUpdatePrompt(manifest, {
+      update: () => void requestInstall(manifest),
+      later: () => snoozeManifest(manifest),
+      ignore: () => ignoreManifest(manifest),
+    });
+    if (!updatePrompt && typeof root.Caelian?.notify === 'function') {
+      root.Caelian.notify({
+        kind: 'info',
+        icon: '↥',
+        eyebrow: 'UPDATE AVAILABLE',
+        title: '发现新版本 ' + manifest.version,
+        description: '点击此通知立即更新；无需刷新酒馆。',
+        duration: 12_000,
+        priority: 88,
+        onClick: () => requestInstall(manifest),
+      });
+    }
+  };
+
+  const scheduleCheck = (delay) => {
+    if (!setTimer || stopped) return;
+    if (watchTimer !== null && clearTimer) clearTimer(watchTimer);
+    watchTimer = setTimer(() => {
+      watchTimer = null;
+      void checkForUpdates(false);
+    }, delay);
+  };
+
+  const checkForUpdates = async (force) => {
+    if (checking || stopped) return;
+    const now = Date.now();
+    if (!force && now - lastCheckAt < focusCooldownMs) return;
+    checking = true;
+    lastCheckAt = now;
+    try {
+      const latest = await fetchLatestManifest();
+      if (
+        latest &&
+        latest.manifest.buildId !== root.Caelian?.buildId
+      ) {
+        promptForUpdate(latest.manifest);
+      }
+    } finally {
+      checking = false;
+      const hidden = root.document?.visibilityState === 'hidden';
+      scheduleCheck(hidden ? backgroundIntervalMs : checkIntervalMs);
+    }
+  };
+
+  const onVisible = () => {
+    if (root.document?.visibilityState !== 'hidden') {
+      void checkForUpdates(false);
+    }
+  };
+  const onFocus = () => void checkForUpdates(false);
+  const onOnline = () => void checkForUpdates(true);
+
+  const startUpdateWatcher = () => {
+    if (stopped) return;
+    try {
+      previousWatcher?.stop?.();
+    } catch {}
+    root.document?.addEventListener?.('visibilitychange', onVisible);
+    root.addEventListener?.('focus', onFocus);
+    root.addEventListener?.('online', onOnline);
+    if (typeof root.BroadcastChannel === 'function') {
+      try {
+        broadcast = new root.BroadcastChannel('caelian:alpha:update');
+        broadcast.addEventListener('message', (event) => {
+          const data = event?.data;
+          if (data?.type === 'prompted' && typeof data.buildId === 'string') {
+            writeReminder({
+              buildId: data.buildId,
+              nextReminderAt: Number(data.nextReminderAt || Date.now() + reminderDelayMs),
+              ignored: false,
+            });
+            if (updatePrompt?.buildId === data.buildId) {
+              updatePrompt.remove();
+              updatePrompt = null;
+            }
+          }
+        });
+      } catch {}
+    }
+    scheduleCheck(checkIntervalMs);
+    root[watcherKey] = {
+      channel: 'alpha',
+      checkIntervalMs,
+      checkNow: () => checkForUpdates(true),
+      stop: () => {
+        if (stopped) return;
+        stopped = true;
+        if (watchTimer !== null && clearTimer) clearTimer(watchTimer);
+        watchTimer = null;
+        stopDeferredWatch();
+        updatePrompt?.remove?.();
+        updatePrompt = null;
+        root.document?.removeEventListener?.('visibilitychange', onVisible);
+        root.removeEventListener?.('focus', onFocus);
+        root.removeEventListener?.('online', onOnline);
+        try {
+          broadcast?.close?.();
+        } catch {}
+        broadcast = null;
+      },
+    };
+  };
+
   const cachedGood = readCached(cacheKey);
   const cachedPrevious = readCached(previousCacheKey);
   const sourceErrors = [];
@@ -266,6 +715,7 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
 
   if (root.Caelian?.buildId === requested.buildId) {
     writeCached(cacheKey, requested);
+    startUpdateWatcher();
     return;
   }
 
@@ -276,6 +726,7 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
     }
     writeCached(cacheKey, requested);
     notify('success', 'Alpha ' + requested.version + ' 已加载');
+    startUpdateWatcher();
     return;
   } catch (updateError) {
     const recoveryCandidates = [];
@@ -337,6 +788,7 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
               '（' + fallback.buildId.slice(0, 8) + '）',
           );
         }
+        startUpdateWatcher();
         return;
       } catch {}
     }
@@ -382,7 +834,7 @@ const standaloneScript = {
   name: 'Re∞：欧西亚斯Alpha',
   id: 'f56df46e-b198-4d84-9e94-269079a31e17',
   content: bridge,
-  info: '固定读取公网 Alpha 通道；主线路不可达时自动切换备用公网 CDN。',
+  info: '固定读取公网 Alpha 通道；每 10 分钟自动检查更新，主线路不可达时切换备用公网 CDN。',
   button: {
     enabled: true,
     buttons: [],

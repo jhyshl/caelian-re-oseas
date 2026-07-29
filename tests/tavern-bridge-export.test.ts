@@ -45,6 +45,10 @@ describe('Tavern Helper Alpha bridge export', () => {
     expect(receiver.content).toContain(
       '主更新线路不可达，已自动切换备用公网 CDN',
     );
+    expect(receiver.content).toContain('__CaelianAlphaUpdateWatcher');
+    expect(receiver.content).toContain('发现新版本');
+    expect(receiver.content).toContain('2 小时后提醒');
+    expect(receiver.content).toContain('战斗结束后自动更新');
     expect(receiver.content).not.toMatch(/127\.0\.0\.1|localhost/);
     expect(receiver.info).toContain('备用公网 CDN');
   });
@@ -117,6 +121,131 @@ describe('Tavern Helper Alpha bridge export', () => {
     expect(requests[1]).toContain('jianghailou7.chatgpt.site');
     expect(warnings).toContain(
       '主更新线路不可达，已自动切换备用公网 CDN。',
+    );
+  });
+
+  it('checks for a newer build without reloading Tavern and prompts once', async () => {
+    const receiver = JSON.parse(
+      await readFile(
+        path.join(
+          root,
+          'dist',
+          'tavern-helper',
+          'caelian-alpha-script.json',
+        ),
+        'utf8',
+      ),
+    ) as { content: string };
+    const storage = new Map<string, string>();
+    const scheduled: number[] = [];
+    const stateListeners: Array<() => void> = [];
+    const notifications: Array<{
+      title: string;
+      description?: string;
+      onClick?: () => Promise<void>;
+    }> = [];
+    let requestCount = 0;
+    const currentManifest = {
+      channel: 'alpha',
+      version: '0.2.0-alpha.current',
+      buildId: 'current-build',
+      bridgeApi: 1,
+      modules: {
+        runtime: {
+          url: 'https://jhyshl.github.io/caelian-re-oseas/builds/current-build/assets/alpha.js',
+          css: [],
+        },
+      },
+    };
+    const nextManifest = {
+      ...currentManifest,
+      version: '0.2.0-alpha.next',
+      buildId: 'next-build',
+      modules: {
+        runtime: {
+          url: 'https://jhyshl.github.io/caelian-re-oseas/builds/next-build/assets/alpha.js',
+          css: [],
+        },
+      },
+    };
+    const host = {
+      document: {},
+      Caelian: {
+        buildId: currentManifest.buildId,
+        notify: (input: (typeof notifications)[number]) => {
+          notifications.push(input);
+        },
+        query: async () => ({
+          battle: { state: { status: 'ongoing' } },
+        }),
+        on: (_event: string, handler: () => void) => {
+          stateListeners.push(handler);
+          return () => undefined;
+        },
+      },
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+      },
+      setTimeout: (_callback: () => void, delay: number) => {
+        scheduled.push(delay);
+        return scheduled.length;
+      },
+      clearTimeout: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    } as Record<string, unknown>;
+    host.parent = host;
+
+    await (vm.runInNewContext(receiver.content, {
+      window: host,
+      console,
+      Date,
+      JSON,
+      Number,
+      Promise,
+      Set,
+      TypeError,
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        json: async () =>
+          requestCount++ === 0 ? currentManifest : nextManifest,
+      }),
+    }) as Promise<void>);
+
+    const watcher = host.__CaelianAlphaUpdateWatcher as {
+      checkIntervalMs: number;
+      checkNow: () => Promise<void>;
+    };
+    expect(watcher.checkIntervalMs).toBe(10 * 60 * 1000);
+    expect(scheduled).toContain(10 * 60 * 1000);
+
+    await watcher.checkNow();
+
+    expect(notifications).toHaveLength(1);
+    expect(notifications[0]?.title).toBe(
+      '发现新版本 0.2.0-alpha.next',
+    );
+    expect(notifications[0]?.description).toContain('无需刷新酒馆');
+    expect(typeof notifications[0]?.onClick).toBe('function');
+    expect(host.Caelian).toMatchObject({ buildId: 'current-build' });
+
+    await watcher.checkNow();
+    expect(notifications).toHaveLength(1);
+    expect(
+      JSON.parse(
+        storage.get('caelian:bridge:update-reminder:alpha') ?? '{}',
+      ),
+    ).toMatchObject({
+      buildId: 'next-build',
+      ignored: false,
+    });
+
+    await notifications[0]?.onClick?.();
+    expect(stateListeners).toHaveLength(1);
+    expect(notifications[1]?.description).toContain(
+      '战斗结束后自动更新',
     );
   });
 });
