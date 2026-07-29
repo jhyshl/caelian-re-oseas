@@ -61,12 +61,22 @@ describe('MVU v3 contracts', () => {
       storyFlags: {
         [`${'标'.repeat(90)}`]: true,
       },
+      world: {
+        region: ` ${'城'.repeat(140)} `,
+        place: '',
+        mainStage: 99_999,
+        mainStep: -12,
+      },
     });
 
     expect(normalized.companion?.affinity).toBe(100);
     expect(normalized.companion?.mood).toHaveLength(80);
     expect(normalized.companion?.innerThought).toHaveLength(500);
     expect(Object.keys(normalized.storyFlags ?? {})[0]).toHaveLength(80);
+    expect(normalized.world?.region).toHaveLength(120);
+    expect(normalized.world?.place).toBe('');
+    expect(normalized.world?.mainStage).toBe(9_999);
+    expect(normalized.world?.mainStep).toBe(0);
   });
 
   it('关系阶段只由本地好感度推导', () => {
@@ -115,8 +125,59 @@ describe('MVU v3 contracts', () => {
           updatedAt: 1,
         },
       ],
+      {
+        profileId: 'profile:test',
+        region: '伊拉亚城',
+        place: '中央广场',
+        location: '伊拉亚城-中央广场',
+        gameDate: '新圣约历1385-09-02',
+        gameTime: '10:30',
+        weather: '多云',
+        mainStage: 1,
+        mainStep: 2,
+        updatedAt: 1,
+      },
     );
 
     expect(narrative.storyFlags).toEqual({ a: true });
+    expect(narrative.world).toMatchObject({
+      location: '伊拉亚城-中央广场',
+      gameTime: '10:30',
+      mainStage: 1,
+    });
+  });
+
+  it('从 v3 narrative 读取由 AI 更新的世界状态', () => {
+    expect(
+      extractMvuNarrativePatch({
+        stat_data: {
+          caelian: {
+            narrative: {
+              world: {
+                region: '艾瑟拉森林',
+                place: '月露湖',
+                location: '艾瑟拉森林-月露湖',
+                gameDate: '新圣约历1385-09-04',
+                gameTime: '21:15',
+                weather: '小雨',
+                mainStage: 2,
+                mainStep: 3,
+              },
+            },
+          },
+        },
+      }),
+    ).toEqual({
+      world: {
+        region: '艾瑟拉森林',
+        place: '月露湖',
+        location: '艾瑟拉森林-月露湖',
+        gameDate: '新圣约历1385-09-04',
+        gameTime: '21:15',
+        weather: '小雨',
+        mainStage: 2,
+        mainStep: 3,
+      },
+    });
   });
 });

@@ -9,6 +9,17 @@ const MAX_VISIBLE_RELEASES = 5;
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.14',
+    label: 'Alpha 14',
+    releasedAt: '2026-07-29',
+    changes: [
+      '修复 MVU 实时读取链路：在 VARIABLE_UPDATE_ENDED 后重新读取最新楼层变量，凯利安状态和世界状态会随 AI 回复刷新。',
+      '世界地区、地点、日期、时间、天气和主线阶段改由 AI 写入 caelian.narrative.world；地图按钮只填入行动文本，不再由脚本自行移动。',
+      '新增角色卡与绑定世界书的受控增量更新通道，只允许作用于“凯利安”和指定主绑定世界书。',
+      '内容更新使用唯一命令和精确片段前置校验；检测到玩家修改时保留玩家版本，支持关闭自动更新和手动检查。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.13',
     label: 'Alpha 13',
     releasedAt: '2026-07-29',

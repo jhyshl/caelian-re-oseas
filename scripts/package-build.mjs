@@ -16,6 +16,12 @@ const publicBase = (
   process.env.CAELIAN_PUBLIC_BASE ??
   'https://jhyshl.github.io/caelian-re-oseas'
 ).replace(/\/+$/, '');
+const managedContentManifest = JSON.parse(
+  await readFile(
+    path.join(root, 'public', 'managed-content', 'alpha.json'),
+    'utf8',
+  ),
+);
 
 function resolveBuildId() {
   if (process.env.CAELIAN_BUILD_ID) return process.env.CAELIAN_BUILD_ID;
@@ -158,6 +164,14 @@ const channelManifest = {
       css,
     },
   },
+  managedContent: {
+    url: `${publicBase}/managed-content/alpha.json`,
+    revision: managedContentManifest.revision,
+    sourceCard: {
+      ...managedContentManifest.sourceCard,
+      url: `${publicBase}/managed-content/cards/caelian-alpha-mvu-v3.json`,
+    },
+  },
   ...(previousChannelManifest
     ? {
         previous: {
@@ -170,6 +184,15 @@ const channelManifest = {
 };
 
 await mkdir(path.join(distRoot, 'channels'), { recursive: true });
+await rm(path.join(distRoot, 'managed-content'), {
+  recursive: true,
+  force: true,
+});
+await cp(
+  path.join(root, 'public', 'managed-content'),
+  path.join(distRoot, 'managed-content'),
+  { recursive: true },
+);
 if (previousChannelManifest) {
   await writeFile(
     path.join(distRoot, 'channels', 'alpha.previous.json'),
@@ -201,7 +224,7 @@ const statusPage = `<!doctype html>
     <h1>Re∞：欧西亚斯</h1>
     <p>当前版本：<code>${packageJson.version}</code></p>
     <p>构建：<code>${buildId}</code></p>
-    <p><a href="./channels/alpha.json">Alpha manifest</a> · <a href="./builds/${buildId}/index.html">浏览器演示</a> · <a href="./tavern-helper/caelian-alpha.json">酒馆助手接入口</a></p>
+    <p><a href="./channels/alpha.json">Alpha manifest</a> · <a href="./managed-content/cards/caelian-alpha-mvu-v3.json">最新版角色卡</a> · <a href="./builds/${buildId}/index.html">浏览器演示</a> · <a href="./tavern-helper/caelian-alpha.json">酒馆助手接入口</a></p>
   </main>
 </body>
 </html>

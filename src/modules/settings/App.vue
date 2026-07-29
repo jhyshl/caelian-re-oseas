@@ -13,6 +13,10 @@ const draft = ref<Pick<SettingsRecord, 'preserveAdventureSave' | 'battleDifficul
 });
 const notice = ref('');
 const saving = ref(false);
+const contentSyncing = ref(false);
+const managedContentAutoUpdate = ref(
+  props.context.api.getManagedContentAutoUpdate(),
+);
 const runtime = props.context.api.getRuntimeInfo();
 
 async function save() {
@@ -39,6 +43,43 @@ async function syncMvu() {
   notice.value = written
     ? '已刷新 MVU 中的精简 AI 摘要。'
     : '当前没有可用的 MVU 接口；本地档案不受影响。';
+}
+
+async function syncManagedContent() {
+  contentSyncing.value = true;
+  const result = await props.context.api.syncManagedContent({ force: true });
+  contentSyncing.value = false;
+  if (result.status === 'wrong-character') {
+    notice.value = '当前角色不是“凯利安”，未读取或修改任何角色卡内容。';
+    return;
+  }
+  if (result.status === 'wrong-worldbook') {
+    notice.value = '当前角色未绑定指定世界书，未修改任何内容。';
+    return;
+  }
+  if (result.status === 'unavailable') {
+    notice.value = '酒馆助手角色卡/世界书编辑接口尚未连接。';
+    return;
+  }
+  if (result.status === 'offline') {
+    notice.value = '暂时无法读取内容更新清单，请稍后重试。';
+    return;
+  }
+  notice.value =
+    result.conflicts.length > 0
+      ? `已更新 ${result.applied} 项；${result.conflicts.length} 项检测到玩家修改，已保留玩家版本。`
+      : result.applied > 0
+        ? `已安全更新 ${result.applied} 项角色卡/世界书内容。`
+        : '角色卡与绑定世界书内容已经是最新版本。';
+}
+
+function updateManagedContentPreference() {
+  props.context.api.setManagedContentAutoUpdate(
+    managedContentAutoUpdate.value,
+  );
+  notice.value = managedContentAutoUpdate.value
+    ? '已开启角色卡/世界书安全增量更新。'
+    : '已关闭自动内容更新；仍可随时手动检查。';
 }
 
 onMounted(async () => {
@@ -82,6 +123,20 @@ onMounted(async () => {
             <option value="hard">困难</option>
             <option value="hell">炼狱</option>
           </select>
+        </label>
+        <label class="setting-row">
+          <div>
+            <strong>角色卡 / 世界书安全增量更新</strong>
+            <span>
+              仅允许修改“凯利安”及其指定绑定世界书。更新只处理管理端标记的精确片段；
+              与玩家修改冲突时保留玩家版本，不会整卡覆盖。
+            </span>
+          </div>
+          <input
+            v-model="managedContentAutoUpdate"
+            type="checkbox"
+            @change="updateManagedContentPreference"
+          />
         </label>
         <label class="setting-row">
           <div>
@@ -129,6 +184,14 @@ onMounted(async () => {
         </div>
         <button type="button" class="ca-button" @click="syncMvu">
           立即刷新 MVU 精简摘要
+        </button>
+        <button
+          type="button"
+          class="ca-button"
+          :disabled="contentSyncing"
+          @click="syncManagedContent"
+        >
+          {{ contentSyncing ? '正在检查内容……' : '检查角色卡 / 世界书更新' }}
         </button>
       </section>
 

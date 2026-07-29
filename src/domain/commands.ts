@@ -115,6 +115,21 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
             message: '至少需要修改一个凯利安叙事字段',
           })
           .optional(),
+        world: z
+          .object({
+            region: z.string().trim().min(1).max(120).optional(),
+            place: z.string().trim().max(120).optional(),
+            location: z.string().trim().min(1).max(180).optional(),
+            gameDate: z.string().trim().min(1).max(80).optional(),
+            gameTime: z.string().trim().min(1).max(40).optional(),
+            weather: z.string().trim().min(1).max(80).optional(),
+            mainStage: z.number().int().min(0).max(9_999).optional(),
+            mainStep: z.number().int().min(0).max(9_999).optional(),
+          })
+          .refine((value) => Object.keys(value).length > 0, {
+            message: '至少需要修改一个世界叙事字段',
+          })
+          .optional(),
         storyFlags: z
           .record(
             z.string().trim().min(1).max(80),
@@ -126,7 +141,8 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
           .optional(),
       })
       .refine(
-        (value) => Boolean(value.companion || value.storyFlags),
+        (value) =>
+          Boolean(value.companion || value.world || value.storyFlags),
         { message: '至少需要一个叙事更新' },
       ),
   }),

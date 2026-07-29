@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "channel": "alpha",
+  "revision": "2026-07-29.1",
+  "target": {
+    "characterName": "凯利安",
+    "worldbookNames": [
+      "孔雀开屏你说看不见",
+      "孔雀开屏你说你看不见"
+    ],
+    "requirePrimaryBinding": true
+  },
+  "sourceCard": {
+    "url": "https://jhyshl.github.io/caelian-re-oseas/managed-content/cards/caelian-alpha-mvu-v3.json",
+    "sha256": "1f8625f8569907e7140ace91bfd25df92f9a2e6a837ecf4cc552dd400963e8bc"
+  },
+  "operations": [
+    {
+      "id": "2026-07-29.mvu-world.script-comment",
+      "target": {
+        "kind": "character-script",
+        "scriptId": "edfcaddc-2475-46e8-a0d9-f14a2e6558b2",
+        "scriptName": "Alpha MVU 最小变量结构 v3.0"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "  // narrative 是唯一允许 AI 更新的区域，浏览器端会校验后写入 IndexedDB。",
+        "after": "  // narrative 是唯一允许 AI 更新的区域；Alpha 只读取、校验并显示，不会自行推进世界状态。"
+      }
+    },
+    {
+      "id": "2026-07-29.mvu-world.script-schema",
+      "target": {
+        "kind": "character-script",
+        "scriptId": "edfcaddc-2475-46e8-a0d9-f14a2e6558b2",
+        "scriptName": "Alpha MVU 最小变量结构 v3.0"
+      },
+      "mutation": {
+        "action": "insert-before",
+        "anchor": "    storyFlags: z.record(z.string(), z.boolean()).prefault({}),",
+        "text": "    world: z.object({\n      region: z.string().max(120).prefault('伊拉亚城'),\n      place: z.string().max(120).prefault('宿舍楼'),\n      location: z.string().max(180).prefault('圣德里安学院-宿舍楼'),\n      gameDate: z.string().max(80).prefault('新圣约历1385-09-01'),\n      gameTime: z.string().max(40).prefault('08:00'),\n      weather: z.string().max(80).prefault('晴朗'),\n      mainStage: z.coerce.number().int().min(0).max(9999).prefault(0),\n      mainStep: z.coerce.number().int().min(0).max(9999).prefault(0),\n    }).passthrough().prefault({}),\n"
+      }
+    },
+    {
+      "id": "2026-07-29.mvu-world.initvar",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "initvar"
+      },
+      "mutation": {
+        "action": "insert-before",
+        "anchor": "    storyFlags: {}",
+        "text": "    world:\n      region: 伊拉亚城\n      place: 宿舍楼\n      location: 圣德里安学院-宿舍楼\n      gameDate: 新圣约历1385-09-01\n      gameTime: \"08:00\"\n      weather: 晴朗\n      mainStage: 0\n      mainStep: 0\n"
+      }
+    },
+    {
+      "id": "2026-07-29.mvu-world.rules",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "insert-before",
+        "anchor": "    caelian.narrative.storyFlags:",
+        "text": "    caelian.narrative.world:\n      authority: AI\n      check:\n        - 世界状态必须跟随当前剧情，由 AI 在实际发生变化时更新；Alpha 脚本不得自行推进。\n        - region 填当前大地区；place 填地区内地点；location 填面板显示的完整位置。\n        - gameDate、gameTime 随剧情中真实经过的时间更新；没有时间推进时保持原值。\n        - weather 只在天气确实变化时更新，不要每轮随机改写。\n        - mainStage、mainStep 只在主线里程碑或步骤真正推进时更新，范围为0~9999。\n        - 不得根据玩家点击地图直接假定已经抵达；必须等正文确认行动完成后再更新。\n"
+      }
+    },
+    {
+      "id": "2026-07-29.mvu-world.authority",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    - 如果 caelian.state 与叙事文本冲突，以 caelian.state 为当前游戏事实；不要尝试用 MVU 修正本地状态。",
+        "after": "    - 世界剧情事实以 caelian.narrative.world 为 AI 写入源；caelian.state.world 是 Alpha 读取、校验后的只读显示摘要。其他本地游戏数据仍以 caelian.state 为准。"
+      }
+    },
+    {
+      "id": "2026-07-29.mvu-world.output-boundary",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量输出格式"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    - 禁止创建玩家、世界、协会、战斗、背包、装备、卡牌、任务或成就变量。",
+        "after": "    - 禁止创建玩家、协会、战斗、背包、装备、卡牌、任务或成就变量；世界状态只能写入 /caelian/narrative/world/ 下的既定字段。"
+      }
+    },
+    {
+      "id": "2026-07-29.mvu-world.output-example",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量输出格式"
+      },
+      "mutation": {
+        "action": "insert-before",
+        "anchor": "      { \"op\": \"insert\", \"path\": \"/caelian/narrative/storyFlags/初次共同冒险\", \"value\": true }",
+        "text": "      { \"op\": \"replace\", \"path\": \"/caelian/narrative/world/region\", \"value\": \"伊拉亚城\" },\n      { \"op\": \"replace\", \"path\": \"/caelian/narrative/world/place\", \"value\": \"中央广场\" },\n      { \"op\": \"replace\", \"path\": \"/caelian/narrative/world/location\", \"value\": \"伊拉亚城-中央广场\" },\n      { \"op\": \"replace\", \"path\": \"/caelian/narrative/world/gameTime\", \"value\": \"10:30\" },\n"
+      }
+    }
+  ]
+}

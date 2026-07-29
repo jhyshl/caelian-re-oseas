@@ -155,6 +155,16 @@ describe('createAiProjection', () => {
         affinity: 35,
         innerThought: '他开始值得信任了。',
       },
+      world: {
+        region: '伊拉亚城',
+        place: '集市',
+        location: '伊拉亚城-集市',
+        gameDate: '新圣约历1385-09-01',
+        gameTime: '08:00',
+        weather: '晴朗',
+        mainStage: 1,
+        mainStep: 2,
+      },
       storyFlags: { 'first-meeting': true },
     });
     expect(serialized).not.toContain('secret-item');

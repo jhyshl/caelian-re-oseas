@@ -525,8 +525,20 @@ export interface MvuCompanionState {
   innerThought: string;
 }
 
+export interface MvuNarrativeWorldState {
+  region: string;
+  place: string;
+  location: string;
+  gameDate: string;
+  gameTime: string;
+  weather: string;
+  mainStage: number;
+  mainStep: number;
+}
+
 export interface MvuNarrativeState {
   companion: MvuCompanionState;
+  world: MvuNarrativeWorldState;
   storyFlags: Record<string, boolean>;
 }
 

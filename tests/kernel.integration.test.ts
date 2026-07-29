@@ -1,5 +1,5 @@
 import Dexie from 'dexie';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createKernel } from '@/kernel/create-kernel';
 import { CaelianDatabase } from '@/storage/database';
 
@@ -9,6 +9,8 @@ afterEach(async () => {
   delete window.__CaelianRuntime;
   delete window.Mvu;
   delete window.SillyTavern;
+  delete window.eventOn;
+  delete window.tavern_events;
   document
     .querySelectorAll('[data-caelian-panel]')
     .forEach((element) => element.remove());
@@ -230,6 +232,112 @@ describe('CaelianKernel integration', () => {
       source: 'mvu-before-v3',
     });
     inspectionDb.close();
+
+    await kernel.api.shutdown();
+  });
+
+  it('MVU 完成 AI 更新后实时刷新凯利安与世界状态', async () => {
+    const databaseName = `caelian-alpha-mvu-live-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return { stop: () => handlers.delete(event) };
+    });
+    window.tavern_events = {};
+
+    let mvuData: Record<string, unknown> = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            companion: {
+              affinity: 10,
+              mood: '平静',
+              location: '圣德里安学院',
+              clothing: '学院制服',
+              innerThought: '先继续观察。',
+            },
+            world: {
+              region: '伊拉亚城',
+              place: '宿舍楼',
+              location: '圣德里安学院-宿舍楼',
+              gameDate: '新圣约历1385-09-01',
+              gameTime: '08:00',
+              weather: '晴朗',
+              mainStage: 0,
+              mainStep: 0,
+            },
+            storyFlags: {},
+          },
+        },
+      },
+    };
+    window.Mvu = {
+      events: { VARIABLE_UPDATE_ENDED: 'mvu-ended' },
+      getMvuData: () => mvuData,
+      replaceMvuData: (next) => {
+        mvuData = next;
+      },
+    };
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'mvu-live-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    const caelian = (
+      (mvuData.stat_data as Record<string, unknown>)
+        .caelian as Record<string, unknown>
+    );
+    caelian.narrative = {
+      companion: {
+        affinity: 37,
+        mood: '期待',
+        location: '中央广场',
+        clothing: '学院制服',
+        innerThought: '或许可以再相信他一些。',
+      },
+      world: {
+        region: '伊拉亚城',
+        place: '中央广场',
+        location: '伊拉亚城-中央广场',
+        gameDate: '新圣约历1385-09-02',
+        gameTime: '10:30',
+        weather: '多云',
+        mainStage: 1,
+        mainStep: 2,
+      },
+      storyFlags: { 已经出发: true },
+    };
+    handlers.get('mvu-ended')?.();
+
+    await expect
+      .poll(async () => {
+        const state = await kernel.api.query('state');
+        return {
+          affinity: state.social.affinity,
+          mood: state.social.mood,
+          location: state.world.location,
+          gameDate: state.world.gameDate,
+          gameTime: state.world.gameTime,
+          weather: state.world.weather,
+          mainStage: state.world.mainStage,
+          mainStep: state.world.mainStep,
+        };
+      })
+      .toEqual({
+        affinity: 37,
+        mood: '期待',
+        location: '伊拉亚城-中央广场',
+        gameDate: '新圣约历1385-09-02',
+        gameTime: '10:30',
+        weather: '多云',
+        mainStage: 1,
+        mainStep: 2,
+      });
 
     await kernel.api.shutdown();
   });

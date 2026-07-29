@@ -51,6 +51,16 @@ const projection: AiProjection = {
       clothing: '白色暗纹衬衫',
       innerThought: '',
     },
+    world: {
+      region: '圣德里安学院',
+      place: '中央广场',
+      location: '圣德里安学院-中央广场',
+      gameDate: '新圣约历1385-09-01',
+      gameTime: '08:00',
+      weather: '晴朗',
+      mainStage: 0,
+      mainStep: 0,
+    },
     storyFlags: {},
   },
 };
@@ -58,6 +68,9 @@ const projection: AiProjection = {
 afterEach(() => {
   delete window.Mvu;
   delete window.SillyTavern;
+  delete window.eventOn;
+  delete window.tavern_events;
+  vi.useRealTimers();
   document.querySelector('#user_avatar_block')?.remove();
 });
 
@@ -131,6 +144,112 @@ describe('TavernAdapter', () => {
     expect(replaceMvuData).not.toHaveBeenCalled();
 
     delete window.Mvu;
+  });
+
+  it('回写只读投影时保留 AI 已写入的 narrative', async () => {
+    const replaceMvuData = vi.fn();
+    const aiNarrative = {
+      companion: {
+        affinity: 28,
+        mood: '安心',
+        location: '中央广场',
+        clothing: '学院制服',
+        innerThought: '他今天似乎很高兴。',
+      },
+      world: {
+        region: '伊拉亚城',
+        place: '中央广场',
+        location: '伊拉亚城-中央广场',
+        gameDate: '新圣约历1385-09-02',
+        gameTime: '10:30',
+        weather: '多云',
+        mainStage: 1,
+        mainStep: 2,
+      },
+      storyFlags: { 已经出发: true },
+    };
+    window.Mvu = {
+      getMvuData: () => ({
+        stat_data: {
+          caelian: {
+            ...projection,
+            _meta: { ...projection._meta, revision: 0 },
+            narrative: aiNarrative,
+          },
+        },
+      }),
+      replaceMvuData,
+    };
+    const adapter = new TavernAdapter(window);
+
+    await adapter.writeProjection(projection);
+
+    const next = replaceMvuData.mock.calls[0]?.[0] as {
+      stat_data: { caelian: AiProjection };
+    };
+    expect(next.stat_data.caelian.narrative).toEqual(aiNarrative);
+  });
+
+  it('旧 v3 narrative 缺少 world 时只补初始结构，不覆盖已有 AI 字段', async () => {
+    const replaceMvuData = vi.fn();
+    window.Mvu = {
+      getMvuData: () => ({
+        stat_data: {
+          caelian: {
+            narrative: {
+              companion: {
+                ...projection.narrative.companion,
+                affinity: 25,
+              },
+              storyFlags: { 玩家保留标记: true },
+            },
+          },
+        },
+      }),
+      replaceMvuData,
+    };
+    const adapter = new TavernAdapter(window);
+
+    await adapter.writeProjection(projection);
+
+    const next = replaceMvuData.mock.calls[0]?.[0] as {
+      stat_data: { caelian: AiProjection };
+    };
+    expect(next.stat_data.caelian.narrative).toMatchObject({
+      companion: { affinity: 25 },
+      world: projection.narrative.world,
+      storyFlags: { 玩家保留标记: true },
+    });
+  });
+
+  it('在 MVU 更新完成后防抖触发重新读取事件', async () => {
+    vi.useFakeTimers();
+    const handlers = new Map<unknown, () => void>();
+    const stop = vi.fn();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler as () => void);
+      return { stop };
+    });
+    window.tavern_events = {};
+    window.Mvu = {
+      events: { VARIABLE_UPDATE_ENDED: 'mvu-ended' },
+      getMvuData: () => ({}),
+      replaceMvuData: vi.fn(),
+    };
+    const listener = vi.fn();
+    const adapter = new TavernAdapter(window);
+    adapter.subscribe(listener);
+
+    handlers.get('mvu-ended')?.();
+    handlers.get('mvu-ended')?.();
+    await vi.advanceTimersByTimeAsync(179);
+    expect(listener).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith('MVU_VARIABLE_UPDATE_ENDED');
+
+    adapter.unsubscribeAll();
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 
   it('把行动文字写入酒馆输入框并派发输入事件', () => {

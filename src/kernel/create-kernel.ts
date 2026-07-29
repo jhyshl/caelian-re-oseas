@@ -31,6 +31,10 @@ import { NotificationCenter } from '@/notifications/notification-center';
 import type { NotificationKind } from '@/notifications/types';
 import { GameRepository } from '@/storage/repository';
 import { TavernAdapter } from '@/tavern/adapter';
+import {
+  ManagedContentUpdater,
+  type ManagedContentSyncResult,
+} from '@/content-updates/managed-content';
 
 interface KernelOptions {
   channel: ReleaseChannel;
@@ -51,12 +55,14 @@ export class CaelianKernel {
   private readonly events = new EventBus();
   private readonly panels: PanelRegistry;
   private readonly notifications: NotificationCenter;
+  private readonly managedContent: ManagedContentUpdater;
   private readonly stateDisposers: Array<() => void> = [];
   private status: RuntimeStatus = 'starting';
   private profileId?: string;
   private lastError?: string;
   private projectionQueue: Promise<boolean> = Promise.resolve(false);
   private projectionWriteInProgress = false;
+  private managedContentTimer?: number;
 
   constructor(options: KernelOptions) {
     if (options.channel !== 'alpha') {
@@ -80,6 +86,7 @@ export class CaelianKernel {
     this.notifications = new NotificationCenter(
       this.adapter.host.document,
     );
+    this.managedContent = new ManagedContentUpdater(this.adapter.host);
     this.api = this.createPublicApi();
   }
 
@@ -117,7 +124,8 @@ export class CaelianKernel {
       );
       this.adapter.subscribe(async (eventName) => {
         if (
-          eventName === 'MESSAGE_UPDATED' &&
+          (eventName === 'MESSAGE_UPDATED' ||
+            eventName === 'MVU_VARIABLE_UPDATE_ENDED') &&
           this.projectionWriteInProgress
         ) {
           return;
@@ -135,6 +143,7 @@ export class CaelianKernel {
       await this.panels.open('shell');
       await this.openReleaseNotesIfNew();
       await this.openAchievementSpecialIfNeeded();
+      this.startManagedContentUpdates();
       await this.events.emit('runtime.ready', this.getRuntimeInfo());
     } catch (error) {
       this.status = 'error';
@@ -234,6 +243,10 @@ export class CaelianKernel {
     await this.panels.closeAll();
     this.notifications.destroy();
     this.adapter.unsubscribeAll();
+    if (this.managedContentTimer !== undefined) {
+      this.adapter.host.clearInterval(this.managedContentTimer);
+      this.managedContentTimer = undefined;
+    }
     for (const dispose of this.stateDisposers.splice(0)) dispose();
     this.db.close();
     this.status = 'stopped';
@@ -259,6 +272,12 @@ export class CaelianKernel {
       notify: (input) => this.notifications.show(input),
       confirm: (input) => this.notifications.confirm(input),
       syncProjection: () => this.syncProjection(),
+      syncManagedContent: (options) =>
+        this.syncManagedContent(options?.force ?? true),
+      getManagedContentAutoUpdate: () =>
+        this.managedContent.autoUpdateEnabled(),
+      setManagedContentAutoUpdate: (enabled) =>
+        this.managedContent.setAutoUpdateEnabled(enabled),
       on: (event, handler) => this.events.on(event, handler),
       shutdown: () => this.shutdown(),
     };
@@ -277,6 +296,12 @@ export class CaelianKernel {
       notify: (input) => this.notifications.show(input),
       confirm: (input) => this.notifications.confirm(input),
       syncProjection: () => this.syncProjection(),
+      syncManagedContent: (options) =>
+        this.syncManagedContent(options?.force ?? true),
+      getManagedContentAutoUpdate: () =>
+        this.managedContent.autoUpdateEnabled(),
+      setManagedContentAutoUpdate: (enabled) =>
+        this.managedContent.setAutoUpdateEnabled(enabled),
       on: (event, handler) => this.events.on(event, handler),
     };
   }
@@ -341,6 +366,14 @@ export class CaelianKernel {
           ),
         )
       : {};
+    const world = patch.world
+      ? Object.fromEntries(
+          Object.entries(patch.world).filter(
+            ([key, value]) =>
+              snapshot.world[key as keyof typeof patch.world] !== value,
+          ),
+        )
+      : {};
     const currentFlags = new Map(
       snapshot.storyFlags.map((flag) => [flag.key, flag.value]),
     );
@@ -354,12 +387,14 @@ export class CaelianKernel {
 
     if (
       Object.keys(companion).length === 0 &&
+      Object.keys(world).length === 0 &&
       Object.keys(storyFlags).length === 0
     ) {
       return null;
     }
     return {
       ...(Object.keys(companion).length > 0 ? { companion } : {}),
+      ...(Object.keys(world).length > 0 ? { world } : {}),
       ...(Object.keys(storyFlags).length > 0 ? { storyFlags } : {}),
     };
   }
@@ -372,6 +407,35 @@ export class CaelianKernel {
       hash = Math.imul(hash, 16_777_619);
     }
     return (hash >>> 0).toString(36);
+  }
+
+  private startManagedContentUpdates(): void {
+    void this.syncManagedContent(false);
+    this.managedContentTimer = this.adapter.host.setInterval(
+      () => void this.syncManagedContent(false),
+      10 * 60 * 1_000,
+    );
+  }
+
+  private async syncManagedContent(
+    force: boolean,
+  ): Promise<ManagedContentSyncResult> {
+    const result = await this.managedContent.sync({ force });
+    if (result.applied > 0) {
+      this.notifyRuntime(
+        'success',
+        `已安全更新 ${result.applied} 项角色卡/世界书内容。`,
+        '凯利安内容更新完成',
+      );
+    }
+    if (result.conflicts.length > 0 && force) {
+      this.notifyRuntime(
+        'warning',
+        `${result.conflicts.length} 项内容与玩家修改冲突，已保留玩家版本。`,
+        '凯利安内容更新已暂停',
+      );
+    }
+    return result;
   }
 
   private async openReleaseNotesIfNew(): Promise<void> {

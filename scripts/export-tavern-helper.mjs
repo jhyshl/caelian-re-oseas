@@ -335,6 +335,7 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
       )) {
         if (oldStyle.dataset.caelianBuild !== manifest.buildId) oldStyle.remove();
       }
+      await root.Caelian?.syncManagedContent?.({ force: false });
     } catch (error) {
       for (const style of installedStyles) style.remove();
       throw error;
@@ -618,6 +619,7 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
       ) {
         promptForUpdate(latest.manifest);
       }
+      await root.Caelian?.syncManagedContent?.({ force: false });
     } finally {
       checking = false;
       const hidden = root.document?.visibilityState === 'hidden';
@@ -665,6 +667,8 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
       channel: 'alpha',
       checkIntervalMs,
       checkNow: () => checkForUpdates(true),
+      syncContent: () =>
+        root.Caelian?.syncManagedContent?.({ force: true }),
       stop: () => {
         if (stopped) return;
         stopped = true;

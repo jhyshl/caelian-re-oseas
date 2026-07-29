@@ -18,6 +18,7 @@ export function createAiProjection(
   const narrative = createMvuNarrative(
     snapshot.social,
     snapshot.storyFlags,
+    snapshot.world,
   );
   const battleState = snapshot.battle?.state;
   return {

@@ -24,7 +24,8 @@ const corsHeaders = {
 const isReleasePath = (pathname) =>
   pathname.startsWith('/builds/') ||
   pathname.startsWith('/channels/') ||
-  pathname.startsWith('/tavern-helper/');
+  pathname.startsWith('/tavern-helper/') ||
+  pathname.startsWith('/managed-content/');
 
 const withReleaseHeaders = (request, pathname, source) => {
   const headers = new Headers(source.headers);
@@ -36,7 +37,8 @@ const withReleaseHeaders = (request, pathname, source) => {
     headers.set('Cache-Control', 'public, max-age=31536000, immutable');
   } else if (
     pathname.startsWith('/channels/') ||
-    pathname.startsWith('/tavern-helper/')
+    pathname.startsWith('/tavern-helper/') ||
+    pathname.startsWith('/managed-content/')
   ) {
     headers.set('Cache-Control', 'no-store');
   }
@@ -72,6 +74,22 @@ const rebaseManifest = (manifest, origin) => {
           previous: {
             ...manifest.previous,
             url: rebaseUrl(manifest.previous.url),
+          },
+        }
+      : {}),
+    ...(manifest.managedContent
+      ? {
+          managedContent: {
+            ...manifest.managedContent,
+            url: rebaseUrl(manifest.managedContent.url),
+            ...(manifest.managedContent.sourceCard
+              ? {
+                  sourceCard: {
+                    ...manifest.managedContent.sourceCard,
+                    url: rebaseUrl(manifest.managedContent.sourceCard.url),
+                  },
+                }
+              : {}),
           },
         }
       : {}),

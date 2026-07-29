@@ -1,8 +1,10 @@
 import type {
   MvuCompanionState,
   MvuNarrativeState,
+  MvuNarrativeWorldState,
   SocialProgressRecord,
   StoryFlagRecord,
+  WorldStateRecord,
 } from '@/domain/types';
 
 export const MVU_SCHEMA_VERSION = 3 as const;
@@ -19,6 +21,7 @@ export const LEGACY_STAT_DATA_KEYS = [
 
 export interface MvuNarrativePatch {
   companion?: Partial<MvuCompanionState>;
+  world?: Partial<MvuNarrativeWorldState>;
   storyFlags?: Record<string, boolean>;
 }
 
@@ -30,9 +33,21 @@ const DEFAULT_COMPANION: MvuCompanionState = {
   innerThought: '',
 };
 
+const DEFAULT_WORLD: MvuNarrativeWorldState = {
+  region: '伊拉亚城',
+  place: '宿舍楼',
+  location: '圣德里安学院-宿舍楼',
+  gameDate: '新圣约历1385-09-01',
+  gameTime: '08:00',
+  weather: '晴朗',
+  mainStage: 0,
+  mainStep: 0,
+};
+
 export function defaultMvuNarrative(): MvuNarrativeState {
   return {
     companion: { ...DEFAULT_COMPANION },
+    world: { ...DEFAULT_WORLD },
     storyFlags: {},
   };
 }
@@ -48,6 +63,7 @@ export function relationshipStage(affinity: number): string {
 export function createMvuNarrative(
   social: SocialProgressRecord,
   storyFlags: StoryFlagRecord[],
+  world: WorldStateRecord,
 ): MvuNarrativeState {
   return {
     companion: {
@@ -64,6 +80,16 @@ export function createMvuNarrative(
         DEFAULT_COMPANION.clothing,
       ),
       innerThought: cleanText(social.innerThought, 500, ''),
+    },
+    world: {
+      region: cleanText(world.region, 120, DEFAULT_WORLD.region),
+      place: cleanText(world.place, 120, '', true),
+      location: cleanText(world.location, 180, DEFAULT_WORLD.location),
+      gameDate: cleanText(world.gameDate, 80, DEFAULT_WORLD.gameDate),
+      gameTime: cleanText(world.gameTime, 40, DEFAULT_WORLD.gameTime),
+      weather: cleanText(world.weather, 80, DEFAULT_WORLD.weather),
+      mainStage: clampStage(world.mainStage),
+      mainStep: clampStage(world.mainStep),
     },
     storyFlags: Object.fromEntries(
       storyFlags
@@ -109,9 +135,19 @@ export function extractMvuNarrativePatch(
     500,
     true,
   );
+  const world: Partial<MvuNarrativeWorldState> = {};
+  assignWorldText(world, 'region', legacyWorld['当前地区'], 120);
+  assignWorldText(world, 'place', legacyWorld['当前地点'], 120, true);
+  assignWorldText(world, 'location', legacyWorld['当前位置'], 180);
+  assignWorldText(world, 'gameDate', legacyWorld['日期'], 80);
+  assignWorldText(world, 'gameTime', legacyWorld['时间'], 40);
+  assignWorldText(world, 'weather', legacyWorld['天气'], 80);
+  assignWorldNumber(world, 'mainStage', legacyWorld['主线阶段']);
+  assignWorldNumber(world, 'mainStep', legacyWorld['主线步骤']);
 
   return {
     ...(Object.keys(companion).length > 0 ? { companion } : {}),
+    ...(Object.keys(world).length > 0 ? { world } : {}),
     ...(Object.keys(legacyFlags).length > 0
       ? { storyFlags: parseFlags(legacyFlags) }
       : {}),
@@ -129,6 +165,7 @@ export function normalizeNarrativePatch(
   patch: MvuNarrativePatch,
 ): MvuNarrativePatch {
   const companion: Partial<MvuCompanionState> = {};
+  const world: Partial<MvuNarrativeWorldState> = {};
   if (patch.companion) {
     assignNumber(companion, 'affinity', patch.companion.affinity);
     assignText(companion, 'mood', patch.companion.mood, 80);
@@ -142,8 +179,19 @@ export function normalizeNarrativePatch(
       true,
     );
   }
+  if (patch.world) {
+    assignWorldText(world, 'region', patch.world.region, 120);
+    assignWorldText(world, 'place', patch.world.place, 120, true);
+    assignWorldText(world, 'location', patch.world.location, 180);
+    assignWorldText(world, 'gameDate', patch.world.gameDate, 80);
+    assignWorldText(world, 'gameTime', patch.world.gameTime, 40);
+    assignWorldText(world, 'weather', patch.world.weather, 80);
+    assignWorldNumber(world, 'mainStage', patch.world.mainStage);
+    assignWorldNumber(world, 'mainStep', patch.world.mainStep);
+  }
   return {
     ...(Object.keys(companion).length > 0 ? { companion } : {}),
+    ...(Object.keys(world).length > 0 ? { world } : {}),
     ...(patch.storyFlags
       ? { storyFlags: parseFlags(patch.storyFlags) }
       : {}),
@@ -154,7 +202,9 @@ function parseNarrative(
   narrative: Record<string, unknown>,
 ): MvuNarrativePatch {
   const rawCompanion = asRecord(narrative.companion);
+  const rawWorld = asRecord(narrative.world);
   const companion: Partial<MvuCompanionState> = {};
+  const world: Partial<MvuNarrativeWorldState> = {};
   assignNumber(companion, 'affinity', rawCompanion.affinity);
   assignText(companion, 'mood', rawCompanion.mood, 80);
   assignText(companion, 'location', rawCompanion.location, 120);
@@ -166,9 +216,18 @@ function parseNarrative(
     500,
     true,
   );
+  assignWorldText(world, 'region', rawWorld.region, 120);
+  assignWorldText(world, 'place', rawWorld.place, 120, true);
+  assignWorldText(world, 'location', rawWorld.location, 180);
+  assignWorldText(world, 'gameDate', rawWorld.gameDate, 80);
+  assignWorldText(world, 'gameTime', rawWorld.gameTime, 40);
+  assignWorldText(world, 'weather', rawWorld.weather, 80);
+  assignWorldNumber(world, 'mainStage', rawWorld.mainStage);
+  assignWorldNumber(world, 'mainStep', rawWorld.mainStep);
   const rawFlags = asRecord(narrative.storyFlags);
   return {
     ...(Object.keys(companion).length > 0 ? { companion } : {}),
+    ...(Object.keys(world).length > 0 ? { world } : {}),
     ...(Object.keys(rawFlags).length > 0
       ? { storyFlags: parseFlags(rawFlags) }
       : {}),
@@ -211,8 +270,35 @@ function assignText<K extends keyof MvuCompanionState>(
   target[key] = text as MvuCompanionState[K];
 }
 
+function assignWorldText<K extends keyof MvuNarrativeWorldState>(
+  target: Partial<MvuNarrativeWorldState>,
+  key: K,
+  value: unknown,
+  maximum: number,
+  allowEmpty = false,
+): void {
+  if (typeof value !== 'string') return;
+  const text = value.trim().slice(0, maximum);
+  if (!text && !allowEmpty) return;
+  target[key] = text as MvuNarrativeWorldState[K];
+}
+
+function assignWorldNumber<K extends 'mainStage' | 'mainStep'>(
+  target: Partial<MvuNarrativeWorldState>,
+  key: K,
+  value: unknown,
+): void {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return;
+  target[key] = clampStage(number);
+}
+
 function clampAffinity(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function clampStage(value: number): number {
+  return Math.max(0, Math.min(9_999, Math.round(value)));
 }
 
 function cleanKey(value: string): string {
@@ -223,8 +309,10 @@ function cleanText(
   value: string,
   maximum: number,
   fallback: string,
+  allowEmpty = false,
 ): string {
-  return value.trim().slice(0, maximum) || fallback;
+  const text = value.trim().slice(0, maximum);
+  return text || (allowEmpty ? '' : fallback);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

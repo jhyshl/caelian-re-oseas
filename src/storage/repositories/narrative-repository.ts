@@ -26,6 +26,17 @@ export class NarrativeRepository {
       });
     }
 
+    if (patch.world) {
+      const current = await this.db.worldStates.get(profileId);
+      if (!current) throw new Error('世界状态不存在');
+      await this.db.worldStates.put({
+        ...current,
+        ...patch.world,
+        profileId,
+        updatedAt: now,
+      });
+    }
+
     if (patch.storyFlags) {
       await this.db.storyFlags.bulkPut(
         Object.entries(patch.storyFlags).map(([key, value]) => ({

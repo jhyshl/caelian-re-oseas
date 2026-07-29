@@ -168,13 +168,39 @@ export class TavernAdapter {
     const current = mvu.getMvuData(option) ?? {};
     const next = this.clone(current);
     const statData = this.asRecord(next.stat_data);
+    const currentCaelian = this.asRecord(statData.caelian);
+    const currentNarrative = this.asRecord(currentCaelian.narrative);
+    const currentCompanion = this.asRecord(currentNarrative.companion);
+    const currentWorld = this.asRecord(currentNarrative.world);
+    const currentStoryFlags = this.asRecord(currentNarrative.storyFlags);
 
     for (const key of LEGACY_STAT_DATA_KEYS) {
       delete statData[key];
     }
     next.stat_data = {
       ...statData,
-      caelian: projection,
+      caelian: {
+        ...projection,
+        narrative:
+          Object.keys(currentNarrative).length > 0
+            ? {
+                ...projection.narrative,
+                ...currentNarrative,
+                companion: {
+                  ...projection.narrative.companion,
+                  ...currentCompanion,
+                },
+                world: {
+                  ...projection.narrative.world,
+                  ...currentWorld,
+                },
+                storyFlags: {
+                  ...projection.narrative.storyFlags,
+                  ...currentStoryFlags,
+                },
+              }
+            : projection.narrative,
+      },
     };
 
     if (JSON.stringify(current) === JSON.stringify(next)) return false;
@@ -185,23 +211,39 @@ export class TavernAdapter {
   subscribe(handler: TavernEventHandler): void {
     const eventOn = this.host.eventOn;
     const events = this.host.tavern_events;
-    if (typeof eventOn !== 'function' || !events) return;
+    if (typeof eventOn !== 'function') return;
 
-    for (const eventName of [
-      'CHAT_CHANGED',
-      'MESSAGE_RECEIVED',
-      'MESSAGE_UPDATED',
-      'PERSONA_CHANGED',
-      'PERSONA_UPDATED',
-      'CHARACTER_EDITED',
-    ]) {
-      const event = events[eventName];
-      if (event === undefined) continue;
-      const possibleDisposer = eventOn(event, () => void handler(eventName));
-      if (typeof possibleDisposer === 'function') {
-        this.disposers.push(possibleDisposer as () => void);
+    if (events) {
+      for (const eventName of [
+        'CHAT_CHANGED',
+        'MESSAGE_RECEIVED',
+        'MESSAGE_UPDATED',
+        'PERSONA_CHANGED',
+        'PERSONA_UPDATED',
+        'CHARACTER_EDITED',
+      ]) {
+        const event = events[eventName];
+        if (event === undefined) continue;
+        this.addEventDisposer(
+          eventOn(event, () => void handler(eventName)),
+        );
       }
     }
+
+    const mvuEvent = this.host.Mvu?.events?.VARIABLE_UPDATE_ENDED;
+    if (mvuEvent === undefined) return;
+    let timer: number | undefined;
+    const possibleDisposer = eventOn(mvuEvent, () => {
+      if (timer !== undefined) this.host.clearTimeout(timer);
+      timer = this.host.setTimeout(() => {
+        timer = undefined;
+        void handler('MVU_VARIABLE_UPDATE_ENDED');
+      }, 180);
+    });
+    this.addEventDisposer(possibleDisposer);
+    this.disposers.push(() => {
+      if (timer !== undefined) this.host.clearTimeout(timer);
+    });
   }
 
   unsubscribeAll(): void {
@@ -371,6 +413,23 @@ export class TavernAdapter {
       return structuredClone(value);
     } catch {
       return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+    }
+  }
+
+  private addEventDisposer(value: unknown): void {
+    if (typeof value === 'function') {
+      this.disposers.push(value as () => void);
+      return;
+    }
+    if (
+      typeof value === 'object' &&
+      value !== null &&
+      'stop' in value
+    ) {
+      const stop = value.stop;
+      if (typeof stop === 'function') {
+        this.disposers.push(() => stop.call(value));
+      }
     }
   }
 

@@ -24,6 +24,9 @@ interface Window {
 }
 
 interface MvuLike {
+  events?: {
+    VARIABLE_UPDATE_ENDED?: unknown;
+  };
   getMvuData: (option: MvuOption) => Record<string, unknown>;
   replaceMvuData: (
     data: Record<string, unknown>,

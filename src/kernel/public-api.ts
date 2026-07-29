@@ -11,6 +11,7 @@ import type {
   ConfirmationInput,
   NotificationInput,
 } from '@/notifications/types';
+import type { ManagedContentSyncResult } from '@/content-updates/managed-content';
 
 export type PanelName =
   | 'shell'
@@ -64,6 +65,11 @@ export interface CaelianPublicApi {
   notify(input: NotificationInput): number;
   confirm(input: ConfirmationInput): Promise<boolean>;
   syncProjection(): Promise<boolean>;
+  syncManagedContent(options?: {
+    force?: boolean;
+  }): Promise<ManagedContentSyncResult>;
+  getManagedContentAutoUpdate(): boolean;
+  setManagedContentAutoUpdate(enabled: boolean): void;
   on<K extends keyof KernelEventMap>(
     event: K,
     handler: (payload: KernelEventMap[K]) => void | Promise<void>,
@@ -80,6 +86,9 @@ export type PanelApi = Pick<
   | 'closePanel'
   | 'getAvatarUrls'
   | 'syncProjection'
+  | 'syncManagedContent'
+  | 'getManagedContentAutoUpdate'
+  | 'setManagedContentAutoUpdate'
   | 'getRuntimeInfo'
   | 'setUserInput'
   | 'notify'

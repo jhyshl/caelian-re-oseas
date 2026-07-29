@@ -10,7 +10,6 @@ import type {
   RegionPlaceDefinition,
 } from '@/content/types';
 import type { GameSnapshot } from '@/domain/types';
-import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
@@ -54,24 +53,10 @@ async function travel(region: RegionDefinition, place?: RegionPlaceDefinition) {
     return;
   }
   const prompt = place ? `前往${place.name}` : `前往${region.name}`;
-  const result = await props.context.api.execute({
-    id: commandId('world.move'),
-    type: 'world.move',
-    payload: {
-      region: region.name,
-      place: place?.name ?? '',
-      location: place ? `${region.name}-${place.name}` : region.name,
-    },
-  });
-  if (result.status === 'rejected') {
-    notice.value = result.message ?? '移动失败';
-    return;
-  }
   const filled = props.context.api.setUserInput(prompt);
-  snapshot.value = await props.context.api.query('state');
   notice.value = filled
-    ? `已移动到${place?.name ?? region.name}，行动文本已填入酒馆输入框。`
-    : `已移动到${place?.name ?? region.name}；当前页面未找到酒馆输入框。`;
+    ? `已填入“${prompt}”。发送后由 AI 根据剧情更新世界状态。`
+    : `未找到酒馆输入框；世界状态不会由脚本自行修改。`;
 }
 
 onMounted(async () => {
@@ -153,7 +138,7 @@ onMounted(async () => {
           </button>
         </div>
         <p class="map-hint">
-          点击地区查看可前往的建筑与地点；“前往”会更新本地世界状态，并将行动文本填入酒馆输入框。
+          点击地区查看可前往的建筑与地点；“前往”只填入行动文本，世界状态由 AI 在下一轮通过 MVU 更新。
         </p>
       </section>
 
