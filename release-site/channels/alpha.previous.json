@@ -1,0 +1,20 @@
+{
+  "channel": "alpha",
+  "version": "0.2.0-alpha.4",
+  "buildId": "4aa3efcb622d-dirty",
+  "bridgeApi": 1,
+  "schemaVersion": 1,
+  "publishedAt": "2026-07-28T10:25:35.152Z",
+  "modules": {
+    "runtime": {
+      "url": "https://jhyshl.github.io/caelian-re-oseas/builds/4aa3efcb622d-dirty/assets/alpha.DDLV9sWr.js",
+      "integrity": "sha384-6IhsaXX6/dV5BCTjDbwYP/j1OS9TNDWEXTwz+2wZA979EPIF6EU9UKqeOPqDotyY",
+      "css": [
+        {
+          "url": "https://jhyshl.github.io/caelian-re-oseas/builds/4aa3efcb622d-dirty/assets/style.BJYuyLgc.css",
+          "integrity": "sha384-3QM/EmCxJxQIyRS2eWZOix/U/sE8QLOnYn3hxmEE3ULOkZbmLDB9maMTwqBRjsp1"
+        }
+      ]
+    }
+  }
+}
