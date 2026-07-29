@@ -62,6 +62,11 @@ const buildId = resolveBuildId().replace(/[^a-zA-Z0-9._-]/g, '-');
 const immutableRoot = path.join(distRoot, 'builds', buildId);
 
 let previousChannelManifest = null;
+const isPublishableBuildId = (value) =>
+  typeof value === 'string' &&
+  value.length > 0 &&
+  !value.endsWith('-dirty') &&
+  !value.startsWith('local-');
 const rebaseManifest = (manifest) => {
   const rebaseUrl = (value) => {
     if (typeof value !== 'string') return value;
@@ -94,7 +99,10 @@ try {
     String(previous.buildId ?? ''),
   );
   await stat(previousBuildRoot);
-  if (previous.buildId && previous.buildId !== buildId) {
+  if (
+    isPublishableBuildId(previous.buildId) &&
+    previous.buildId !== buildId
+  ) {
     previousChannelManifest = rebaseManifest(previous);
   } else if (previous.buildId === buildId) {
     const archived = JSON.parse(
@@ -109,7 +117,10 @@ try {
       String(archived.buildId ?? ''),
     );
     await stat(archivedBuildRoot);
-    if (archived.buildId && archived.buildId !== buildId) {
+    if (
+      isPublishableBuildId(archived.buildId) &&
+      archived.buildId !== buildId
+    ) {
       previousChannelManifest = rebaseManifest(archived);
     }
   }
