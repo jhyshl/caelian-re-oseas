@@ -243,26 +243,30 @@ export class CaelianKernel {
 
     const announcementId = releaseAnnouncementId(this.version);
     try {
-      const shouldOpen = await this.db.transaction(
-        'rw',
-        this.db.contentVersions,
-        async () => {
-          const existing =
-            await this.db.contentVersions.get(announcementId);
-          if (existing) return false;
-          await this.db.contentVersions.put({
-            id: announcementId,
-            version: this.version,
-            buildId: this.buildId,
-            sourceHash: 'release-notes',
-            updatedAt: Date.now(),
-          });
-          return true;
-        },
-      );
-      if (shouldOpen) await this.panels.open('release-notes');
+      const existing = await this.db.contentVersions.get(announcementId);
+      if (existing) return;
     } catch {
-      // A release notice must never prevent the game runtime from starting.
+      // Without a reliable read, do not risk showing the same notice repeatedly.
+      return;
+    }
+
+    try {
+      await this.panels.open('release-notes');
+    } catch {
+      // A failed mount must not be recorded as a notice the player has seen.
+      return;
+    }
+
+    try {
+      await this.db.contentVersions.put({
+        id: announcementId,
+        version: this.version,
+        buildId: this.buildId,
+        sourceHash: 'release-notes',
+        updatedAt: Date.now(),
+      });
+    } catch {
+      // The visible notice is still useful when persistence is unavailable.
     }
   }
 

@@ -9,6 +9,16 @@ const MAX_VISIBLE_RELEASES = 5;
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.6',
+    label: 'Alpha 6',
+    releasedAt: '2026-07-29',
+    changes: [
+      '修复部分终端已经更新到新版、却没有显示更新公告的问题。',
+      '调整公告已读标记的写入时机：窗口成功打开后才会记录为已展示。',
+      '继续保留每个终端、每个版本只提示一次的规则。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.5',
     label: 'Alpha 5',
     releasedAt: '2026-07-29',

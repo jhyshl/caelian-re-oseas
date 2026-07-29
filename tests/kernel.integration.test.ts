@@ -48,31 +48,38 @@ describe('CaelianKernel integration', () => {
     expect(document.querySelector('[data-caelian-panel]')).toBeNull();
   });
 
-  it('同一终端的同一版本只自动打开一次更新公告', async () => {
+  it('已读旧版本后，新版本仍自动打开一次更新公告', async () => {
     const databaseName = `caelian-alpha-release-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
-    const createReleaseKernel = () =>
+    const createReleaseKernel = (version: string) =>
       createKernel({
         channel: 'alpha',
-        version: '0.2.0-alpha.5',
+        version,
         buildId: 'release-test-build',
         databaseName,
         sourceWindow: window,
       });
 
-    const firstKernel = createReleaseKernel();
+    const firstKernel = createReleaseKernel('0.2.0-alpha.5');
     await firstKernel.initialize();
     expect(
       document.querySelector('[data-caelian-panel="release-notes"]'),
     ).not.toBeNull();
     await firstKernel.api.shutdown();
 
-    const secondKernel = createReleaseKernel();
-    await secondKernel.initialize();
+    const upgradedKernel = createReleaseKernel('0.2.0-alpha.6');
+    await upgradedKernel.initialize();
+    expect(
+      document.querySelector('[data-caelian-panel="release-notes"]'),
+    ).not.toBeNull();
+    await upgradedKernel.api.shutdown();
+
+    const repeatedKernel = createReleaseKernel('0.2.0-alpha.6');
+    await repeatedKernel.initialize();
     expect(
       document.querySelector('[data-caelian-panel="release-notes"]'),
     ).toBeNull();
-    expect(secondKernel.api.listOpenPanels()).toEqual(['shell']);
-    await secondKernel.api.shutdown();
+    expect(repeatedKernel.api.listOpenPanels()).toEqual(['shell']);
+    await repeatedKernel.api.shutdown();
   });
 });
