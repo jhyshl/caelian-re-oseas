@@ -7,6 +7,10 @@ import type {
   RuntimeInfo,
 } from '@/domain/types';
 import type { KernelEventMap } from '@/kernel/event-bus';
+import type {
+  ConfirmationInput,
+  NotificationInput,
+} from '@/notifications/types';
 
 export type PanelName =
   | 'shell'
@@ -57,6 +61,8 @@ export interface CaelianPublicApi {
   listOpenPanels(): PanelName[];
   getAvatarUrls(): Promise<TavernAvatarUrls>;
   setUserInput(text: string): boolean;
+  notify(input: NotificationInput): number;
+  confirm(input: ConfirmationInput): Promise<boolean>;
   syncProjection(): Promise<boolean>;
   on<K extends keyof KernelEventMap>(
     event: K,
@@ -76,6 +82,8 @@ export type PanelApi = Pick<
   | 'syncProjection'
   | 'getRuntimeInfo'
   | 'setUserInput'
+  | 'notify'
+  | 'confirm'
   | 'on'
 >;
 

@@ -677,10 +677,13 @@ async function discardHand() {
 
 async function surrender() {
   if (!battle.value) return;
-  const confirmed =
-    props.context.document.defaultView?.confirm(
-      '确定要撤退吗？撤退会损失当前生命与一部分金币。',
-    ) ?? false;
+  const confirmed = await props.context.api.confirm({
+    title: '确认从战斗中撤退？',
+    description: '撤退会损失当前生命与一部分金币，本轮战斗也会立即结束。',
+    confirmText: '确认撤退',
+    cancelText: '继续战斗',
+    tone: 'danger',
+  });
   if (!confirmed) return;
   await execute({
     id: commandId('battle.surrender'),

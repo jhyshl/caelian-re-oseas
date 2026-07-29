@@ -249,6 +249,15 @@ export class TavernAdapter {
     level: 'info' | 'success' | 'warning' | 'error',
     message: string,
   ): void {
+    if (typeof this.host.Caelian?.notify === 'function') {
+      this.host.Caelian.notify({
+        kind: level,
+        title: 'Re∞：欧西亚斯 Alpha',
+        description: message,
+        duration: level === 'error' ? 7_000 : 5_000,
+      });
+      return;
+    }
     this.host.toastr?.[level]?.(message, 'Re∞：欧西亚斯 Alpha');
   }
 

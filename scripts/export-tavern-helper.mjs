@@ -56,11 +56,79 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
   const allowedBases = ${JSON.stringify(allowedBases)};
   const cacheKey = 'caelian:bridge:last-manifest:alpha';
   const previousCacheKey = 'caelian:bridge:previous-manifest:alpha';
+  const showBridgeToast = (level, message) => {
+    const d = root.document;
+    if (!d || typeof d.createElement !== 'function' || !d.body) return false;
+    const styleId = 'caelian-bridge-toast-style-v2';
+    if (!d.getElementById?.(styleId)) {
+      const style = d.createElement('style');
+      style.id = styleId;
+      style.textContent = '.caelian-bridge-toast-host{position:fixed;z-index:2147483647;top:max(12px,env(safe-area-inset-top));left:50%;width:min(540px,calc(100vw - 20px));display:grid;gap:8px;transform:translateX(-50%);pointer-events:none;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.caelian-bridge-toast{position:relative;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;min-height:58px;padding:10px 11px;overflow:hidden;border:1px solid rgba(212,168,67,.56);border-radius:15px;color:#f6efe2;background:linear-gradient(135deg,rgba(31,42,55,.98),rgba(43,31,55,.98));box-shadow:0 18px 48px rgba(0,0,0,.44);backdrop-filter:blur(14px) saturate(145%);opacity:0;transform:translateY(-12px);transition:opacity .25s ease,transform .25s ease;pointer-events:auto}.caelian-bridge-toast.warning,.caelian-bridge-toast.error{border-color:rgba(239,118,95,.6);background:linear-gradient(135deg,rgba(56,29,31,.98),rgba(34,19,30,.98))}.caelian-bridge-toast.show{opacity:1;transform:none}.caelian-bridge-toast.hide{opacity:0;transform:translateY(-10px)}.caelian-bridge-toast-icon{display:grid;width:36px;height:36px;place-items:center;border-radius:11px;color:#201506;background:linear-gradient(135deg,#ffe197,#b98220);font-weight:900}.caelian-bridge-toast.warning .caelian-bridge-toast-icon,.caelian-bridge-toast.error .caelian-bridge-toast-icon{color:#fff;background:linear-gradient(135deg,#ffb59b,#ad4435)}.caelian-bridge-toast-copy{min-width:0}.caelian-bridge-toast-copy span{display:block;color:#e5c875;font-size:8px;font-weight:800;letter-spacing:.15em}.caelian-bridge-toast-copy strong{display:block;margin-top:2px;overflow:hidden;color:#fff2d8;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.caelian-bridge-toast-close{width:23px;height:23px;padding:0;border:0;border-radius:7px;color:#d8ccbb;background:rgba(255,255,255,.07);font-size:16px;cursor:pointer}.caelian-bridge-toast-progress{position:absolute;right:9px;bottom:0;left:9px;height:2px;background:linear-gradient(90deg,transparent,#ffe197);transform-origin:left;animation:caelianBridgeToastTimer 5s linear forwards}@keyframes caelianBridgeToastTimer{to{transform:scaleX(0)}}@media(prefers-reduced-motion:reduce){.caelian-bridge-toast{transition:none}.caelian-bridge-toast-progress{animation:none}}';
+      (d.head || d.documentElement).appendChild(style);
+    }
+    let host = d.querySelector?.('.caelian-bridge-toast-host');
+    if (!host) {
+      host = d.createElement('div');
+      host.className = 'caelian-bridge-toast-host';
+      d.body.appendChild(host);
+    }
+    const toast = d.createElement('div');
+    toast.className = 'caelian-bridge-toast ' + level;
+    const icon = d.createElement('div');
+    icon.className = 'caelian-bridge-toast-icon';
+    icon.textContent = level === 'error' ? '×' : level === 'warning' ? '!' : '✦';
+    const copy = d.createElement('div');
+    copy.className = 'caelian-bridge-toast-copy';
+    const label = d.createElement('span');
+    label.textContent = level === 'error' ? 'SYSTEM ERROR' : level === 'warning' ? 'ATTENTION' : 'UPDATE COMPLETE';
+    const text = d.createElement('strong');
+    text.textContent = String(message || '');
+    copy.append(label, text);
+    const close = d.createElement('button');
+    close.type = 'button';
+    close.className = 'caelian-bridge-toast-close';
+    close.setAttribute('aria-label', '关闭通知');
+    close.textContent = '×';
+    const progress = d.createElement('div');
+    progress.className = 'caelian-bridge-toast-progress';
+    toast.append(icon, copy, close, progress);
+    host.appendChild(toast);
+    const remove = () => {
+      toast.classList.remove('show');
+      toast.classList.add('hide');
+      setTimeout(() => {
+        toast.remove();
+        if (!host.childElementCount) host.remove();
+      }, 260);
+    };
+    close.addEventListener('click', remove);
+    try {
+      (root.requestAnimationFrame || requestAnimationFrame)(() => {
+        toast.classList.add('show');
+      });
+    } catch {
+      setTimeout(() => toast.classList.add('show'), 20);
+    }
+    setTimeout(remove, level === 'error' ? 7000 : 5000);
+    return true;
+  };
+
   const notify = (level, message) => {
     try {
+      if (typeof root.Caelian?.notify === 'function') {
+        root.Caelian.notify({
+          kind: level,
+          title: 'Re∞：欧西亚斯 Alpha',
+          description: message,
+          duration: level === 'error' ? 7000 : 5000,
+        });
+        return;
+      }
+      if (showBridgeToast(level, message)) return;
       root.toastr?.[level]?.(message, 'Re∞：欧西亚斯 Alpha');
     } catch {}
   };
+  root.__CaelianBridgeNotify = notify;
 
   const isAllowedUrl = (value) =>
     typeof value === 'string' &&
@@ -281,7 +349,11 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
   const message = error instanceof Error ? error.message : String(error);
   try {
     const root = window.parent || window;
-    root.toastr?.error?.(message, 'Re∞：欧西亚斯 Alpha');
+    if (typeof root.__CaelianBridgeNotify === 'function') {
+      root.__CaelianBridgeNotify('error', message);
+    } else {
+      root.toastr?.error?.(message, 'Re∞：欧西亚斯 Alpha');
+    }
   } catch {}
   console.error('[Caelian Alpha Bridge]', error);
 });`;

@@ -27,6 +27,8 @@ import {
   CaelianDatabase,
   DATABASE_SCHEMA_VERSION,
 } from '@/storage/database';
+import { NotificationCenter } from '@/notifications/notification-center';
+import type { NotificationKind } from '@/notifications/types';
 import { GameRepository } from '@/storage/repository';
 import { TavernAdapter } from '@/tavern/adapter';
 
@@ -48,6 +50,7 @@ export class CaelianKernel {
   private readonly repository: GameRepository;
   private readonly events = new EventBus();
   private readonly panels: PanelRegistry;
+  private readonly notifications: NotificationCenter;
   private readonly stateDisposers: Array<() => void> = [];
   private status: RuntimeStatus = 'starting';
   private profileId?: string;
@@ -74,14 +77,18 @@ export class CaelianKernel {
       document: this.adapter.host.document,
     };
     this.panels = new PanelRegistry(panelContext, this.events);
+    this.notifications = new NotificationCenter(
+      this.adapter.host.document,
+    );
     this.api = this.createPublicApi();
   }
 
   async initialize(): Promise<void> {
+    this.notifications.mount();
     if (this.adapter.hasLegacyRuntime()) {
       this.status = 'blocked-by-legacy';
       this.lastError = '检测到旧版 __CaelianRuntime；Alpha 已停止写入。';
-      this.adapter.notify('error', this.lastError);
+      this.notifyRuntime('error', this.lastError, '旧版脚本仍在运行');
       await this.panels.open('shell');
       return;
     }
@@ -89,10 +96,15 @@ export class CaelianKernel {
     try {
       this.stateDisposers.push(
         this.events.on('achievement.unlocked', (notice) => {
-          this.adapter.notify(
-            'success',
-            `获得成就：${notice.name} ${'★'.repeat(notice.stars)}`,
-          );
+          this.notifications.show({
+            kind: 'achievement',
+            icon: '♛',
+            title: notice.name,
+            description: notice.description,
+            meta: '★'.repeat(notice.stars),
+            duration: 6_200,
+            onClick: () => this.panels.navigate('achievements'),
+          });
         }),
       );
       await this.activateCurrentProfile();
@@ -128,7 +140,7 @@ export class CaelianKernel {
       this.status = 'error';
       this.lastError =
         error instanceof Error ? error.message : String(error);
-      this.adapter.notify('error', this.lastError);
+      this.notifyRuntime('error', this.lastError);
       throw error;
     }
   }
@@ -220,6 +232,7 @@ export class CaelianKernel {
   async shutdown(): Promise<void> {
     if (this.status === 'stopped') return;
     await this.panels.closeAll();
+    this.notifications.destroy();
     this.adapter.unsubscribeAll();
     for (const dispose of this.stateDisposers.splice(0)) dispose();
     this.db.close();
@@ -243,6 +256,8 @@ export class CaelianKernel {
       listOpenPanels: () => this.panels.list(),
       getAvatarUrls: () => this.adapter.avatarUrls(),
       setUserInput: (text) => this.adapter.setUserInput(text),
+      notify: (input) => this.notifications.show(input),
+      confirm: (input) => this.notifications.confirm(input),
       syncProjection: () => this.syncProjection(),
       on: (event, handler) => this.events.on(event, handler),
       shutdown: () => this.shutdown(),
@@ -259,6 +274,8 @@ export class CaelianKernel {
       closePanel: (panel) => this.panels.close(panel),
       getAvatarUrls: () => this.adapter.avatarUrls(),
       setUserInput: (text) => this.adapter.setUserInput(text),
+      notify: (input) => this.notifications.show(input),
+      confirm: (input) => this.notifications.confirm(input),
       syncProjection: () => this.syncProjection(),
       on: (event, handler) => this.events.on(event, handler),
     };
@@ -403,6 +420,19 @@ export class CaelianKernel {
       return String(input.id);
     }
     return 'unknown-command';
+  }
+
+  private notifyRuntime(
+    kind: Extract<NotificationKind, 'info' | 'success' | 'warning' | 'error'>,
+    message: string,
+    title = 'Re∞：欧西亚斯 Alpha',
+  ): void {
+    this.notifications.show({
+      kind,
+      title,
+      description: message,
+      duration: kind === 'error' ? 7_000 : 5_000,
+    });
   }
 }
 

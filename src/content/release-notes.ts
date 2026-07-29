@@ -9,6 +9,17 @@ const MAX_VISIBLE_RELEASES = 5;
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.12',
+    label: 'Alpha 12',
+    releasedAt: '2026-07-29',
+    changes: [
+      '重做统一轻量通知层，沿用旧版顶部堆叠、类型优先级和点击进入对应面板的交互。',
+      '成就通知恢复金紫主题、成就描述与星级，并加入入场扫光、倒计时光带、悬停暂停和独立关闭按钮。',
+      '成功、提示、警告、错误、任务与合成通知采用各自配色，移动端同步适配安全区与窄屏布局。',
+      '战斗撤退改用欧西亚斯风格确认弹窗，不再显示浏览器原生确认框；更新接入口通知也会复用新样式。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.11',
     label: 'Alpha 11',
     releasedAt: '2026-07-29',
