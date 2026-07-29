@@ -16,6 +16,7 @@ const definitions: Record<PanelName, () => Promise<PanelModule>> = {
   achievements: () => import('@/modules/achievements/mount'),
   settings: () => import('@/modules/settings/mount'),
   feedback: () => import('@/modules/feedback/mount'),
+  'release-notes': () => import('@/modules/release-notes/mount'),
   diagnostics: () => import('@/modules/diagnostics/mount'),
 };
 

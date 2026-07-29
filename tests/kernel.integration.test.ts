@@ -47,4 +47,32 @@ describe('CaelianKernel integration', () => {
     await kernel.api.shutdown();
     expect(document.querySelector('[data-caelian-panel]')).toBeNull();
   });
+
+  it('同一终端的同一版本只自动打开一次更新公告', async () => {
+    const databaseName = `caelian-alpha-release-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const createReleaseKernel = () =>
+      createKernel({
+        channel: 'alpha',
+        version: '0.2.0-alpha.5',
+        buildId: 'release-test-build',
+        databaseName,
+        sourceWindow: window,
+      });
+
+    const firstKernel = createReleaseKernel();
+    await firstKernel.initialize();
+    expect(
+      document.querySelector('[data-caelian-panel="release-notes"]'),
+    ).not.toBeNull();
+    await firstKernel.api.shutdown();
+
+    const secondKernel = createReleaseKernel();
+    await secondKernel.initialize();
+    expect(
+      document.querySelector('[data-caelian-panel="release-notes"]'),
+    ).toBeNull();
+    expect(secondKernel.api.listOpenPanels()).toEqual(['shell']);
+    await secondKernel.api.shutdown();
+  });
 });

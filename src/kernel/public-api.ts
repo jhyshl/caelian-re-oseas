@@ -18,6 +18,7 @@ export type PanelName =
   | 'achievements'
   | 'settings'
   | 'feedback'
+  | 'release-notes'
   | 'diagnostics';
 export type QueryName = 'runtime' | 'state' | 'inventory' | 'events';
 

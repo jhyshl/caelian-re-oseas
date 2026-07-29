@@ -1,4 +1,8 @@
 import type { CommandResult } from '@/domain/commands';
+import {
+  releaseAnnouncementId,
+  releaseNotesFor,
+} from '@/content/release-notes';
 import type {
   ReleaseChannel,
   RuntimeInfo,
@@ -94,6 +98,7 @@ export class CaelianKernel {
       this.status = 'ready';
       await this.syncProjection();
       await this.panels.open('shell');
+      await this.openReleaseNotesIfNew();
       await this.events.emit('runtime.ready', this.getRuntimeInfo());
     } catch (error) {
       this.status = 'error';
@@ -231,6 +236,34 @@ export class CaelianKernel {
       playerName: identity.playerName,
     });
     this.profileId = profile.id;
+  }
+
+  private async openReleaseNotesIfNew(): Promise<void> {
+    if (releaseNotesFor(this.version).length === 0) return;
+
+    const announcementId = releaseAnnouncementId(this.version);
+    try {
+      const shouldOpen = await this.db.transaction(
+        'rw',
+        this.db.contentVersions,
+        async () => {
+          const existing =
+            await this.db.contentVersions.get(announcementId);
+          if (existing) return false;
+          await this.db.contentVersions.put({
+            id: announcementId,
+            version: this.version,
+            buildId: this.buildId,
+            sourceHash: 'release-notes',
+            updatedAt: Date.now(),
+          });
+          return true;
+        },
+      );
+      if (shouldOpen) await this.panels.open('release-notes');
+    } catch {
+      // A release notice must never prevent the game runtime from starting.
+    }
   }
 
   private commandId(input: unknown): string {

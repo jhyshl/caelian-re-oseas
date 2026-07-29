@@ -41,8 +41,8 @@
   pointer-events: none;
 }
 
-.caelian-feedback-host {
-  /* Feedback is modal: keep the draggable shell from covering form controls. */
+.caelian-modal-host {
+  /* Modal panels must cover the draggable shell and all game panels. */
   z-index: 2147483647;
 }
 

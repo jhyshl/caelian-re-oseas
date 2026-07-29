@@ -1,6 +1,6 @@
 {
   "name": "caelian-re-oseas",
-  "version": "0.2.0-alpha.4",
+  "version": "0.2.0-alpha.5",
   "private": true,
   "type": "module",
   "description": "Re∞ Oseas browser-first rewrite for SillyTavern.",
