@@ -150,6 +150,16 @@ export default {
       });
     }
 
+    if (pathname.startsWith('/managed-content/')) {
+      const upstreamUrl = new URL(upstreamBase + pathname);
+      upstreamUrl.search = requestUrl.search;
+      const upstreamResponse = await fetch(upstreamUrl, {
+        method: request.method,
+        redirect: 'follow',
+      });
+      return withReleaseHeaders(request, pathname, upstreamResponse);
+    }
+
     const assetResponse = await env.ASSETS.fetch(request);
     if (assetResponse.ok || !isReleasePath(pathname)) {
       return withReleaseHeaders(request, pathname, assetResponse);
