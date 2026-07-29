@@ -11,10 +11,37 @@ const publicBase = (
   process.env.CAELIAN_PUBLIC_BASE ??
   'https://jhyshl.github.io/caelian-re-oseas'
 ).replace(/\/+$/, '');
+const proxyBase = (
+  process.env.CAELIAN_PROXY_BASE ??
+  'https://tlsdyacdkbcjxbwvyeim.supabase.co/functions/v1/caelian-release-proxy'
+).replace(/\/+$/, '');
+const sitesBase = (
+  process.env.CAELIAN_SITES_BASE ??
+  'https://caelian-re-oseas-alpha.jianghailou7.chatgpt.site'
+).replace(/\/+$/, '');
 const manifestUrl = `${publicBase}/channels/alpha.json`;
+const manifestSources = [
+  {
+    name: 'GitHub Pages',
+    url: manifestUrl,
+  },
+  {
+    name: 'Sites CDN',
+    url: `${sitesBase}/channels/alpha.json`,
+  },
+  {
+    name: 'Supabase CDN',
+    url: `${proxyBase}/channels/alpha.json`,
+  },
+];
+const allowedBases = [
+  `${publicBase}/`,
+  `${sitesBase}/`,
+  `${proxyBase}/`,
+];
 
 const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
-// 这个接入口不包含业务版本号；每次启动都从 Alpha manifest 解析当前构建。
+// 每次启动读取 Alpha manifest；主线路不可达时自动切换独立公网镜像。
 (async function loadCaelianAlpha() {
   'use strict';
 
@@ -25,8 +52,8 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
       return window;
     }
   })();
-  const manifestUrl = ${JSON.stringify(manifestUrl)};
-  const allowedBase = ${JSON.stringify(`${publicBase}/`)};
+  const manifestSources = ${JSON.stringify(manifestSources, null, 2)};
+  const allowedBases = ${JSON.stringify(allowedBases)};
   const cacheKey = 'caelian:bridge:last-manifest:alpha';
   const previousCacheKey = 'caelian:bridge:previous-manifest:alpha';
   const notify = (level, message) => {
@@ -35,25 +62,34 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
     } catch {}
   };
 
+  const isAllowedUrl = (value) =>
+    typeof value === 'string' &&
+    allowedBases.some((base) => value.startsWith(base));
+
   const validate = (manifest) => {
     const runtime = manifest?.modules?.runtime;
+    const styles = Array.isArray(runtime?.css) ? runtime.css : [];
     if (
       manifest?.channel !== 'alpha' ||
       manifest?.bridgeApi !== 1 ||
       typeof manifest?.buildId !== 'string' ||
-      typeof runtime?.url !== 'string' ||
-      !runtime.url.startsWith(allowedBase)
+      !isAllowedUrl(runtime?.url) ||
+      styles.some((style) => !isAllowedUrl(style?.url))
     ) {
       throw new Error('Alpha manifest 格式或来源不合法');
     }
     return manifest;
   };
 
-  const fetchManifest = async (url) => {
-    const response = await fetch(url, {
-      cache: 'no-store',
-      credentials: 'omit',
-    });
+  const fetchManifest = async (source) => {
+    const separator = source.url.includes('?') ? '&' : '?';
+    const response = await fetch(
+      source.url + separator + 'caelian-manifest=' + Date.now(),
+      {
+        cache: 'no-store',
+        credentials: 'omit',
+      },
+    );
     if (!response.ok) throw new Error('HTTP ' + response.status);
     return validate(await response.json());
   };
@@ -75,7 +111,7 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
   const installStyles = async (manifest) => {
     const installed = [];
     for (const style of manifest.modules.runtime.css || []) {
-      if (!style?.url || !style.url.startsWith(allowedBase)) continue;
+      if (!isAllowedUrl(style?.url)) continue;
       const existing = root.document.querySelector(
         'link[data-caelian-style="' + style.url + '"]',
       );
@@ -133,15 +169,31 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
 
   const cachedGood = readCached(cacheKey);
   const cachedPrevious = readCached(previousCacheKey);
-  let requested;
-  try {
-    requested = await fetchManifest(manifestUrl);
-  } catch (error) {
+  const sourceErrors = [];
+  let requested = null;
+  let requestedSourceIndex = -1;
+
+  for (let index = 0; index < manifestSources.length; index += 1) {
+    const source = manifestSources[index];
+    try {
+      requested = await fetchManifest(source);
+      requestedSourceIndex = index;
+      break;
+    } catch (error) {
+      sourceErrors.push(source.name + ': ' + String(error));
+    }
+  }
+
+  if (!requested) {
     if (!cachedGood) {
-      throw new Error('无法取得 Alpha 更新清单：' + String(error));
+      throw new Error(
+        '无法取得 Alpha 更新清单：' + sourceErrors.join('；'),
+      );
     }
     requested = cachedGood;
-    notify('warning', 'Alpha 更新清单暂时不可用，已加载上一次成功构建。');
+    notify('warning', '更新线路暂时不可用，已加载上一次成功构建。');
+  } else if (requestedSourceIndex > 0) {
+    notify('warning', '主更新线路不可达，已自动切换备用公网 CDN。');
   }
 
   if (root.Caelian?.buildId === requested.buildId) {
@@ -159,16 +211,41 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
     return;
   } catch (updateError) {
     const recoveryCandidates = [];
-    if (cachedGood && cachedGood.buildId !== requested.buildId) {
+
+    for (let index = 0; index < manifestSources.length; index += 1) {
+      if (index === requestedSourceIndex) continue;
+      try {
+        const alternate = await fetchManifest(manifestSources[index]);
+        if (
+          alternate.modules.runtime.url !== requested.modules.runtime.url
+        ) {
+          recoveryCandidates.push(alternate);
+        }
+      } catch {}
+    }
+
+    if (
+      cachedGood &&
+      cachedGood.modules.runtime.url !== requested.modules.runtime.url
+    ) {
       recoveryCandidates.push(cachedGood);
     }
-    if (cachedPrevious && cachedPrevious.buildId !== requested.buildId) {
+    if (
+      cachedPrevious &&
+      cachedPrevious.modules.runtime.url !== requested.modules.runtime.url
+    ) {
       recoveryCandidates.push(cachedPrevious);
     }
-    if (requested.previous?.url?.startsWith(allowedBase)) {
+    if (isAllowedUrl(requested.previous?.url)) {
       try {
-        const publishedPrevious = await fetchManifest(requested.previous.url);
-        if (publishedPrevious.buildId !== requested.buildId) {
+        const publishedPrevious = await fetchManifest({
+          name: 'previous',
+          url: requested.previous.url,
+        });
+        if (
+          publishedPrevious.modules.runtime.url !==
+          requested.modules.runtime.url
+        ) {
           recoveryCandidates.push(publishedPrevious);
         }
       } catch {}
@@ -176,21 +253,27 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
 
     const attempted = new Set();
     for (const fallback of recoveryCandidates) {
-      if (attempted.has(fallback.buildId)) continue;
-      attempted.add(fallback.buildId);
+      const runtimeUrl = fallback.modules.runtime.url;
+      if (attempted.has(runtimeUrl)) continue;
+      attempted.add(runtimeUrl);
       try {
         await activate(fallback, true);
-        writeCached(cacheKey, fallback);
-        notify(
-          'warning',
-          'Alpha 更新失败，已自动回退到 ' + fallback.version +
-            '（' + fallback.buildId.slice(0, 8) + '）',
-        );
+        if (fallback.buildId === requested.buildId) {
+          writeCached(cacheKey, fallback);
+          notify('warning', '主线路加载失败，已从备用公网 CDN 加载当前版本。');
+        } else {
+          writeCached(cacheKey, fallback);
+          notify(
+            'warning',
+            'Alpha 更新失败，已自动回退到 ' + fallback.version +
+              '（' + fallback.buildId.slice(0, 8) + '）',
+          );
+        }
         return;
       } catch {}
     }
     throw new Error(
-      'Alpha 更新失败且无法恢复上一个版本：' +
+      'Alpha 更新失败且无法切换备用线路：' +
         (updateError instanceof Error ? updateError.message : String(updateError)),
     );
   }
@@ -227,7 +310,7 @@ const standaloneScript = {
   name: 'Re∞：欧西亚斯Alpha',
   id: 'f56df46e-b198-4d84-9e94-269079a31e17',
   content: bridge,
-  info: '固定读取公网 Alpha 通道；发布新版本后，各终端会在下次加载时自动更新。',
+  info: '固定读取公网 Alpha 通道；主线路不可达时自动切换备用公网 CDN。',
   button: {
     enabled: true,
     buttons: [],
@@ -266,6 +349,7 @@ await writeFile(
       bridgeApi: 1,
       packageVersion: packageJson.version,
       manifestUrl,
+      manifestSources,
     },
     null,
     2,

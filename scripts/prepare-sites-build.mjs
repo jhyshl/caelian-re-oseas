@@ -13,11 +13,69 @@ const statusPage = (
 );
 
 const worker = `const statusPage = ${JSON.stringify(statusPage)};
+const upstreamBase = 'https://jhyshl.github.io/caelian-re-oseas';
 const corsHeaders = {
   'Access-Control-Allow-Headers': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
   'Access-Control-Allow-Origin': '*',
   'Cross-Origin-Resource-Policy': 'cross-origin',
+};
+
+const isReleasePath = (pathname) =>
+  pathname.startsWith('/builds/') ||
+  pathname.startsWith('/channels/') ||
+  pathname.startsWith('/tavern-helper/');
+
+const withReleaseHeaders = (request, pathname, source) => {
+  const headers = new Headers(source.headers);
+  for (const [name, value] of Object.entries(corsHeaders)) {
+    headers.set(name, value);
+  }
+
+  if (pathname.startsWith('/builds/')) {
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  } else if (
+    pathname.startsWith('/channels/') ||
+    pathname.startsWith('/tavern-helper/')
+  ) {
+    headers.set('Cache-Control', 'no-store');
+  }
+
+  return new Response(request.method === 'HEAD' ? null : source.body, {
+    status: source.status,
+    statusText: source.statusText,
+    headers,
+  });
+};
+
+const rebaseManifest = (manifest, origin) => {
+  const rebaseUrl = (value) =>
+    typeof value === 'string' && value.startsWith(upstreamBase + '/')
+      ? origin + value.slice(upstreamBase.length)
+      : value;
+  const runtime = manifest?.modules?.runtime ?? {};
+  return {
+    ...manifest,
+    modules: {
+      ...(manifest.modules ?? {}),
+      runtime: {
+        ...runtime,
+        url: rebaseUrl(runtime.url),
+        css: (runtime.css ?? []).map((style) => ({
+          ...style,
+          url: rebaseUrl(style.url),
+        })),
+      },
+    },
+    ...(manifest.previous
+      ? {
+          previous: {
+            ...manifest.previous,
+            url: rebaseUrl(manifest.previous.url),
+          },
+        }
+      : {}),
+  };
 };
 
 export default {
@@ -26,7 +84,18 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
-    const pathname = new URL(request.url).pathname;
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      return new Response('Method not allowed', {
+        status: 405,
+        headers: {
+          ...corsHeaders,
+          Allow: 'GET, HEAD, OPTIONS',
+        },
+      });
+    }
+
+    const requestUrl = new URL(request.url);
+    const pathname = requestUrl.pathname;
     if (pathname === '/' || pathname === '/index.html') {
       return new Response(request.method === 'HEAD' ? null : statusPage, {
         headers: {
@@ -37,26 +106,38 @@ export default {
       });
     }
 
-    const response = await env.ASSETS.fetch(request);
-    const headers = new Headers(response.headers);
-    for (const [name, value] of Object.entries(corsHeaders)) {
-      headers.set(name, value);
+    const assetResponse = await env.ASSETS.fetch(request);
+    if (assetResponse.ok || !isReleasePath(pathname)) {
+      return withReleaseHeaders(request, pathname, assetResponse);
     }
 
-    if (pathname.startsWith('/builds/')) {
-      headers.set('Cache-Control', 'public, max-age=31536000, immutable');
-    } else if (
-      pathname.startsWith('/channels/') ||
-      pathname.startsWith('/tavern-helper/')
-    ) {
-      headers.set('Cache-Control', 'no-store');
-    }
-
-    return new Response(request.method === 'HEAD' ? null : response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
+    const upstreamUrl = new URL(upstreamBase + pathname);
+    upstreamUrl.search = requestUrl.search;
+    const upstreamResponse = await fetch(upstreamUrl, {
+      method: request.method,
+      redirect: 'follow',
     });
+
+    if (
+      request.method === 'GET' &&
+      upstreamResponse.ok &&
+      (pathname === '/channels/alpha.json' ||
+        pathname === '/channels/alpha.previous.json')
+    ) {
+      const manifest = rebaseManifest(
+        await upstreamResponse.json(),
+        requestUrl.origin,
+      );
+      return new Response(JSON.stringify(manifest, null, 2) + '\\n', {
+        headers: {
+          ...corsHeaders,
+          'Cache-Control': 'no-store',
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+      });
+    }
+
+    return withReleaseHeaders(request, pathname, upstreamResponse);
   },
 };
 `;
