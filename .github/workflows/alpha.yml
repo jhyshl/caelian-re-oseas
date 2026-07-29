@@ -1,4 +1,4 @@
-name: Alpha Artifact Release
+name: Alpha Release
 
 on:
   push:
@@ -13,7 +13,58 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Select release input
+        id: mode
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "mode=artifact" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet HEAD^ HEAD -- . ':(exclude)release-site/**' ':(exclude).github/workflows/alpha.yml'; then
+            echo "mode=artifact" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=source" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.mode.outputs.mode == 'source'
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        if: steps.mode.outputs.mode == 'source'
+      - run: npm run check
+        if: steps.mode.outputs.mode == 'source'
+      - run: npm test
+        if: steps.mode.outputs.mode == 'source'
+      - run: npm run build:alpha
+        if: steps.mode.outputs.mode == 'source'
+        env:
+          CAELIAN_BUILD_ID: ${{ github.sha }}
+      - name: Select Pages directory
+        id: package
+        shell: bash
+        run: |
+          if [ "${{ steps.mode.outputs.mode }}" = "source" ]; then
+            echo "path=dist" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=release-site" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Upload verified Alpha artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ steps.package.outputs.path }}
+
   deploy:
+    needs: verify-and-package
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,15 +74,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - name: Upload verified Alpha artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: release-site
       - name: Deploy Alpha
         id: deployment
         uses: actions/deploy-pages@v4
