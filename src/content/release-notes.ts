@@ -15,7 +15,6 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
     changes: [
       '修复生产环境中更新公告模块与主入口互相等待，导致公告窗口始终无法创建的问题。',
       '已在真实 SillyTavern 1.18.0 与酒馆助手 4.8.19 环境中验证父窗口挂载链路。',
-      '公告继续使用宿主页面最高层级，并在每台终端首次加载 Alpha 7 时显示一次。',
     ],
   },
   {
