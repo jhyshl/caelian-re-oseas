@@ -106,24 +106,19 @@ export default {
       });
     }
 
-    const assetResponse = await env.ASSETS.fetch(request);
-    if (assetResponse.ok || !isReleasePath(pathname)) {
-      return withReleaseHeaders(request, pathname, assetResponse);
-    }
-
-    const upstreamUrl = new URL(upstreamBase + pathname);
-    upstreamUrl.search = requestUrl.search;
-    const upstreamResponse = await fetch(upstreamUrl, {
-      method: request.method,
-      redirect: 'follow',
-    });
-
     if (
       request.method === 'GET' &&
-      upstreamResponse.ok &&
       (pathname === '/channels/alpha.json' ||
         pathname === '/channels/alpha.previous.json')
     ) {
+      const upstreamUrl = new URL(upstreamBase + pathname);
+      upstreamUrl.search = requestUrl.search;
+      const upstreamResponse = await fetch(upstreamUrl, {
+        redirect: 'follow',
+      });
+      if (!upstreamResponse.ok) {
+        return withReleaseHeaders(request, pathname, upstreamResponse);
+      }
       const manifest = rebaseManifest(
         await upstreamResponse.json(),
         requestUrl.origin,
@@ -136,6 +131,18 @@ export default {
         },
       });
     }
+
+    const assetResponse = await env.ASSETS.fetch(request);
+    if (assetResponse.ok || !isReleasePath(pathname)) {
+      return withReleaseHeaders(request, pathname, assetResponse);
+    }
+
+    const upstreamUrl = new URL(upstreamBase + pathname);
+    upstreamUrl.search = requestUrl.search;
+    const upstreamResponse = await fetch(upstreamUrl, {
+      method: request.method,
+      redirect: 'follow',
+    });
 
     return withReleaseHeaders(request, pathname, upstreamResponse);
   },
