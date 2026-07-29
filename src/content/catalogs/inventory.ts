@@ -3,6 +3,10 @@ import type {
   EquipmentDefinition,
   RelicDefinition,
 } from '@/content/types';
+import {
+  BLANK_PAGE_RELIC_DEFINITION,
+  BLANK_PAGE_RELIC_ID,
+} from '@/achievements/catalog';
 
 let itemCache: Record<string, BattleItemDefinition> | undefined;
 let relicCache: Record<string, RelicDefinition> | undefined;
@@ -21,7 +25,10 @@ export async function loadBattleItems() {
 export async function loadRelics() {
   if (!relicCache) {
     const module = await import('@/content/generated/inventory/relics.json');
-    relicCache = module.default as Record<string, RelicDefinition>;
+    relicCache = {
+      ...(module.default as Record<string, RelicDefinition>),
+      [BLANK_PAGE_RELIC_ID]: BLANK_PAGE_RELIC_DEFINITION,
+    };
   }
   return relicCache;
 }

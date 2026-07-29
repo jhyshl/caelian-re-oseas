@@ -379,6 +379,34 @@ export interface AchievementProgressRecord {
   updatedAt: number;
 }
 
+export interface AchievementCounterRecord {
+  id: string;
+  profileId: string;
+  key: string;
+  value: number;
+  data?: unknown;
+  updatedAt: number;
+}
+
+export interface AchievementUnlockNotice {
+  achievementId: string;
+  name: string;
+  description: string;
+  stars: number;
+  unlockedAt: number;
+}
+
+export interface AchievementSpecialState {
+  letterClaimed: boolean;
+  dailyGiftAvailable: boolean;
+  lastDailyGiftDate: string;
+  lastDailyGiftItems: Array<{
+    itemId: string;
+    name: string;
+    quantity: number;
+  }>;
+}
+
 export interface MarketStateRecord {
   id: string;
   profileId: string;
@@ -445,6 +473,7 @@ export interface SettingsRecord {
   id: string;
   profileId: string;
   preserveAdventureSave: boolean;
+  sharedProfileId?: string;
   battleDifficulty: 'easy' | 'normal' | 'hard' | 'hell';
   updatedAt: number;
 }

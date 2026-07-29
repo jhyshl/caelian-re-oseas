@@ -3,12 +3,14 @@ import type { ProfileRecord, RegionAccessRecord } from '@/domain/types';
 import type { CaelianDatabase } from '@/storage/database';
 import {
   defaultGuild,
+  defaultGlobalSettings,
   defaultLoadout,
   defaultPlayer,
   defaultSettings,
   defaultSocialProgress,
   defaultStatAllocations,
   defaultWorld,
+  GLOBAL_SETTINGS_ID,
 } from '@/storage/defaults';
 
 export class ProfileRepository {
@@ -83,5 +85,99 @@ export class ProfileRepository {
     );
 
     return profile;
+  }
+
+  async resolve(
+    chatId: string,
+    defaults: {
+      playerName?: string;
+      legacyPreserveAdventureSave?: boolean;
+    } = {},
+  ): Promise<ProfileRecord> {
+    const global = await this.ensureGlobalSettings(
+      defaults.legacyPreserveAdventureSave,
+    );
+    if (global.preserveAdventureSave && global.sharedProfileId) {
+      const shared = await this.db.profiles.get(global.sharedProfileId);
+      if (shared) return shared;
+    }
+
+    const profile = await this.ensure(chatId, defaults);
+    if (global.preserveAdventureSave && !global.sharedProfileId) {
+      await this.db.settings.update(GLOBAL_SETTINGS_ID, {
+        sharedProfileId: profile.id,
+        updatedAt: Date.now(),
+      });
+    }
+    return profile;
+  }
+
+  async ensureGlobalSettings(legacyValue = false) {
+    const existing = await this.db.settings.get(GLOBAL_SETTINGS_ID);
+    if (existing) return existing;
+    const now = Date.now();
+    const inferred = await this.db.settings
+      .toCollection()
+      .filter(
+        (entry) =>
+          entry.id !== GLOBAL_SETTINGS_ID &&
+          entry.preserveAdventureSave,
+      )
+      .first();
+    const settings = defaultGlobalSettings(
+      now,
+      inferred?.preserveAdventureSave ?? legacyValue,
+    );
+    if (settings.preserveAdventureSave) {
+      settings.sharedProfileId = inferred?.profileId;
+    }
+    await this.db.settings.add(settings);
+    return settings;
+  }
+
+  async displaySettings(profileId: string) {
+    const [profileSettings, global] = await Promise.all([
+      this.db.settings.get(profileId),
+      this.ensureGlobalSettings(),
+    ]);
+    if (!profileSettings) throw new Error('设置记录不存在');
+    return {
+      ...profileSettings,
+      preserveAdventureSave: global.preserveAdventureSave,
+      sharedProfileId: global.sharedProfileId,
+    };
+  }
+
+  async updateSettings(
+    profileId: string,
+    changes: {
+      preserveAdventureSave?: boolean;
+      battleDifficulty?: 'easy' | 'normal' | 'hard' | 'hell';
+    },
+  ): Promise<void> {
+    const now = Date.now();
+    if (changes.battleDifficulty !== undefined) {
+      await this.db.settings.update(profileId, {
+        battleDifficulty: changes.battleDifficulty,
+        updatedAt: now,
+      });
+    }
+    if (changes.preserveAdventureSave !== undefined) {
+      const global = await this.ensureGlobalSettings();
+      await this.db.settings.put({
+        ...global,
+        preserveAdventureSave: changes.preserveAdventureSave,
+        sharedProfileId: changes.preserveAdventureSave
+          ? profileId
+          : global.sharedProfileId,
+        updatedAt: now,
+      });
+      await this.db.settings
+        .toCollection()
+        .modify((entry) => {
+          entry.preserveAdventureSave = changes.preserveAdventureSave ?? false;
+          entry.updatedAt = now;
+        });
+    }
   }
 }

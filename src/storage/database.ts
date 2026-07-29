@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie';
 import type {
+  AchievementCounterRecord,
   AchievementProgressRecord,
   BattleRewardRecord,
   BattleSessionRecord,
@@ -33,7 +34,7 @@ import type {
   WorldStateRecord,
 } from '@/domain/types';
 
-export const DATABASE_SCHEMA_VERSION = 2;
+export const DATABASE_SCHEMA_VERSION = 3;
 
 export class CaelianDatabase extends Dexie {
   profiles!: Table<ProfileRecord, string>;
@@ -63,6 +64,7 @@ export class CaelianDatabase extends Dexie {
   battleRewards!: Table<BattleRewardRecord, string>;
 
   achievementProgress!: Table<AchievementProgressRecord, string>;
+  achievementCounters!: Table<AchievementCounterRecord, string>;
   marketStates!: Table<MarketStateRecord, string>;
   craftingDrafts!: Table<CraftingDraftRecord, string>;
   socialProgress!: Table<SocialProgressRecord, string>;
@@ -81,7 +83,7 @@ export class CaelianDatabase extends Dexie {
   ) {
     super(databaseName);
 
-    this.version(DATABASE_SCHEMA_VERSION).stores({
+    this.version(2).stores({
       profiles: 'id, &chatId, updatedAt',
 
       playerStates: 'profileId, created, classMain, subclass, level, updatedAt',
@@ -122,6 +124,10 @@ export class CaelianDatabase extends Dexie {
       settings: 'id, profileId, updatedAt',
       contentVersions: 'id, version, buildId, sourceHash, updatedAt',
       legacySnapshots: 'id, profileId, source, createdAt',
+    });
+
+    this.version(3).stores({
+      achievementCounters: 'id, profileId, key, updatedAt',
     });
   }
 }

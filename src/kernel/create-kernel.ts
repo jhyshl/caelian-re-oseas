@@ -87,8 +87,17 @@ export class CaelianKernel {
     }
 
     try {
+      this.stateDisposers.push(
+        this.events.on('achievement.unlocked', (notice) => {
+          this.adapter.notify(
+            'success',
+            `获得成就：${notice.name} ${'★'.repeat(notice.stars)}`,
+          );
+        }),
+      );
       await this.activateCurrentProfile();
       await this.ingestMvuNarrative();
+      await this.scanCurrentAchievements();
       this.stateDisposers.push(
         this.events.on('state.changed', async () => {
           await this.syncProjection();
@@ -105,6 +114,7 @@ export class CaelianKernel {
           await this.activateCurrentProfile();
         }
         await this.ingestMvuNarrative();
+        await this.scanCurrentAchievements();
         await this.syncProjection();
         await this.events.emit('tavern.changed', { event: eventName });
       });
@@ -112,6 +122,7 @@ export class CaelianKernel {
       await this.syncProjection();
       await this.panels.open('shell');
       await this.openReleaseNotesIfNew();
+      await this.openAchievementSpecialIfNeeded();
       await this.events.emit('runtime.ready', this.getRuntimeInfo());
     } catch (error) {
       this.status = 'error';
@@ -164,6 +175,11 @@ export class CaelianKernel {
     }
     if (name === 'events') {
       return (await this.repository.recentEvents(
+        this.profileId,
+      )) as QueryResultMap[K];
+    }
+    if (name === 'achievement-special') {
+      return (await this.repository.achievementSpecialState(
         this.profileId,
       )) as QueryResultMap[K];
     }
@@ -250,10 +266,27 @@ export class CaelianKernel {
 
   private async activateCurrentProfile(): Promise<void> {
     const identity = await this.adapter.identity();
-    const profile = await this.repository.ensureProfile(identity.chatId, {
-      playerName: identity.playerName,
-    });
+    const profile = await this.repository.resolveProfile(
+      identity.chatId,
+      {
+        playerName: identity.playerName,
+        legacyPreserveAdventureSave:
+          this.adapter.legacyPreserveAdventureSave(),
+      },
+    );
     this.profileId = profile.id;
+    await this.repository.importLegacyAchievements(
+      profile.id,
+      this.adapter.legacyAchievementPayload(),
+    );
+  }
+
+  private async scanCurrentAchievements(): Promise<void> {
+    if (!this.profileId) return;
+    await this.repository.scanAchievements(
+      this.profileId,
+      await this.adapter.chatTexts(),
+    );
   }
 
   private async ingestMvuNarrative(): Promise<void> {
@@ -354,6 +387,15 @@ export class CaelianKernel {
     } catch {
       // The visible notice is still useful when persistence is unavailable.
     }
+  }
+
+  private async openAchievementSpecialIfNeeded(): Promise<void> {
+    if (!this.profileId) return;
+    const state = await this.repository.achievementSpecialState(
+      this.profileId,
+    );
+    if (state.letterClaimed && !state.dailyGiftAvailable) return;
+    await this.panels.open('achievement-letter');
   }
 
   private commandId(input: unknown): string {

@@ -265,7 +265,10 @@ describe('CaelianKernel integration', () => {
     expect(
       document.querySelector('[data-caelian-panel="release-notes"]'),
     ).toBeNull();
-    expect(repeatedKernel.api.listOpenPanels()).toEqual(['shell']);
+    expect(repeatedKernel.api.listOpenPanels()).toEqual([
+      'shell',
+      'achievement-letter',
+    ]);
     await repeatedKernel.api.shutdown();
   });
 });

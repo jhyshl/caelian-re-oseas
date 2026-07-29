@@ -1,5 +1,6 @@
 import type { CommandResult } from '@/domain/commands';
 import type {
+  AchievementSpecialState,
   EventLogRecord,
   GameSnapshot,
   InventoryStackRecord,
@@ -20,14 +21,21 @@ export type PanelName =
   | 'settings'
   | 'feedback'
   | 'release-notes'
+  | 'achievement-letter'
   | 'diagnostics';
-export type QueryName = 'runtime' | 'state' | 'inventory' | 'events';
+export type QueryName =
+  | 'runtime'
+  | 'state'
+  | 'inventory'
+  | 'events'
+  | 'achievement-special';
 
 export interface QueryResultMap {
   runtime: RuntimeInfo;
   state: GameSnapshot;
   inventory: InventoryStackRecord[];
   events: EventLogRecord[];
+  'achievement-special': AchievementSpecialState;
 }
 
 export interface TavernAvatarUrls {

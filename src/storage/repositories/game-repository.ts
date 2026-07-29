@@ -1,9 +1,17 @@
 import type { CommandResult, DomainCommand } from '@/domain/commands';
 import { domainCommandSchema } from '@/domain/commands';
-import type { GameSnapshot, ProfileRecord } from '@/domain/types';
+import type {
+  AchievementSpecialState,
+  GameSnapshot,
+  ProfileRecord,
+} from '@/domain/types';
 import type { EventBus } from '@/kernel/event-bus';
 import type { CaelianDatabase } from '@/storage/database';
 import { BattleRepository } from '@/storage/repositories/battle-repository';
+import {
+  AchievementRepository,
+  type LegacyAchievementPayload,
+} from '@/storage/repositories/achievement-repository';
 import { CardRepository } from '@/storage/repositories/card-repository';
 import { InventoryRepository } from '@/storage/repositories/inventory-repository';
 import { NarrativeRepository } from '@/storage/repositories/narrative-repository';
@@ -21,6 +29,7 @@ export class GameRepository {
   private readonly guild: GuildRepository;
   private readonly battles: BattleRepository;
   private readonly narrative: NarrativeRepository;
+  private readonly achievements: AchievementRepository;
 
   constructor(
     private readonly db: CaelianDatabase,
@@ -34,6 +43,7 @@ export class GameRepository {
     this.guild = new GuildRepository(db);
     this.battles = new BattleRepository(db);
     this.narrative = new NarrativeRepository(db);
+    this.achievements = new AchievementRepository(db, events);
   }
 
   ensureProfile(
@@ -41,6 +51,16 @@ export class GameRepository {
     defaults: { playerName?: string } = {},
   ): Promise<ProfileRecord> {
     return this.profiles.ensure(chatId, defaults);
+  }
+
+  resolveProfile(
+    chatId: string,
+    defaults: {
+      playerName?: string;
+      legacyPreserveAdventureSave?: boolean;
+    } = {},
+  ): Promise<ProfileRecord> {
+    return this.profiles.resolve(chatId, defaults);
   }
 
   async snapshot(profileId: string): Promise<GameSnapshot> {
@@ -88,11 +108,8 @@ export class GameRepository {
         .equals(profileId)
         .filter((session) => session.active)
         .first(),
-      this.db.achievementProgress
-        .where('profileId')
-        .equals(profileId)
-        .toArray(),
-      this.db.settings.get(profileId),
+      this.achievements.listProgress(profileId),
+      this.profiles.displaySettings(profileId),
     ]);
     if (
       !profile ||
@@ -140,6 +157,10 @@ export class GameRepository {
       };
     }
     const command = parsed.data;
+    const achievementCapture = await this.achievements.capture(
+      profileId,
+      command,
+    );
     if (command.type.startsWith('battle.')) {
       await this.battles.prepare();
     }
@@ -170,6 +191,11 @@ export class GameRepository {
     );
 
     if (result.status === 'applied') {
+      await this.achievements.handleCommand(
+        profileId,
+        command,
+        achievementCapture,
+      );
       await this.events.emit('state.changed', { command: result });
     }
     return result;
@@ -197,6 +223,26 @@ export class GameRepository {
       data,
       createdAt: Date.now(),
     });
+  }
+
+  importLegacyAchievements(
+    profileId: string,
+    payload: LegacyAchievementPayload,
+  ): Promise<void> {
+    return this.achievements.importLegacy(profileId, payload);
+  }
+
+  scanAchievements(
+    profileId: string,
+    chatTexts: string[] = [],
+  ): Promise<void> {
+    return this.achievements.scanStatic(profileId, chatTexts);
+  }
+
+  achievementSpecialState(
+    profileId: string,
+  ): Promise<AchievementSpecialState> {
+    return this.achievements.specialState(profileId);
   }
 
   private async applyCommand(
@@ -238,6 +284,12 @@ export class GameRepository {
           command.payload.relicId,
           command.payload.carried,
         );
+      case 'achievement.record':
+        return this.achievements.recordExternal(profileId, command.payload);
+      case 'achievement.claim-poem-letter':
+        return this.achievements.claimPoemLetter(profileId);
+      case 'achievement.claim-daily-gift':
+        return this.achievements.claimDailyGift(profileId);
       case 'battle.start':
         return this.battles.start(profileId, command.payload);
       case 'battle.explore':
@@ -262,10 +314,7 @@ export class GameRepository {
       case 'battle.finish':
         return this.battles.finish(profileId, command.payload.battleId);
       case 'settings.update':
-        await this.db.settings.update(profileId, {
-          ...command.payload,
-          updatedAt: Date.now(),
-        });
+        return this.profiles.updateSettings(profileId, command.payload);
     }
   }
 
@@ -284,12 +333,14 @@ export class GameRepository {
       this.db.equipmentInstances,
       this.db.equipmentLoadouts,
       this.db.ownedRelics,
+      this.db.specialCollectibles,
       this.db.passiveTalents,
       this.db.ownedCards,
       this.db.decks,
       this.db.battleSessions,
       this.db.battleRewards,
       this.db.achievementProgress,
+      this.db.achievementCounters,
       this.db.settings,
       this.db.commandInbox,
       this.db.eventLog,

@@ -17,7 +17,9 @@ export function mountVuePanel(
   host.className =
     panel === 'shell'
       ? 'caelian-panel-host caelian-shell-host'
-      : panel === 'feedback' || panel === 'release-notes'
+      : panel === 'feedback' ||
+          panel === 'release-notes' ||
+          panel === 'achievement-letter'
         ? 'caelian-panel-host caelian-modal-host'
         : 'caelian-panel-host';
   const root = context.document.createElement('div');

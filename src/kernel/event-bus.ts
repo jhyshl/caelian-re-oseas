@@ -1,5 +1,8 @@
 import type { CommandResult } from '@/domain/commands';
-import type { RuntimeInfo } from '@/domain/types';
+import type {
+  AchievementUnlockNotice,
+  RuntimeInfo,
+} from '@/domain/types';
 
 export interface KernelEventMap {
   'runtime.ready': RuntimeInfo;
@@ -9,6 +12,7 @@ export interface KernelEventMap {
   'panel.opened': { panel: string };
   'panel.closed': { panel: string };
   'tavern.changed': { event: string };
+  'achievement.unlocked': AchievementUnlockNotice;
 }
 
 type EventHandler<T> = (payload: T) => void | Promise<void>;

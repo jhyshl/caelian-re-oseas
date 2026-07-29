@@ -1,6 +1,7 @@
 import type { AiProjection } from '@/domain/types';
 import type { TavernAvatarUrls } from '@/kernel/public-api';
 import { LEGACY_STAT_DATA_KEYS } from '@/mvu/contracts';
+import type { LegacyAchievementPayload } from '@/storage/repositories/achievement-repository';
 
 type TavernEventHandler = (eventName: string) => void | Promise<void>;
 
@@ -69,6 +70,70 @@ export class TavernAdapter {
     } catch {
       return { user: '', character: '' };
     }
+  }
+
+  legacyPreserveAdventureSave(): boolean {
+    try {
+      const raw = this.host.localStorage.getItem('adv_panel_settings_v1');
+      if (!raw) return false;
+      const parsed = JSON.parse(raw) as {
+        preserveAdventureSave?: unknown;
+      };
+      return parsed.preserveAdventureSave === true;
+    } catch {
+      return false;
+    }
+  }
+
+  legacyAchievementPayload(): LegacyAchievementPayload {
+    try {
+      const achievementState = this.readLocalJson(
+        'caelian_global_achievements_v1',
+      );
+      const prefix = 'caelian_special_patch_past_present_poem_v1';
+      return {
+        unlocked: this.asRecord(achievementState.unlocked),
+        advanced: this.readLocalJson(
+          'caelian_advanced_achievement_stats_v1',
+        ),
+        oldPlayerPatch: this.localFlag(
+          'caelian_special_patch_old_player_v1',
+        ),
+        repoRewardPatch: this.localFlag(
+          'caelian_special_patch_repo_reward_v1',
+        ),
+        poemRewardGranted: this.localFlag(`${prefix}_reward_granted`),
+        poemUnlockedAt:
+          this.host.localStorage.getItem(`${prefix}_reward_timestamp`) ??
+          this.host.localStorage.getItem(
+            `${prefix}_letter_opened_timestamp`,
+          ) ??
+          undefined,
+        poemDailyGiftDate:
+          this.host.localStorage.getItem(`${prefix}_daily_gift_day`) ??
+          undefined,
+        poemDailyGiftItems: this.readLocalValue(
+          `${prefix}_daily_gift_last_items`,
+        ),
+      };
+    } catch {
+      return {};
+    }
+  }
+
+  async chatTexts(): Promise<string[]> {
+    const context = await this.context();
+    const chatTexts = (context.chat ?? []).flatMap((message) => {
+      const text = message.mes ?? message.message ?? message.content;
+      return typeof text === 'string' && text.trim() ? [text] : [];
+    });
+    if (chatTexts.length > 0) return chatTexts;
+    return [
+      ...this.host.document.querySelectorAll<HTMLElement>('.mes .mes_text'),
+    ].flatMap((element) => {
+      const text = element.innerText || element.textContent || '';
+      return text.trim() ? [text] : [];
+    });
   }
 
   hasLegacyRuntime(): boolean {
@@ -304,5 +369,22 @@ export class TavernAdapter {
     return typeof value === 'object' && value !== null
       ? (value as Record<string, unknown>)
       : {};
+  }
+
+  private readLocalJson(key: string): Record<string, unknown> {
+    return this.asRecord(this.readLocalValue(key));
+  }
+
+  private readLocalValue(key: string): unknown {
+    try {
+      return JSON.parse(this.host.localStorage.getItem(key) || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  private localFlag(key: string): boolean {
+    const value = this.host.localStorage.getItem(key);
+    return value === '1' || value === 'true' || Boolean(value);
   }
 }

@@ -8,6 +8,8 @@ import type {
   WorldStateRecord,
 } from '@/domain/types';
 
+export const GLOBAL_SETTINGS_ID = '__caelian_global_settings__';
+
 export function defaultPlayer(
   profileId: string,
   playerName: string,
@@ -104,6 +106,20 @@ export function defaultSettings(
     id: profileId,
     profileId,
     preserveAdventureSave: false,
+    battleDifficulty: 'normal',
+    updatedAt: now,
+  };
+}
+
+export function defaultGlobalSettings(
+  now: number,
+  preserveAdventureSave = false,
+): SettingsRecord {
+  return {
+    id: GLOBAL_SETTINGS_ID,
+    profileId: GLOBAL_SETTINGS_ID,
+    preserveAdventureSave,
+    sharedProfileId: undefined,
     battleDifficulty: 'normal',
     updatedAt: now,
   };

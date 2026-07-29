@@ -1,17 +1,40 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import {
+  ACHIEVEMENT_CATEGORIES,
+  ACHIEVEMENT_CATEGORY_LABELS,
+  achievementTarget,
+  type AchievementCategory,
+} from '@/achievements/catalog';
 import { loadAchievementDefinitions } from '@/content/catalogs/achievements';
 import type { AchievementDefinition } from '@/content/types';
-import type { GameSnapshot } from '@/domain/types';
+import type {
+  AchievementProgressRecord,
+  AchievementSpecialState,
+  GameSnapshot,
+} from '@/domain/types';
 import type { PanelContext } from '@/kernel/public-api';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
+const special = ref<AchievementSpecialState>();
 const definitions = ref<Record<string, AchievementDefinition>>({});
 const mode = ref<'all' | 'unlocked' | 'locked'>('all');
+const category = ref<AchievementCategory>('all');
 const stars = ref(0);
 const search = ref('');
+const disposers: Array<() => void> = [];
+
+const progressById = computed(
+  () =>
+    new Map(
+      (snapshot.value?.achievements ?? []).map((progress) => [
+        progress.achievementId,
+        progress,
+      ]),
+    ),
+);
 
 const unlockedIds = computed(
   () =>
@@ -21,23 +44,47 @@ const unlockedIds = computed(
         .map((progress) => progress.achievementId),
     ),
 );
+
 const entries = computed(() => {
   const term = search.value.trim().toLowerCase();
-  return Object.entries(definitions.value).filter(([id, definition]) => {
-    const unlocked = unlockedIds.value.has(id);
-    const modeMatches =
-      mode.value === 'all' ||
-      (mode.value === 'unlocked' ? unlocked : !unlocked);
-    const starValue = Number(definition.star ?? 0);
-    const starMatches = stars.value === 0 || starValue === stars.value;
-    const searchMatches =
-      !term ||
-      definition.name.toLowerCase().includes(term) ||
-      definition.description.toLowerCase().includes(term) ||
-      String(definition.condition ?? '').toLowerCase().includes(term);
-    return modeMatches && starMatches && searchMatches;
-  });
+  return Object.entries(definitions.value)
+    .filter(([id, definition]) => {
+      const unlocked = unlockedIds.value.has(id);
+      const modeMatches =
+        mode.value === 'all' ||
+        (mode.value === 'unlocked' ? unlocked : !unlocked);
+      const definitionCategory = String(
+        definition.category ?? 'story',
+      ) as AchievementCategory;
+      const categoryMatches =
+        category.value === 'all' || definitionCategory === category.value;
+      const starValue = Number(definition.star ?? 0);
+      const starMatches = stars.value === 0 || starValue === stars.value;
+      const hidden = Boolean(definition.hidden) && !unlocked;
+      const searchSource = hidden
+        ? '隐藏成就'
+        : `${definition.name} ${definition.description} ${definition.condition ?? ''}`;
+      const searchMatches =
+        !term || searchSource.toLowerCase().includes(term);
+      return (
+        modeMatches &&
+        categoryMatches &&
+        starMatches &&
+        searchMatches
+      );
+    })
+    .sort(([leftId, left], [rightId, right]) => {
+      const unlockedDifference =
+        Number(unlockedIds.value.has(rightId)) -
+        Number(unlockedIds.value.has(leftId));
+      if (unlockedDifference !== 0) return unlockedDifference;
+      const starDifference =
+        Number(right.star ?? 0) - Number(left.star ?? 0);
+      if (starDifference !== 0) return starDifference;
+      return left.name.localeCompare(right.name, 'zh-Hans-CN');
+    });
 });
+
 const totalStars = computed(() =>
   Object.entries(definitions.value).reduce(
     (total, [id, definition]) =>
@@ -46,11 +93,77 @@ const totalStars = computed(() =>
   ),
 );
 
-onMounted(async () => {
-  [snapshot.value, definitions.value] = await Promise.all([
+const possibleStars = computed(() =>
+  Object.values(definitions.value).reduce(
+    (total, definition) => total + Number(definition.star ?? 0),
+    0,
+  ),
+);
+
+const categoryOptions = computed(() =>
+  ACHIEVEMENT_CATEGORIES.map((id) => ({
+    id,
+    label: ACHIEVEMENT_CATEGORY_LABELS[id],
+  })),
+);
+
+async function refresh(): Promise<void> {
+  [snapshot.value, special.value] = await Promise.all([
     props.context.api.query('state'),
-    loadAchievementDefinitions(),
+    props.context.api.query('achievement-special'),
   ]);
+}
+
+function progress(id: string): AchievementProgressRecord | undefined {
+  return progressById.value.get(id);
+}
+
+function progressValue(id: string): number {
+  return Math.min(
+    achievementTarget(id),
+    Math.max(0, progress(id)?.progress ?? 0),
+  );
+}
+
+function progressPercent(id: string): number {
+  return Math.min(
+    100,
+    Math.round((progressValue(id) / achievementTarget(id)) * 100),
+  );
+}
+
+function unlockedDate(id: string): string {
+  const timestamp = progress(id)?.unlockedAt;
+  if (!timestamp) return '';
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(timestamp);
+}
+
+function isHidden(id: string, definition: AchievementDefinition): boolean {
+  return Boolean(definition.hidden) && !unlockedIds.value.has(id);
+}
+
+function openSpecialLetter(): void {
+  void props.context.api.openPanel('achievement-letter');
+}
+
+onMounted(async () => {
+  [definitions.value] = await Promise.all([loadAchievementDefinitions()]);
+  await refresh();
+  for (const event of [
+    'state.changed',
+    'tavern.changed',
+    'achievement.unlocked',
+  ] as const) {
+    disposers.push(props.context.api.on(event, refresh));
+  }
+});
+
+onUnmounted(() => {
+  for (const dispose of disposers.splice(0)) dispose();
 });
 </script>
 
@@ -66,7 +179,7 @@ onMounted(async () => {
         <div>
           <span>ACHIEVEMENT ARCHIVE</span>
           <h1>欧西亚斯成就图鉴</h1>
-          <p>名称、达成条件、星级与描述直接来自原始成就系统。</p>
+          <p>跨聊天保存；条件、星级和文本均沿用旧版成就系统。</p>
         </div>
         <dl>
           <div>
@@ -75,13 +188,39 @@ onMounted(async () => {
           </div>
           <div>
             <dt>获得星数</dt>
-            <dd>{{ totalStars }} ★</dd>
+            <dd>{{ totalStars }}/{{ possibleStars }} ★</dd>
           </div>
         </dl>
       </section>
 
-      <div class="achievement-filters">
+      <section class="poem-card">
+        <div class="poem-icon">✉</div>
         <div>
+          <span>SPECIAL ACHIEVEMENT</span>
+          <strong>今昔的诗行</strong>
+          <p v-if="!special?.letterClaimed">
+            一封写给今昔的感谢信正在等你开启。
+          </p>
+          <p v-else-if="special.dailyGiftAvailable">
+            空白的书页带来了今天的随机赠礼。
+          </p>
+          <p v-else>
+            今日赠礼已领取；空白的书页会在明天再次生效。
+          </p>
+        </div>
+        <button type="button" @click="openSpecialLetter">
+          {{
+            !special?.letterClaimed
+              ? '开启信件'
+              : special.dailyGiftAvailable
+                ? '领取赠礼'
+                : '重读信件'
+          }}
+        </button>
+      </section>
+
+      <div class="achievement-filters">
+        <div class="status-filter">
           <button
             v-for="item in [
               ['all', '全部'],
@@ -96,7 +235,16 @@ onMounted(async () => {
             {{ item[1] }}
           </button>
         </div>
-        <select v-model.number="stars">
+        <select v-model="category" aria-label="成就类别">
+          <option
+            v-for="option in categoryOptions"
+            :key="option.id"
+            :value="option.id"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+        <select v-model.number="stars" aria-label="成就星级">
           <option :value="0">全部星级</option>
           <option v-for="value in 5" :key="value" :value="value">
             {{ value }} 星
@@ -117,24 +265,54 @@ onMounted(async () => {
           <article
             v-for="[id, achievement] in entries"
             :key="id"
-            :class="{ unlocked: unlockedIds.has(id) }"
+            :class="{
+              unlocked: unlockedIds.has(id),
+              hidden: isHidden(id, achievement),
+            }"
           >
             <header>
               <div class="achievement-icon">
-                {{ unlockedIds.has(id) ? '♛' : '◇' }}
+                {{ unlockedIds.has(id) ? '♛' : isHidden(id, achievement) ? '?' : '◇' }}
               </div>
               <div>
-                <strong>{{ achievement.name }}</strong>
-                <span>
-                  {{ '★'.repeat(Number(achievement.star ?? 0)) }}
-                </span>
+                <strong>
+                  {{ isHidden(id, achievement) ? '？？？' : achievement.name }}
+                </strong>
+                <span>{{ '★'.repeat(Number(achievement.star ?? 0)) }}</span>
               </div>
               <b>{{ unlockedIds.has(id) ? '已解锁' : '未解锁' }}</b>
             </header>
-            <p>{{ achievement.description }}</p>
+            <p>
+              {{
+                isHidden(id, achievement)
+                  ? '达成隐藏条件后才会显示这项成就。'
+                  : achievement.description
+              }}
+            </p>
+            <div
+              v-if="
+                !unlockedIds.has(id) &&
+                  !isHidden(id, achievement) &&
+                  (achievementTarget(id) > 1 || progressValue(id) > 0)
+              "
+              class="progress"
+            >
+              <span :style="{ width: `${progressPercent(id)}%` }"></span>
+              <small>
+                {{ progressValue(id) }}/{{ achievementTarget(id) }}
+              </small>
+            </div>
             <footer>
-              <span>达成条件</span>
-              <strong>{{ achievement.condition }}</strong>
+              <span>{{ unlockedIds.has(id) ? '解锁日期' : '达成条件' }}</span>
+              <strong>
+                {{
+                  unlockedIds.has(id)
+                    ? unlockedDate(id)
+                    : isHidden(id, achievement)
+                      ? '隐藏'
+                      : achievement.condition
+                }}
+              </strong>
             </footer>
           </article>
         </div>
@@ -154,7 +332,8 @@ onMounted(async () => {
     var(--ca-surface);
 }
 
-.achievement-summary > div > span {
+.achievement-summary > div > span,
+.poem-card > div:nth-child(2) > span {
   color: var(--ca-gold);
   font-size: 9px;
   letter-spacing: 0.17em;
@@ -166,7 +345,8 @@ onMounted(async () => {
   font: 700 23px var(--ca-serif);
 }
 
-.achievement-summary p {
+.achievement-summary p,
+.poem-card p {
   margin: 0;
   color: var(--ca-muted);
   font-size: 11px;
@@ -179,7 +359,7 @@ onMounted(async () => {
 }
 
 .achievement-summary dl div {
-  min-width: 88px;
+  min-width: 94px;
   display: grid;
   gap: 3px;
   padding: 10px;
@@ -196,7 +376,50 @@ onMounted(async () => {
 .achievement-summary dd {
   margin: 0;
   color: var(--ca-gold-light);
+  font: 700 15px var(--ca-serif);
+}
+
+.poem-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  margin: 12px 0;
+  padding: 13px 15px;
+  border: 1px solid rgba(212, 168, 67, 0.35);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 0 50%, rgba(83, 41, 103, 0.24), transparent 30%),
+    var(--ca-surface);
+}
+
+.poem-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--ca-gold-dark);
+  border-radius: 50%;
+  color: var(--ca-gold-light);
+  background: #211526;
+  font-size: 19px;
+}
+
+.poem-card strong {
+  display: block;
+  margin: 2px 0 3px;
+  color: var(--ca-text-bright);
   font: 700 16px var(--ca-serif);
+}
+
+.poem-card button {
+  padding: 8px 12px;
+  border: 1px solid var(--ca-gold-dark);
+  border-radius: 8px;
+  color: var(--ca-gold-light);
+  background: rgba(212, 168, 67, 0.08);
+  font: 700 10px var(--ca-ui);
+  cursor: pointer;
 }
 
 .achievement-filters {
@@ -205,7 +428,7 @@ onMounted(async () => {
   margin: 14px 0;
 }
 
-.achievement-filters > div {
+.status-filter {
   display: flex;
   gap: 5px;
 }
@@ -233,7 +456,7 @@ onMounted(async () => {
 }
 
 .achievement-filters input {
-  min-width: 160px;
+  min-width: 150px;
   flex: 1;
   font-weight: 400;
 }
@@ -258,6 +481,18 @@ onMounted(async () => {
     radial-gradient(circle at 0 0, rgba(212, 168, 67, 0.1), transparent 36%),
     var(--ca-surface-soft);
   opacity: 1;
+}
+
+.achievement-grid article.hidden {
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 255, 255, 0.012),
+      rgba(255, 255, 255, 0.012) 5px,
+      transparent 5px,
+      transparent 10px
+    ),
+    var(--ca-surface-soft);
 }
 
 .achievement-grid header {
@@ -308,12 +543,37 @@ onMounted(async () => {
   color: #8fd5ae;
 }
 
-.achievement-grid p {
+.achievement-grid article > p {
   min-height: 34px;
   margin: 12px 0;
   color: var(--ca-muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.progress {
+  position: relative;
+  height: 13px;
+  margin: -2px 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--ca-border);
+  border-radius: 999px;
+  background: #0d0f14;
+}
+
+.progress > span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #6f4d1c, #d4a843);
+}
+
+.progress > small {
+  position: absolute;
+  inset: 0;
+  color: #e5dfd3;
+  text-align: center;
+  font-size: 8px;
+  line-height: 11px;
 }
 
 .achievement-grid footer {
@@ -351,6 +611,15 @@ onMounted(async () => {
 
   .achievement-grid {
     grid-template-columns: 1fr;
+  }
+
+  .poem-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .poem-card button {
+    grid-column: 1 / -1;
+    width: 100%;
   }
 }
 </style>

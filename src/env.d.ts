@@ -46,6 +46,11 @@ interface TavernContext {
   groupId?: string | number;
   name1?: string;
   name2?: string;
+  chat?: Array<{
+    mes?: string;
+    message?: string;
+    content?: string;
+  }>;
   characters?: Array<{
     name?: string;
     avatar?: string;

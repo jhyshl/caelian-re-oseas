@@ -4,6 +4,44 @@ const commandBase = {
   id: z.string().min(1).max(160),
 };
 
+const achievementEventSchema = z.object({
+  event: z.enum([
+    'special.old-player',
+    'special.repo-reward',
+    'quest.complete',
+    'caelian.gift',
+    'caelian.invite',
+    'trelao.pet',
+    'trelao.feed',
+    'battle.consumable-heal',
+    'battle.astrology-draw',
+    'battle.merchant-bribe-victory',
+    'gold.gain',
+    'gold.sell',
+    'craft.item',
+    'craft.equipment',
+    'workshop.class',
+    'workshop.card',
+    'collectible.special',
+  ]),
+  amount: z.number().min(0).max(1_000_000_000).optional(),
+  count: z.number().int().min(0).max(1_000_000).optional(),
+  success: z.boolean().optional(),
+  liked: z.boolean().optional(),
+  positive: z.boolean().optional(),
+  reaction: z.string().trim().max(80).optional(),
+  favor: z.number().min(-100).max(100).optional(),
+  category: z.string().trim().max(80).optional(),
+  region: z.string().trim().max(160).optional(),
+  questId: z.string().trim().max(180).optional(),
+  ending: z.string().trim().max(40).optional(),
+  cardName: z.string().trim().max(180).optional(),
+  cardType: z.string().trim().max(80).optional(),
+  weaponMaster: z.boolean().optional(),
+  star: z.number().int().min(1).max(5).optional(),
+  ids: z.array(z.string().trim().min(1).max(180)).max(100).optional(),
+});
+
 export const domainCommandSchema = z.discriminatedUnion('type', [
   z.object({
     ...commandBase,
@@ -156,6 +194,21 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       relicId: z.string().trim().min(1).max(180),
       carried: z.boolean(),
     }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('achievement.record'),
+    payload: achievementEventSchema,
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('achievement.claim-poem-letter'),
+    payload: z.object({}),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('achievement.claim-daily-gift'),
+    payload: z.object({}),
   }),
   z.object({
     ...commandBase,

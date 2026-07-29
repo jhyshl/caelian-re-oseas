@@ -1,4 +1,9 @@
 import type { AchievementDefinition } from '@/content/types';
+import {
+  achievementCategory,
+  PAST_PRESENT_POEM_DEFINITION,
+  PAST_PRESENT_POEM_ID,
+} from '@/achievements/catalog';
 
 let achievementCache:
   | Record<string, AchievementDefinition>
@@ -9,10 +14,23 @@ export async function loadAchievementDefinitions() {
     const module = await import(
       '@/content/generated/achievements/definitions.json'
     );
-    achievementCache = module.default as unknown as Record<
+    const legacy = module.default as unknown as Record<
       string,
       AchievementDefinition
     >;
+    achievementCache = Object.fromEntries(
+      Object.entries({
+        ...legacy,
+        [PAST_PRESENT_POEM_ID]: PAST_PRESENT_POEM_DEFINITION,
+      }).map(([id, definition]) => [
+        id,
+        {
+          ...definition,
+          id,
+          category: achievementCategory(id),
+        },
+      ]),
+    );
   }
   return achievementCache;
 }

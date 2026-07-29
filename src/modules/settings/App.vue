@@ -29,7 +29,9 @@ async function save() {
     return;
   }
   snapshot.value = await props.context.api.query('state');
-  notice.value = '设置已保存到当前聊天的浏览器本地档案。';
+  notice.value = draft.value.preserveAdventureSave
+    ? '设置已保存。之后新建或切换聊天会继续使用当前冒险存档。'
+    : '设置已保存。之后新建聊天会创建独立冒险存档。';
 }
 
 async function syncMvu() {
@@ -84,7 +86,10 @@ onMounted(async () => {
         <label class="setting-row">
           <div>
             <strong>切换聊天时保留冒险存档</strong>
-            <span>Alpha 暂按聊天隔离档案；此选项为后续跨聊天迁移流程预留。</span>
+            <span>
+              关闭时角色卡每个新聊天使用独立冒险档；开启后，新聊天继续使用当前冒险档。
+              该开关在浏览器内全局同步，不会因新建聊天而重置。
+            </span>
           </div>
           <input v-model="draft.preserveAdventureSave" type="checkbox" />
         </label>

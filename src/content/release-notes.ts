@@ -9,6 +9,17 @@ const MAX_VISIBLE_RELEASES = 5;
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.11',
+    label: 'Alpha 11',
+    releasedAt: '2026-07-29',
+    changes: [
+      '完整接入旧版 95 项成就及“今昔的诗行”特殊成就，保留原名称、条件、描述与星级。',
+      '成就解锁、累计进度与领取记录改为浏览器 IndexedDB 全局保存，换聊天或新开角色卡档案不会丢失，也不写入 MVU。',
+      '恢复成就通知、分类筛选、进度显示、旧本地记录迁移，以及感谢信、1834 金币、空白的书页和每日随机赠礼。',
+      '修复“保留冒险存档”开关：关闭时每个新聊天创建独立冒险档；开启时后续新聊天沿用当前冒险档，开关状态全局同步。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.10',
     label: 'Alpha 10',
     releasedAt: '2026-07-29',
