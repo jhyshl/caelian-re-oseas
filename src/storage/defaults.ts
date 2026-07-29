@@ -3,6 +3,7 @@ import type {
   GuildRecord,
   PlayerRecord,
   SettingsRecord,
+  SocialProgressRecord,
   StatAllocationRecord,
   WorldStateRecord,
 } from '@/domain/types';
@@ -104,6 +105,24 @@ export function defaultSettings(
     profileId,
     preserveAdventureSave: false,
     battleDifficulty: 'normal',
+    updatedAt: now,
+  };
+}
+
+export function defaultSocialProgress(
+  profileId: string,
+  now: number,
+): SocialProgressRecord {
+  return {
+    id: `${profileId}:caelian`,
+    profileId,
+    characterId: 'caelian',
+    affinity: 0,
+    mood: '平静',
+    location: '圣德里安学院',
+    clothing: '白色暗纹衬衫搭配红金色马甲',
+    innerThought: '',
+    relationshipStage: '陌生人',
     updatedAt: now,
   };
 }

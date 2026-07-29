@@ -62,6 +62,38 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...commandBase,
+    type: z.literal('narrative.update'),
+    payload: z
+      .object({
+        companion: z
+          .object({
+            affinity: z.number().int().min(0).max(100).optional(),
+            mood: z.string().trim().min(1).max(80).optional(),
+            location: z.string().trim().min(1).max(120).optional(),
+            clothing: z.string().trim().min(1).max(240).optional(),
+            innerThought: z.string().trim().max(500).optional(),
+          })
+          .refine((value) => Object.keys(value).length > 0, {
+            message: '至少需要修改一个凯利安叙事字段',
+          })
+          .optional(),
+        storyFlags: z
+          .record(
+            z.string().trim().min(1).max(80),
+            z.boolean(),
+          )
+          .refine((value) => Object.keys(value).length <= 64, {
+            message: '单次最多更新 64 个剧情标记',
+          })
+          .optional(),
+      })
+      .refine(
+        (value) => Boolean(value.companion || value.storyFlags),
+        { message: '至少需要一个叙事更新' },
+      ),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal('quest.accept'),
     payload: z.object({
       taskId: z.string().trim().min(1).max(160),

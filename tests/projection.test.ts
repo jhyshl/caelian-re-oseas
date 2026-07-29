@@ -56,6 +56,27 @@ const snapshot: GameSnapshot = {
     updatedAt: 1,
   },
   regionAccess: [],
+  storyFlags: [
+    {
+      id: 'profile:test:first-meeting',
+      profileId: 'profile:test',
+      key: 'first-meeting',
+      value: true,
+      updatedAt: 1,
+    },
+  ],
+  social: {
+    id: 'profile:test:caelian',
+    profileId: 'profile:test',
+    characterId: 'caelian',
+    affinity: 35,
+    mood: '平静',
+    location: '伊拉亚城-集市',
+    clothing: '白色暗纹衬衫',
+    innerThought: '他开始值得信任了。',
+    relationshipStage: '熟人',
+    updatedAt: 1,
+  },
   guild: {
     profileId: 'profile:test',
     rank: 'copper',
@@ -116,16 +137,30 @@ const snapshot: GameSnapshot = {
 
 describe('createAiProjection', () => {
   it('只投影 AI 所需摘要，不包含本地背包和卡牌明细', () => {
-    const projection = createAiProjection(snapshot, 'alpha', 4);
+    const projection = createAiProjection(snapshot, 'alpha');
     const serialized = JSON.stringify(projection);
 
-    expect(projection.schemaVersion).toBe(2);
-    expect(projection.player.name).toBe('凯利安');
-    expect(projection.world.location).toBe('伊拉亚城-集市');
-    expect(projection.guild.activeQuests).toHaveLength(1);
+    expect(projection._meta).toMatchObject({
+      schemaVersion: 3,
+      owner: 'caelian-alpha',
+      channel: 'alpha',
+      revision: 1,
+    });
+    expect(projection.state.player.name).toBe('凯利安');
+    expect(projection.state.world.location).toBe('伊拉亚城-集市');
+    expect(projection.state.guild.activeQuests).toHaveLength(1);
+    expect(projection.state.companion.relationshipStage).toBe('熟人');
+    expect(projection.narrative).toMatchObject({
+      companion: {
+        affinity: 35,
+        innerThought: '他开始值得信任了。',
+      },
+      storyFlags: { 'first-meeting': true },
+    });
     expect(serialized).not.toContain('secret-item');
     expect(serialized).not.toContain('不应进入 MVU');
     expect(serialized).not.toContain('inventory');
     expect(serialized).not.toContain('cards');
+    expect(serialized).not.toContain('equipment');
   });
 });

@@ -9,6 +9,16 @@ const MAX_VISIBLE_RELEASES = 5;
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.8',
+    label: 'Alpha 8',
+    releasedAt: '2026-07-29',
+    changes: [
+      '重构 MVU 为 v3 最小投影：完整背包、装备、卡牌、任务和战斗数据只保存在玩家浏览器 IndexedDB。',
+      '新增旧 MVU 一次性归档与安全迁移，只接收凯利安叙事字段和布尔剧情标记。',
+      'MVU 回写会清理旧欧西亚斯顶层变量，同时保留宠物等其他插件的 stat_data。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.7',
     label: 'Alpha 7',
     releasedAt: '2026-07-29',

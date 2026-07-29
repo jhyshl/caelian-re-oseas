@@ -2,6 +2,59 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AiProjection } from '@/domain/types';
 import { resolveTavernHost, TavernAdapter } from '@/tavern/adapter';
 
+const projection: AiProjection = {
+  _meta: {
+    schemaVersion: 3,
+    owner: 'caelian-alpha',
+    channel: 'alpha',
+    revision: 1,
+  },
+  state: {
+    player: {
+      name: '测试者',
+      profession: '炼金术士',
+      level: 1,
+      hp: 80,
+      hpMax: 80,
+      mp: 30,
+      mpMax: 30,
+      gold: 500,
+    },
+    world: {
+      region: '圣德里安学院',
+      location: '中央广场',
+      gameDate: '',
+      gameTime: '',
+      weather: '',
+      mainStage: 0,
+      mainStep: 0,
+      accessibleRegions: [],
+    },
+    guild: { rank: 'copper', activeQuests: [] },
+    battle: {
+      active: false,
+      status: 'none',
+      phase: 'none',
+      source: '',
+      relatedQuestId: '',
+      turn: 0,
+      enemies: [],
+      result: null,
+    },
+    companion: { relationshipStage: '陌生人' },
+  },
+  narrative: {
+    companion: {
+      affinity: 0,
+      mood: '平静',
+      location: '圣德里安学院',
+      clothing: '白色暗纹衬衫',
+      innerThought: '',
+    },
+    storyFlags: {},
+  },
+};
+
 describe('TavernAdapter', () => {
   it('只替换 stat_data.caelian，并保留其他 MVU 数据', async () => {
     const replaceMvuData = vi.fn();
@@ -15,37 +68,6 @@ describe('TavernAdapter', () => {
       replaceMvuData,
     };
     const adapter = new TavernAdapter(window);
-    const projection: AiProjection = {
-      schemaVersion: 2,
-      channel: 'alpha',
-      revision: 1,
-      player: {
-        name: '测试者',
-        profession: '炼金术士',
-        level: 1,
-        hp: 80,
-        hpMax: 80,
-        mp: 30,
-        mpMax: 30,
-        gold: 500,
-      },
-      world: {
-        region: '圣德里安学院',
-        location: '中央广场',
-        gameDate: '',
-        gameTime: '',
-        weather: '',
-        mainStage: 0,
-        mainStep: 0,
-      },
-      guild: { rank: 'copper', activeQuests: [] },
-      battle: {
-        active: false,
-        source: '',
-        relatedQuestId: '',
-        turn: 0,
-      },
-    };
 
     await expect(adapter.writeProjection(projection)).resolves.toBe(true);
     expect(replaceMvuData).toHaveBeenCalledTimes(1);
@@ -55,6 +77,52 @@ describe('TavernAdapter', () => {
       existing_system: { keep: true },
       caelian: projection,
     });
+
+    delete window.Mvu;
+  });
+
+  it('移除旧欧西亚斯顶层变量，但保留其他插件数据', async () => {
+    const replaceMvuData = vi.fn();
+    const current = {
+      stat_data: {
+        世界: { 天气: '晴朗' },
+        地区剧情: {},
+        凯利安: { 好感度: 10 },
+        玩家: { 背包: { 药水: 3 } },
+        协会: {},
+        战斗: {},
+        pixel_pet: { keep: true },
+      },
+    };
+    window.Mvu = {
+      getMvuData: () => current,
+      replaceMvuData,
+    };
+    const adapter = new TavernAdapter(window);
+
+    expect(adapter.readMvuData()).toEqual(current);
+    await expect(adapter.writeProjection(projection)).resolves.toBe(true);
+    const next = replaceMvuData.mock.calls[0]?.[0] as {
+      stat_data: Record<string, unknown>;
+    };
+    expect(next.stat_data).toEqual({
+      pixel_pet: { keep: true },
+      caelian: projection,
+    });
+
+    delete window.Mvu;
+  });
+
+  it('投影未变化时跳过 MVU 回写', async () => {
+    const replaceMvuData = vi.fn();
+    window.Mvu = {
+      getMvuData: () => ({ stat_data: { caelian: projection } }),
+      replaceMvuData,
+    };
+    const adapter = new TavernAdapter(window);
+
+    await expect(adapter.writeProjection(projection)).resolves.toBe(false);
+    expect(replaceMvuData).not.toHaveBeenCalled();
 
     delete window.Mvu;
   });

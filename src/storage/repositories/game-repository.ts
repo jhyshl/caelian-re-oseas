@@ -6,6 +6,7 @@ import type { CaelianDatabase } from '@/storage/database';
 import { BattleRepository } from '@/storage/repositories/battle-repository';
 import { CardRepository } from '@/storage/repositories/card-repository';
 import { InventoryRepository } from '@/storage/repositories/inventory-repository';
+import { NarrativeRepository } from '@/storage/repositories/narrative-repository';
 import { GuildRepository } from '@/storage/repositories/guild-repository';
 import { PlayerRepository } from '@/storage/repositories/player-repository';
 import { ProfileRepository } from '@/storage/repositories/profile-repository';
@@ -19,6 +20,7 @@ export class GameRepository {
   private readonly cards: CardRepository;
   private readonly guild: GuildRepository;
   private readonly battles: BattleRepository;
+  private readonly narrative: NarrativeRepository;
 
   constructor(
     private readonly db: CaelianDatabase,
@@ -31,6 +33,7 @@ export class GameRepository {
     this.cards = new CardRepository(db);
     this.guild = new GuildRepository(db);
     this.battles = new BattleRepository(db);
+    this.narrative = new NarrativeRepository(db);
   }
 
   ensureProfile(
@@ -47,6 +50,8 @@ export class GameRepository {
       statAllocations,
       world,
       regionAccess,
+      storyFlags,
+      social,
       guild,
       quests,
       questHistory,
@@ -66,6 +71,8 @@ export class GameRepository {
       this.db.statAllocations.get(profileId),
       this.db.worldStates.get(profileId),
       this.db.regionAccess.where('profileId').equals(profileId).toArray(),
+      this.db.storyFlags.where('profileId').equals(profileId).toArray(),
+      this.db.socialProgress.get(`${profileId}:caelian`),
       this.db.guildStates.get(profileId),
       this.db.questRecords.where('profileId').equals(profileId).toArray(),
       this.db.questHistory.where('profileId').equals(profileId).toArray(),
@@ -92,6 +99,7 @@ export class GameRepository {
       !player ||
       !statAllocations ||
       !world ||
+      !social ||
       !guild ||
       !loadout ||
       !settings
@@ -104,6 +112,8 @@ export class GameRepository {
       statAllocations,
       world,
       regionAccess,
+      storyFlags,
+      social,
       guild,
       quests,
       questHistory,
@@ -174,6 +184,21 @@ export class GameRepository {
       .toArray();
   }
 
+  async archiveLegacyMvu(
+    profileId: string,
+    data: Record<string, unknown>,
+  ): Promise<void> {
+    const id = `${profileId}:mvu-before-v3`;
+    if (await this.db.legacySnapshots.get(id)) return;
+    await this.db.legacySnapshots.add({
+      id,
+      profileId,
+      source: 'mvu-before-v3',
+      data,
+      createdAt: Date.now(),
+    });
+  }
+
   private async applyCommand(
     profileId: string,
     command: DomainCommand,
@@ -193,6 +218,8 @@ export class GameRepository {
         );
       case 'world.move':
         return this.world.move(profileId, command.payload);
+      case 'narrative.update':
+        return this.narrative.update(profileId, command.payload);
       case 'quest.accept':
         return this.guild.acceptCommission(profileId, command.payload);
       case 'quest.abandon':
@@ -248,6 +275,8 @@ export class GameRepository {
       this.db.playerStates,
       this.db.statAllocations,
       this.db.worldStates,
+      this.db.storyFlags,
+      this.db.socialProgress,
       this.db.guildStates,
       this.db.questRecords,
       this.db.questHistory,

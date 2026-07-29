@@ -1,4 +1,5 @@
 import type { AiProjection } from '@/domain/types';
+import { LEGACY_STAT_DATA_KEYS } from '@/mvu/contracts';
 
 type TavernEventHandler = (eventName: string) => void | Promise<void>;
 
@@ -70,6 +71,17 @@ export class TavernAdapter {
     );
   }
 
+  readMvuData(): Record<string, unknown> | null {
+    const mvu = this.host.Mvu;
+    if (!mvu || !this.hasMvu()) return null;
+    try {
+      const option: MvuOption = { type: 'message', message_id: 'latest' };
+      return this.clone(mvu.getMvuData(option) ?? {});
+    } catch {
+      return null;
+    }
+  }
+
   async writeProjection(projection: AiProjection): Promise<boolean> {
     const mvu = this.host.Mvu;
     if (!mvu || !this.hasMvu()) return false;
@@ -79,11 +91,15 @@ export class TavernAdapter {
     const next = this.clone(current);
     const statData = this.asRecord(next.stat_data);
 
+    for (const key of LEGACY_STAT_DATA_KEYS) {
+      delete statData[key];
+    }
     next.stat_data = {
       ...statData,
       caelian: projection,
     };
 
+    if (JSON.stringify(current) === JSON.stringify(next)) return false;
     await Promise.resolve(mvu.replaceMvuData(next, option));
     return true;
   }

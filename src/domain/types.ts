@@ -471,6 +471,8 @@ export interface GameSnapshot {
   statAllocations: StatAllocationRecord;
   world: WorldStateRecord;
   regionAccess: RegionAccessRecord[];
+  storyFlags: StoryFlagRecord[];
+  social: SocialProgressRecord;
   guild: GuildRecord;
   quests: QuestRecord[];
   questHistory: QuestHistoryRecord[];
@@ -486,45 +488,83 @@ export interface GameSnapshot {
   settings: SettingsRecord;
 }
 
+export interface MvuCompanionState {
+  affinity: number;
+  mood: string;
+  location: string;
+  clothing: string;
+  innerThought: string;
+}
+
+export interface MvuNarrativeState {
+  companion: MvuCompanionState;
+  storyFlags: Record<string, boolean>;
+}
+
 export interface AiProjection {
-  schemaVersion: 2;
-  channel: ReleaseChannel;
-  revision: number;
-  player: {
-    name: string;
-    profession: string;
-    level: number;
-    hp: number;
-    hpMax: number;
-    mp: number;
-    mpMax: number;
-    gold: number;
+  _meta: {
+    schemaVersion: 3;
+    owner: 'caelian-alpha';
+    channel: ReleaseChannel;
+    revision: number;
   };
-  world: {
-    region: string;
-    location: string;
-    gameDate: string;
-    gameTime: string;
-    weather: string;
-    mainStage: number;
-    mainStep: number;
+  state: {
+    player: {
+      name: string;
+      profession: string;
+      level: number;
+      hp: number;
+      hpMax: number;
+      mp: number;
+      mpMax: number;
+      gold: number;
+    };
+    world: {
+      region: string;
+      location: string;
+      gameDate: string;
+      gameTime: string;
+      weather: string;
+      mainStage: number;
+      mainStep: number;
+      accessibleRegions: string[];
+    };
+    guild: {
+      rank: string;
+      activeQuests: Array<{
+        id: string;
+        kind: QuestKind;
+        title: string;
+        region: string;
+        objective: string;
+        status: QuestStatus;
+        currentStage: number;
+        totalStages: number;
+      }>;
+    };
+    battle: {
+      active: boolean;
+      status: BattleStatus | 'none';
+      phase: LocalBattleState['phase'] | 'none';
+      source: string;
+      relatedQuestId: string;
+      turn: number;
+      enemies: Array<{
+        name: string;
+        hp: number;
+        hpMax: number;
+      }>;
+      result: {
+        experience: number;
+        gold: number;
+        items: string[];
+      } | null;
+    };
+    companion: {
+      relationshipStage: string;
+    };
   };
-  guild: {
-    rank: string;
-    activeQuests: Array<{
-      kind: QuestKind;
-      title: string;
-      objective: string;
-      currentStage: number;
-      totalStages: number;
-    }>;
-  };
-  battle: {
-    active: boolean;
-    source: string;
-    relatedQuestId: string;
-    turn: number;
-  };
+  narrative: MvuNarrativeState;
 }
 
 export interface RuntimeInfo {

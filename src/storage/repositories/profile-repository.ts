@@ -6,6 +6,7 @@ import {
   defaultLoadout,
   defaultPlayer,
   defaultSettings,
+  defaultSocialProgress,
   defaultStatAllocations,
   defaultWorld,
 } from '@/storage/defaults';
@@ -18,7 +19,15 @@ export class ProfileRepository {
     defaults: { playerName?: string } = {},
   ): Promise<ProfileRecord> {
     const existing = await this.db.profiles.where('chatId').equals(chatId).first();
-    if (existing) return existing;
+    if (existing) {
+      const socialId = `${existing.id}:caelian`;
+      if (!(await this.db.socialProgress.get(socialId))) {
+        await this.db.socialProgress.add(
+          defaultSocialProgress(existing.id, Date.now()),
+        );
+      }
+      return existing;
+    }
 
     const now = Date.now();
     const id = `profile:${encodeURIComponent(chatId)}`;
@@ -55,6 +64,7 @@ export class ProfileRepository {
         this.db.regionAccess,
         this.db.guildStates,
         this.db.equipmentLoadouts,
+        this.db.socialProgress,
         this.db.settings,
       ],
       async () => {
@@ -67,6 +77,7 @@ export class ProfileRepository {
         await this.db.regionAccess.bulkAdd(access);
         await this.db.guildStates.add(defaultGuild(id, now));
         await this.db.equipmentLoadouts.add(defaultLoadout(id, now));
+        await this.db.socialProgress.add(defaultSocialProgress(id, now));
         await this.db.settings.add(defaultSettings(id, now));
       },
     );

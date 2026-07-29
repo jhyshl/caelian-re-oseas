@@ -18,6 +18,12 @@ import type {
 } from '@/kernel/public-api';
 import { createAiProjection } from '@/mvu/projection';
 import {
+  extractMvuNarrativePatch,
+  hasLegacyMvuState,
+  normalizeNarrativePatch,
+  type MvuNarrativePatch,
+} from '@/mvu/contracts';
+import {
   CaelianDatabase,
   DATABASE_SCHEMA_VERSION,
 } from '@/storage/database';
@@ -45,9 +51,9 @@ export class CaelianKernel {
   private readonly stateDisposers: Array<() => void> = [];
   private status: RuntimeStatus = 'starting';
   private profileId?: string;
-  private revision = 0;
   private lastError?: string;
   private projectionQueue: Promise<boolean> = Promise.resolve(false);
+  private projectionWriteInProgress = false;
 
   constructor(options: KernelOptions) {
     if (options.channel !== 'alpha') {
@@ -82,18 +88,25 @@ export class CaelianKernel {
 
     try {
       await this.activateCurrentProfile();
+      await this.ingestMvuNarrative();
       this.stateDisposers.push(
         this.events.on('state.changed', async () => {
           await this.syncProjection();
         }),
       );
       this.adapter.subscribe(async (eventName) => {
+        if (
+          eventName === 'MESSAGE_UPDATED' &&
+          this.projectionWriteInProgress
+        ) {
+          return;
+        }
         await this.events.emit('tavern.changed', { event: eventName });
         if (eventName === 'CHAT_CHANGED') {
           await this.activateCurrentProfile();
-        } else {
-          await this.syncProjection();
         }
+        await this.ingestMvuNarrative();
+        await this.syncProjection();
       });
       this.status = 'ready';
       await this.syncProjection();
@@ -172,15 +185,18 @@ export class CaelianKernel {
   private async performProjectionSync(): Promise<boolean> {
     if (this.status !== 'ready' || !this.profileId) return false;
     const snapshot = await this.repository.snapshot(this.profileId);
-    const revision = ++this.revision;
-    const projection = createAiProjection(
-      snapshot,
-      this.channel,
-      revision,
-    );
-    const written = await this.adapter.writeProjection(projection);
+    const projection = createAiProjection(snapshot, this.channel);
+    this.projectionWriteInProgress = true;
+    let written: boolean;
+    try {
+      written = await this.adapter.writeProjection(projection);
+    } finally {
+      this.projectionWriteInProgress = false;
+    }
     if (written) {
-      await this.events.emit('projection.synced', { revision });
+      await this.events.emit('projection.synced', {
+        revision: projection._meta.revision,
+      });
     }
     return written;
   }
@@ -236,6 +252,74 @@ export class CaelianKernel {
       playerName: identity.playerName,
     });
     this.profileId = profile.id;
+  }
+
+  private async ingestMvuNarrative(): Promise<void> {
+    if (!this.profileId) return;
+    const mvuData = this.adapter.readMvuData();
+    if (!mvuData) return;
+
+    if (hasLegacyMvuState(mvuData)) {
+      await this.repository.archiveLegacyMvu(this.profileId, mvuData);
+    }
+
+    const extracted = extractMvuNarrativePatch(mvuData);
+    if (!extracted) return;
+    const patch = normalizeNarrativePatch(extracted);
+    const snapshot = await this.repository.snapshot(this.profileId);
+    const changed = this.changedNarrativePatch(patch, snapshot);
+    if (!changed) return;
+
+    await this.repository.execute(this.profileId, {
+      id: `mvu-narrative:${this.hashJson(this.profileId)}:${snapshot.profile.updatedAt}:${this.hashJson(changed)}`,
+      type: 'narrative.update',
+      payload: changed,
+    });
+  }
+
+  private changedNarrativePatch(
+    patch: MvuNarrativePatch,
+    snapshot: Awaited<ReturnType<GameRepository['snapshot']>>,
+  ): MvuNarrativePatch | null {
+    const companion = patch.companion
+      ? Object.fromEntries(
+          Object.entries(patch.companion).filter(
+            ([key, value]) =>
+              snapshot.social[key as keyof typeof patch.companion] !== value,
+          ),
+        )
+      : {};
+    const currentFlags = new Map(
+      snapshot.storyFlags.map((flag) => [flag.key, flag.value]),
+    );
+    const storyFlags = patch.storyFlags
+      ? Object.fromEntries(
+          Object.entries(patch.storyFlags).filter(
+            ([key, value]) => (currentFlags.get(key) ?? false) !== value,
+          ),
+        )
+      : {};
+
+    if (
+      Object.keys(companion).length === 0 &&
+      Object.keys(storyFlags).length === 0
+    ) {
+      return null;
+    }
+    return {
+      ...(Object.keys(companion).length > 0 ? { companion } : {}),
+      ...(Object.keys(storyFlags).length > 0 ? { storyFlags } : {}),
+    };
+  }
+
+  private hashJson(value: unknown): string {
+    const source = JSON.stringify(value);
+    let hash = 2_166_136_261;
+    for (let index = 0; index < source.length; index += 1) {
+      hash ^= source.charCodeAt(index);
+      hash = Math.imul(hash, 16_777_619);
+    }
+    return (hash >>> 0).toString(36);
   }
 
   private async openReleaseNotesIfNew(): Promise<void> {
