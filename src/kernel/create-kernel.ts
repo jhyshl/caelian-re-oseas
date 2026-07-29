@@ -63,6 +63,7 @@ export class CaelianKernel {
   private projectionQueue: Promise<boolean> = Promise.resolve(false);
   private projectionWriteInProgress = false;
   private managedContentTimer?: number;
+  private readonly pendingTavernUpdates = new Set<Promise<void>>();
 
   constructor(options: KernelOptions) {
     if (options.channel !== 'alpha') {
@@ -122,21 +123,8 @@ export class CaelianKernel {
           await this.syncProjection();
         }),
       );
-      this.adapter.subscribe(async (eventName) => {
-        if (
-          (eventName === 'MESSAGE_UPDATED' ||
-            eventName === 'MVU_VARIABLE_UPDATE_ENDED') &&
-          this.projectionWriteInProgress
-        ) {
-          return;
-        }
-        if (eventName === 'CHAT_CHANGED') {
-          await this.activateCurrentProfile();
-        }
-        await this.ingestMvuNarrative();
-        await this.scanCurrentAchievements();
-        await this.syncProjection();
-        await this.events.emit('tavern.changed', { event: eventName });
+      this.adapter.subscribe((eventName) => {
+        this.queueTavernUpdate(eventName);
       });
       this.status = 'ready';
       await this.syncProjection();
@@ -247,11 +235,47 @@ export class CaelianKernel {
       this.adapter.host.clearInterval(this.managedContentTimer);
       this.managedContentTimer = undefined;
     }
+    await Promise.all([...this.pendingTavernUpdates]);
     for (const dispose of this.stateDisposers.splice(0)) dispose();
     this.db.close();
     this.status = 'stopped';
     await this.events.emit('runtime.stopped', this.getRuntimeInfo());
     this.events.clear();
+  }
+
+  private queueTavernUpdate(eventName: string): void {
+    const task = this.handleTavernUpdate(eventName)
+      .catch((error) => {
+        if (this.status === 'stopped') return;
+        this.lastError =
+          error instanceof Error ? error.message : String(error);
+        this.notifyRuntime(
+          'error',
+          this.lastError,
+          '酒馆变量更新同步失败',
+        );
+      })
+      .finally(() => {
+        this.pendingTavernUpdates.delete(task);
+      });
+    this.pendingTavernUpdates.add(task);
+  }
+
+  private async handleTavernUpdate(eventName: string): Promise<void> {
+    if (
+      (eventName === 'MESSAGE_UPDATED' ||
+        eventName === 'MVU_VARIABLE_UPDATE_ENDED') &&
+      this.projectionWriteInProgress
+    ) {
+      return;
+    }
+    if (eventName === 'CHAT_CHANGED') {
+      await this.activateCurrentProfile();
+    }
+    await this.ingestMvuNarrative();
+    await this.scanCurrentAchievements();
+    await this.syncProjection();
+    await this.events.emit('tavern.changed', { event: eventName });
   }
 
   private createPublicApi(): CaelianPublicApi {
