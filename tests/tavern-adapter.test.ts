@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AiProjection } from '@/domain/types';
 import { resolveTavernHost, TavernAdapter } from '@/tavern/adapter';
 
@@ -54,6 +54,12 @@ const projection: AiProjection = {
     storyFlags: {},
   },
 };
+
+afterEach(() => {
+  delete window.Mvu;
+  delete window.SillyTavern;
+  document.querySelector('#user_avatar_block')?.remove();
+});
 
 describe('TavernAdapter', () => {
   it('只替换 stat_data.caelian，并保留其他 MVU 数据', async () => {
@@ -140,6 +146,39 @@ describe('TavernAdapter', () => {
     expect(input).toHaveBeenCalledTimes(1);
 
     textarea.remove();
+  });
+
+  it('读取当前 User Persona 与角色卡头像', async () => {
+    const personaBlock = document.createElement('div');
+    personaBlock.id = 'user_avatar_block';
+    const selectedPersona = document.createElement('div');
+    selectedPersona.className = 'avatar-container selected';
+    selectedPersona.dataset.avatarId = 'user persona.png';
+    personaBlock.appendChild(selectedPersona);
+    document.body.appendChild(personaBlock);
+
+    window.SillyTavern = {
+      getContext: () => ({
+        characterId: '0',
+        name2: '凯利安',
+        characters: [{ name: '凯利安', avatar: 'caelian.png' }],
+        getThumbnailUrl: (type, file) =>
+          `/thumbnail?type=${type}&file=${encodeURIComponent(file)}`,
+      }),
+    };
+
+    const adapter = new TavernAdapter(window);
+
+    await expect(adapter.avatarUrls()).resolves.toEqual({
+      user: new URL(
+        '/thumbnail?type=persona&file=user%20persona.png',
+        document.baseURI,
+      ).href,
+      character: new URL(
+        '/thumbnail?type=avatar&file=caelian.png',
+        document.baseURI,
+      ).href,
+    });
   });
 
   it('普通 iframe 不会因为父窗口可访问就被误判为酒馆宿主', () => {

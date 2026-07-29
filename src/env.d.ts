@@ -46,4 +46,19 @@ interface TavernContext {
   groupId?: string | number;
   name1?: string;
   name2?: string;
+  characters?: Array<{
+    name?: string;
+    avatar?: string;
+  }>;
+  chatMetadata?: {
+    persona?: string;
+  };
+  powerUserSettings?: {
+    default_persona?: string;
+  };
+  getThumbnailUrl?: (
+    type: 'avatar' | 'persona',
+    file: string,
+    cacheBust?: boolean,
+  ) => string;
 }

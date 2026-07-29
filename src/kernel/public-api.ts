@@ -30,6 +30,11 @@ export interface QueryResultMap {
   events: EventLogRecord[];
 }
 
+export interface TavernAvatarUrls {
+  user: string;
+  character: string;
+}
+
 export interface CaelianPublicApi {
   readonly channel: 'alpha';
   readonly version: string;
@@ -42,6 +47,7 @@ export interface CaelianPublicApi {
   navigatePanel(panel: PanelName): Promise<void>;
   closePanel(panel: PanelName): Promise<void>;
   listOpenPanels(): PanelName[];
+  getAvatarUrls(): Promise<TavernAvatarUrls>;
   setUserInput(text: string): boolean;
   syncProjection(): Promise<boolean>;
   on<K extends keyof KernelEventMap>(
@@ -58,6 +64,7 @@ export type PanelApi = Pick<
   | 'openPanel'
   | 'navigatePanel'
   | 'closePanel'
+  | 'getAvatarUrls'
   | 'syncProjection'
   | 'getRuntimeInfo'
   | 'setUserInput'

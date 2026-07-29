@@ -10,6 +10,7 @@ import MeterBar from '@/ui/adventurer/MeterBar.vue';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
+const playerAvatarUrl = ref('');
 const busyStat = ref('');
 const statEditMode = ref(false);
 const professionDialog = ref<'create' | 'reclass'>();
@@ -56,8 +57,17 @@ const statRows = [
 ] as const;
 
 async function refresh() {
-  snapshot.value = await props.context.api.query('state');
+  const [nextSnapshot, avatars] = await Promise.all([
+    props.context.api.query('state'),
+    props.context.api.getAvatarUrls(),
+  ]);
+  snapshot.value = nextSnapshot;
+  playerAvatarUrl.value = avatars.user;
   if (!snapshot.value.player.created) professionDialog.value = 'create';
+}
+
+function handlePlayerAvatarError() {
+  playerAvatarUrl.value = '';
 }
 
 async function allocate(
@@ -127,7 +137,15 @@ onUnmounted(() => {
     <template v-else>
       <section class="ca-section identity-card">
         <div class="avatar">
-          {{ snapshot.player.name.trim().slice(0, 1) || '冒' }}
+          <img
+            v-if="playerAvatarUrl"
+            :src="playerAvatarUrl"
+            :alt="`${snapshot.player.name || '玩家'}的头像`"
+            @error="handlePlayerAvatarError"
+          />
+          <span v-else>
+            {{ snapshot.player.name.trim().slice(0, 1) || '冒' }}
+          </span>
         </div>
         <div class="identity">
           <h1>{{ snapshot.player.name || '未命名' }}</h1>
@@ -370,6 +388,7 @@ onUnmounted(() => {
   grid-area: avatar;
   width: 58px;
   height: 58px;
+  overflow: hidden;
   display: grid;
   place-items: center;
   border: 1px solid rgba(212, 168, 67, 0.5);
@@ -379,6 +398,13 @@ onUnmounted(() => {
     radial-gradient(circle at 30% 20%, rgba(240, 214, 138, 0.25), transparent 36%),
     #292116;
   font: 700 28px/1 var(--ca-serif);
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .identity {

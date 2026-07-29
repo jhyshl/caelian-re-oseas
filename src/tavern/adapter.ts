@@ -1,4 +1,5 @@
 import type { AiProjection } from '@/domain/types';
+import type { TavernAvatarUrls } from '@/kernel/public-api';
 import { LEGACY_STAT_DATA_KEYS } from '@/mvu/contracts';
 
 type TavernEventHandler = (eventName: string) => void | Promise<void>;
@@ -58,6 +59,18 @@ export class TavernAdapter {
     };
   }
 
+  async avatarUrls(): Promise<TavernAvatarUrls> {
+    try {
+      const context = await this.context();
+      return {
+        user: this.resolveUserAvatar(context),
+        character: this.resolveCharacterAvatar(context),
+      };
+    } catch {
+      return { user: '', character: '' };
+    }
+  }
+
   hasLegacyRuntime(): boolean {
     return Boolean(this.host.__CaelianRuntime);
   }
@@ -113,6 +126,9 @@ export class TavernAdapter {
       'CHAT_CHANGED',
       'MESSAGE_RECEIVED',
       'MESSAGE_UPDATED',
+      'PERSONA_CHANGED',
+      'PERSONA_UPDATED',
+      'CHARACTER_EDITED',
     ]) {
       const event = events[eventName];
       if (event === undefined) continue;
@@ -173,6 +189,107 @@ export class TavernAdapter {
 
   private resolveHost(sourceWindow: Window): Window {
     return resolveTavernHost(sourceWindow);
+  }
+
+  private resolveUserAvatar(context: TavernContext): string {
+    const document = this.host.document;
+    const selectedPersona = document.querySelector<HTMLElement>(
+      '#user_avatar_block .avatar-container.selected',
+    );
+    const selectedImage = selectedPersona
+      ?.querySelector<HTMLImageElement>('img[src]')
+      ?.getAttribute('src');
+    const selectedImageUrl = this.safeAvatarUrl(selectedImage);
+    if (selectedImageUrl) return selectedImageUrl;
+
+    const selectedPersonaId = selectedPersona?.dataset.avatarId?.trim();
+    const selectedThumbnail = this.thumbnailUrl(
+      context,
+      'persona',
+      selectedPersonaId,
+    );
+    if (selectedThumbnail) return selectedThumbnail;
+
+    const messageImages = document.querySelectorAll<HTMLImageElement>(
+      '.mes[is_user="true"] .avatar img[src]',
+    );
+    const messageImage = messageImages.item(messageImages.length - 1);
+    const messageImageUrl = this.safeAvatarUrl(
+      messageImage?.getAttribute('src'),
+    );
+    if (messageImageUrl) return messageImageUrl;
+
+    return this.thumbnailUrl(
+      context,
+      'persona',
+      context.chatMetadata?.persona ??
+        context.powerUserSettings?.default_persona,
+    );
+  }
+
+  private resolveCharacterAvatar(context: TavernContext): string {
+    const characters = context.characters ?? [];
+    const characterIndex = Number(context.characterId);
+    const directCharacter = Number.isInteger(characterIndex)
+      ? characters[characterIndex]
+      : undefined;
+    const character =
+      directCharacter ??
+      characters.find(
+        (candidate) =>
+          candidate.name?.trim() &&
+          candidate.name.trim() === context.name2?.trim(),
+      );
+    const thumbnail = this.thumbnailUrl(
+      context,
+      'avatar',
+      character?.avatar,
+    );
+    if (thumbnail) return thumbnail;
+
+    const messageImages = this.host.document.querySelectorAll<HTMLImageElement>(
+      '.mes[is_user="false"] .avatar img[src]',
+    );
+    const messageImage = messageImages.item(messageImages.length - 1);
+    return this.safeAvatarUrl(messageImage?.getAttribute('src'));
+  }
+
+  private thumbnailUrl(
+    context: TavernContext,
+    type: 'avatar' | 'persona',
+    file: string | undefined,
+  ): string {
+    const value = file?.trim();
+    if (!value) return '';
+    if (value.startsWith('data:image/') || value.startsWith('blob:')) {
+      return this.safeAvatarUrl(value);
+    }
+    try {
+      const thumbnail = context.getThumbnailUrl?.(type, value);
+      const thumbnailUrl = this.safeAvatarUrl(thumbnail);
+      if (thumbnailUrl) return thumbnailUrl;
+    } catch {
+      // Older Tavern builds may expose the data without the helper.
+    }
+    const fallback =
+      type === 'persona'
+        ? `/User Avatars/${encodeURIComponent(value)}`
+        : `/characters/${encodeURIComponent(value)}`;
+    return this.safeAvatarUrl(fallback);
+  }
+
+  private safeAvatarUrl(value: string | null | undefined): string {
+    const source = value?.trim();
+    if (!source) return '';
+    if (/^data:image\//i.test(source)) return source;
+    try {
+      const url = new URL(source, this.host.document.baseURI);
+      return ['http:', 'https:', 'blob:'].includes(url.protocol)
+        ? url.href
+        : '';
+    } catch {
+      return '';
+    }
   }
 
   private clone(value: Record<string, unknown>): Record<string, unknown> {

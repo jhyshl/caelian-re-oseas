@@ -8,6 +8,7 @@ const databaseNames: string[] = [];
 afterEach(async () => {
   delete window.__CaelianRuntime;
   delete window.Mvu;
+  delete window.SillyTavern;
   document
     .querySelectorAll('[data-caelian-panel]')
     .forEach((element) => element.remove());
@@ -97,6 +98,52 @@ describe('CaelianKernel integration', () => {
 
     await kernel.api.shutdown();
     expect(document.querySelector('[data-caelian-panel]')).toBeNull();
+  });
+
+  it('玩家面板和凯利安状态栏显示酒馆当前头像', async () => {
+    const databaseName = `caelian-alpha-avatars-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    window.SillyTavern = {
+      getContext: () => ({
+        chatId: 'avatar-test-chat',
+        characterId: '0',
+        name1: '测试玩家',
+        name2: '凯利安',
+        characters: [{ name: '凯利安', avatar: 'caelian.png' }],
+        chatMetadata: { persona: 'player.png' },
+        getThumbnailUrl: (type, file) => `/avatars/${type}/${file}`,
+      }),
+    };
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'avatar-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    await kernel.api.openPanel('character');
+    await kernel.api.openPanel('affinity');
+
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLImageElement>(
+            '[data-caelian-panel="character"] .avatar img',
+          )?.src,
+      )
+      .toBe(new URL('/avatars/persona/player.png', document.baseURI).href);
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLImageElement>(
+            '[data-caelian-panel="affinity"] .crest img',
+          )?.src,
+      )
+      .toBe(new URL('/avatars/avatar/caelian.png', document.baseURI).href);
+
+    await kernel.api.shutdown();
   });
 
   it('把旧 MVU 叙事字段迁入本地数据库并回写最小 v3 投影', async () => {

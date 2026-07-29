@@ -9,6 +9,17 @@ const MAX_VISIBLE_RELEASES = 5;
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.10',
+    label: 'Alpha 10',
+    releasedAt: '2026-07-29',
+    changes: [
+      '玩家面板头像改为读取酒馆当前选中的 User Persona 头像。',
+      '凯利安状态栏头像改为读取当前角色卡头像。',
+      '切换 Persona、编辑角色或更换头像后会自动刷新；头像缺失或加载失败时回退显示名称首字。',
+      '头像只在前端从酒馆宿主读取，不写入 MVU 或本地数据库。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.9',
     label: 'Alpha 9',
     releasedAt: '2026-07-29',

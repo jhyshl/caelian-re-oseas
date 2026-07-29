@@ -10,6 +10,7 @@ import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
+const characterAvatarUrl = ref('');
 const error = ref('');
 const disposers: Array<() => void> = [];
 let refreshSequence = 0;
@@ -33,15 +34,23 @@ const updatedAt = computed(() => {
 async function refresh(): Promise<void> {
   const sequence = ++refreshSequence;
   try {
-    const next = await props.context.api.query('state');
+    const [next, avatars] = await Promise.all([
+      props.context.api.query('state'),
+      props.context.api.getAvatarUrls(),
+    ]);
     if (sequence !== refreshSequence) return;
     snapshot.value = next;
+    characterAvatarUrl.value = avatars.character;
     error.value = '';
   } catch (caught) {
     if (sequence !== refreshSequence) return;
     error.value =
       caught instanceof Error ? caught.message : '凯利安状态读取失败';
   }
+}
+
+function handleCharacterAvatarError(): void {
+  characterAvatarUrl.value = '';
 }
 
 onMounted(async () => {
@@ -80,7 +89,15 @@ onUnmounted(() => {
 
     <template v-else-if="status && snapshot">
       <header class="companion-heading">
-        <div class="crest" aria-hidden="true">C</div>
+        <div class="crest">
+          <img
+            v-if="characterAvatarUrl"
+            :src="characterAvatarUrl"
+            alt="凯利安的头像"
+            @error="handleCharacterAvatarError"
+          />
+          <span v-else aria-hidden="true">C</span>
+        </div>
         <div>
           <span>COMPANION STATUS</span>
           <h1>凯利安状态栏</h1>
@@ -178,6 +195,7 @@ onUnmounted(() => {
 .crest {
   width: 58px;
   height: 58px;
+  overflow: hidden;
   display: grid;
   place-items: center;
   border: 1px solid rgba(212, 168, 67, 0.55);
@@ -190,6 +208,13 @@ onUnmounted(() => {
     inset 0 0 0 4px rgba(255, 255, 255, 0.035),
     0 8px 24px rgba(0, 0, 0, 0.3);
   font: 700 28px/1 Georgia, serif;
+}
+
+.crest img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .companion-heading > div:nth-child(2) > span {
