@@ -1,11 +1,18 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverRoot = path.join(root, 'dist', 'server');
+const statusPage = (
+  await readFile(path.join(root, 'dist', 'index.html'), 'utf8')
+).replaceAll(
+  'href="./',
+  'href="https://jhyshl.github.io/caelian-re-oseas/',
+);
 
-const worker = `const corsHeaders = {
+const worker = `const statusPage = ${JSON.stringify(statusPage)};
+const corsHeaders = {
   'Access-Control-Allow-Headers': '*',
   'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
   'Access-Control-Allow-Origin': '*',
@@ -18,13 +25,23 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
+    const pathname = new URL(request.url).pathname;
+    if (pathname === '/' || pathname === '/index.html') {
+      return new Response(request.method === 'HEAD' ? null : statusPage, {
+        headers: {
+          ...corsHeaders,
+          'Cache-Control': 'no-store',
+          'Content-Type': 'text/html; charset=utf-8',
+        },
+      });
+    }
+
     const response = await env.ASSETS.fetch(request);
     const headers = new Headers(response.headers);
     for (const [name, value] of Object.entries(corsHeaders)) {
       headers.set(name, value);
     }
 
-    const pathname = new URL(request.url).pathname;
     if (pathname.startsWith('/builds/')) {
       headers.set('Cache-Control', 'public, max-age=31536000, immutable');
     } else if (
