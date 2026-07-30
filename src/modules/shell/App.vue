@@ -71,6 +71,7 @@ const primary: Array<{ panel: PanelName; icon: string; label: string }> = [
   { panel: 'achievements', icon: '♛', label: '成就' },
   { panel: 'settings', icon: '⚙', label: '设置' },
   { panel: 'feedback', icon: '✎', label: '反馈' },
+  { panel: 'release-notes', icon: '◉', label: '公告' },
 ];
 
 const launcherItems = computed(() => {
