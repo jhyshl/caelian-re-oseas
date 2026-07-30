@@ -4,6 +4,7 @@ import type {
   EventLogRecord,
   GameSnapshot,
   InventoryStackRecord,
+  MailboxState,
   MarketView,
   RuntimeInfo,
 } from '@/domain/types';
@@ -25,6 +26,7 @@ export type PanelName =
   | 'map'
   | 'battle'
   | 'achievements'
+  | 'mailbox'
   | 'settings'
   | 'feedback'
   | 'release-notes'
@@ -36,7 +38,8 @@ export type QueryName =
   | 'inventory'
   | 'market'
   | 'events'
-  | 'achievement-special';
+  | 'achievement-special'
+  | 'mailbox';
 
 export interface QueryResultMap {
   runtime: RuntimeInfo;
@@ -45,6 +48,7 @@ export interface QueryResultMap {
   market: MarketView;
   events: EventLogRecord[];
   'achievement-special': AchievementSpecialState;
+  mailbox: MailboxState;
 }
 
 export interface TavernAvatarUrls {

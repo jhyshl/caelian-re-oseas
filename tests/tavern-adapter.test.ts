@@ -388,4 +388,40 @@ describe('TavernAdapter', () => {
 
     expect(resolveTavernHost(standalone)).toBe(standalone);
   });
+
+  it('识别玩家已导入的补丁授权，并在补丁事件后立即通知 Alpha', () => {
+    localStorage.setItem('caelian_special_patch_old_player_v1', '1');
+    localStorage.setItem(
+      'caelian_launch_reward_old_timer_v1_letter_opened',
+      '1',
+    );
+    const hostState = window as unknown as Record<string, unknown>;
+    hostState.__CAELIAN_SPECIAL_PATCH_REPO_REWARD__ = true;
+    const adapter = new TavernAdapter(window);
+
+    expect(adapter.achievementPatchSignals()).toEqual([
+      { id: 'old-player', opened: false },
+      { id: 'repo-reward', opened: false },
+      { id: 'old-timer', opened: true },
+    ]);
+
+    const listener = vi.fn();
+    adapter.subscribe(listener);
+    window.dispatchEvent(
+      new CustomEvent('caelian-special-achievement-patch'),
+    );
+    expect(listener).toHaveBeenCalledWith('ACHIEVEMENT_PATCH_CHANGED');
+    adapter.unsubscribeAll();
+    listener.mockClear();
+    window.dispatchEvent(
+      new CustomEvent('caelian-special-achievement-patch'),
+    );
+    expect(listener).not.toHaveBeenCalled();
+
+    localStorage.removeItem('caelian_special_patch_old_player_v1');
+    localStorage.removeItem(
+      'caelian_launch_reward_old_timer_v1_letter_opened',
+    );
+    delete hostState.__CAELIAN_SPECIAL_PATCH_REPO_REWARD__;
+  });
 });

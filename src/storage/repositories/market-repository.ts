@@ -13,6 +13,7 @@ import type {
   MarketView,
 } from '@/domain/types';
 import type { CaelianDatabase } from '@/storage/database';
+import { GLOBAL_ACHIEVEMENT_PROFILE_ID } from '@/achievements/catalog';
 
 interface Candidate {
   key: string;
@@ -59,6 +60,7 @@ export class MarketRepository {
   constructor(
     private readonly db: CaelianDatabase,
     private readonly now: () => Date = () => new Date(),
+    private readonly random: () => number = Math.random,
   ) {}
 
   async prepare(): Promise<void> {
@@ -157,8 +159,15 @@ export class MarketRepository {
       listing.kind === 'item'
         ? Math.min(listing.stock, Math.max(1, Math.floor(input.quantity)))
         : 1;
-    const totalPrice = listing.price * quantity;
-    if (player.gold < totalPrice) throw new Error('金币不足');
+    const fullPrice = listing.price * quantity;
+    if (player.gold < fullPrice) throw new Error('金币不足');
+    const silverForkDiscount = await this.rollSilverForkDiscount(
+      profileId,
+      listing,
+    );
+    const totalPrice = silverForkDiscount
+      ? Math.max(1, Math.ceil(fullPrice * 0.5))
+      : fullPrice;
 
     if (listing.kind === 'item') {
       await this.addItem(
@@ -679,6 +688,34 @@ export class MarketRepository {
       }）`,
       updatedAt: Date.now(),
     });
+  }
+
+  private async rollSilverForkDiscount(
+    profileId: string,
+    listing: MarketListing,
+  ): Promise<boolean> {
+    if (listing.kind !== 'item' || listing.tab !== 'specialty') return false;
+    const silverFork = await this.db.ownedRelics.get(
+      `${profileId}:special_silver_fork`,
+    );
+    if (!silverFork) return false;
+    const key = 'market.silverForkDiscountMisses';
+    const id = `${GLOBAL_ACHIEVEMENT_PROFILE_ID}:${key}`;
+    const current = await this.db.achievementCounters.get(id);
+    const misses = Math.max(0, Math.floor(current?.value ?? 0));
+    const hit = misses >= 9 || this.random() < 0.2;
+    await this.db.achievementCounters.put({
+      id,
+      profileId: GLOBAL_ACHIEVEMENT_PROFILE_ID,
+      key,
+      value: hit ? 0 : misses + 1,
+      data: {
+        lastTriggered: hit,
+        guaranteed: hit && misses >= 9,
+      },
+      updatedAt: Date.now(),
+    });
+    return hit;
   }
 
   private async addRelic(

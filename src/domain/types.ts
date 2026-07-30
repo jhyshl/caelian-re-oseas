@@ -407,6 +407,38 @@ export interface AchievementSpecialState {
   }>;
 }
 
+export interface MailRecord {
+  id: string;
+  profileId: string;
+  mailId: string;
+  source: 'special-achievement' | 'achievement-patch';
+  receivedAt: number;
+  openedAt: number | null;
+  rewardClaimedAt: number | null;
+  updatedAt: number;
+}
+
+export interface MailboxEntry {
+  id: string;
+  source: MailRecord['source'];
+  title: string;
+  preview: string;
+  sender: string;
+  body: string[];
+  signature: string;
+  rewardText: string;
+  achievementId: string;
+  receivedAt: number;
+  openedAt: number | null;
+  rewardClaimedAt: number | null;
+  unread: boolean;
+}
+
+export interface MailboxState {
+  unreadCount: number;
+  entries: MailboxEntry[];
+}
+
 export type MarketListingKind = 'item' | 'equipment' | 'relic' | 'card';
 export type MarketListingTab = 'specialty' | 'gear' | 'loot' | 'cards';
 

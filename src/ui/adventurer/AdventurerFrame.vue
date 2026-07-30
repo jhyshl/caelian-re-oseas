@@ -20,14 +20,9 @@ const navigation: Array<{
   label: string;
 }> = [
   { id: 'character', icon: '♙', label: '角色' },
-  { id: 'affinity', icon: '♡', label: '凯利安' },
   { id: 'deck', icon: '▱', label: '牌组' },
   { id: 'inventory', icon: '◇', label: '背包' },
-  { id: 'market', icon: '¤', label: '集市' },
   { id: 'guild', icon: '⚔', label: '协会' },
-  { id: 'map', icon: '⌖', label: '地图' },
-  { id: 'battle', icon: '✹', label: '战斗' },
-  { id: 'achievements', icon: '♛', label: '成就' },
 ];
 
 function navigate(panel: PanelName) {
@@ -49,14 +44,6 @@ function navigate(panel: PanelName) {
           <span>RE∞ OSEAS</span>
         </div>
         <div class="ca-date">{{ date || '欧西亚斯大陆' }}</div>
-        <button
-          type="button"
-          class="ca-header-button"
-          aria-label="打开设置"
-          @click="navigate('settings')"
-        >
-          ⚙ <span>设置</span>
-        </button>
         <button
           type="button"
           class="ca-header-button ca-close"

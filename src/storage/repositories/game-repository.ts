@@ -3,9 +3,11 @@ import { domainCommandSchema } from '@/domain/commands';
 import type {
   AchievementSpecialState,
   GameSnapshot,
+  MailboxState,
   MarketView,
   ProfileRecord,
 } from '@/domain/types';
+import type { AchievementPatchSignal } from '@/achievements/patch-registry';
 import type { EventBus } from '@/kernel/event-bus';
 import type { CaelianDatabase } from '@/storage/database';
 import { BattleRepository } from '@/storage/repositories/battle-repository';
@@ -255,6 +257,17 @@ export class GameRepository {
     return this.achievements.specialState(profileId);
   }
 
+  syncPatchEntitlements(
+    profileId: string,
+    signals: AchievementPatchSignal[],
+  ) {
+    return this.achievements.syncPatchEntitlements(profileId, signals);
+  }
+
+  mailboxState(profileId: string): Promise<MailboxState> {
+    return this.achievements.mailboxState(profileId);
+  }
+
   marketState(profileId: string): Promise<MarketView> {
     return this.market.view(profileId);
   }
@@ -304,6 +317,11 @@ export class GameRepository {
         return this.achievements.claimPoemLetter(profileId);
       case 'achievement.claim-daily-gift':
         return this.achievements.claimDailyGift(profileId);
+      case 'mail.open':
+        return this.achievements.openMail(
+          profileId,
+          command.payload.mailId,
+        );
       case 'market.buy':
         return this.market.buy(profileId, command.payload);
       case 'market.sell-item':
@@ -364,6 +382,7 @@ export class GameRepository {
       this.db.battleRewards,
       this.db.achievementProgress,
       this.db.achievementCounters,
+      this.db.mailRecords,
       this.db.marketStates,
       this.db.settings,
       this.db.commandInbox,

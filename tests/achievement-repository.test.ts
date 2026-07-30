@@ -36,7 +36,7 @@ afterEach(async () => {
 describe('AchievementRepository integration', () => {
   it('保留旧版 95 项并接入今昔的诗行特殊成就', async () => {
     const definitions = await loadAchievementDefinitions();
-    expect(Object.keys(definitions)).toHaveLength(96);
+    expect(Object.keys(definitions)).toHaveLength(97);
     expect(definitions.ach_re_oseas).toMatchObject({
       name: 'Re∞: 欧西亚斯',
       star: 3,

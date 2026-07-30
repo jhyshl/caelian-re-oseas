@@ -228,6 +228,13 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...commandBase,
+    type: z.literal('mail.open'),
+    payload: z.object({
+      mailId: z.string().trim().min(1).max(160),
+    }),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal('market.buy'),
     payload: z.object({
       listingKey: z.string().trim().min(1).max(260),

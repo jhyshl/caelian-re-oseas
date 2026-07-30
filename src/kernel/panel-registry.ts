@@ -16,6 +16,7 @@ const definitions: Record<PanelName, () => Promise<PanelModule>> = {
   map: () => import('@/modules/map/mount'),
   battle: () => import('@/modules/battle/mount'),
   achievements: () => import('@/modules/achievements/mount'),
+  mailbox: () => import('@/modules/mailbox/mount'),
   settings: () => import('@/modules/settings/mount'),
   feedback: () => import('@/modules/feedback/mount'),
   'release-notes': () => import('@/modules/release-notes/mount'),
@@ -33,6 +34,7 @@ const gamePanels = new Set<PanelName>([
   'map',
   'battle',
   'achievements',
+  'mailbox',
   'settings',
   'feedback',
 ]);

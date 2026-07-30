@@ -197,6 +197,11 @@ export class CaelianKernel {
         this.profileId,
       )) as QueryResultMap[K];
     }
+    if (name === 'mailbox') {
+      return (await this.repository.mailboxState(
+        this.profileId,
+      )) as QueryResultMap[K];
+    }
     if (name === 'market') {
       return (await this.repository.marketState(
         this.profileId,
@@ -278,6 +283,11 @@ export class CaelianKernel {
     eventName: string,
     payload?: TavernEventPayload,
   ): Promise<void> {
+    if (eventName === 'ACHIEVEMENT_PATCH_CHANGED') {
+      await this.syncAchievementPatches();
+      await this.events.emit('tavern.changed', { event: eventName });
+      return;
+    }
     if (
       eventName === 'PERSONA_CHANGED' ||
       eventName === 'PERSONA_UPDATED' ||
@@ -371,6 +381,26 @@ export class CaelianKernel {
       profile.id,
       this.adapter.legacyAchievementPayload(),
     );
+    await this.syncAchievementPatches();
+  }
+
+  private async syncAchievementPatches(): Promise<void> {
+    if (!this.profileId) return;
+    const result = await this.repository.syncPatchEntitlements(
+      this.profileId,
+      this.adapter.achievementPatchSignals(),
+    );
+    if (result.receivedMailIds.length > 0) {
+      this.notifications.show({
+        kind: 'info',
+        icon: '✉',
+        title: '收到新的特殊邮件',
+        description: `邮箱中新增 ${result.receivedMailIds.length} 封可永久重读的信件。`,
+        meta: '补丁成就奖励只会结算一次',
+        duration: 7_000,
+        onClick: () => this.panels.navigate('mailbox'),
+      });
+    }
   }
 
   private async scanCurrentAchievements(): Promise<void> {

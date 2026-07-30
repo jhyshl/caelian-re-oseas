@@ -115,8 +115,16 @@ export class BattleRepository {
       throw new Error('请先结束或关闭当前战斗');
     }
 
-    const [player, deck, loadout, equipment, settings, ownedPassives, world] =
-      await Promise.all([
+    const [
+      player,
+      deck,
+      loadout,
+      equipment,
+      settings,
+      ownedPassives,
+      world,
+      ownedRelics,
+    ] = await Promise.all([
         this.db.playerStates.get(profileId),
         this.db.decks
           .where('profileId')
@@ -131,6 +139,7 @@ export class BattleRepository {
         this.db.settings.get(profileId),
         this.db.passiveTalents.where('profileId').equals(profileId).toArray(),
         this.db.worldStates.get(profileId),
+        this.db.ownedRelics.where('profileId').equals(profileId).toArray(),
       ]);
     if (!player) throw new Error('玩家档案不存在');
     if (!deck || deck.cardIds.length === 0) {
@@ -204,7 +213,7 @@ export class BattleRepository {
       `在${region}遭遇 ${enemyCount > 1 ? `${enemyCount} 只` : ''}${monster.name}。抽取 ${battlePlayer.hand.length} 张起始手牌。`,
     );
     const now = Date.now();
-    await this.db.battleSessions.add({
+    const session: BattleSessionRecord = {
       id: battleId,
       profileId,
       active: true,
@@ -216,7 +225,19 @@ export class BattleRepository {
       phase: state.phase,
       state,
       updatedAt: now,
-    });
+    };
+    await this.db.battleSessions.add(session);
+    const specialVictory = this.applyBattleStartRelics(
+      state,
+      ownedRelics
+        .filter((entry) => entry.carried)
+        .map((entry) => entry.relicId),
+    );
+    if (specialVictory) {
+      await this.finishBattle(session, 'victory');
+    } else {
+      await this.save(session);
+    }
   }
 
   async playCard(
@@ -1652,6 +1673,102 @@ export class BattleRepository {
       updatedAt: now,
     });
     await this.save(session);
+  }
+
+  private applyBattleStartRelics(
+    state: LocalBattleState,
+    carriedRelicIds: string[],
+  ): boolean {
+    const carried = new Set(carriedRelicIds);
+    const alive = () => this.aliveEnemies(state);
+
+    if (carried.has('special_reshaped_quill')) {
+      const enemies = alive();
+      const bosses = enemies.filter((enemy) => {
+        const definition = this.monsters?.[enemy.definitionId];
+        return definition ? this.isBossMonster(definition) : false;
+      });
+      if (bosses.length > 0) {
+        const target = bosses
+          .slice()
+          .sort((left, right) => right.hpMax - left.hpMax)[0]!;
+        const damage = Math.max(1, Math.ceil(target.hpMax * 0.3));
+        target.hp = Math.max(0, target.hp - damage);
+        this.log(
+          state,
+          'system',
+          `重塑的羽毛笔落下星光，对首领 ${target.name} 造成 ${damage} 点伤害。`,
+        );
+        this.animation(state, {
+          kind: 'damage',
+          sourceSide: 'system',
+          sourceId: 'special_reshaped_quill',
+          targetSide: 'enemy',
+          targetId: target.id,
+          amount: damage,
+          hpAfter: target.hp,
+          label: '重塑的羽毛笔',
+        });
+      } else if (enemies.length >= 2) {
+        const target = enemies
+          .slice()
+          .sort((left, right) => right.hp - left.hp)[0]!;
+        const damage = target.hp;
+        target.hp = 0;
+        this.log(
+          state,
+          'system',
+          `重塑的羽毛笔划开命运，秒杀了 ${target.name}。`,
+        );
+        this.animation(state, {
+          kind: 'damage',
+          sourceSide: 'system',
+          sourceId: 'special_reshaped_quill',
+          targetSide: 'enemy',
+          targetId: target.id,
+          amount: damage,
+          hpAfter: 0,
+          label: '重塑的羽毛笔',
+        });
+        state.selectedTarget = Math.max(
+          0,
+          state.enemies.findIndex((enemy) => enemy.hp > 0),
+        );
+      }
+    }
+
+    if (carried.has('special_golden_shovel')) {
+      const enemies = alive();
+      const hasBoss = enemies.some((enemy) => {
+        const definition = this.monsters?.[enemy.definitionId];
+        return definition ? this.isBossMonster(definition) : false;
+      });
+      if (!hasBoss && this.random() < 0.1) {
+        for (const enemy of enemies) enemy.hp = 0;
+        this.log(
+          state,
+          'system',
+          '金铲子闪闪发光，战斗直接判定为胜利！',
+        );
+        this.animation(state, {
+          kind: 'status',
+          sourceSide: 'system',
+          sourceId: 'special_golden_shovel',
+          targetSide: 'enemy',
+          label: '金铲子 · 直接胜利',
+        });
+      } else {
+        this.log(
+          state,
+          'system',
+          hasBoss
+            ? '金铲子遇到首领怪物，没有触发。'
+            : '金铲子轻轻一挥，但这次没有挖到胜利。',
+        );
+      }
+    }
+
+    return alive().length === 0;
   }
 
   private calculateRewards(state: LocalBattleState): BattleRewards {

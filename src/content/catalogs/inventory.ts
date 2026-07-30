@@ -9,6 +9,7 @@ import {
   BLANK_PAGE_RELIC_DEFINITION,
   BLANK_PAGE_RELIC_ID,
 } from '@/achievements/catalog';
+import { PATCH_RELIC_DEFINITIONS } from '@/achievements/patch-registry';
 
 let itemCache: Record<string, BattleItemDefinition> | undefined;
 let allItemCache: Record<string, BattleItemDefinition> | undefined;
@@ -33,6 +34,7 @@ export async function loadRelics() {
     const module = await import('@/content/generated/inventory/relics.json');
     relicCache = {
       ...(module.default as Record<string, RelicDefinition>),
+      ...PATCH_RELIC_DEFINITIONS,
       [BLANK_PAGE_RELIC_ID]: BLANK_PAGE_RELIC_DEFINITION,
     };
   }

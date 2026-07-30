@@ -45,9 +45,18 @@ const unlockedIds = computed(
     ),
 );
 
+const visibleDefinitions = computed(() =>
+  Object.fromEntries(
+    Object.entries(definitions.value).filter(
+      ([id, definition]) =>
+        !definition.patchOnly || progressById.value.has(id),
+    ),
+  ),
+);
+
 const entries = computed(() => {
   const term = search.value.trim().toLowerCase();
-  return Object.entries(definitions.value)
+  return Object.entries(visibleDefinitions.value)
     .filter(([id, definition]) => {
       const unlocked = unlockedIds.value.has(id);
       const modeMatches =
@@ -86,7 +95,7 @@ const entries = computed(() => {
 });
 
 const totalStars = computed(() =>
-  Object.entries(definitions.value).reduce(
+  Object.entries(visibleDefinitions.value).reduce(
     (total, [id, definition]) =>
       total + (unlockedIds.value.has(id) ? Number(definition.star ?? 0) : 0),
     0,
@@ -94,7 +103,7 @@ const totalStars = computed(() =>
 );
 
 const possibleStars = computed(() =>
-  Object.values(definitions.value).reduce(
+  Object.values(visibleDefinitions.value).reduce(
     (total, definition) => total + Number(definition.star ?? 0),
     0,
   ),
@@ -150,6 +159,10 @@ function openSpecialLetter(): void {
   void props.context.api.openPanel('achievement-letter');
 }
 
+function openMailbox(): void {
+  void props.context.api.navigatePanel('mailbox');
+}
+
 onMounted(async () => {
   [definitions.value] = await Promise.all([loadAchievementDefinitions()]);
   await refresh();
@@ -184,7 +197,7 @@ onUnmounted(() => {
         <dl>
           <div>
             <dt>已解锁</dt>
-            <dd>{{ unlockedIds.size }}/{{ Object.keys(definitions).length }}</dd>
+            <dd>{{ unlockedIds.size }}/{{ Object.keys(visibleDefinitions).length }}</dd>
           </div>
           <div>
             <dt>获得星数</dt>
@@ -216,6 +229,14 @@ onUnmounted(() => {
                 ? '领取赠礼'
                 : '重读信件'
           }}
+        </button>
+        <button
+          v-if="special?.letterClaimed"
+          type="button"
+          class="mailbox-button"
+          @click="openMailbox"
+        >
+          打开邮箱
         </button>
       </section>
 
@@ -381,7 +402,7 @@ onUnmounted(() => {
 
 .poem-card {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 13px;
   margin: 12px 0;
@@ -420,6 +441,12 @@ onUnmounted(() => {
   background: rgba(212, 168, 67, 0.08);
   font: 700 10px var(--ca-ui);
   cursor: pointer;
+}
+
+.poem-card .mailbox-button {
+  border-color: var(--ca-border-light);
+  color: var(--ca-muted);
+  background: transparent;
 }
 
 .achievement-filters {

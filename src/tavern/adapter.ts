@@ -2,6 +2,10 @@ import type { AiProjection } from '@/domain/types';
 import type { TavernAvatarUrls } from '@/kernel/public-api';
 import { LEGACY_STAT_DATA_KEYS } from '@/mvu/contracts';
 import type { LegacyAchievementPayload } from '@/storage/repositories/achievement-repository';
+import {
+  ACHIEVEMENT_PATCHES,
+  type AchievementPatchSignal,
+} from '@/achievements/patch-registry';
 
 export interface TavernEventPayload {
   mvuData?: Record<string, unknown>;
@@ -146,6 +150,24 @@ export class TavernAdapter {
     }
   }
 
+  achievementPatchSignals(): AchievementPatchSignal[] {
+    const hostState = this.host as unknown as Record<string, unknown>;
+    return ACHIEVEMENT_PATCHES.flatMap((patch) => {
+      const active =
+        hostState[patch.windowFlag] === true ||
+        patch.activationStorageKeys.some((key) => this.localFlag(key));
+      if (!active) return [];
+      return [
+        {
+          id: patch.id,
+          opened: patch.openedStorageKeys.some((key) =>
+            this.localFlag(key),
+          ),
+        },
+      ];
+    });
+  }
+
   async chatTexts(): Promise<string[]> {
     const context = await this.context();
     const chatTexts = (context.chat ?? []).flatMap((message) => {
@@ -223,6 +245,19 @@ export class TavernAdapter {
   }
 
   subscribe(handler: TavernEventHandler): void {
+    for (const eventName of [
+      'caelian-special-achievement-patch',
+      'caelian-launch-reward-patch',
+    ]) {
+      const listener = () => {
+        void handler('ACHIEVEMENT_PATCH_CHANGED');
+      };
+      this.host.addEventListener(eventName, listener);
+      this.disposers.push(() =>
+        this.host.removeEventListener(eventName, listener),
+      );
+    }
+
     const eventOn = this.host.eventOn;
     const events = this.host.tavern_events;
     if (typeof eventOn !== 'function') return;

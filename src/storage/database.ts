@@ -14,6 +14,7 @@ import type {
   GuildRecord,
   InventoryStackRecord,
   LegacySnapshotRecord,
+  MailRecord,
   MarketStateRecord,
   OwnedCardRecord,
   OwnedRelicRecord,
@@ -34,7 +35,7 @@ import type {
   WorldStateRecord,
 } from '@/domain/types';
 
-export const DATABASE_SCHEMA_VERSION = 3;
+export const DATABASE_SCHEMA_VERSION = 4;
 
 export class CaelianDatabase extends Dexie {
   profiles!: Table<ProfileRecord, string>;
@@ -65,6 +66,7 @@ export class CaelianDatabase extends Dexie {
 
   achievementProgress!: Table<AchievementProgressRecord, string>;
   achievementCounters!: Table<AchievementCounterRecord, string>;
+  mailRecords!: Table<MailRecord, string>;
   marketStates!: Table<MarketStateRecord, string>;
   craftingDrafts!: Table<CraftingDraftRecord, string>;
   socialProgress!: Table<SocialProgressRecord, string>;
@@ -128,6 +130,11 @@ export class CaelianDatabase extends Dexie {
 
     this.version(3).stores({
       achievementCounters: 'id, profileId, key, updatedAt',
+    });
+
+    this.version(4).stores({
+      mailRecords:
+        'id, profileId, &mailId, source, receivedAt, openedAt, updatedAt',
     });
   }
 }

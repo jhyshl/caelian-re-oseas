@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/* global Event, HTMLElement, MouseEvent, Node, PointerEvent, Window, window */
+/* global Event, HTMLElement, MouseEvent, Node, PointerEvent, TouchEvent, Window, window */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type { PanelContext, PanelName } from '@/kernel/public-api';
 import {
@@ -12,6 +12,10 @@ import {
   type LauncherPosition,
   type ViewportRect,
 } from '@/modules/shell/floating-position';
+import {
+  horizontalSwipeDirection,
+  paginateLauncherItems,
+} from '@/modules/shell/launcher-pagination';
 
 const props = defineProps<{ context: PanelContext }>();
 
@@ -31,9 +35,16 @@ const idle = ref(false);
 const retracted = ref(initialPlacement.dockSide !== null);
 const shellElement = ref<HTMLElement | null>(null);
 const info = computed(() => props.context.api.getRuntimeInfo());
+const pageIndex = ref(0);
 
 let idleTimer: number | undefined;
 let activationTimer: number | undefined;
+let swipeStart:
+  | {
+      x: number;
+      y: number;
+    }
+  | undefined;
 let dragSession:
   | {
       pointerId: number;
@@ -52,12 +63,30 @@ const primary: Array<{ panel: PanelName; icon: string; label: string }> = [
   { panel: 'affinity', icon: '♡', label: '凯利安' },
   { panel: 'deck', icon: '▱', label: '牌组' },
   { panel: 'inventory', icon: '◇', label: '背包' },
-  { panel: 'market', icon: '¤', label: '集市' },
   { panel: 'guild', icon: '⚔', label: '协会' },
+  { panel: 'mailbox', icon: '✉', label: '邮箱' },
+  { panel: 'market', icon: '¤', label: '集市' },
   { panel: 'map', icon: '⌖', label: '地图' },
   { panel: 'battle', icon: '✹', label: '战斗' },
   { panel: 'achievements', icon: '♛', label: '成就' },
+  { panel: 'settings', icon: '⚙', label: '设置' },
+  { panel: 'feedback', icon: '✎', label: '反馈' },
 ];
+
+const launcherItems = computed(() => {
+  if (info.value.status === 'ready') return primary;
+  return primary.map((item) =>
+    item.panel === 'feedback'
+      ? { panel: 'diagnostics' as const, icon: '◈', label: '诊断' }
+      : item,
+  );
+});
+const launcherPages = computed(() =>
+  paginateLauncherItems(launcherItems.value),
+);
+const currentPage = computed(
+  () => launcherPages.value[pageIndex.value] ?? launcherPages.value[0]!,
+);
 
 const renderedPosition = computed(() => {
   if (dockSide.value && retracted.value) {
@@ -242,6 +271,7 @@ function recordActivity(): void {
 
 function openWheel(): void {
   wake();
+  if (pageIndex.value >= launcherPages.value.length) pageIndex.value = 0;
   expanded.value = true;
 }
 
@@ -273,6 +303,32 @@ function open(panel: PanelName): void {
   if (info.value.status !== 'ready' && panel !== 'diagnostics') return;
   void props.context.api.navigatePanel(panel);
   closeWheel();
+}
+
+function changePage(direction: -1 | 1): void {
+  const count = launcherPages.value.length;
+  if (count <= 1) return;
+  pageIndex.value = (pageIndex.value + direction + count) % count;
+  recordActivity();
+}
+
+function handleWheelTouchStart(event: TouchEvent): void {
+  const touch = event.changedTouches.item(0);
+  if (!touch) return;
+  swipeStart = { x: touch.clientX, y: touch.clientY };
+  recordActivity();
+}
+
+function handleWheelTouchEnd(event: TouchEvent): void {
+  const start = swipeStart;
+  swipeStart = undefined;
+  const touch = event.changedTouches.item(0);
+  if (!start || !touch) return;
+  const direction = horizontalSwipeDirection(
+    touch.clientX - start.x,
+    touch.clientY - start.y,
+  );
+  if (direction) changePage(direction);
 }
 
 function handlePointerDown(event: PointerEvent): void {
@@ -457,7 +513,14 @@ onUnmounted(() => {
     @pointerleave="scheduleIdle"
     @focusin="recordActivity"
   >
-    <div v-if="expanded" class="wheel" :class="wheelClasses" role="menu">
+    <div
+      v-if="expanded"
+      class="wheel"
+      :class="wheelClasses"
+      role="menu"
+      @touchstart.passive="handleWheelTouchStart"
+      @touchend.passive="handleWheelTouchEnd"
+    >
       <header>
         <span>RE∞ OSEAS</span>
         <small>{{ info.version }} · {{ info.channel }}</small>
@@ -467,26 +530,43 @@ onUnmounted(() => {
       </p>
       <div class="wheel-grid">
         <button
-          v-for="item in primary"
+          v-for="item in currentPage"
           :key="item.panel"
           type="button"
           role="menuitem"
-          :disabled="info.status !== 'ready'"
+          :disabled="
+            info.status !== 'ready' && item.panel !== 'diagnostics'
+          "
           @click="open(item.panel)"
         >
           <b>{{ item.icon }}</b>
           <span>{{ item.label }}</span>
         </button>
       </div>
-      <footer>
-        <button type="button" role="menuitem" @click="open('settings')">
-          ⚙ 设置
+      <footer class="page-controls">
+        <button
+          type="button"
+          aria-label="上一页"
+          @click="changePage(-1)"
+        >
+          ‹
         </button>
-        <button type="button" role="menuitem" @click="open('feedback')">
-          ✎ 反馈
-        </button>
-        <button type="button" role="menuitem" @click="open('diagnostics')">
-          ◈ 诊断
+        <div aria-label="悬浮窗页码">
+          <button
+            v-for="(_, index) in launcherPages"
+            :key="index"
+            type="button"
+            :class="{ active: pageIndex === index }"
+            :aria-label="`第 ${index + 1} 页`"
+            @click="pageIndex = index"
+          ></button>
+        </div>
+        <button
+          type="button"
+          aria-label="下一页"
+          @click="changePage(1)"
+        >
+          ›
         </button>
       </footer>
     </div>
@@ -666,7 +746,7 @@ header small {
 
 .wheel-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
 }
 
@@ -704,25 +784,48 @@ header small {
   opacity: 0.4;
 }
 
-footer {
+.page-controls {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: 34px minmax(0, 1fr) 34px;
+  align-items: center;
   gap: 6px;
-  margin-top: 7px;
+  margin-top: 9px;
 }
 
-footer button {
-  padding: 8px;
+.page-controls > button {
+  height: 30px;
+  padding: 0;
   border: 1px solid #292d37;
   border-radius: 9px;
   color: #938d82;
   background: transparent;
-  font: 600 10px inherit;
+  font: 700 21px/1 inherit;
   cursor: pointer;
 }
 
-footer button:hover {
+.page-controls > button:hover {
   color: #f0d68a;
+}
+
+.page-controls > div {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.page-controls > div button {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #4c4f57;
+  cursor: pointer;
+}
+
+.page-controls > div button.active {
+  background: #d4a843;
+  box-shadow: 0 0 0 3px rgba(212, 168, 67, 0.12);
 }
 
 .warning {

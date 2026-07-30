@@ -4,6 +4,7 @@ import {
   PAST_PRESENT_POEM_DEFINITION,
   PAST_PRESENT_POEM_ID,
 } from '@/achievements/catalog';
+import { PATCH_ACHIEVEMENT_DEFINITIONS } from '@/achievements/patch-registry';
 
 let achievementCache:
   | Record<string, AchievementDefinition>
@@ -21,13 +22,14 @@ export async function loadAchievementDefinitions() {
     achievementCache = Object.fromEntries(
       Object.entries({
         ...legacy,
+        ...PATCH_ACHIEVEMENT_DEFINITIONS,
         [PAST_PRESENT_POEM_ID]: PAST_PRESENT_POEM_DEFINITION,
       }).map(([id, definition]) => [
         id,
         {
           ...definition,
           id,
-          category: achievementCategory(id),
+          category: definition.category ?? achievementCategory(id),
         },
       ]),
     );
