@@ -7,6 +7,7 @@ import {
   createAffinityViewModel,
 } from '@/modules/affinity/view-model';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
+import AdjustableAvatar from '@/ui/AdjustableAvatar.vue';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -100,15 +101,14 @@ onUnmounted(() => {
 
     <template v-else-if="status && snapshot">
       <header class="companion-heading">
-        <div class="crest">
-          <img
-            v-if="characterAvatarUrl"
-            :src="characterAvatarUrl"
-            alt="凯利安的头像"
-            @error="handleCharacterAvatarError"
-          />
-          <span v-else aria-hidden="true">C</span>
-        </div>
+        <AdjustableAvatar
+          class="crest"
+          :src="characterAvatarUrl"
+          alt="凯利安的头像"
+          fallback="C"
+          preference-id="caelian"
+          @image-error="handleCharacterAvatarError"
+        />
         <div>
           <span>COMPANION STATUS</span>
           <h1>凯利安状态栏</h1>
@@ -219,13 +219,6 @@ onUnmounted(() => {
     inset 0 0 0 4px rgba(255, 255, 255, 0.035),
     0 8px 24px rgba(0, 0, 0, 0.3);
   font: 700 28px/1 Georgia, serif;
-}
-
-.crest img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
 }
 
 .companion-heading > div:nth-child(2) > span {

@@ -134,11 +134,8 @@ onMounted(async () => {
             <i>◆</i>
             <div>
               <strong>{{ stack.name }}</strong>
-              <span>
-                {{
-                  items[stack.itemId]?.desc ||
-                    '旧版物品库未提供额外说明。'
-                }}
+              <span v-if="items[stack.itemId]?.desc">
+                {{ items[stack.itemId]?.desc }}
               </span>
             </div>
             <b>×{{ stack.quantity }}</b>

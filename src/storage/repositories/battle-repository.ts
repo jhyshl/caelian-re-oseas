@@ -465,6 +465,7 @@ export class BattleRepository {
       debuffs: {},
       summons: [],
       chants: [],
+      passiveEffects: [],
     };
   }
 
@@ -849,12 +850,19 @@ export class BattleRepository {
   ): void {
     const target = state.enemies[targetIndex];
     if (!target) return;
+    const aliveTargets = this.aliveEnemies(state);
     const targets =
       effect.target === 'all_enemies'
-        ? this.aliveEnemies(state)
-        : [target].filter((enemy) => enemy.hp > 0);
+        ? aliveTargets
+        : effect.target === 'random_enemy'
+          ? this.shuffle(aliveTargets).slice(
+              0,
+              Math.max(1, this.number(effect.target_count, 1)),
+            )
+          : [target].filter((enemy) => enemy.hp > 0);
     switch (effect.type) {
       case 'damage': {
+        let totalDamage = 0;
         for (const enemy of targets) {
           const base =
             this.number(effect.value) +
@@ -866,7 +874,7 @@ export class BattleRepository {
             bonus;
           const hits = Math.max(1, this.number(effect.hits, 1));
           for (let hit = 0; hit < hits; hit += 1) {
-            this.damage(
+            totalDamage += this.damage(
               state,
               state.player,
               enemy,
@@ -876,10 +884,21 @@ export class BattleRepository {
             );
           }
         }
+        const lifesteal = Math.round(
+          totalDamage * Math.max(0, this.number(effect.lifesteal_ratio)),
+        );
+        if (lifesteal > 0) this.heal(state, state.player, lifesteal, card.name);
         break;
       }
       case 'shield': {
-        const amount = Math.max(0, this.number(effect.value));
+        const shieldBonus = this.passiveEffectValue(
+          state,
+          'shield_bonus',
+        );
+        const amount = Math.max(
+          0,
+          Math.round(this.number(effect.value) * (1 + shieldBonus)),
+        );
         state.player.shield += amount;
         this.log(state, 'player', `获得 ${amount} 点护盾`);
         this.animation(state, {
@@ -942,6 +961,82 @@ export class BattleRepository {
       }
       case 'gain_ap': {
         const gained = this.number(effect.value);
+        state.player.ap += gained;
+        this.animation(state, {
+          kind: 'ap',
+          sourceSide: 'player',
+          targetSide: 'player',
+          targetId: 'player',
+          amount: gained,
+          apAfter: state.player.ap,
+          label: card.name,
+        });
+        break;
+      }
+      case 'spend_mp_damage': {
+        const mpCost = Math.max(0, this.number(effect.amount));
+        if (state.player.mp < mpCost) {
+          this.log(state, 'system', `「${card.name}」所需 MP 不足`);
+          break;
+        }
+        state.player.mp -= mpCost;
+        const damage = this.number(effect.value) * Math.max(1, mpCost);
+        for (const enemy of targets) {
+          this.damage(
+            state,
+            state.player,
+            enemy,
+            damage,
+            'player',
+            card.name,
+          );
+        }
+        this.animation(state, {
+          kind: 'mp',
+          sourceSide: 'player',
+          targetSide: 'player',
+          targetId: 'player',
+          amount: -mpCost,
+          mpAfter: state.player.mp,
+          label: card.name,
+        });
+        break;
+      }
+      case 'spend_mp_shield': {
+        const mpCost = Math.max(0, this.number(effect.amount));
+        if (state.player.mp < mpCost) {
+          this.log(state, 'system', `「${card.name}」所需 MP 不足`);
+          break;
+        }
+        state.player.mp -= mpCost;
+        const shield = Math.max(
+          0,
+          Math.round(
+            this.number(effect.value) *
+              Math.max(1, mpCost) *
+              (1 + this.passiveEffectValue(state, 'shield_bonus')),
+          ),
+        );
+        state.player.shield += shield;
+        this.animation(state, {
+          kind: 'shield',
+          sourceSide: 'player',
+          targetSide: 'player',
+          targetId: 'player',
+          amount: shield,
+          shieldAfter: state.player.shield,
+          label: card.name,
+        });
+        break;
+      }
+      case 'mp_to_ap': {
+        const mpCost = Math.max(0, this.number(effect.amount));
+        if (state.player.mp < mpCost) {
+          this.log(state, 'system', `「${card.name}」所需 MP 不足`);
+          break;
+        }
+        const gained = Math.max(0, this.number(effect.value));
+        state.player.mp -= mpCost;
         state.player.ap += gained;
         this.animation(state, {
           kind: 'ap',
@@ -1102,14 +1197,16 @@ export class BattleRepository {
         break;
       }
       case 'damage_per_debuff':
-        this.damage(
-          state,
-          state.player,
-          target,
-          Object.keys(target.debuffs).length * this.number(effect.value),
-          'player',
-          card.name,
-        );
+        for (const enemy of targets) {
+          this.damage(
+            state,
+            state.player,
+            enemy,
+            Object.keys(enemy.debuffs).length * this.number(effect.value),
+            'player',
+            card.name,
+          );
+        }
         break;
       case 'damage_per_buff':
         this.damage(
@@ -1122,14 +1219,28 @@ export class BattleRepository {
         );
         break;
       case 'damage_from_shield':
-        this.damage(
-          state,
-          state.player,
-          target,
-          Math.round(state.player.shield * this.number(effect.ratio)),
-          'player',
-          card.name,
-        );
+        for (const enemy of targets) {
+          this.damage(
+            state,
+            state.player,
+            enemy,
+            Math.round(state.player.shield * this.number(effect.ratio)),
+            'player',
+            card.name,
+          );
+        }
+        break;
+      case 'trap':
+        for (const enemy of targets) {
+          this.damage(
+            state,
+            state.player,
+            enemy,
+            this.number(effect.value),
+            'player',
+            `${card.name}的陷阱`,
+          );
+        }
         break;
       case 'damage_from_enemy_shield':
         this.damage(
@@ -1181,6 +1292,43 @@ export class BattleRepository {
         state.player.discardPile.push(...state.player.hand.splice(0, amount));
         break;
       }
+      case 'discard_all_damage': {
+        const discarded = state.player.hand.splice(0);
+        state.player.discardPile.push(...discarded);
+        const damage = discarded.length * this.number(effect.value);
+        for (const enemy of targets) {
+          this.damage(
+            state,
+            state.player,
+            enemy,
+            damage,
+            'player',
+            card.name,
+          );
+        }
+        break;
+      }
+      case 'destroy_summon': {
+        const requested =
+          effect.amount === 'all'
+            ? state.player.summons.length
+            : Math.max(1, this.number(effect.amount, 1));
+        const destroyed =
+          effect.target === 'all_summons'
+            ? state.player.summons.splice(0)
+            : this.shuffle(state.player.summons).slice(0, requested);
+        if (effect.target !== 'all_summons') {
+          const destroyedIds = new Set(destroyed.map((summon) => summon.id));
+          state.player.summons = state.player.summons.filter(
+            (summon) => !destroyedIds.has(summon.id),
+          );
+        }
+        this.log(state, 'player', `牺牲 ${destroyed.length} 个召唤物`);
+        break;
+      }
+      case 'reveal_intent':
+        this.log(state, 'player', '已洞察敌人的行动意图');
+        break;
       case 'recover_discard':
       case 'recover_discard_summon': {
         const amount = Math.min(
@@ -1221,15 +1369,39 @@ export class BattleRepository {
         break;
       case 'conditional_group': {
         const conditions = Array.isArray(effect.conditions)
-          ? effect.conditions
+          ? (effect.conditions as CardEffect[])
           : [];
-        if (conditions.every((condition) => this.conditionMatches(condition, state, target))) {
-          const thenEffects = Array.isArray(effect.then_effects)
-            ? (effect.then_effects as CardEffect[])
-            : [];
-          for (const child of thenEffects) {
-            this.applyCardEffect(state, card, child, targetIndex);
+        const matches = conditions.map((condition) =>
+          this.conditionMatches(condition, state, target),
+        );
+        const passed =
+          effect.logic === 'or'
+            ? matches.some(Boolean)
+            : matches.every(Boolean);
+        if (passed) {
+          if (effect.logic === 'or') {
+            const firstPayable = conditions.find(
+              (condition, index) =>
+                matches[index] && this.isPayableCondition(condition),
+            );
+            if (firstPayable) this.payCondition(state, firstPayable);
+          } else {
+            for (const condition of conditions) {
+              if (this.isPayableCondition(condition)) {
+                this.payCondition(state, condition);
+              }
+            }
           }
+        }
+        const children = passed
+          ? Array.isArray(effect.then_effects)
+            ? (effect.then_effects as CardEffect[])
+            : []
+          : Array.isArray(effect.else_effects)
+            ? (effect.else_effects as CardEffect[])
+            : [];
+        for (const child of children) {
+          this.applyCardEffect(state, card, child, targetIndex);
         }
         break;
       }
@@ -1262,6 +1434,9 @@ export class BattleRepository {
           ? this.rules?.playerDefenseScale ?? 0.28
           : this.rules?.enemyDefenseScale ?? 0.26;
       amount -= Math.floor(target.defense * defenseScale);
+    }
+    if (target === state.player) {
+      amount -= this.passiveEffectValue(state, 'damage_reduction');
     }
     amount = Math.max(rawAmount > 0 ? 1 : 0, Math.round(amount));
     const absorbed = Math.min(target.shield, amount);
@@ -1505,15 +1680,25 @@ export class BattleRepository {
       const passive = this.passives?.[passiveId];
       const effect = passive?.effect;
       if (!effect) continue;
-      if (effect.type === 'battle_start_shield') {
-        state.player.shield += this.number(effect.value);
-      } else if (effect.type === 'battle_start_mp') {
-        state.player.mp = Math.min(
-          state.player.mpMax,
-          state.player.mp + this.number(effect.value),
-        );
-      } else if (effect.type === 'extra_draw') {
-        state.player.drawPerTurn += this.number(effect.value);
+      const effects =
+        effect.type === 'multi' && Array.isArray(effect.effects)
+          ? (effect.effects as CardEffect[])
+          : [effect];
+      state.player.passiveEffects ??= [];
+      state.player.passiveEffects.push(...effects);
+      for (const child of effects) {
+        if (child.type === 'battle_start_shield') {
+          state.player.shield += this.number(child.value);
+        } else if (child.type === 'battle_start_mp') {
+          state.player.mp = Math.min(
+            state.player.mpMax,
+            state.player.mp + this.number(child.value),
+          );
+        } else if (child.type === 'extra_draw') {
+          state.player.drawPerTurn += this.number(child.value);
+        } else if (child.type === 'first_turn_ap') {
+          state.player.ap += this.number(child.value);
+        }
       }
       this.log(state, 'system', `被动「${passive.name}」生效`);
     }
@@ -1524,20 +1709,24 @@ export class BattleRepository {
     profileId: string,
   ): void {
     void profileId;
-    // extra_draw is folded into drawPerTurn at battle start. Remaining common
-    // passives are represented by the browser-local records already copied in.
-    for (const passive of Object.values(this.passives ?? {})) {
-      if (passive.effect?.type !== 'turn_start_heal') continue;
-      // Only apply catalog entries that the battle start log marked as owned.
-      if (!state.log.some((entry) => entry.text === `被动「${passive.name}」生效`)) {
-        continue;
+    for (const rawEffect of state.player.passiveEffects ?? []) {
+      if (typeof rawEffect !== 'object' || rawEffect === null) continue;
+      const effect = rawEffect as CardEffect;
+      if (effect.type === 'turn_start_heal') {
+        this.heal(
+          state,
+          state.player,
+          this.number(effect.value),
+          '职业天赋',
+        );
+      } else if (effect.type === 'turn_start_cleanse') {
+        this.removeEffects(state.player.debuffs, this.number(effect.value, 1));
+      } else if (
+        effect.type === 'turn_start_debuff_shield' &&
+        Object.keys(state.player.debuffs).length > 0
+      ) {
+        state.player.shield += this.number(effect.value);
       }
-      this.heal(
-        state,
-        state.player,
-        this.number(passive.effect.value),
-        passive.name,
-      );
     }
   }
 
@@ -1566,6 +1755,9 @@ export class BattleRepository {
     target: BattleEnemyState,
   ): number {
     let bonus = 0;
+    if (card.type === 'attack') {
+      bonus += this.passiveEffectValue(state, 'attack_bonus');
+    }
     for (const effect of card.effects ?? []) {
       if (
         effect.type === 'conditional_bonus' &&
@@ -1621,21 +1813,89 @@ export class BattleRepository {
       case 'has_shield':
       case 'self_has_shield':
         return state.player.shield > 0;
+      case 'self_no_shield':
+        return state.player.shield <= 0;
       case 'self_no_debuff':
         return Object.keys(state.player.debuffs).length === 0;
       case 'self_has_debuff':
         return Object.keys(state.player.debuffs).length > 0;
       case 'enemy_has_debuff':
         return Object.keys(target.debuffs).length > 0;
+      case 'enemy_no_debuff':
+        return Object.keys(target.debuffs).length === 0;
       case 'enemy_has_specific_debuff':
         return Boolean(target.debuffs[String(detail.debuff)]);
       case 'enemy_has_shield':
         return target.shield > 0;
+      case 'enemy_no_shield':
+        return target.shield <= 0;
+      case 'enemy_no_specific_debuff':
+        return !target.debuffs[String(detail.debuff)];
+      case 'self_has_buff':
+        return Object.keys(state.player.buffs).length > 0;
+      case 'self_no_buff':
+        return Object.keys(state.player.buffs).length === 0;
+      case 'self_full_hp':
+        return state.player.hp >= state.player.hpMax;
+      case 'self_not_full_hp':
+        return state.player.hp < state.player.hpMax;
+      case 'has_summon':
+        return state.player.summons.length > 0;
+      case 'no_summon':
+        return state.player.summons.length === 0;
+      case 'spend_mp':
+        return state.player.mp >= this.number(detail.amount ?? detail.value, 1);
+      case 'discard':
+        return (
+          state.player.hand.length >= this.number(detail.amount ?? detail.value, 1)
+        );
+      case 'destroy_summon':
+        return (
+          state.player.summons.length >=
+          this.number(detail.amount ?? detail.value, 1)
+        );
       case 'low_hp':
       case 'self_low_hp':
         return state.player.hp <= state.player.hpMax * 0.5;
       default:
         return false;
+    }
+  }
+
+  private passiveEffectValue(
+    state: LocalBattleState,
+    type: string,
+  ): number {
+    return (state.player.passiveEffects ?? []).reduce<number>((sum, rawEffect) => {
+      if (typeof rawEffect !== 'object' || rawEffect === null) return sum;
+      const effect = rawEffect as CardEffect;
+      return effect.type === type ? sum + this.number(effect.value) : sum;
+    }, 0);
+  }
+
+  private isPayableCondition(condition: CardEffect): boolean {
+    return ['spend_mp', 'discard', 'destroy_summon'].includes(condition.type);
+  }
+
+  private payCondition(state: LocalBattleState, condition: CardEffect): void {
+    const requested = Math.max(
+      1,
+      this.number(condition.amount ?? condition.value, 1),
+    );
+    if (condition.type === 'spend_mp') {
+      state.player.mp = Math.max(0, state.player.mp - requested);
+    } else if (condition.type === 'discard') {
+      const discarded = state.player.hand.splice(0, requested);
+      state.player.discardPile.push(...discarded);
+    } else if (condition.type === 'destroy_summon') {
+      const destroyed =
+        condition.amount === 'all'
+          ? [...state.player.summons]
+          : this.shuffle(state.player.summons).slice(0, requested);
+      const ids = new Set(destroyed.map((summon) => summon.id));
+      state.player.summons = state.player.summons.filter(
+        (summon) => !ids.has(summon.id),
+      );
     }
   }
 

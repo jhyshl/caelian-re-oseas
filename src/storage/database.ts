@@ -35,7 +35,7 @@ import type {
   WorldStateRecord,
 } from '@/domain/types';
 
-export const DATABASE_SCHEMA_VERSION = 4;
+export const DATABASE_SCHEMA_VERSION = 5;
 
 export class CaelianDatabase extends Dexie {
   profiles!: Table<ProfileRecord, string>;
@@ -136,5 +136,15 @@ export class CaelianDatabase extends Dexie {
       mailRecords:
         'id, profileId, &mailId, source, receivedAt, openedAt, updatedAt',
     });
+
+    this.version(5)
+      .stores({})
+      .upgrade(async (transaction) => {
+        await transaction
+          .table<InventoryStackRecord, string>('inventoryStacks')
+          .where('itemId')
+          .startsWith('daily:')
+          .delete();
+      });
   }
 }

@@ -6,6 +6,7 @@ import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import ProfessionDialog from '@/modules/character/ProfessionDialog.vue';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
+import AdjustableAvatar from '@/ui/AdjustableAvatar.vue';
 import MeterBar from '@/ui/adventurer/MeterBar.vue';
 
 const props = defineProps<{ context: PanelContext }>();
@@ -150,17 +151,14 @@ onUnmounted(() => {
 
     <template v-else>
       <section class="ca-section identity-card">
-        <div class="avatar">
-          <img
-            v-if="playerAvatarUrl"
-            :src="playerAvatarUrl"
-            :alt="`${snapshot.player.name || '玩家'}的头像`"
-            @error="handlePlayerAvatarError"
-          />
-          <span v-else>
-            {{ snapshot.player.name.trim().slice(0, 1) || '冒' }}
-          </span>
-        </div>
+        <AdjustableAvatar
+          class="avatar"
+          :src="playerAvatarUrl"
+          :alt="`${snapshot.player.name || '玩家'}的头像`"
+          :fallback="snapshot.player.name.trim().slice(0, 1) || '冒'"
+          preference-id="player"
+          @image-error="handlePlayerAvatarError"
+        />
         <div class="identity">
           <h1>{{ snapshot.player.name || '未命名' }}</h1>
           <div class="badges">
@@ -412,13 +410,6 @@ onUnmounted(() => {
     radial-gradient(circle at 30% 20%, rgba(240, 214, 138, 0.25), transparent 36%),
     #292116;
   font: 700 28px/1 var(--ca-serif);
-}
-
-.avatar img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
 }
 
 .identity {

@@ -2,6 +2,7 @@ import {
   classSubclasses,
   getStarterDeck,
 } from '@/content/catalogs/professions';
+import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
 import type {
   OwnedCardRecord,
   PlayerRecord,
@@ -194,6 +195,11 @@ export class PlayerRepository {
     );
     await this.db.ownedCards.where('profileId').equals(profileId).delete();
     await this.db.decks.where('profileId').equals(profileId).delete();
+    await this.db.passiveTalents
+      .where('profileId')
+      .equals(profileId)
+      .filter((entry) => entry.passiveId.startsWith('custom_passive_'))
+      .delete();
     await this.db.ownedCards.bulkAdd(ownedCards);
     await this.db.decks.add({
       id: `${profileId}:active`,
@@ -203,5 +209,19 @@ export class PlayerRepository {
       active: true,
       updatedAt: now,
     });
+    const customProfession = readWorkshopPacks()
+      .flatMap((pack) => pack.classes)
+      .find((entry) => entry.id === subclass);
+    if (customProfession) {
+      const passiveId = workshopPassiveId(customProfession.id);
+      await this.db.passiveTalents.put({
+        id: `${profileId}:${passiveId}`,
+        profileId,
+        passiveId,
+        name: customProfession.talent.name,
+        description: customProfession.talent.description,
+        updatedAt: now,
+      });
+    }
   }
 }

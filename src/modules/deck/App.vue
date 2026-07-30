@@ -5,6 +5,7 @@ import type { CardDefinition } from '@/content/types';
 import type { GameSnapshot } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
+import WorkshopDialog from '@/modules/deck/WorkshopDialog.vue';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
@@ -15,6 +16,7 @@ const draft = ref<string[]>([]);
 const filter = ref('all');
 const search = ref('');
 const notice = ref('');
+const workshopOpen = ref(false);
 
 const typeNames: Record<string, string> = {
   all: '全部',
@@ -119,6 +121,10 @@ async function saveDeck() {
   notice.value = '牌组已保存到浏览器本地档案。';
 }
 
+async function workshopSaved() {
+  catalog.value = { ...(await loadCardCatalog()) };
+}
+
 onMounted(async () => {
   [snapshot.value, catalog.value] = await Promise.all([
     props.context.api.query('state'),
@@ -161,9 +167,18 @@ onMounted(async () => {
               保存牌组
             </button>
           </template>
-          <button v-else type="button" class="ca-button primary" @click="beginEdit">
-            编辑牌组
-          </button>
+          <template v-else>
+            <button
+              type="button"
+              class="ca-button"
+              @click="workshopOpen = true"
+            >
+              创意工坊
+            </button>
+            <button type="button" class="ca-button primary" @click="beginEdit">
+              编辑牌组
+            </button>
+          </template>
         </div>
       </section>
 
@@ -249,6 +264,12 @@ onMounted(async () => {
 
       <p v-if="notice" class="deck-notice">{{ notice }}</p>
     </template>
+    <WorkshopDialog
+      v-if="workshopOpen"
+      :context="context"
+      @close="workshopOpen = false"
+      @saved="workshopSaved"
+    />
   </AdventurerFrame>
 </template>
 

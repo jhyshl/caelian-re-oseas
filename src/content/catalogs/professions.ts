@@ -7,6 +7,7 @@ import type {
   MainProfessionPresentation,
   ProfessionTalent,
 } from '@/content/types';
+import { readWorkshopPacks } from '@/workshop';
 
 export const classNames = classNamesJson as Record<string, string>;
 export const subclassNames = subclassNamesJson as Record<string, string>;
@@ -49,6 +50,40 @@ export const mainProfessions: MainProfessionPresentation[] = Object.entries(
   description: presentation[id]?.description ?? '',
   subclassIds,
 }));
+
+const installedWorkshopClassIds = new Set<string>();
+
+export function refreshWorkshopProfessionCatalogs(): void {
+  for (const classId of installedWorkshopClassIds) {
+    for (const subclasses of Object.values(classSubclasses)) {
+      const index = subclasses.indexOf(classId);
+      if (index >= 0) subclasses.splice(index, 1);
+    }
+    delete subclassNames[classId];
+    delete professionTalents[classId];
+    delete starterDecks[classId];
+  }
+  installedWorkshopClassIds.clear();
+  for (const pack of readWorkshopPacks()) {
+    for (const profession of pack.classes) {
+      const subclasses = classSubclasses[profession.main] ?? [];
+      if (!classSubclasses[profession.main]) {
+        classSubclasses[profession.main] = subclasses;
+      }
+      if (!subclasses.includes(profession.id)) subclasses.push(profession.id);
+      subclassNames[profession.id] = profession.name;
+      professionTalents[profession.id] = {
+        title: profession.name,
+        playstyle: profession.description,
+        talent: `${profession.talent.name}：${profession.talent.description}`,
+      };
+      starterDecks[profession.id] = [...profession.starterDeck];
+      installedWorkshopClassIds.add(profession.id);
+    }
+  }
+}
+
+refreshWorkshopProfessionCatalogs();
 
 export function getProfessionTalent(subclassId: string): ProfessionTalent {
   return (

@@ -222,7 +222,7 @@ onUnmounted(() => {
               <small>{{ rarityLabel(listing.rarity) }}</small>
             </div>
             <h2>{{ listing.name }}</h2>
-            <p>{{ listing.detail || '旧版数据库未提供额外说明。' }}</p>
+            <p v-if="listing.detail">{{ listing.detail }}</p>
             <div class="goods-bottom">
               <div>
                 <b>¤ {{ listing.price }}</b>
@@ -266,7 +266,7 @@ onUnmounted(() => {
             <article v-for="entry in market.sellItems" :key="entry.itemId">
               <div>
                 <strong>{{ entry.name }} ×{{ entry.quantity }}</strong>
-                <span>{{ entry.detail || '物品库未提供额外说明。' }}</span>
+                <span v-if="entry.detail">{{ entry.detail }}</span>
               </div>
               <b>¤ {{ entry.price }}/件</b>
               <button

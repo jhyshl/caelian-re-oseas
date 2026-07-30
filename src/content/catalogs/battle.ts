@@ -1,4 +1,5 @@
 import type { CardEffect } from '@/content/types';
+import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
 
 export interface MonsterSkillDefinition {
   name: string;
@@ -58,6 +59,30 @@ export interface PassiveDefinition {
 let monsterCache: Record<string, MonsterDefinition> | undefined;
 let rulesCache: BattleRules | undefined;
 let passiveCache: Record<string, PassiveDefinition> | undefined;
+const installedWorkshopPassiveIds = new Set<string>();
+
+export function refreshWorkshopPassiveCatalog(): void {
+  if (!passiveCache) return;
+  for (const passiveId of installedWorkshopPassiveIds) {
+    delete passiveCache[passiveId];
+  }
+  installedWorkshopPassiveIds.clear();
+  for (const pack of readWorkshopPacks()) {
+    for (const profession of pack.classes) {
+      const passiveId = workshopPassiveId(profession.id);
+      passiveCache[passiveId] = {
+        id: passiveId,
+        name: profession.talent.name || `${profession.name}天赋`,
+        description: profession.talent.description,
+        effect: {
+          type: 'multi',
+          effects: profession.talent.effects,
+        },
+      };
+      installedWorkshopPassiveIds.add(passiveId);
+    }
+  }
+}
 
 export async function loadMonsterCatalog() {
   if (!monsterCache) {
@@ -87,5 +112,6 @@ export async function loadPassiveCatalog(): Promise<
     const module = await import('@/content/generated/battle/passives.json');
     passiveCache = module.default as Record<string, PassiveDefinition>;
   }
+  refreshWorkshopPassiveCatalog();
   return passiveCache;
 }

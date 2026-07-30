@@ -256,6 +256,11 @@ export interface BattlePlayerState {
   debuffs: Record<string, BattleTimedEffect>;
   summons: BattleSummonState[];
   chants: BattleChantState[];
+  /**
+   * Effects copied from the player's owned passive talents when a local battle
+   * starts. Older Alpha saves may omit this field.
+   */
+  passiveEffects?: unknown[];
 }
 
 export interface BattleEnemyState {

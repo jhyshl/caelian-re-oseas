@@ -1,7 +1,23 @@
 import type { CardDefinition } from '@/content/types';
+import { readWorkshopPacks } from '@/workshop';
 
 let cardCache: Record<string, CardDefinition> | undefined;
 let commonMarketCache: Record<string, CardDefinition> | undefined;
+const installedWorkshopCardIds = new Set<string>();
+
+export function refreshWorkshopCardCatalog(): void {
+  if (!cardCache) return;
+  for (const cardId of installedWorkshopCardIds) delete cardCache[cardId];
+  installedWorkshopCardIds.clear();
+  for (const pack of readWorkshopPacks()) {
+    for (const profession of pack.classes) {
+      for (const card of profession.cards) {
+        cardCache[card.id] = card;
+        installedWorkshopCardIds.add(card.id);
+      }
+    }
+  }
+}
 
 export async function loadCommonMarketCards(): Promise<
   Record<string, CardDefinition>
@@ -28,6 +44,7 @@ export async function loadCardCatalog(): Promise<
       ...commonMarket,
     };
   }
+  refreshWorkshopCardCatalog();
   return cardCache;
 }
 
