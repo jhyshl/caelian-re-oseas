@@ -246,7 +246,7 @@ describe('CaelianKernel integration', () => {
     });
     window.tavern_events = {};
 
-    let mvuData: Record<string, unknown> = {
+    let persistedMvuData: Record<string, unknown> = {
       stat_data: {
         caelian: {
           narrative: {
@@ -272,12 +272,13 @@ describe('CaelianKernel integration', () => {
         },
       },
     };
+    const replaceMvuData = vi.fn((next: Record<string, unknown>) => {
+      persistedMvuData = next;
+    });
     window.Mvu = {
       events: { VARIABLE_UPDATE_ENDED: 'mvu-ended' },
-      getMvuData: () => mvuData,
-      replaceMvuData: (next) => {
-        mvuData = next;
-      },
+      getMvuData: () => persistedMvuData,
+      replaceMvuData,
     };
     const kernel = createKernel({
       channel: 'alpha',
@@ -288,8 +289,10 @@ describe('CaelianKernel integration', () => {
     });
 
     await kernel.initialize();
+    const writesBeforeAiUpdate = replaceMvuData.mock.calls.length;
+    const eventMvuData = structuredClone(persistedMvuData);
     const caelian = (
-      (mvuData.stat_data as Record<string, unknown>)
+      (eventMvuData.stat_data as Record<string, unknown>)
         .caelian as Record<string, unknown>
     );
     caelian.narrative = {
@@ -312,7 +315,9 @@ describe('CaelianKernel integration', () => {
       },
       storyFlags: { 已经出发: true },
     };
-    handlers.get('mvu-ended')?.();
+    handlers
+      .get('mvu-ended')
+      ?.(eventMvuData, persistedMvuData);
 
     await expect
       .poll(async () => {
@@ -320,7 +325,11 @@ describe('CaelianKernel integration', () => {
         return {
           affinity: state.social.affinity,
           mood: state.social.mood,
-          location: state.world.location,
+          companionLocation: state.social.location,
+          clothing: state.social.clothing,
+          innerThought: state.social.innerThought,
+          worldPlace: state.world.place,
+          worldLocation: state.world.location,
           gameDate: state.world.gameDate,
           gameTime: state.world.gameTime,
           weather: state.world.weather,
@@ -331,13 +340,20 @@ describe('CaelianKernel integration', () => {
       .toEqual({
         affinity: 37,
         mood: '期待',
-        location: '伊拉亚城-中央广场',
+        companionLocation: '中央广场',
+        clothing: '学院制服',
+        innerThought: '或许可以再相信他一些。',
+        worldPlace: '中央广场',
+        worldLocation: '伊拉亚城-中央广场',
         gameDate: '新圣约历1385-09-02',
         gameTime: '10:30',
         weather: '多云',
         mainStage: 1,
         mainStep: 2,
       });
+    expect(replaceMvuData).toHaveBeenCalledTimes(
+      writesBeforeAiUpdate,
+    );
 
     await kernel.api.shutdown();
   });

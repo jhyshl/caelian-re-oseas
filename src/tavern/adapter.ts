@@ -3,7 +3,15 @@ import type { TavernAvatarUrls } from '@/kernel/public-api';
 import { LEGACY_STAT_DATA_KEYS } from '@/mvu/contracts';
 import type { LegacyAchievementPayload } from '@/storage/repositories/achievement-repository';
 
-type TavernEventHandler = (eventName: string) => void | Promise<void>;
+export interface TavernEventPayload {
+  mvuData?: Record<string, unknown>;
+  previousMvuData?: Record<string, unknown>;
+}
+
+type TavernEventHandler = (
+  eventName: string,
+  payload?: TavernEventPayload,
+) => void | Promise<void>;
 
 export function resolveTavernHost(sourceWindow: Window): Window {
   try {
@@ -170,37 +178,26 @@ export class TavernAdapter {
     const statData = this.asRecord(next.stat_data);
     const currentCaelian = this.asRecord(statData.caelian);
     const currentNarrative = this.asRecord(currentCaelian.narrative);
-    const currentCompanion = this.asRecord(currentNarrative.companion);
-    const currentWorld = this.asRecord(currentNarrative.world);
-    const currentStoryFlags = this.asRecord(currentNarrative.storyFlags);
+    const hasCurrentNarrative = Object.prototype.hasOwnProperty.call(
+      currentCaelian,
+      'narrative',
+    );
+    const isLegacyMigration = LEGACY_STAT_DATA_KEYS.some(
+      (key) => key in statData,
+    );
 
     for (const key of LEGACY_STAT_DATA_KEYS) {
       delete statData[key];
     }
+    const nextCaelian: Record<string, unknown> = { ...projection };
+    if (hasCurrentNarrative) {
+      nextCaelian.narrative = this.clone(currentNarrative);
+    } else if (!isLegacyMigration) {
+      delete nextCaelian.narrative;
+    }
     next.stat_data = {
       ...statData,
-      caelian: {
-        ...projection,
-        narrative:
-          Object.keys(currentNarrative).length > 0
-            ? {
-                ...projection.narrative,
-                ...currentNarrative,
-                companion: {
-                  ...projection.narrative.companion,
-                  ...currentCompanion,
-                },
-                world: {
-                  ...projection.narrative.world,
-                  ...currentWorld,
-                },
-                storyFlags: {
-                  ...projection.narrative.storyFlags,
-                  ...currentStoryFlags,
-                },
-              }
-            : projection.narrative,
-      },
+      caelian: nextCaelian,
     };
 
     if (JSON.stringify(current) === JSON.stringify(next)) return false;
@@ -233,16 +230,27 @@ export class TavernAdapter {
     const mvuEvent = this.host.Mvu?.events?.VARIABLE_UPDATE_ENDED;
     if (mvuEvent === undefined) return;
     let timer: number | undefined;
-    const possibleDisposer = eventOn(mvuEvent, () => {
-      if (timer !== undefined) this.host.clearTimeout(timer);
-      timer = this.host.setTimeout(() => {
-        timer = undefined;
-        void handler('MVU_VARIABLE_UPDATE_ENDED');
-      }, 180);
-    });
+    let pendingPayload: TavernEventPayload | undefined;
+    const possibleDisposer = eventOn(
+      mvuEvent,
+      (variables, variablesBeforeUpdate) => {
+        pendingPayload = {
+          mvuData: this.cloneIfRecord(variables),
+          previousMvuData: this.cloneIfRecord(variablesBeforeUpdate),
+        };
+        if (timer !== undefined) this.host.clearTimeout(timer);
+        timer = this.host.setTimeout(() => {
+          timer = undefined;
+          const payload = pendingPayload;
+          pendingPayload = undefined;
+          void handler('MVU_VARIABLE_UPDATE_ENDED', payload);
+        }, 180);
+      },
+    );
     this.addEventDisposer(possibleDisposer);
     this.disposers.push(() => {
       if (timer !== undefined) this.host.clearTimeout(timer);
+      pendingPayload = undefined;
     });
   }
 
@@ -414,6 +422,19 @@ export class TavernAdapter {
     } catch {
       return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
     }
+  }
+
+  private cloneIfRecord(
+    value: unknown,
+  ): Record<string, unknown> | undefined {
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      Array.isArray(value)
+    ) {
+      return undefined;
+    }
+    return this.clone(value as Record<string, unknown>);
   }
 
   private addEventDisposer(value: unknown): void {

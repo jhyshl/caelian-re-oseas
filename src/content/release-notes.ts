@@ -9,6 +9,17 @@ const MAX_VISIBLE_RELEASES = 5;
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.15',
+    label: 'Alpha 15',
+    releasedAt: '2026-07-30',
+    changes: [
+      '修复 MVU 实时入口：直接读取 VARIABLE_UPDATE_ENDED 传入的最新版变量表，不再等待后重新读取可能尚未写回的旧楼层。',
+      '好感度、情绪、凯利安位置、衣着、心理活动以及完整世界状态会在同一次变量更新后一起刷新。',
+      '新版 caelian.narrative 完全由变量管理器和 AI 管理；Alpha 只读取、校验与显示，不补写或覆盖这些字段。',
+      '新增回归测试：即使 latest 楼层仍是旧值，状态栏也必须采用事件中的新值，并且不得因此触发 MVU 回写。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.14',
     label: 'Alpha 14',
     releasedAt: '2026-07-29',

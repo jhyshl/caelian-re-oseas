@@ -94,7 +94,10 @@ describe('TavernAdapter', () => {
     expect(next.unrelated).toBe('preserved');
     expect(next.stat_data).toEqual({
       existing_system: { keep: true },
-      caelian: projection,
+      caelian: {
+        _meta: projection._meta,
+        state: projection.state,
+      },
     });
 
     delete window.Mvu;
@@ -190,7 +193,7 @@ describe('TavernAdapter', () => {
     expect(next.stat_data.caelian.narrative).toEqual(aiNarrative);
   });
 
-  it('旧 v3 narrative 缺少 world 时只补初始结构，不覆盖已有 AI 字段', async () => {
+  it('新版 narrative 缺少字段时保持变量管理器原样，不由脚本补写', async () => {
     const replaceMvuData = vi.fn();
     window.Mvu = {
       getMvuData: () => ({
@@ -215,19 +218,24 @@ describe('TavernAdapter', () => {
     const next = replaceMvuData.mock.calls[0]?.[0] as {
       stat_data: { caelian: AiProjection };
     };
-    expect(next.stat_data.caelian.narrative).toMatchObject({
-      companion: { affinity: 25 },
-      world: projection.narrative.world,
+    expect(next.stat_data.caelian.narrative).toEqual({
+      companion: {
+        ...projection.narrative.companion,
+        affinity: 25,
+      },
       storyFlags: { 玩家保留标记: true },
     });
   });
 
   it('在 MVU 更新完成后防抖触发重新读取事件', async () => {
     vi.useFakeTimers();
-    const handlers = new Map<unknown, () => void>();
+    const handlers = new Map<
+      unknown,
+      (...args: unknown[]) => void
+    >();
     const stop = vi.fn();
     window.eventOn = vi.fn((event, handler) => {
-      handlers.set(event, handler as () => void);
+      handlers.set(event, handler);
       return { stop };
     });
     window.tavern_events = {};
@@ -240,13 +248,46 @@ describe('TavernAdapter', () => {
     const adapter = new TavernAdapter(window);
     adapter.subscribe(listener);
 
-    handlers.get('mvu-ended')?.();
-    handlers.get('mvu-ended')?.();
+    const first = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            companion: { affinity: 12 },
+          },
+        },
+      },
+    };
+    const latest = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            companion: { affinity: 37 },
+          },
+        },
+      },
+    };
+    const before = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            companion: { affinity: 10 },
+          },
+        },
+      },
+    };
+    handlers.get('mvu-ended')?.(first, before);
+    handlers.get('mvu-ended')?.(latest, first);
     await vi.advanceTimersByTimeAsync(179);
     expect(listener).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
     expect(listener).toHaveBeenCalledTimes(1);
-    expect(listener).toHaveBeenCalledWith('MVU_VARIABLE_UPDATE_ENDED');
+    expect(listener).toHaveBeenCalledWith(
+      'MVU_VARIABLE_UPDATE_ENDED',
+      {
+        mvuData: latest,
+        previousMvuData: first,
+      },
+    );
 
     adapter.unsubscribeAll();
     expect(stop).toHaveBeenCalledTimes(1);
