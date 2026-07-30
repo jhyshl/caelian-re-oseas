@@ -4,6 +4,7 @@ import type {
   EventLogRecord,
   GameSnapshot,
   InventoryStackRecord,
+  MarketView,
   RuntimeInfo,
 } from '@/domain/types';
 import type { KernelEventMap } from '@/kernel/event-bus';
@@ -19,6 +20,7 @@ export type PanelName =
   | 'affinity'
   | 'deck'
   | 'inventory'
+  | 'market'
   | 'guild'
   | 'map'
   | 'battle'
@@ -32,6 +34,7 @@ export type QueryName =
   | 'runtime'
   | 'state'
   | 'inventory'
+  | 'market'
   | 'events'
   | 'achievement-special';
 
@@ -39,6 +42,7 @@ export interface QueryResultMap {
   runtime: RuntimeInfo;
   state: GameSnapshot;
   inventory: InventoryStackRecord[];
+  market: MarketView;
   events: EventLogRecord[];
   'achievement-special': AchievementSpecialState;
 }

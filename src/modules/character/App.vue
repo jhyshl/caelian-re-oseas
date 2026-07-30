@@ -56,14 +56,19 @@ const statRows = [
   },
 ] as const;
 
-async function refresh() {
-  const [nextSnapshot, avatars] = await Promise.all([
-    props.context.api.query('state'),
-    props.context.api.getAvatarUrls(),
-  ]);
-  snapshot.value = nextSnapshot;
-  playerAvatarUrl.value = avatars.user;
+async function refreshState() {
+  snapshot.value = await props.context.api.query('state');
   if (!snapshot.value.player.created) professionDialog.value = 'create';
+}
+
+async function refreshAvatar() {
+  playerAvatarUrl.value = (
+    await props.context.api.getAvatarUrls()
+  ).user;
+}
+
+async function refresh() {
+  await Promise.all([refreshState(), refreshAvatar()]);
 }
 
 function handlePlayerAvatarError() {
@@ -83,7 +88,7 @@ async function allocate(
       payload: { stat, direction },
     });
     if (result.status === 'rejected') throw new Error(result.message);
-    await refresh();
+    await refreshState();
   } catch (caught) {
     notice.value = caught instanceof Error ? caught.message : String(caught);
   } finally {
@@ -107,14 +112,23 @@ function equipped(slot: 'weaponId' | 'armorId' | 'accessoryId') {
 async function professionApplied() {
   professionDialog.value = undefined;
   notice.value = '职业与预设牌组已保存到本地档案。';
-  await refresh();
+  await refreshState();
 }
 
 onMounted(async () => {
   await refresh();
   disposers.push(
-    props.context.api.on('state.changed', refresh),
-    props.context.api.on('tavern.changed', refresh),
+    props.context.api.on('state.changed', refreshState),
+    props.context.api.on('tavern.changed', async ({ event }) => {
+      await refreshState();
+      if (
+        event === 'CHAT_CHANGED' ||
+        event === 'PERSONA_CHANGED' ||
+        event === 'PERSONA_UPDATED'
+      ) {
+        await refreshAvatar();
+      }
+    }),
   );
 });
 onUnmounted(() => {

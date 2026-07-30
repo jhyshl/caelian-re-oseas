@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadAchievementDefinitions } from '@/content/catalogs/achievements';
+import {
+  loadDailyGiftItemPool,
+  loadMarketItemsByRegion,
+} from '@/content/catalogs/inventory';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { GameRepository } from '@/storage/repository';
@@ -115,10 +119,35 @@ describe('AchievementRepository integration', () => {
       payload: {},
     });
     const afterGift = await repository.snapshot(profile.id);
+    const giftPool = new Set(
+      (await loadDailyGiftItemPool()).map((item) => item.itemId),
+    );
     const dailyQuantity = afterGift.inventory
-      .filter((stack) => stack.itemId.startsWith('daily:'))
+      .filter((stack) => giftPool.has(stack.itemId))
       .reduce((total, stack) => total + stack.quantity, 0);
     expect(dailyQuantity).toBe(10);
+    expect(
+      afterGift.inventory.every(
+        (stack) =>
+          !stack.itemId.startsWith('daily:') || giftPool.has(stack.itemId),
+      ),
+    ).toBe(true);
+    const marketRows = await loadMarketItemsByRegion();
+    const actualMarketNames = new Set(
+      Object.values(marketRows)
+        .flat()
+        .filter(
+          (item) =>
+            item.marketKind !== 'equipment' &&
+            item.marketKind !== 'relic',
+        )
+        .map((item) => item.name),
+    );
+    expect(
+      afterGift.inventory
+        .filter((stack) => giftPool.has(stack.itemId))
+        .every((stack) => actualMarketNames.has(stack.name)),
+    ).toBe(true);
     await expect(
       repository.achievementSpecialState(profile.id),
     ).resolves.toMatchObject({

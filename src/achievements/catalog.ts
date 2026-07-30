@@ -32,39 +32,6 @@ export const BLANK_PAGE_RELIC_DEFINITION: RelicDefinition = {
 
 export const POEM_REWARD_GOLD = 1834;
 
-export const DAILY_GIFT_POOL = [
-  '苹果',
-  '白面包',
-  '蜂蜜',
-  '牛奶',
-  '奶酪',
-  '鸡蛋',
-  '熏肉',
-  '鱼干',
-  '蘑菇',
-  '薄荷叶',
-  '月露草',
-  '星砂',
-  '铁矿石',
-  '银矿石',
-  '铜矿石',
-  '清水',
-  '盐',
-  '糖',
-  '绷带',
-  '小型治疗药剂',
-  '魔力药剂',
-  '火绒草',
-  '风铃花',
-  '圣心百合',
-  '海盐贝',
-  '香料包',
-  '羊皮纸',
-  '墨水',
-  '玻璃瓶',
-  '软木塞',
-] as const;
-
 export const ACHIEVEMENT_CATEGORIES = [
   'all',
   'story',

@@ -3,6 +3,7 @@ import { domainCommandSchema } from '@/domain/commands';
 import type {
   AchievementSpecialState,
   GameSnapshot,
+  MarketView,
   ProfileRecord,
 } from '@/domain/types';
 import type { EventBus } from '@/kernel/event-bus';
@@ -14,6 +15,7 @@ import {
 } from '@/storage/repositories/achievement-repository';
 import { CardRepository } from '@/storage/repositories/card-repository';
 import { InventoryRepository } from '@/storage/repositories/inventory-repository';
+import { MarketRepository } from '@/storage/repositories/market-repository';
 import { NarrativeRepository } from '@/storage/repositories/narrative-repository';
 import { GuildRepository } from '@/storage/repositories/guild-repository';
 import { PlayerRepository } from '@/storage/repositories/player-repository';
@@ -30,6 +32,7 @@ export class GameRepository {
   private readonly battles: BattleRepository;
   private readonly narrative: NarrativeRepository;
   private readonly achievements: AchievementRepository;
+  private readonly market: MarketRepository;
 
   constructor(
     private readonly db: CaelianDatabase,
@@ -44,6 +47,7 @@ export class GameRepository {
     this.battles = new BattleRepository(db);
     this.narrative = new NarrativeRepository(db);
     this.achievements = new AchievementRepository(db, events);
+    this.market = new MarketRepository(db);
   }
 
   ensureProfile(
@@ -164,6 +168,12 @@ export class GameRepository {
     if (command.type.startsWith('battle.')) {
       await this.battles.prepare();
     }
+    if (command.type.startsWith('market.')) {
+      await this.market.prepare();
+    }
+    if (command.type === 'achievement.claim-daily-gift') {
+      await this.achievements.prepareDailyGiftPool();
+    }
     const result = await this.db.transaction(
       'rw',
       this.writeTables(),
@@ -245,6 +255,10 @@ export class GameRepository {
     return this.achievements.specialState(profileId);
   }
 
+  marketState(profileId: string): Promise<MarketView> {
+    return this.market.view(profileId);
+  }
+
   private async applyCommand(
     profileId: string,
     command: DomainCommand,
@@ -290,6 +304,15 @@ export class GameRepository {
         return this.achievements.claimPoemLetter(profileId);
       case 'achievement.claim-daily-gift':
         return this.achievements.claimDailyGift(profileId);
+      case 'market.buy':
+        return this.market.buy(profileId, command.payload);
+      case 'market.sell-item':
+        return this.market.sellItem(profileId, command.payload);
+      case 'market.sell-equipment':
+        return this.market.sellEquipment(
+          profileId,
+          command.payload.instanceId,
+        );
       case 'battle.start':
         return this.battles.start(profileId, command.payload);
       case 'battle.explore':
@@ -341,6 +364,7 @@ export class GameRepository {
       this.db.battleRewards,
       this.db.achievementProgress,
       this.db.achievementCounters,
+      this.db.marketStates,
       this.db.settings,
       this.db.commandInbox,
       this.db.eventLog,

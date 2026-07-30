@@ -23,6 +23,7 @@ const navigation: Array<{
   { id: 'affinity', icon: '♡', label: '凯利安' },
   { id: 'deck', icon: '▱', label: '牌组' },
   { id: 'inventory', icon: '◇', label: '背包' },
+  { id: 'market', icon: '¤', label: '集市' },
   { id: 'guild', icon: '⚔', label: '协会' },
   { id: 'map', icon: '⌖', label: '地图' },
   { id: 'battle', icon: '✹', label: '战斗' },

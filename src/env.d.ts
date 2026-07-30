@@ -15,6 +15,7 @@ interface Window {
     handler: (...args: unknown[]) => void,
   ) => unknown;
   tavern_events?: Record<string, unknown>;
+  getCharAvatarPath?: (name: 'current' | string) => string | null;
   toastr?: {
     info?: (message: string, title?: string) => void;
     success?: (message: string, title?: string) => void;

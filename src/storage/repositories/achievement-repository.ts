@@ -1,6 +1,5 @@
 import {
   BLANK_PAGE_RELIC_ID,
-  DAILY_GIFT_POOL,
   GLOBAL_ACHIEVEMENT_PROFILE_ID,
   MAIN_QUEST_ACHIEVEMENTS,
   PAST_PRESENT_POEM_ID,
@@ -10,6 +9,7 @@ import {
 } from '@/achievements/catalog';
 import { loadAchievementDefinitions } from '@/content/catalogs/achievements';
 import { loadCardCatalog } from '@/content/catalogs/cards';
+import { loadDailyGiftItemPool } from '@/content/catalogs/inventory';
 import type { AchievementDefinition } from '@/content/types';
 import type { DomainCommand } from '@/domain/commands';
 import type {
@@ -94,6 +94,7 @@ const COUNTER_PROGRESS: Record<string, string[]> = {
 
 export class AchievementRepository {
   private definitions?: Record<string, AchievementDefinition>;
+  private dailyGiftPool?: Array<{ itemId: string; name: string }>;
   private suppressUnlockNotices = false;
 
   constructor(
@@ -101,6 +102,10 @@ export class AchievementRepository {
     private readonly events: EventBus,
     private readonly random: () => number = Math.random,
   ) {}
+
+  async prepareDailyGiftPool(): Promise<void> {
+    this.dailyGiftPool ??= await loadDailyGiftItemPool();
+  }
 
   async listProgress(profileId: string): Promise<AchievementProgressRecord[]> {
     const [global, local] = await Promise.all([
@@ -124,7 +129,8 @@ export class AchievementRepository {
     const capture: AchievementCommandCapture = {};
     if (
       command.type === 'player.update' ||
-      command.type.startsWith('battle.')
+      command.type.startsWith('battle.') ||
+      command.type.startsWith('market.')
     ) {
       capture.playerGold = (await this.db.playerStates.get(profileId))?.gold;
     }
@@ -210,6 +216,21 @@ export class AchievementRepository {
           'economy.goldGained',
           nextGold - before.playerGold,
         );
+        await this.syncCounterProgress('economy.goldGained');
+      }
+    }
+
+    if (
+      before.playerGold !== undefined &&
+      (command.type === 'market.sell-item' ||
+        command.type === 'market.sell-equipment')
+    ) {
+      const nextGold = (await this.db.playerStates.get(profileId))?.gold ?? 0;
+      const gained = Math.max(0, nextGold - before.playerGold);
+      if (gained > 0) {
+        await this.incrementCounter('economy.sellGold', gained);
+        await this.incrementCounter('economy.goldGained', gained);
+        await this.syncCounterProgress('economy.sellGold');
         await this.syncCounterProgress('economy.goldGained');
       }
     }
@@ -879,17 +900,22 @@ export class AchievementRepository {
   }
 
   private pickDailyGifts(): AchievementSpecialState['lastDailyGiftItems'] {
-    const pool = [...DAILY_GIFT_POOL];
+    const pool = [...(this.dailyGiftPool ?? [])];
+    if (pool.length < 2) {
+      throw new Error('区域集市物品库为空，无法生成每日赠礼');
+    }
     for (let index = pool.length - 1; index > 0; index -= 1) {
       const swap = Math.floor(this.random() * (index + 1));
       const current = pool[index]!;
       pool[index] = pool[swap]!;
       pool[swap] = current;
     }
-    const kindCount = 2 + Math.floor(this.random() * 4);
-    const picked = pool.slice(0, kindCount).map((name) => ({
-      itemId: `daily:${name}`,
-      name,
+    const maximumKinds = Math.min(5, pool.length, 10);
+    const kindCount =
+      2 + Math.floor(this.random() * (maximumKinds - 1));
+    const picked = pool.slice(0, kindCount).map((item) => ({
+      itemId: item.itemId,
+      name: item.name,
       quantity: 1,
     }));
     let remaining = 10 - picked.length;

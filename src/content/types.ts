@@ -72,7 +72,26 @@ export interface BattleItemDefinition {
   desc: string;
   effect?: CardEffect;
   category?: string;
+  basePrice?: number;
+  rarity?: string;
   [key: string]: unknown;
+}
+
+export interface MarketSourceItem {
+  id: string;
+  name: string;
+  basePrice: number;
+  rarity: string;
+  stockMin: number;
+  stockMax: number;
+  marketKind?: 'item' | 'equipment' | 'relic';
+  refId?: string;
+  unique?: boolean;
+  stockLocked?: boolean;
+}
+
+export interface GatherResourceDefinition extends BattleItemDefinition {
+  regions: string[];
 }
 
 export interface AchievementDefinition {

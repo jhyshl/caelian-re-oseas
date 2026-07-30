@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { loadBattleItems, loadRelics } from '@/content/catalogs/inventory';
+import { loadItemCatalog, loadRelics } from '@/content/catalogs/inventory';
 import type {
   BattleItemDefinition,
   RelicDefinition,
@@ -83,7 +83,7 @@ function setCarried(relicId: string, carried: boolean) {
 onMounted(async () => {
   [snapshot.value, items.value, relics.value] = await Promise.all([
     props.context.api.query('state'),
-    loadBattleItems(),
+    loadItemCatalog(),
     loadRelics(),
   ]);
 });
@@ -136,8 +136,8 @@ onMounted(async () => {
               <strong>{{ stack.name }}</strong>
               <span>
                 {{
-                  items[stack.itemId]?.desc ??
-                    '该物品由剧情或集市写入本地背包。'
+                  items[stack.itemId]?.desc ||
+                    '旧版物品库未提供额外说明。'
                 }}
               </span>
             </div>

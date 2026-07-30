@@ -70,6 +70,7 @@ afterEach(() => {
   delete window.SillyTavern;
   delete window.eventOn;
   delete window.tavern_events;
+  delete window.getCharAvatarPath;
   vi.useRealTimers();
   document.querySelector('#user_avatar_block')?.remove();
 });
@@ -339,6 +340,45 @@ describe('TavernAdapter', () => {
         document.baseURI,
       ).href,
     });
+  });
+
+  it('缓存官方缩略图地址，并只在头像事件后重新解析', async () => {
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return undefined;
+    });
+    window.tavern_events = {
+      PERSONA_CHANGED: 'persona-changed',
+      CHARACTER_EDITED: 'character-edited',
+    };
+    const personaBlock = document.createElement('div');
+    personaBlock.id = 'user_avatar_block';
+    const selectedPersona = document.createElement('div');
+    selectedPersona.className = 'avatar-container selected';
+    selectedPersona.dataset.avatarId = 'first.png';
+    personaBlock.appendChild(selectedPersona);
+    document.body.appendChild(personaBlock);
+    const getContext = vi.fn(() => ({
+      characterId: '0',
+      characters: [{ name: '凯利安', avatar: 'caelian.png' }],
+      getThumbnailUrl: (type: 'avatar' | 'persona', file: string) =>
+        `/thumbnail?type=${type}&file=${encodeURIComponent(file)}`,
+    }));
+    window.SillyTavern = { getContext };
+    const adapter = new TavernAdapter(window);
+    adapter.subscribe(vi.fn());
+
+    const first = await adapter.avatarUrls();
+    const cached = await adapter.avatarUrls();
+    expect(cached).toEqual(first);
+    expect(getContext).toHaveBeenCalledTimes(1);
+
+    handlers.get('persona-changed')?.('second.png');
+    const changed = await adapter.avatarUrls();
+    expect(changed.user).toContain('file=second.png');
+    expect(changed.character).toBe(first.character);
+    expect(getContext).toHaveBeenCalledTimes(2);
   });
 
   it('普通 iframe 不会因为父窗口可访问就被误判为酒馆宿主', () => {

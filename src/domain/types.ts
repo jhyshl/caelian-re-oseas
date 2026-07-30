@@ -407,13 +407,65 @@ export interface AchievementSpecialState {
   }>;
 }
 
+export type MarketListingKind = 'item' | 'equipment' | 'relic' | 'card';
+export type MarketListingTab = 'specialty' | 'gear' | 'loot' | 'cards';
+
+export interface MarketListing {
+  key: string;
+  kind: MarketListingKind;
+  tab: MarketListingTab;
+  itemId: string;
+  refId?: string;
+  name: string;
+  rarity: string;
+  source: string;
+  detail: string;
+  stock: number;
+  basePrice: number;
+  price: number;
+  factor: number;
+  stars?: number;
+}
+
+export interface MarketInventory {
+  version: 1;
+  listings: MarketListing[];
+}
+
 export interface MarketStateRecord {
   id: string;
   profileId: string;
   regionId: string;
   refreshKey: string;
-  inventory: unknown;
+  inventory: MarketInventory;
   updatedAt: number;
+}
+
+export interface MarketSellItem {
+  itemId: string;
+  name: string;
+  quantity: number;
+  detail: string;
+  price: number;
+}
+
+export interface MarketSellEquipment {
+  instanceId: string;
+  name: string;
+  description: string;
+  stars: number;
+  price: number;
+}
+
+export interface MarketView {
+  regionId: string;
+  refreshKey: string;
+  nextRefreshAt: number;
+  gold: number;
+  isMerchant: boolean;
+  listings: MarketListing[];
+  sellItems: MarketSellItem[];
+  sellEquipment: MarketSellEquipment[];
 }
 
 export interface CraftingDraftRecord {

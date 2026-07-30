@@ -31,22 +31,28 @@ const updatedAt = computed(() => {
   }).format(timestamp);
 });
 
-async function refresh(): Promise<void> {
+async function refreshState(): Promise<void> {
   const sequence = ++refreshSequence;
   try {
-    const [next, avatars] = await Promise.all([
-      props.context.api.query('state'),
-      props.context.api.getAvatarUrls(),
-    ]);
+    const next = await props.context.api.query('state');
     if (sequence !== refreshSequence) return;
     snapshot.value = next;
-    characterAvatarUrl.value = avatars.character;
     error.value = '';
   } catch (caught) {
     if (sequence !== refreshSequence) return;
     error.value =
       caught instanceof Error ? caught.message : '凯利安状态读取失败';
   }
+}
+
+async function refreshAvatar(): Promise<void> {
+  characterAvatarUrl.value = (
+    await props.context.api.getAvatarUrls()
+  ).character;
+}
+
+async function refresh(): Promise<void> {
+  await Promise.all([refreshState(), refreshAvatar()]);
 }
 
 function handleCharacterAvatarError(): void {
@@ -56,8 +62,13 @@ function handleCharacterAvatarError(): void {
 onMounted(async () => {
   await refresh();
   disposers.push(
-    props.context.api.on('state.changed', refresh),
-    props.context.api.on('tavern.changed', refresh),
+    props.context.api.on('state.changed', refreshState),
+    props.context.api.on('tavern.changed', async ({ event }) => {
+      await refreshState();
+      if (event === 'CHAT_CHANGED' || event === 'CHARACTER_EDITED') {
+        await refreshAvatar();
+      }
+    }),
   );
 });
 

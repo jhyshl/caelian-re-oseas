@@ -52,6 +52,7 @@ const primary: Array<{ panel: PanelName; icon: string; label: string }> = [
   { panel: 'affinity', icon: '♡', label: '凯利安' },
   { panel: 'deck', icon: '▱', label: '牌组' },
   { panel: 'inventory', icon: '◇', label: '背包' },
+  { panel: 'market', icon: '¤', label: '集市' },
   { panel: 'guild', icon: '⚔', label: '协会' },
   { panel: 'map', icon: '⌖', label: '地图' },
   { panel: 'battle', icon: '✹', label: '战斗' },

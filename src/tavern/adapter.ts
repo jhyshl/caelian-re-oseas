@@ -6,6 +6,7 @@ import type { LegacyAchievementPayload } from '@/storage/repositories/achievemen
 export interface TavernEventPayload {
   mvuData?: Record<string, unknown>;
   previousMvuData?: Record<string, unknown>;
+  avatarId?: string;
 }
 
 type TavernEventHandler = (
@@ -36,6 +37,9 @@ export function resolveTavernHost(sourceWindow: Window): Window {
 export class TavernAdapter {
   readonly host: Window;
   private readonly disposers: Array<() => void> = [];
+  private userAvatarUrl: string | undefined;
+  private characterAvatarUrl: string | undefined;
+  private userAvatarId: string | undefined;
 
   constructor(sourceWindow: Window = window) {
     this.host = this.resolveHost(sourceWindow);
@@ -69,15 +73,28 @@ export class TavernAdapter {
   }
 
   async avatarUrls(): Promise<TavernAvatarUrls> {
+    if (
+      this.userAvatarUrl !== undefined &&
+      this.characterAvatarUrl !== undefined
+    ) {
+      return {
+        user: this.userAvatarUrl,
+        character: this.characterAvatarUrl,
+      };
+    }
     try {
       const context = await this.context();
-      return {
-        user: this.resolveUserAvatar(context),
-        character: this.resolveCharacterAvatar(context),
-      };
+      const user = this.resolveUserAvatar(context);
+      const character = this.resolveCharacterAvatar(context);
+      if (user) this.userAvatarUrl = user;
+      if (character) this.characterAvatarUrl = character;
     } catch {
-      return { user: '', character: '' };
+      // Leave missing URLs uncached so a panel mounted slightly later can retry.
     }
+    return {
+      user: this.userAvatarUrl ?? '',
+      character: this.characterAvatarUrl ?? '',
+    };
   }
 
   legacyPreserveAdventureSave(): boolean {
@@ -222,7 +239,10 @@ export class TavernAdapter {
         const event = events[eventName];
         if (event === undefined) continue;
         this.addEventDisposer(
-          eventOn(event, () => void handler(eventName)),
+          eventOn(event, (...args) => {
+            const payload = this.handleAvatarEvent(eventName, args);
+            void handler(eventName, payload);
+          }),
         );
       }
     }
@@ -320,19 +340,26 @@ export class TavernAdapter {
     const selectedPersona = document.querySelector<HTMLElement>(
       '#user_avatar_block .avatar-container.selected',
     );
-    const selectedImage = selectedPersona
-      ?.querySelector<HTMLImageElement>('img[src]')
-      ?.getAttribute('src');
-    const selectedImageUrl = this.safeAvatarUrl(selectedImage);
-    if (selectedImageUrl) return selectedImageUrl;
-
-    const selectedPersonaId = selectedPersona?.dataset.avatarId?.trim();
+    const selectedPersonaId =
+      this.userAvatarId ??
+      selectedPersona?.dataset.avatarId?.trim() ??
+      context.chatMetadata?.persona ??
+      context.powerUserSettings?.default_persona;
     const selectedThumbnail = this.thumbnailUrl(
       context,
       'persona',
       selectedPersonaId,
     );
-    if (selectedThumbnail) return selectedThumbnail;
+    if (selectedThumbnail) {
+      this.userAvatarId = selectedPersonaId;
+      return selectedThumbnail;
+    }
+
+    const selectedImage = selectedPersona
+      ?.querySelector<HTMLImageElement>('img[src]')
+      ?.getAttribute('src');
+    const selectedImageUrl = this.safeAvatarUrl(selectedImage);
+    if (selectedImageUrl) return selectedImageUrl;
 
     const messageImages = document.querySelectorAll<HTMLImageElement>(
       '.mes[is_user="true"] .avatar img[src]',
@@ -343,12 +370,7 @@ export class TavernAdapter {
     );
     if (messageImageUrl) return messageImageUrl;
 
-    return this.thumbnailUrl(
-      context,
-      'persona',
-      context.chatMetadata?.persona ??
-        context.powerUserSettings?.default_persona,
-    );
+    return '';
   }
 
   private resolveCharacterAvatar(context: TavernContext): string {
@@ -370,6 +392,14 @@ export class TavernAdapter {
       character?.avatar,
     );
     if (thumbnail) return thumbnail;
+
+    try {
+      const helper = this.host.getCharAvatarPath?.('current');
+      const helperUrl = this.safeAvatarUrl(helper);
+      if (helperUrl) return helperUrl;
+    } catch {
+      // Tavern Helper may not expose this optional convenience API.
+    }
 
     const messageImages = this.host.document.querySelectorAll<HTMLImageElement>(
       '.mes[is_user="false"] .avatar img[src]',
@@ -422,6 +452,35 @@ export class TavernAdapter {
     } catch {
       return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
     }
+  }
+
+  private handleAvatarEvent(
+    eventName: string,
+    args: unknown[],
+  ): TavernEventPayload | undefined {
+    if (eventName === 'CHAT_CHANGED') {
+      this.userAvatarUrl = undefined;
+      this.characterAvatarUrl = undefined;
+      this.userAvatarId = undefined;
+      return undefined;
+    }
+    if (eventName === 'PERSONA_CHANGED') {
+      const avatarId =
+        typeof args[0] === 'string' && args[0].trim()
+          ? args[0].trim()
+          : undefined;
+      this.userAvatarId = avatarId;
+      this.userAvatarUrl = undefined;
+      return avatarId ? { avatarId } : undefined;
+    }
+    if (eventName === 'PERSONA_UPDATED') {
+      this.userAvatarUrl = undefined;
+      return undefined;
+    }
+    if (eventName === 'CHARACTER_EDITED') {
+      this.characterAvatarUrl = undefined;
+    }
+    return undefined;
   }
 
   private cloneIfRecord(

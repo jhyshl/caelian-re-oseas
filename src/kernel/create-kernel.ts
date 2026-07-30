@@ -197,6 +197,11 @@ export class CaelianKernel {
         this.profileId,
       )) as QueryResultMap[K];
     }
+    if (name === 'market') {
+      return (await this.repository.marketState(
+        this.profileId,
+      )) as QueryResultMap[K];
+    }
     const snapshot = await this.repository.snapshot(this.profileId);
     if (name === 'inventory') {
       return snapshot.inventory as QueryResultMap[K];
@@ -273,6 +278,14 @@ export class CaelianKernel {
     eventName: string,
     payload?: TavernEventPayload,
   ): Promise<void> {
+    if (
+      eventName === 'PERSONA_CHANGED' ||
+      eventName === 'PERSONA_UPDATED' ||
+      eventName === 'CHARACTER_EDITED'
+    ) {
+      await this.events.emit('tavern.changed', { event: eventName });
+      return;
+    }
     if (
       (eventName === 'MESSAGE_UPDATED' ||
         eventName === 'MVU_VARIABLE_UPDATE_ENDED') &&
