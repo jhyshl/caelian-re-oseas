@@ -59,7 +59,7 @@ describe('MarketRepository integration', () => {
 
     await database.playerStates.update(profile.id, { gold: 100_000 });
     expect(
-      currentMarketSlotKey(new Date('2026-07-30T12:30:00+08:00')),
+      currentMarketSlotKey(new Date(2026, 6, 30, 12, 30)),
     ).toBe('2026-7-30-12');
     await repository.execute(profile.id, {
       id: 'market-buy-real-item',
@@ -83,7 +83,7 @@ describe('MarketRepository integration', () => {
   });
 
   it('购买装备时从旧版装备定义创建星级实例，不修改基础库', async () => {
-    const marketDate = new Date('2026-07-30T16:30:00+08:00');
+    const marketDate = new Date(2026, 6, 30, 16, 30);
     const database = new CaelianDatabase(
       'alpha',
       `caelian-alpha-market-equipment-${crypto.randomUUID()}`,
