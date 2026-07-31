@@ -127,6 +127,7 @@ function reset(): void {
 }
 
 function pointerDown(event: PointerEvent): void {
+  event.preventDefault();
   const element = event.currentTarget as HTMLElement;
   const rect = element.getBoundingClientRect();
   dragging.value = true;
@@ -143,6 +144,7 @@ function pointerDown(event: PointerEvent): void {
 
 function pointerMove(event: PointerEvent): void {
   if (!pointerStart) return;
+  event.preventDefault();
   draft.value = {
     ...draft.value,
     x: Math.min(
@@ -236,8 +238,10 @@ function handleImageError(): void {
               <div>
                 <img
                   v-if="activeSrc"
+                  class="avatar-source-image"
                   :src="activeSrc"
                   :alt="`${alt}完整原图`"
+                  style="object-fit: contain !important; object-position: 50% 50% !important; transform: none !important"
                   draggable="false"
                 />
                 <span v-else>{{ fallback }}</span>
@@ -349,9 +353,13 @@ function handleImageError(): void {
 
 .avatar-viewport img,
 .avatar-preview img {
-  width: 100%;
-  height: 100%;
-  display: block;
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  display: block !important;
   object-fit: cover;
   object-position: var(--ca-avatar-position, 50% 50%) !important;
   transform: scale(var(--ca-avatar-zoom, 1)) !important;
@@ -481,10 +489,15 @@ function handleImageError(): void {
 }
 
 .avatar-source-preview img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: contain;
+  position: static !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  display: block !important;
+  object-fit: contain !important;
+  object-position: 50% 50% !important;
+  transform: none !important;
   user-select: none;
 }
 

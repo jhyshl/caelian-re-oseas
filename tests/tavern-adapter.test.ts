@@ -324,6 +324,93 @@ describe('TavernAdapter', () => {
     });
   });
 
+  it('从聊天记录恢复当前 Persona 的完整原图而不是缩略图', async () => {
+    window.SillyTavern = {
+      getContext: () => ({
+        name1: '当前玩家',
+        chat: [
+          {
+            is_user: true,
+            force_avatar: 'User Avatars/current persona.png',
+          },
+        ],
+        powerUserSettings: {
+          default_persona: 'different-default.png',
+        },
+        getThumbnailUrl: (type, file) =>
+          `/thumbnail?type=${type}&file=${encodeURIComponent(file)}`,
+      }),
+    };
+
+    const adapter = new TavernAdapter(window);
+
+    await expect(adapter.avatarUrls()).resolves.toMatchObject({
+      user: new URL(
+        '/thumbnail?type=persona&file=current%20persona.png',
+        document.baseURI,
+      ).href,
+      userOriginal: new URL(
+        '/User Avatars/current%20persona.png',
+        document.baseURI,
+      ).href,
+    });
+  });
+
+  it('可从酒馆消息缩略图地址反查玩家 Persona 原图', async () => {
+    const message = document.createElement('div');
+    message.className = 'mes';
+    message.setAttribute('is_user', 'true');
+    message.innerHTML =
+      '<div class="avatar"><img src="/thumbnail?type=persona&amp;file=full-player.png"></div>';
+    document.body.appendChild(message);
+    window.SillyTavern = {
+      getContext: () => ({
+        powerUserSettings: { default_persona: 'default.png' },
+        getThumbnailUrl: (type, file) =>
+          `/thumbnail?type=${type}&file=${encodeURIComponent(file)}`,
+      }),
+    };
+
+    const adapter = new TavernAdapter(window);
+
+    await expect(adapter.avatarUrls()).resolves.toMatchObject({
+      userOriginal: new URL(
+        '/User Avatars/full-player.png',
+        document.baseURI,
+      ).href,
+    });
+    message.remove();
+  });
+
+  it('强制刷新玩家头像时不会继续复用旧 Persona ID', async () => {
+    let persona = 'first.png';
+    window.SillyTavern = {
+      getContext: () => ({
+        chatMetadata: { persona },
+        getThumbnailUrl: (type, file) =>
+          `/thumbnail?type=${type}&file=${encodeURIComponent(file)}`,
+      }),
+    };
+    const adapter = new TavernAdapter(window);
+
+    await expect(adapter.avatarUrls()).resolves.toMatchObject({
+      userOriginal: new URL(
+        '/User Avatars/first.png',
+        document.baseURI,
+      ).href,
+    });
+
+    persona = 'second.png';
+    await expect(
+      adapter.avatarUrls({ refresh: 'user' }),
+    ).resolves.toMatchObject({
+      userOriginal: new URL(
+        '/User Avatars/second.png',
+        document.baseURI,
+      ).href,
+    });
+  });
+
   it('优先从酒馆助手脚本运行窗口读取当前角色头像', async () => {
     window.SillyTavern = {
       getContext: () => ({

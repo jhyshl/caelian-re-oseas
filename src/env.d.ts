@@ -57,6 +57,9 @@ interface TavernContext {
     mes?: string;
     message?: string;
     content?: string;
+    is_user?: boolean;
+    isUser?: boolean;
+    force_avatar?: string;
   }>;
   characters?: Array<{
     name?: string;
@@ -67,6 +70,7 @@ interface TavernContext {
   };
   powerUserSettings?: {
     default_persona?: string;
+    personas?: Record<string, string>;
   };
   getThumbnailUrl?: (
     type: 'avatar' | 'persona',

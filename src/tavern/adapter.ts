@@ -87,6 +87,7 @@ export class TavernAdapter {
     if (options.refresh === 'all' || options.refresh === 'user') {
       this.userAvatarUrl = undefined;
       this.userAvatarOriginalUrl = undefined;
+      this.userAvatarId = undefined;
     }
     if (options.refresh === 'all' || options.refresh === 'character') {
       this.characterAvatarUrl = undefined;
@@ -512,14 +513,8 @@ export class TavernAdapter {
 
   private resolveUserAvatar(context: TavernContext): string {
     const document = this.host.document;
-    const selectedPersona = document.querySelector<HTMLElement>(
-      '#user_avatar_block .avatar-container.selected',
-    );
-    const selectedPersonaId =
-      this.userAvatarId ??
-      selectedPersona?.dataset.avatarId?.trim() ??
-      context.chatMetadata?.persona ??
-      context.powerUserSettings?.default_persona;
+    const selectedPersona = this.selectedPersonaElement();
+    const selectedPersonaId = this.resolveUserAvatarId(context);
     const selectedThumbnail = this.thumbnailUrl(
       context,
       'persona',
@@ -549,14 +544,8 @@ export class TavernAdapter {
   }
 
   private resolveUserAvatarOriginal(context: TavernContext): string {
-    const selectedPersona = this.host.document.querySelector<HTMLElement>(
-      '#user_avatar_block .avatar-container.selected',
-    );
-    const selectedPersonaId =
-      this.userAvatarId ??
-      selectedPersona?.dataset.avatarId?.trim() ??
-      context.chatMetadata?.persona ??
-      context.powerUserSettings?.default_persona;
+    const selectedPersona = this.selectedPersonaElement();
+    const selectedPersonaId = this.resolveUserAvatarId(context);
     const original = this.originalAvatarUrl(
       'persona',
       selectedPersonaId,
@@ -570,6 +559,127 @@ export class TavernAdapter {
         ?.querySelector<HTMLImageElement>('img[src]')
         ?.getAttribute('src'),
     );
+  }
+
+  private resolveUserAvatarId(context: TavernContext): string {
+    const selectedPersona = this.selectedPersonaElement();
+    const selectedImage = selectedPersona
+      ?.querySelector<HTMLImageElement>('img[src]')
+      ?.getAttribute('src');
+    const messageImages =
+      this.host.document.querySelectorAll<HTMLImageElement>(
+        '.mes[is_user="true"] .avatar img[src]',
+      );
+    const messageImage = messageImages.item(messageImages.length - 1);
+    const personas = context.powerUserSettings?.personas;
+    const matchingPersonaIds = personas
+      ? Object.entries(personas)
+          .filter(([, name]) => name?.trim() === context.name1?.trim())
+          .map(([avatarId]) => avatarId)
+      : [];
+    const candidates = [
+      this.userAvatarId,
+      context.chatMetadata?.persona,
+      selectedPersona?.dataset.avatarId,
+      selectedPersona
+        ?.querySelector<HTMLElement>('[data-avatar-id]')
+        ?.dataset.avatarId,
+      this.latestChatUserAvatarId(context),
+      this.userAvatarIdFromValue(selectedImage),
+      this.userAvatarIdFromValue(messageImage?.getAttribute('src')),
+      matchingPersonaIds.length === 1
+        ? matchingPersonaIds[0]
+        : undefined,
+      context.powerUserSettings?.default_persona,
+    ];
+    for (const candidate of candidates) {
+      const avatarId = this.userAvatarIdFromValue(candidate);
+      if (!avatarId) continue;
+      this.userAvatarId = avatarId;
+      return avatarId;
+    }
+    return '';
+  }
+
+  private selectedPersonaElement(): HTMLElement | null {
+    const document = this.host.document;
+    const direct = document.querySelector<HTMLElement>(
+      [
+        '#user_avatar_block .avatar-container.selected',
+        '#user_avatar_block .avatar-container.current',
+        '#user_avatar_block .avatar-container[aria-selected="true"]',
+        '#user_avatar_block .avatar-container[aria-current="true"]',
+      ].join(','),
+    );
+    if (direct) return direct;
+    return (
+      document
+        .querySelector<HTMLElement>(
+          [
+            '#user_avatar_block .avatar.selected',
+            '#user_avatar_block [data-avatar-id][aria-selected="true"]',
+            '#user_avatar_block [data-avatar-id][aria-current="true"]',
+          ].join(','),
+        )
+        ?.closest<HTMLElement>('.avatar-container') ?? null
+    );
+  }
+
+  private latestChatUserAvatarId(context: TavernContext): string {
+    const chat = context.chat ?? [];
+    for (let index = chat.length - 1; index >= 0; index -= 1) {
+      const message = chat[index];
+      const avatarId = this.userAvatarIdFromValue(
+        message?.force_avatar,
+      );
+      if (!avatarId) continue;
+      if (
+        message?.is_user === true ||
+        message?.isUser === true ||
+        /(?:^|\/)User(?:%20| )Avatars\//i.test(
+          message?.force_avatar ?? '',
+        )
+      ) {
+        return avatarId;
+      }
+    }
+    return '';
+  }
+
+  private userAvatarIdFromValue(
+    value: string | null | undefined,
+  ): string {
+    const source = value?.trim();
+    if (!source || /^data:image\//i.test(source) || source.startsWith('blob:')) {
+      return '';
+    }
+    try {
+      const url = new URL(source, this.host.document.baseURI);
+      const thumbnailType = url.searchParams.get('type');
+      const thumbnailFile = url.searchParams.get('file');
+      if (thumbnailType === 'persona' && thumbnailFile?.trim()) {
+        return thumbnailFile.trim();
+      }
+      const match = url.pathname.match(
+        /(?:^|\/)User(?:%20| )Avatars\/(.+)$/i,
+      );
+      if (match?.[1]) return this.decodeAvatarId(match[1]);
+      if (/^(?:https?:|\/)/i.test(source)) return '';
+    } catch {
+      // Plain avatar IDs are handled below.
+    }
+    const match = source.match(
+      /(?:^|\/)User(?:%20| )Avatars\/(.+)$/i,
+    );
+    return this.decodeAvatarId(match?.[1] ?? source);
+  }
+
+  private decodeAvatarId(value: string): string {
+    try {
+      return decodeURIComponent(value).trim();
+    } catch {
+      return value.trim();
+    }
   }
 
   private resolveCharacterAvatar(context: TavernContext): string {

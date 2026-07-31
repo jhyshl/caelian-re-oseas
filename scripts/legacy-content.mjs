@@ -287,6 +287,42 @@ function verify(sourcePath) {
   printSummary(manifest);
 }
 
+function verifyGeneratedContent() {
+  const manifestPath = join(
+    OUTPUT_ROOT,
+    'legacy-content-manifest.json',
+  );
+  if (!existsSync(manifestPath)) {
+    throw new Error('旧版内容清单缺失，无法核对生成数据');
+  }
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const errors = [];
+  for (const [fileName, expected] of Object.entries(
+    manifest.files ?? {},
+  )) {
+    const outputPath = join(OUTPUT_ROOT, fileName);
+    if (!existsSync(outputPath)) {
+      errors.push(`${fileName}: 文件缺失`);
+      continue;
+    }
+    const actual = JSON.parse(readFileSync(outputPath, 'utf8'));
+    const actualJson = stableJson(actual);
+    if (sha256(actualJson) !== expected.sha256) {
+      errors.push(`${fileName}: 内容哈希与清单不一致`);
+    }
+    if (countEntries(actual) !== expected.entries) {
+      errors.push(`${fileName}: 条目数量与清单不一致`);
+    }
+  }
+  if (errors.length > 0) {
+    throw new Error(`生成数据完整性核对失败：\n- ${errors.join('\n- ')}`);
+  }
+  console.log(
+    `核对通过：${Object.keys(manifest.files ?? {}).length} 个分类数据文件与已审计清单完全一致。`,
+  );
+  printSummary(manifest);
+}
+
 function printSummary(manifest) {
   const selected = [
     'cards/cards.json',
@@ -305,14 +341,21 @@ function printSummary(manifest) {
 }
 
 const mode = process.argv[2] ?? 'verify';
-const sourcePath = resolve(
-  process.argv[3] ?? process.env.CAELIAN_LEGACY_SOURCE ?? DEFAULT_SOURCE,
-);
+const explicitSource =
+  process.argv[3] ?? process.env.CAELIAN_LEGACY_SOURCE;
+const sourcePath = resolve(explicitSource ?? DEFAULT_SOURCE);
 
 if (mode === 'extract') {
   extract(sourcePath);
 } else if (mode === 'verify') {
-  verify(sourcePath);
+  if (explicitSource && !existsSync(sourcePath)) {
+    throw new Error(`指定的原脚本不存在：${sourcePath}`);
+  }
+  if (existsSync(sourcePath)) {
+    verify(sourcePath);
+  } else {
+    verifyGeneratedContent();
+  }
 } else {
   throw new Error('用法：node scripts/legacy-content.mjs <extract|verify> [原脚本路径]');
 }

@@ -187,6 +187,7 @@ describe('CaelianKernel integration', () => {
   it('玩家面板和凯利安状态栏显示酒馆当前头像', async () => {
     const databaseName = `caelian-alpha-avatars-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
+    let persona = 'stale-player.png';
     window.SillyTavern = {
       getContext: () => ({
         chatId: 'avatar-test-chat',
@@ -194,7 +195,7 @@ describe('CaelianKernel integration', () => {
         name1: '测试玩家',
         name2: '凯利安',
         characters: [{ name: '凯利安', avatar: 'caelian.png' }],
-        chatMetadata: { persona: 'player.png' },
+        chatMetadata: { persona },
         getThumbnailUrl: (type, file) => `/avatars/${type}/${file}`,
       }),
     };
@@ -207,6 +208,8 @@ describe('CaelianKernel integration', () => {
     });
 
     await kernel.initialize();
+    await kernel.api.getAvatarUrls();
+    persona = 'player.png';
     await kernel.api.openPanel('character');
     await kernel.api.openPanel('affinity');
 
@@ -246,6 +249,12 @@ describe('CaelianKernel integration', () => {
         '.avatar-source-preview img',
       )?.src,
     ).toBe(new URL('/characters/caelian.png', document.baseURI).href);
+    const sourcePreview = document.querySelector<HTMLImageElement>(
+      '.avatar-source-preview img',
+    );
+    expect(sourcePreview?.style.getPropertyValue('object-fit')).toBe(
+      'contain',
+    );
     const thumbnail = crest?.querySelector<HTMLImageElement>('img');
     const editorInputs = Array.from(
       document.querySelectorAll<HTMLInputElement>(
@@ -253,6 +262,67 @@ describe('CaelianKernel integration', () => {
       ),
     );
     expect(editorInputs).toHaveLength(3);
+    const cropPreview = document.querySelector<HTMLElement>(
+      '.avatar-preview',
+    );
+    expect(cropPreview).not.toBeNull();
+    if (cropPreview) {
+      vi.spyOn(cropPreview, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        right: 200,
+        bottom: 200,
+        width: 200,
+        height: 200,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+      cropPreview.setPointerCapture = vi.fn();
+      cropPreview.dispatchEvent(
+        new MouseEvent('pointerdown', {
+          bubbles: true,
+          clientX: 100,
+          clientY: 100,
+        }),
+      );
+      cropPreview.dispatchEvent(
+        new MouseEvent('pointermove', {
+          bubbles: true,
+          clientX: 60,
+          clientY: 140,
+        }),
+      );
+      cropPreview.dispatchEvent(
+        new MouseEvent('pointerup', { bubbles: true }),
+      );
+    }
+    await expect
+      .poll(() => ({
+        zoom: document
+          .querySelector<HTMLImageElement>('.avatar-preview img')
+          ?.style.getPropertyValue('--ca-avatar-zoom'),
+        position: document
+          .querySelector<HTMLImageElement>('.avatar-preview img')
+          ?.style.getPropertyValue('--ca-avatar-position'),
+      }))
+      .toEqual({ zoom: '1', position: '70% 30%' });
+    if (editorInputs[1]) {
+      editorInputs[1].value = '18';
+      editorInputs[1].dispatchEvent(
+        new Event('input', { bubbles: true }),
+      );
+    }
+    await expect
+      .poll(() => ({
+        zoom: document
+          .querySelector<HTMLImageElement>('.avatar-preview img')
+          ?.style.getPropertyValue('--ca-avatar-zoom'),
+        position: document
+          .querySelector<HTMLImageElement>('.avatar-preview img')
+          ?.style.getPropertyValue('--ca-avatar-position'),
+      }))
+      .toEqual({ zoom: '1', position: '18% 30%' });
     if (editorInputs[0]) {
       editorInputs[0].value = '1.8';
       editorInputs[0].dispatchEvent(

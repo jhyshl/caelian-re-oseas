@@ -9,6 +9,16 @@ const MAX_VISIBLE_RELEASES = 5;
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.22',
+    label: 'Alpha 22',
+    releasedAt: '2026-07-31',
+    changes: [
+      '修复玩家 User Persona 完整头像读取：即使当前 Persona 未锁定、头像列表未展开，也会从切换事件、聊天记录和正式缩略图地址恢复真实原图；每次打开玩家面板会重新核对 Persona，默认 Persona 与消息缩略图只作为后续兜底。',
+      '修复头像编辑器在 100% 大小时拖动取景不生效的问题；水平、垂直拖动会立即更新面板取景，不需要先放大图片。',
+      '“完整原图”预览与面板取景样式改为独立隔离，酒馆主题或状态栏的全局头像样式不再把完整预览二次裁切。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.21',
     label: 'Alpha 21',
     releasedAt: '2026-07-31',

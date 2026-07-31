@@ -26,6 +26,7 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - run: npm run content:verify
       - name: Restore previous immutable Pages builds
         if: github.event_name != 'pull_request'
         env:

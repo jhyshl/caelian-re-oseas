@@ -63,8 +63,10 @@ async function refreshState() {
   if (!snapshot.value.player.created) professionDialog.value = 'create';
 }
 
-async function refreshAvatar() {
-  const next = await props.context.api.getAvatarUrls();
+async function refreshAvatar(force = false) {
+  const next = await props.context.api.getAvatarUrls(
+    force ? { refresh: 'user' } : undefined,
+  );
   playerAvatarUrl.value = next.userOriginal || next.user;
   playerAvatarFallbackUrl.value =
     next.userOriginal && next.userOriginal !== next.user
@@ -73,7 +75,7 @@ async function refreshAvatar() {
 }
 
 async function refresh() {
-  await Promise.all([refreshState(), refreshAvatar()]);
+  await Promise.all([refreshState(), refreshAvatar(true)]);
 }
 
 function handlePlayerAvatarError() {
