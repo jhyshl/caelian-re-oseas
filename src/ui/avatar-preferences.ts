@@ -10,6 +10,22 @@ const DEFAULT_PREFERENCE: AvatarViewPreference = {
   y: 50,
 };
 
+type AvatarPreferenceStorage = Pick<
+  Storage,
+  'getItem' | 'setItem' | 'removeItem'
+>;
+
+function preferenceStorage(
+  storage?: AvatarPreferenceStorage,
+): AvatarPreferenceStorage | undefined {
+  if (storage) return storage;
+  try {
+    return globalThis.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -30,9 +46,12 @@ export function avatarPreferenceKey(preferenceId: string): string {
 
 export function readAvatarPreference(
   preferenceId: string,
+  storage?: AvatarPreferenceStorage,
 ): AvatarViewPreference {
   try {
-    const stored = localStorage.getItem(avatarPreferenceKey(preferenceId));
+    const stored = preferenceStorage(storage)?.getItem(
+      avatarPreferenceKey(preferenceId),
+    );
     if (!stored) return { ...DEFAULT_PREFERENCE };
     return normalizeAvatarPreference(
       JSON.parse(stored) as Partial<AvatarViewPreference>,
@@ -45,10 +64,11 @@ export function readAvatarPreference(
 export function writeAvatarPreference(
   preferenceId: string,
   preference: AvatarViewPreference,
+  storage?: AvatarPreferenceStorage,
 ): AvatarViewPreference {
   const normalized = normalizeAvatarPreference(preference);
   try {
-    localStorage.setItem(
+    preferenceStorage(storage)?.setItem(
       avatarPreferenceKey(preferenceId),
       JSON.stringify(normalized),
     );
@@ -60,9 +80,12 @@ export function writeAvatarPreference(
 
 export function resetAvatarPreference(
   preferenceId: string,
+  storage?: AvatarPreferenceStorage,
 ): AvatarViewPreference {
   try {
-    localStorage.removeItem(avatarPreferenceKey(preferenceId));
+    preferenceStorage(storage)?.removeItem(
+      avatarPreferenceKey(preferenceId),
+    );
   } catch {
     // Ignore restricted browser storage.
   }

@@ -306,7 +306,11 @@ export class CaelianKernel {
     if (eventName === 'CHAT_CHANGED') {
       await this.activateCurrentProfile();
     }
-    await this.ingestMvuNarrative(payload?.mvuData);
+    await this.ingestMvuNarrative(
+      payload?.mvuData,
+      payload?.managerMvuData,
+      payload?.previousMvuData,
+    );
     await this.scanCurrentAchievements();
     if (eventName !== 'MVU_VARIABLE_UPDATE_ENDED') {
       await this.syncProjection();
@@ -413,18 +417,35 @@ export class CaelianKernel {
 
   private async ingestMvuNarrative(
     eventMvuData?: Record<string, unknown>,
+    managerMvuData?: Record<string, unknown>,
+    previousMvuData?: Record<string, unknown>,
   ): Promise<void> {
     if (!this.profileId) return;
-    const mvuData = eventMvuData ?? this.adapter.readMvuData();
+    const fallbackMvuData =
+      managerMvuData ?? this.adapter.readMvuData() ?? undefined;
+    const eventPatch = this.extractNormalizedNarrative(eventMvuData);
+    const previousPatch = this.extractNormalizedNarrative(previousMvuData);
+    const fallbackPatch = this.extractNormalizedNarrative(fallbackMvuData);
+    const eventRepeatsPrevious =
+      eventPatch !== null &&
+      previousPatch !== null &&
+      this.hashJson(eventPatch) === this.hashJson(previousPatch);
+    const fallbackDiffersFromPrevious =
+      fallbackPatch !== null &&
+      (previousPatch === null ||
+        this.hashJson(fallbackPatch) !== this.hashJson(previousPatch));
+    const useFallback =
+      eventPatch === null ||
+      (eventRepeatsPrevious && fallbackDiffersFromPrevious);
+    const mvuData = useFallback ? fallbackMvuData : eventMvuData;
+    const patch = useFallback ? fallbackPatch : eventPatch;
     if (!mvuData) return;
 
     if (hasLegacyMvuState(mvuData)) {
       await this.repository.archiveLegacyMvu(this.profileId, mvuData);
     }
 
-    const extracted = extractMvuNarrativePatch(mvuData);
-    if (!extracted) return;
-    const patch = normalizeNarrativePatch(extracted);
+    if (!patch) return;
     const snapshot = await this.repository.snapshot(this.profileId);
     const changed = this.changedNarrativePatch(patch, snapshot);
     if (!changed) return;
@@ -439,6 +460,14 @@ export class CaelianKernel {
     } finally {
       this.mvuIngestDepth -= 1;
     }
+  }
+
+  private extractNormalizedNarrative(
+    mvuData?: Record<string, unknown>,
+  ): MvuNarrativePatch | null {
+    if (!mvuData) return null;
+    const extracted = extractMvuNarrativePatch(mvuData);
+    return extracted ? normalizeNarrativePatch(extracted) : null;
   }
 
   private changedNarrativePatch(

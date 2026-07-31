@@ -70,6 +70,7 @@ afterEach(() => {
   delete window.SillyTavern;
   delete window.eventOn;
   delete window.tavern_events;
+  delete window.waitGlobalInitialized;
   delete window.getCharAvatarPath;
   vi.useRealTimers();
   document.querySelector('#user_avatar_block')?.remove();
@@ -285,6 +286,7 @@ describe('TavernAdapter', () => {
     expect(listener).toHaveBeenCalledWith(
       'MVU_VARIABLE_UPDATE_ENDED',
       {
+        managerMvuData: {},
         mvuData: latest,
         previousMvuData: first,
       },
@@ -336,6 +338,86 @@ describe('TavernAdapter', () => {
     );
     adapter.unsubscribeAll();
     expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('同时监听父窗口变量管理器事件并在事件无参数时重读已保存变量', async () => {
+    vi.useFakeTimers();
+    window.SillyTavern = {
+      getContext: () => ({ chatId: 'host-variable-manager' }),
+    };
+    const hostHandlers = new Map<
+      unknown,
+      (...args: unknown[]) => void
+    >();
+    window.eventOn = vi.fn((event, handler) => {
+      hostHandlers.set(event, handler);
+      return { stop: () => hostHandlers.delete(event) };
+    });
+    window.tavern_events = {};
+    let hostMvuData: Record<string, unknown> = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            companion: { affinity: 18, mood: '平静' },
+          },
+        },
+      },
+    };
+    window.Mvu = {
+      events: { VARIABLE_UPDATE_ENDED: 'host-mvu-ended' },
+      getMvuData: () => hostMvuData,
+      replaceMvuData: vi.fn(),
+    };
+
+    const runtimeHandlers = new Map<
+      unknown,
+      (...args: unknown[]) => void
+    >();
+    const runtime = {
+      parent: window,
+      eventOn: vi.fn((event, handler) => {
+        runtimeHandlers.set(event, handler);
+        return { stop: () => runtimeHandlers.delete(event) };
+      }),
+      tavern_events: {},
+      Mvu: {
+        events: { VARIABLE_UPDATE_ENDED: 'runtime-mvu-ended' },
+        getMvuData: () => ({
+          stat_data: {
+            caelian: {
+              narrative: {
+                companion: { affinity: 1, mood: '旧运行窗口' },
+              },
+            },
+          },
+        }),
+        replaceMvuData: vi.fn(),
+      },
+    } as unknown as Window;
+    const listener = vi.fn();
+    const adapter = new TavernAdapter(runtime);
+    adapter.subscribe(listener);
+
+    expect(hostHandlers.has('host-mvu-ended')).toBe(true);
+    expect(runtimeHandlers.has('runtime-mvu-ended')).toBe(true);
+    hostMvuData = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            companion: { affinity: 64, mood: '变量管理器已保存' },
+          },
+        },
+      },
+    };
+    hostHandlers.get('host-mvu-ended')?.();
+    await vi.advanceTimersByTimeAsync(180);
+
+    expect(listener).toHaveBeenCalledWith(
+      'MVU_VARIABLE_UPDATE_ENDED',
+      expect.objectContaining({ managerMvuData: hostMvuData }),
+    );
+    expect(adapter.readMvuData()).toEqual(hostMvuData);
+    adapter.unsubscribeAll();
   });
 
   it('变量管理器晚于 Alpha 初始化时会自动补绑更新事件', async () => {

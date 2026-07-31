@@ -1,9 +1,9 @@
 <script setup lang="ts">
-/* global HTMLElement, PointerEvent */
+/* global HTMLElement, PointerEvent, Storage */
 import { computed, ref, useAttrs, watch } from 'vue';
 import {
+  normalizeAvatarPreference,
   readAvatarPreference,
-  resetAvatarPreference,
   writeAvatarPreference,
   type AvatarViewPreference,
 } from '@/ui/avatar-preferences';
@@ -19,12 +19,34 @@ const emit = defineEmits<{ imageError: []; imageLoad: [] }>();
 defineOptions({ inheritAttrs: false });
 const attrs = useAttrs();
 
+function storage(): Storage | undefined {
+  if (
+    props.teleportTarget &&
+    typeof props.teleportTarget !== 'string'
+  ) {
+    try {
+      return (
+        props.teleportTarget.ownerDocument.defaultView?.localStorage ??
+        undefined
+      );
+    } catch {
+      return undefined;
+    }
+  }
+  try {
+    return globalThis.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+
 const saved = ref<AvatarViewPreference>(
-  readAvatarPreference(props.preferenceId),
+  readAvatarPreference(props.preferenceId, storage()),
 );
 const draft = ref<AvatarViewPreference>({ ...saved.value });
 const open = ref(false);
 const dragging = ref(false);
+const saveError = ref('');
 let pointerStart:
   | {
       x: number;
@@ -37,43 +59,63 @@ let pointerStart:
   | undefined;
 
 watch(
-  () => props.preferenceId,
-  (preferenceId) => {
-    saved.value = readAvatarPreference(preferenceId);
+  () => [props.preferenceId, props.teleportTarget] as const,
+  ([preferenceId]) => {
+    saved.value = readAvatarPreference(preferenceId, storage());
     draft.value = { ...saved.value };
   },
 );
 
-const thumbnailStyle = computed(() => imageStyle(saved.value));
+const thumbnailStyle = computed(() =>
+  imageStyle(open.value ? draft.value : saved.value),
+);
 const previewStyle = computed(() => imageStyle(draft.value));
 
-function imageStyle(preference: AvatarViewPreference) {
+function imageStyle(
+  preference: AvatarViewPreference,
+): Record<string, string> {
   return {
-    objectPosition: `${preference.x}% ${preference.y}%`,
-    transform: `scale(${preference.zoom})`,
-    transformOrigin: `${preference.x}% ${preference.y}%`,
+    '--ca-avatar-position': `${preference.x}% ${preference.y}%`,
+    '--ca-avatar-origin': `${preference.x}% ${preference.y}%`,
+    '--ca-avatar-zoom': String(preference.zoom),
   };
 }
 
 function showEditor(): void {
   draft.value = { ...saved.value };
+  saveError.value = '';
   open.value = true;
 }
 
 function closeEditor(): void {
   open.value = false;
   dragging.value = false;
+  saveError.value = '';
   pointerStart = undefined;
 }
 
 function save(): void {
-  saved.value = writeAvatarPreference(props.preferenceId, draft.value);
+  const next = writeAvatarPreference(
+    props.preferenceId,
+    draft.value,
+    storage(),
+  );
+  const persisted = readAvatarPreference(
+    props.preferenceId,
+    storage(),
+  );
+  if (JSON.stringify(next) !== JSON.stringify(persisted)) {
+    saveError.value = '浏览器阻止了本地保存，请检查站点存储权限。';
+    return;
+  }
+  saved.value = next;
+  draft.value = { ...next };
   closeEditor();
 }
 
 function reset(): void {
-  saved.value = resetAvatarPreference(props.preferenceId);
-  draft.value = { ...saved.value };
+  draft.value = normalizeAvatarPreference();
+  saveError.value = '';
 }
 
 function pointerDown(event: PointerEvent): void {
@@ -223,7 +265,9 @@ function pointerUp(): void {
 
           <footer>
             <button type="button" class="ca-button" @click="reset">恢复默认</button>
-            <span></span>
+            <span class="avatar-save-status" role="status">
+              {{ saveError }}
+            </span>
             <button type="button" class="ca-button" @click="closeEditor">
               取消
             </button>
@@ -271,7 +315,12 @@ function pointerUp(): void {
   height: 100%;
   display: block;
   object-fit: cover;
-  transition: transform 160ms ease;
+  object-position: var(--ca-avatar-position, 50% 50%) !important;
+  transform: scale(var(--ca-avatar-zoom, 1)) !important;
+  transform-origin: var(--ca-avatar-origin, 50% 50%) !important;
+  transition:
+    object-position 120ms ease,
+    transform 120ms ease;
   user-select: none;
 }
 
@@ -425,6 +474,12 @@ function pointerUp(): void {
 
 .avatar-editor footer > span {
   flex: 1;
+}
+
+.avatar-save-status {
+  color: #ef9c91;
+  font-size: 10px;
+  line-height: 1.35;
 }
 
 @media (max-width: 480px) {

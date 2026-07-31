@@ -29,4 +29,30 @@ describe('头像显示偏好', () => {
       y: 50,
     });
   });
+
+  it('可明确保存到酒馆父窗口提供的本地存储', () => {
+    const values = new Map<string, string>();
+    const hostStorage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+      removeItem: (key: string) => {
+        values.delete(key);
+      },
+    };
+
+    writeAvatarPreference(
+      'caelian',
+      { zoom: 2.2, x: 18, y: 82 },
+      hostStorage,
+    );
+
+    expect(readAvatarPreference('caelian', hostStorage)).toEqual({
+      zoom: 2.2,
+      x: 18,
+      y: 82,
+    });
+    expect(localStorage.getItem(avatarPreferenceKey('caelian'))).toBeNull();
+  });
 });

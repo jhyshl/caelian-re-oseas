@@ -12,6 +12,7 @@ import {
 
 export interface TavernEventPayload {
   mvuData?: Record<string, unknown>;
+  managerMvuData?: Record<string, unknown>;
   previousMvuData?: Record<string, unknown>;
   avatarId?: string;
 }
@@ -279,72 +280,155 @@ export class TavernAdapter {
       'PERSONA_UPDATED',
       'CHARACTER_EDITED',
     ] as const;
-    const boundTavernEvents = new Set<string>();
-    let mvuEventBound = false;
+    const boundTavernEvents: Array<{
+      eventOn: NonNullable<Window['eventOn']>;
+      event: unknown;
+    }> = [];
+    const boundMvuEvents: Array<{
+      eventOn: NonNullable<Window['eventOn']>;
+      event: unknown;
+    }> = [];
     let debounceTimer: number | undefined;
     let retryTimer: number | undefined;
     let cancelled = false;
     let pendingPayload: TavernEventPayload | undefined;
 
-    const bindAvailableEvents = (): boolean => {
-      if (cancelled) return false;
-      const eventOn = this.resolveEventOnApi();
-      if (typeof eventOn !== 'function') return false;
+    const hasBinding = (
+      bindings: Array<{
+        eventOn: NonNullable<Window['eventOn']>;
+        event: unknown;
+      }>,
+      eventOn: NonNullable<Window['eventOn']>,
+      event: unknown,
+    ): boolean =>
+      bindings.some(
+        (binding) =>
+          binding.eventOn === eventOn && binding.event === event,
+      );
 
-      const events = this.resolveTavernEventsApi();
-      if (events) {
-        for (const eventName of tavernEventNames) {
-          if (boundTavernEvents.has(eventName)) continue;
-          const event = events[eventName];
-          if (event === undefined) continue;
-          this.addEventDisposer(
-            eventOn(event, (...args) => {
-              const payload = this.handleAvatarEvent(eventName, args);
-              void handler(eventName, payload);
-            }),
-          );
-          boundTavernEvents.add(eventName);
+    const eventOnApis = (): Array<NonNullable<Window['eventOn']>> => {
+      const candidates = this.apiScopes().flatMap((scope) =>
+        typeof scope.eventOn === 'function' ? [scope.eventOn] : [],
+      );
+      const lexical = this.resolveLexicalEventOnApi();
+      if (lexical) candidates.push(lexical);
+      return candidates.filter(
+        (candidate, index) => candidates.indexOf(candidate) === index,
+      );
+    };
+
+    const tavernEventApis = (): Array<Record<string, unknown>> => {
+      const candidates = this.apiScopes().flatMap((scope) =>
+        scope.tavern_events ? [scope.tavern_events] : [],
+      );
+      const lexical = this.resolveLexicalTavernEventsApi();
+      if (lexical) candidates.push(lexical);
+      return candidates.filter(
+        (candidate, index) => candidates.indexOf(candidate) === index,
+      );
+    };
+
+    const mvuEventApis = (): unknown[] => {
+      const candidates = this.mvuApis().flatMap((mvu) => {
+        const event = mvu.events?.VARIABLE_UPDATE_ENDED;
+        return event === undefined ? [] : [event];
+      });
+      return candidates.filter(
+        (candidate, index) => candidates.indexOf(candidate) === index,
+      );
+    };
+
+    const queueMvuRefresh = (
+      variables: unknown,
+      variablesBeforeUpdate: unknown,
+    ): void => {
+      pendingPayload = {
+        mvuData: this.cloneIfRecord(variables),
+        previousMvuData: this.cloneIfRecord(variablesBeforeUpdate),
+      };
+      if (debounceTimer !== undefined) {
+        this.host.clearTimeout(debounceTimer);
+      }
+      debounceTimer = this.host.setTimeout(() => {
+        debounceTimer = undefined;
+        const payload = pendingPayload ?? {};
+        pendingPayload = undefined;
+        const managerMvuData = this.readMvuData();
+        if (managerMvuData) payload.managerMvuData = managerMvuData;
+        void handler('MVU_VARIABLE_UPDATE_ENDED', payload);
+      }, 180);
+    };
+
+    const bindAvailableEvents = (): void => {
+      if (cancelled) return;
+      const eventOns = eventOnApis();
+
+      for (const eventOn of eventOns) {
+        for (const events of tavernEventApis()) {
+          for (const eventName of tavernEventNames) {
+            const event = events[eventName];
+            if (
+              event === undefined ||
+              hasBinding(boundTavernEvents, eventOn, event)
+            ) {
+              continue;
+            }
+            try {
+              this.addEventDisposer(
+                eventOn(event, (...args) => {
+                  const payload = this.handleAvatarEvent(eventName, args);
+                  void handler(eventName, payload);
+                }),
+              );
+              boundTavernEvents.push({ eventOn, event });
+            } catch {
+              // Some helper frames expose event tokens owned by another bus.
+            }
+          }
         }
       }
 
-      const mvuEvent =
-        this.resolveMvuApi()?.events?.VARIABLE_UPDATE_ENDED;
-      if (!mvuEventBound && mvuEvent !== undefined) {
-        const possibleDisposer = eventOn(
-          mvuEvent,
-          (variables, variablesBeforeUpdate) => {
-            pendingPayload = {
-              mvuData: this.cloneIfRecord(variables),
-              previousMvuData: this.cloneIfRecord(variablesBeforeUpdate),
-            };
-            if (debounceTimer !== undefined) {
-              this.host.clearTimeout(debounceTimer);
-            }
-            debounceTimer = this.host.setTimeout(() => {
-              debounceTimer = undefined;
-              const payload = pendingPayload;
-              pendingPayload = undefined;
-              void handler('MVU_VARIABLE_UPDATE_ENDED', payload);
-            }, 180);
-          },
-        );
-        this.addEventDisposer(possibleDisposer);
-        mvuEventBound = true;
+      for (const eventOn of eventOns) {
+        for (const event of mvuEventApis()) {
+          if (hasBinding(boundMvuEvents, eventOn, event)) continue;
+          try {
+            this.addEventDisposer(eventOn(event, queueMvuRefresh));
+            boundMvuEvents.push({ eventOn, event });
+          } catch {
+            // Keep probing the matching parent/runtime event bus.
+          }
+        }
       }
-      return mvuEventBound;
     };
 
-    const retryDeadline = Date.now() + 15_000;
+    const retryStartedAt = Date.now();
     const retryBinding = (): void => {
       retryTimer = undefined;
-      if (cancelled || bindAvailableEvents()) return;
-      if (Date.now() >= retryDeadline) return;
-      retryTimer = this.host.setTimeout(retryBinding, 250);
+      if (cancelled) return;
+      bindAvailableEvents();
+      const elapsed = Date.now() - retryStartedAt;
+      retryTimer = this.host.setTimeout(
+        retryBinding,
+        elapsed < 15_000 ? 250 : 5_000,
+      );
     };
 
-    if (!bindAvailableEvents()) {
-      retryTimer = this.host.setTimeout(retryBinding, 250);
-      const waitForMvu = this.resolveWaitGlobalInitializedApi();
+    bindAvailableEvents();
+    retryTimer = this.host.setTimeout(retryBinding, 250);
+    const waitForMvuApis = this.apiScopes()
+      .flatMap((scope) =>
+        typeof scope.waitGlobalInitialized === 'function'
+          ? [scope.waitGlobalInitialized]
+          : [],
+      );
+    const lexicalWaitForMvu =
+      this.resolveLexicalWaitGlobalInitializedApi();
+    if (lexicalWaitForMvu) waitForMvuApis.push(lexicalWaitForMvu);
+    const uniqueWaitForMvuApis = waitForMvuApis.filter(
+        (candidate, index, candidates) =>
+          candidates.indexOf(candidate) === index,
+      );
+    for (const waitForMvu of uniqueWaitForMvuApis) {
       if (typeof waitForMvu === 'function') {
         void Promise.resolve(waitForMvu('Mvu'))
           .catch(() => undefined)
@@ -428,12 +512,11 @@ export class TavernAdapter {
   private apiScopes(): Window[] {
     return this.runtime === this.host
       ? [this.host]
-      : [this.runtime, this.host];
+      : [this.host, this.runtime];
   }
 
   private resolveMvuApi(): MvuLike | undefined {
-    for (const scope of this.apiScopes()) {
-      const mvu = scope.Mvu;
+    for (const mvu of this.mvuApis()) {
       if (
         mvu &&
         typeof mvu.getMvuData === 'function' &&
@@ -445,27 +528,55 @@ export class TavernAdapter {
     return undefined;
   }
 
-  private resolveEventOnApi(): Window['eventOn'] {
-    for (const scope of this.apiScopes()) {
-      if (typeof scope.eventOn === 'function') return scope.eventOn;
-    }
-    return undefined;
+  private mvuApis(): MvuLike[] {
+    const candidates = this.apiScopes().flatMap((scope) =>
+      scope.Mvu ? [scope.Mvu] : [],
+    );
+    const lexical = this.resolveLexicalMvuApi();
+    if (lexical) candidates.push(lexical);
+    return candidates.filter(
+      (candidate, index) => candidates.indexOf(candidate) === index,
+    );
   }
 
-  private resolveTavernEventsApi(): Record<string, unknown> | undefined {
-    for (const scope of this.apiScopes()) {
-      if (scope.tavern_events) return scope.tavern_events;
+  private resolveLexicalMvuApi(): MvuLike | undefined {
+    try {
+      return typeof Mvu !== 'undefined' ? Mvu : undefined;
+    } catch {
+      return undefined;
     }
-    return undefined;
   }
 
-  private resolveWaitGlobalInitializedApi(): Window['waitGlobalInitialized'] {
-    for (const scope of this.apiScopes()) {
-      if (typeof scope.waitGlobalInitialized === 'function') {
-        return scope.waitGlobalInitialized;
-      }
+  private resolveLexicalEventOnApi(): Window['eventOn'] {
+    try {
+      return typeof eventOn === 'function' ? eventOn : undefined;
+    } catch {
+      return undefined;
     }
-    return undefined;
+  }
+
+  private resolveLexicalTavernEventsApi():
+    | Record<string, unknown>
+    | undefined {
+    try {
+      return typeof tavern_events !== 'undefined'
+        ? tavern_events
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private resolveLexicalWaitGlobalInitializedApi():
+    | Window['waitGlobalInitialized']
+    | undefined {
+    try {
+      return typeof waitGlobalInitialized === 'function'
+        ? waitGlobalInitialized
+        : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private resolveUserAvatar(context: TavernContext): string {

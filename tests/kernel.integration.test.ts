@@ -2,6 +2,7 @@ import Dexie from 'dexie';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createKernel } from '@/kernel/create-kernel';
 import { CaelianDatabase } from '@/storage/database';
+import { avatarPreferenceKey } from '@/ui/avatar-preferences';
 
 const databaseNames: string[] = [];
 
@@ -12,6 +13,8 @@ afterEach(async () => {
   delete window.eventOn;
   delete window.tavern_events;
   localStorage.removeItem('caelian_launcher_order_v1');
+  localStorage.removeItem(avatarPreferenceKey('caelian'));
+  localStorage.removeItem(avatarPreferenceKey('player'));
   document
     .querySelectorAll('[data-caelian-panel]')
     .forEach((element) => element.remove());
@@ -236,9 +239,60 @@ describe('CaelianKernel integration', () => {
     await expect
       .poll(() => document.querySelector('.avatar-editor'))
       .not.toBeNull();
+    const thumbnail = crest?.querySelector<HTMLImageElement>('img');
+    const editorInputs = Array.from(
+      document.querySelectorAll<HTMLInputElement>(
+        '.avatar-editor input[type="range"]',
+      ),
+    );
+    expect(editorInputs).toHaveLength(3);
+    if (editorInputs[0]) {
+      editorInputs[0].value = '1.8';
+      editorInputs[0].dispatchEvent(
+        new Event('input', { bubbles: true }),
+      );
+    }
+    if (editorInputs[1]) {
+      editorInputs[1].value = '24';
+      editorInputs[1].dispatchEvent(
+        new Event('input', { bubbles: true }),
+      );
+    }
+    if (editorInputs[2]) {
+      editorInputs[2].value = '76';
+      editorInputs[2].dispatchEvent(
+        new Event('input', { bubbles: true }),
+      );
+    }
+    await expect
+      .poll(() => ({
+        zoom: thumbnail?.style.getPropertyValue('--ca-avatar-zoom'),
+        position: thumbnail?.style.getPropertyValue(
+          '--ca-avatar-position',
+        ),
+        previewZoom: document
+          .querySelector<HTMLImageElement>('.avatar-preview img')
+          ?.style.getPropertyValue('--ca-avatar-zoom'),
+      }))
+      .toEqual({
+        zoom: '1.8',
+        position: '24% 76%',
+        previewZoom: '1.8',
+      });
     document
-      .querySelector<HTMLButtonElement>('.avatar-editor [aria-label="关闭"]')
+      .querySelector<HTMLButtonElement>('.avatar-editor footer .primary')
       ?.click();
+    await expect
+      .poll(() => document.querySelector('.avatar-editor'))
+      .toBeNull();
+    expect(
+      JSON.parse(
+        localStorage.getItem(avatarPreferenceKey('caelian')) ?? '{}',
+      ),
+    ).toEqual({ zoom: 1.8, x: 24, y: 76 });
+    expect(
+      thumbnail?.style.getPropertyValue('--ca-avatar-position'),
+    ).toBe('24% 76%');
 
     await kernel.api.openPanel('deck');
     await expect
@@ -532,6 +586,49 @@ describe('CaelianKernel integration', () => {
           )?.textContent,
       )
       .toContain('或许可以再相信他一些。');
+
+    persistedMvuData = structuredClone(eventMvuData);
+    const directlyEditedCaelian = (
+      (persistedMvuData.stat_data as Record<string, unknown>)
+        .caelian as Record<string, unknown>
+    );
+    directlyEditedCaelian.narrative = {
+      companion: {
+        affinity: 64,
+        mood: '变量管理器已保存',
+        location: '学院钟楼',
+        clothing: '白色暗纹衬衫',
+        innerThought: '这次应当不刷新页面也能看到。',
+      },
+      world: {
+        region: '伊拉亚城',
+        place: '学院钟楼',
+        location: '圣德里安学院-学院钟楼',
+        gameDate: '新圣约历1385-09-03',
+        gameTime: '16:20',
+        weather: '晚霞',
+        mainStage: 1,
+        mainStep: 3,
+      },
+      storyFlags: { 已经出发: true },
+    };
+    handlers.get('mvu-ended')?.();
+
+    await expect
+      .poll(
+        () =>
+          document.querySelector(
+            '[data-caelian-panel="affinity"]',
+          )?.textContent,
+      )
+      .toContain('这次应当不刷新页面也能看到。');
+    const directlyEditedState = await kernel.api.query('state');
+    expect(directlyEditedState.social).toMatchObject({
+      affinity: 64,
+      mood: '变量管理器已保存',
+      location: '学院钟楼',
+      innerThought: '这次应当不刷新页面也能看到。',
+    });
     expect(replaceMvuData).toHaveBeenCalledTimes(
       writesBeforeAiUpdate,
     );
