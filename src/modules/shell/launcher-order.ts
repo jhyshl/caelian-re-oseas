@@ -34,31 +34,18 @@ export function normalizeLauncherOrder(
   return normalized;
 }
 
-export function moveLauncherPanel(
+export function prioritizeLauncherPanels(
   order: readonly PanelName[],
-  panel: PanelName,
-  direction: -1 | 1,
+  priority: readonly PanelName[],
 ): PanelName[] {
-  const currentIndex = order.indexOf(panel);
-  if (currentIndex < 0) return [...order];
-  const targetIndex = currentIndex + direction;
-  if (targetIndex < 0 || targetIndex >= order.length) return [...order];
-
-  const next = [...order];
-  const [moved] = next.splice(currentIndex, 1);
-  if (moved) next.splice(targetIndex, 0, moved);
-  return next;
-}
-
-export function moveLauncherPanelBefore(
-  order: readonly PanelName[],
-  panel: PanelName,
-  beforePanel: PanelName,
-): PanelName[] {
-  if (panel === beforePanel || !order.includes(panel)) return [...order];
-  const next = order.filter((candidate) => candidate !== panel);
-  const targetIndex = next.indexOf(beforePanel);
-  if (targetIndex < 0) return [...order];
-  next.splice(targetIndex, 0, panel);
-  return next;
+  const available = new Set(order);
+  const selected = priority.filter(
+    (panel, index) =>
+      available.has(panel) && priority.indexOf(panel) === index,
+  );
+  const selectedSet = new Set(selected);
+  return [
+    ...selected,
+    ...order.filter((panel) => !selectedSet.has(panel)),
+  ];
 }

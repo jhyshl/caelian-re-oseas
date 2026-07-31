@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/* global DragEvent, Event, HTMLElement, MouseEvent, Node, PointerEvent, TouchEvent, Window, window */
+/* global Event, HTMLElement, MouseEvent, Node, PointerEvent, TouchEvent, Window, window */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type { PanelContext, PanelName } from '@/kernel/public-api';
 import {
@@ -16,11 +16,11 @@ import {
   horizontalSwipeDirection,
   paginateLauncherItems,
 } from '@/modules/shell/launcher-pagination';
+import LauncherOrderDialog from '@/modules/shell/LauncherOrderDialog.vue';
 import {
   LAUNCHER_ORDER_STORAGE_KEY,
-  moveLauncherPanel,
-  moveLauncherPanelBefore,
   normalizeLauncherOrder,
+  prioritizeLauncherPanels,
 } from '@/modules/shell/launcher-order';
 
 const props = defineProps<{ context: PanelContext }>();
@@ -46,7 +46,6 @@ const ordering = ref(false);
 
 let idleTimer: number | undefined;
 let activationTimer: number | undefined;
-let draggedPanel: PanelName | undefined;
 let swipeStart:
   | {
       x: number;
@@ -83,7 +82,7 @@ const primary: Array<{ panel: PanelName; icon: string; label: string }> = [
 ];
 const defaultLauncherOrder = primary.map((item) => item.panel);
 const launcherOrder = ref(readStoredLauncherOrder());
-const orderDraft = ref<PanelName[]>([...launcherOrder.value]);
+const orderDraft = ref<PanelName[]>([]);
 const primaryByPanel = new Map(primary.map((item) => [item.panel, item]));
 
 const launcherItems = computed(() => {
@@ -98,8 +97,8 @@ const launcherItems = computed(() => {
       : item,
   );
 });
-const sortableItems = computed(() =>
-  orderDraft.value.flatMap((panel) => {
+const orderingItems = computed(() =>
+  launcherOrder.value.flatMap((panel) => {
     const item = primaryByPanel.get(panel);
     return item ? [item] : [];
   }),
@@ -323,8 +322,7 @@ function openWheel(): void {
 
 function closeWheel(): void {
   ordering.value = false;
-  draggedPanel = undefined;
-  orderDraft.value = [...launcherOrder.value];
+  orderDraft.value = [];
   expanded.value = false;
   scheduleIdle();
 }
@@ -355,65 +353,45 @@ function open(panel: PanelName): void {
 }
 
 function beginOrdering(): void {
-  orderDraft.value = [...launcherOrder.value];
+  orderDraft.value = [];
   ordering.value = true;
-  draggedPanel = undefined;
   recordActivity();
 }
 
 function cancelOrdering(): void {
-  orderDraft.value = [...launcherOrder.value];
+  orderDraft.value = [];
   ordering.value = false;
-  draggedPanel = undefined;
   recordActivity();
 }
 
 function saveOrdering(): void {
-  launcherOrder.value = normalizeLauncherOrder(
+  launcherOrder.value = prioritizeLauncherPanels(
+    launcherOrder.value,
     orderDraft.value,
-    defaultLauncherOrder,
   );
-  orderDraft.value = [...launcherOrder.value];
+  orderDraft.value = [];
   persistLauncherOrder();
   ordering.value = false;
-  draggedPanel = undefined;
   pageIndex.value = 0;
   recordActivity();
 }
 
 function resetOrdering(): void {
   orderDraft.value = [...defaultLauncherOrder];
-  draggedPanel = undefined;
   recordActivity();
 }
 
-function moveOrder(panel: PanelName, direction: -1 | 1): void {
-  orderDraft.value = moveLauncherPanel(
-    orderDraft.value,
-    panel,
-    direction,
-  );
+function toggleOrder(panel: PanelName): void {
+  const index = orderDraft.value.indexOf(panel);
+  orderDraft.value =
+    index >= 0
+      ? orderDraft.value.filter((candidate) => candidate !== panel)
+      : [...orderDraft.value, panel];
   recordActivity();
 }
 
-function handleOrderDragStart(event: DragEvent, panel: PanelName): void {
-  draggedPanel = panel;
-  event.dataTransfer?.setData('text/plain', panel);
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
-  recordActivity();
-}
-
-function handleOrderDrop(event: DragEvent, beforePanel: PanelName): void {
-  const source =
-    draggedPanel ??
-    (event.dataTransfer?.getData('text/plain') as PanelName | undefined);
-  draggedPanel = undefined;
-  if (!source) return;
-  orderDraft.value = moveLauncherPanelBefore(
-    orderDraft.value,
-    source,
-    beforePanel,
-  );
+function clearOrdering(): void {
+  orderDraft.value = [];
   recordActivity();
 }
 
@@ -546,6 +524,7 @@ function handleClick(event: MouseEvent): void {
 }
 
 function handleOutsidePointerDown(event: Event): void {
+  if (ordering.value) return;
   const target = event.target;
   if (
     expanded.value &&
@@ -630,25 +609,17 @@ onUnmounted(() => {
     <div
       v-if="expanded"
       class="wheel"
-      :class="{ ...wheelClasses, ordering }"
-      :role="ordering ? 'dialog' : 'menu'"
-      :aria-label="ordering ? '自定义悬浮面板入口顺序' : undefined"
+      :class="wheelClasses"
+      role="menu"
       @touchstart.passive="handleWheelTouchStart"
       @touchend.passive="handleWheelTouchEnd"
     >
       <header class="wheel-header">
         <div>
-          <span>{{ ordering ? '入口排序' : 'RE∞ OSEAS' }}</span>
-          <small>
-            {{
-              ordering
-                ? '拖动或使用箭头调整'
-                : `${info.version} · ${info.channel}`
-            }}
-          </small>
+          <span>RE∞ OSEAS</span>
+          <small>{{ info.version }} · {{ info.channel }}</small>
         </div>
         <button
-          v-if="!ordering"
           type="button"
           class="order-trigger"
           aria-label="自定义入口顺序"
@@ -662,102 +633,47 @@ onUnmounted(() => {
       <p v-if="info.status !== 'ready'" class="warning">
         {{ info.lastError || `内核状态：${info.status}` }}
       </p>
-      <template v-if="ordering">
-        <p class="order-hint">
-          排序会同步改变分页位置，并只保存在当前浏览器。
-        </p>
-        <ol class="order-list">
-          <li
-            v-for="(item, index) in sortableItems"
-            :key="item.panel"
-            :class="{ dragging: draggedPanel === item.panel }"
-            draggable="true"
-            @dragstart="handleOrderDragStart($event, item.panel)"
-            @dragend="draggedPanel = undefined"
-            @dragover.prevent
-            @drop.prevent="handleOrderDrop($event, item.panel)"
-          >
-            <i aria-hidden="true">⋮⋮</i>
-            <b>{{ item.icon }}</b>
-            <span>{{ item.label }}</span>
-            <small>{{ index + 1 }}</small>
-            <div>
-              <button
-                type="button"
-                :disabled="index === 0"
-                :aria-label="`${item.label}向前移动`"
-                @click="moveOrder(item.panel, -1)"
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                :disabled="index === sortableItems.length - 1"
-                :aria-label="`${item.label}向后移动`"
-                @click="moveOrder(item.panel, 1)"
-              >
-                ↓
-              </button>
-            </div>
-          </li>
-        </ol>
-        <footer class="order-actions">
+      <div class="wheel-grid">
+        <button
+          v-for="item in currentPage"
+          :key="item.panel"
+          type="button"
+          role="menuitem"
+          :disabled="
+            info.status !== 'ready' && item.panel !== 'diagnostics'
+          "
+          @click="open(item.panel)"
+        >
+          <b>{{ item.icon }}</b>
+          <span>{{ item.label }}</span>
+        </button>
+      </div>
+      <footer class="page-controls">
+        <button
+          type="button"
+          aria-label="上一页"
+          @click="changePage(-1)"
+        >
+          ‹
+        </button>
+        <div aria-label="悬浮窗页码">
           <button
+            v-for="(_, index) in launcherPages"
+            :key="index"
             type="button"
-            @click="resetOrdering"
-          >
-            恢复默认
-          </button>
-          <span></span>
-          <button type="button" @click="cancelOrdering">取消</button>
-          <button type="button" class="primary" @click="saveOrdering">
-            保存
-          </button>
-        </footer>
-      </template>
-      <template v-else>
-        <div class="wheel-grid">
-          <button
-            v-for="item in currentPage"
-            :key="item.panel"
-            type="button"
-            role="menuitem"
-            :disabled="
-              info.status !== 'ready' && item.panel !== 'diagnostics'
-            "
-            @click="open(item.panel)"
-          >
-            <b>{{ item.icon }}</b>
-            <span>{{ item.label }}</span>
-          </button>
+            :class="{ active: pageIndex === index }"
+            :aria-label="`第 ${index + 1} 页`"
+            @click="pageIndex = index"
+          ></button>
         </div>
-        <footer class="page-controls">
-          <button
-            type="button"
-            aria-label="上一页"
-            @click="changePage(-1)"
-          >
-            ‹
-          </button>
-          <div aria-label="悬浮窗页码">
-            <button
-              v-for="(_, index) in launcherPages"
-              :key="index"
-              type="button"
-              :class="{ active: pageIndex === index }"
-              :aria-label="`第 ${index + 1} 页`"
-              @click="pageIndex = index"
-            ></button>
-          </div>
-          <button
-            type="button"
-            aria-label="下一页"
-            @click="changePage(1)"
-          >
-            ›
-          </button>
-        </footer>
-      </template>
+        <button
+          type="button"
+          aria-label="下一页"
+          @click="changePage(1)"
+        >
+          ›
+        </button>
+      </footer>
     </div>
     <button
       type="button"
@@ -774,6 +690,18 @@ onUnmounted(() => {
       <i :class="{ ready: info.status === 'ready' }"></i>
     </button>
   </div>
+
+  <LauncherOrderDialog
+    v-if="ordering"
+    :items="orderingItems"
+    :selected="orderDraft"
+    :teleport-target="context.document.body"
+    @toggle="toggleOrder"
+    @clear="clearOrdering"
+    @reset="resetOrdering"
+    @cancel="cancelOrdering"
+    @save="saveOrdering"
+  />
 </template>
 
 <style scoped>
@@ -915,10 +843,6 @@ onUnmounted(() => {
   top: calc(var(--launcher-size) + 12px);
 }
 
-.wheel.ordering {
-  width: min(330px, calc(100vw - 24px));
-}
-
 .wheel-header {
   display: flex;
   align-items: center;
@@ -1053,132 +977,6 @@ onUnmounted(() => {
 .page-controls > div button.active {
   background: #d4a843;
   box-shadow: 0 0 0 3px rgba(212, 168, 67, 0.12);
-}
-
-.order-hint {
-  margin: 0 4px 9px;
-  color: #8f887c;
-  font-size: 9px;
-  line-height: 1.45;
-}
-
-.order-list {
-  max-height: min(56vh, 440px);
-  overflow-y: auto;
-  display: grid;
-  gap: 5px;
-  margin: 0;
-  padding: 0 2px 0 0;
-  list-style: none;
-  overscroll-behavior: contain;
-}
-
-.order-list li {
-  min-height: 40px;
-  display: grid;
-  grid-template-columns: 17px 23px minmax(0, 1fr) 20px auto;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 5px;
-  border: 1px solid #292d37;
-  border-radius: 9px;
-  color: #c5bcad;
-  background: rgba(255, 255, 255, 0.025);
-  cursor: grab;
-}
-
-.order-list li:hover {
-  border-color: rgba(212, 168, 67, 0.42);
-}
-
-.order-list li.dragging {
-  opacity: 0.48;
-}
-
-.order-list li > i {
-  color: #6f6b63;
-  font: normal 13px/1 sans-serif;
-  letter-spacing: -4px;
-}
-
-.order-list li > b {
-  color: #d4a843;
-  font-size: 17px;
-  font-weight: 400;
-  text-align: center;
-}
-
-.order-list li > span {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.order-list li > small {
-  color: #6f6b63;
-  font-size: 8px;
-  text-align: center;
-}
-
-.order-list li > div {
-  display: flex;
-  gap: 3px;
-}
-
-.order-list button {
-  width: 27px;
-  height: 27px;
-  padding: 0;
-  border: 1px solid #343843;
-  border-radius: 7px;
-  color: #bdb4a6;
-  background: rgba(255, 255, 255, 0.025);
-  cursor: pointer;
-}
-
-.order-list button:hover:not(:disabled) {
-  border-color: rgba(212, 168, 67, 0.55);
-  color: #f0d68a;
-}
-
-.order-list button:disabled {
-  cursor: default;
-  opacity: 0.25;
-}
-
-.order-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.order-actions > span {
-  flex: 1;
-}
-
-.order-actions button {
-  min-height: 30px;
-  padding: 6px 9px;
-  border: 1px solid #343843;
-  border-radius: 8px;
-  color: #aaa397;
-  background: rgba(255, 255, 255, 0.025);
-  font: 700 9px/1 inherit;
-  cursor: pointer;
-}
-
-.order-actions button:hover {
-  border-color: rgba(212, 168, 67, 0.55);
-  color: #f0d68a;
-}
-
-.order-actions button.primary {
-  border-color: #9d7528;
-  color: #1c160d;
-  background: linear-gradient(135deg, #f0d68a, #d4a843);
 }
 
 .warning {

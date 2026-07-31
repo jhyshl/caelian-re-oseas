@@ -159,6 +159,7 @@ onUnmounted(() => {
           alt="凯利安的头像"
           fallback="C"
           preference-id="caelian"
+          :teleport-target="context.document.body"
           @image-load="handleCharacterAvatarLoad"
           @image-error="handleCharacterAvatarError"
         />

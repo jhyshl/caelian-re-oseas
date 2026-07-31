@@ -13,6 +13,7 @@ const props = defineProps<{
   alt: string;
   fallback: string;
   preferenceId: string;
+  teleportTarget?: string | HTMLElement;
 }>();
 const emit = defineEmits<{ imageError: []; imageLoad: [] }>();
 defineOptions({ inheritAttrs: false });
@@ -120,125 +121,137 @@ function pointerUp(): void {
 </script>
 
 <template>
-  <button
+  <span
     v-bind="attrs"
-    type="button"
-    class="adjustable-avatar"
-    aria-label="打开头像显示设置"
-    title="点击调整头像大小和位置"
-    @click="showEditor"
+    class="adjustable-avatar-host"
   >
-    <span class="avatar-viewport">
-      <img
-        v-if="src"
-        :src="src"
-        :alt="alt"
-        :style="thumbnailStyle"
-        @load="emit('imageLoad')"
-        @error="emit('imageError')"
-      />
-      <span v-else class="avatar-fallback" aria-hidden="true">
-        {{ fallback }}
-      </span>
-    </span>
-    <i aria-hidden="true">⌘</i>
-  </button>
-
-  <Teleport to="body">
-    <div
-      v-if="open"
-      class="avatar-editor-backdrop"
-      role="presentation"
-      @click.self="closeEditor"
+    <button
+      type="button"
+      class="adjustable-avatar"
+      aria-label="打开头像显示设置"
+      title="点击调整头像大小和位置"
+      @click="showEditor"
     >
-      <section
-        class="avatar-editor"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="avatar-editor-title"
+      <span class="avatar-viewport">
+        <img
+          v-if="src"
+          :src="src"
+          :alt="alt"
+          :style="thumbnailStyle"
+          @load="emit('imageLoad')"
+          @error="emit('imageError')"
+        />
+        <span v-else class="avatar-fallback" aria-hidden="true">
+          {{ fallback }}
+        </span>
+      </span>
+      <i aria-hidden="true">⌘</i>
+    </button>
+
+    <Teleport :to="teleportTarget ?? 'body'">
+      <div
+        v-if="open"
+        class="avatar-editor-backdrop"
+        role="presentation"
+        @click.self="closeEditor"
       >
-        <header>
-          <div>
-            <small>AVATAR VIEW</small>
-            <h2 id="avatar-editor-title">调整头像显示</h2>
-          </div>
-          <button type="button" aria-label="关闭" @click="closeEditor">×</button>
-        </header>
-
-        <div
-          class="avatar-preview"
-          :class="{ dragging }"
-          @pointerdown="pointerDown"
-          @pointermove="pointerMove"
-          @pointerup="pointerUp"
-          @pointercancel="pointerUp"
+        <section
+          class="avatar-editor"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="avatar-editor-title"
         >
-          <img
-            v-if="src"
-            :src="src"
-            :alt="alt"
-            :style="previewStyle"
-            draggable="false"
-          />
-          <span v-else>{{ fallback }}</span>
-          <em>拖动图片调整展示位置</em>
-        </div>
+          <header>
+            <div>
+              <small>AVATAR VIEW</small>
+              <h2 id="avatar-editor-title">调整头像显示</h2>
+            </div>
+            <button type="button" aria-label="关闭" @click="closeEditor">×</button>
+          </header>
 
-        <div class="avatar-controls">
-          <label>
-            <span>图片大小 <b>{{ Math.round(draft.zoom * 100) }}%</b></span>
-            <input
-              v-model.number="draft.zoom"
-              type="range"
-              min="1"
-              max="3"
-              step="0.01"
+          <div
+            class="avatar-preview"
+            :class="{ dragging }"
+            @pointerdown="pointerDown"
+            @pointermove="pointerMove"
+            @pointerup="pointerUp"
+            @pointercancel="pointerUp"
+          >
+            <img
+              v-if="src"
+              :src="src"
+              :alt="alt"
+              :style="previewStyle"
+              draggable="false"
             />
-          </label>
-          <label>
-            <span>水平位置 <b>{{ Math.round(draft.x) }}%</b></span>
-            <input
-              v-model.number="draft.x"
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-            />
-          </label>
-          <label>
-            <span>垂直位置 <b>{{ Math.round(draft.y) }}%</b></span>
-            <input
-              v-model.number="draft.y"
-              type="range"
-              min="0"
-              max="100"
-              step="1"
-            />
-          </label>
-        </div>
+            <span v-else>{{ fallback }}</span>
+            <em>拖动图片调整展示位置</em>
+          </div>
 
-        <footer>
-          <button type="button" class="ca-button" @click="reset">恢复默认</button>
-          <span></span>
-          <button type="button" class="ca-button" @click="closeEditor">
-            取消
-          </button>
-          <button type="button" class="ca-button primary" @click="save">
-            保存显示
-          </button>
-        </footer>
-      </section>
-    </div>
-  </Teleport>
+          <div class="avatar-controls">
+            <label>
+              <span>图片大小 <b>{{ Math.round(draft.zoom * 100) }}%</b></span>
+              <input
+                v-model.number="draft.zoom"
+                type="range"
+                min="1"
+                max="3"
+                step="0.01"
+              />
+            </label>
+            <label>
+              <span>水平位置 <b>{{ Math.round(draft.x) }}%</b></span>
+              <input
+                v-model.number="draft.x"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+              />
+            </label>
+            <label>
+              <span>垂直位置 <b>{{ Math.round(draft.y) }}%</b></span>
+              <input
+                v-model.number="draft.y"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+              />
+            </label>
+          </div>
+
+          <footer>
+            <button type="button" class="ca-button" @click="reset">恢复默认</button>
+            <span></span>
+            <button type="button" class="ca-button" @click="closeEditor">
+              取消
+            </button>
+            <button type="button" class="ca-button primary" @click="save">
+              保存显示
+            </button>
+          </footer>
+        </section>
+      </div>
+    </Teleport>
+  </span>
 </template>
 
 <style scoped>
+.adjustable-avatar-host {
+  position: relative;
+}
+
 .adjustable-avatar {
   position: relative;
+  width: 100%;
+  height: 100%;
+  display: block;
   padding: 0;
   border: 0;
+  border-radius: inherit;
   color: inherit;
-  background: inherit;
+  background: transparent;
   font: inherit;
   cursor: pointer;
 }
@@ -271,8 +284,8 @@ function pointerUp(): void {
 
 .adjustable-avatar > i {
   position: absolute;
-  right: -4px;
-  bottom: -4px;
+  right: 2px;
+  bottom: 2px;
   z-index: 2;
   width: 18px;
   height: 18px;

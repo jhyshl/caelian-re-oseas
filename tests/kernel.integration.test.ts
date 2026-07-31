@@ -97,28 +97,30 @@ describe('CaelianKernel integration', () => {
 
     await expect
       .poll(() =>
-        document.querySelector<HTMLButtonElement>(
-          '.caelian-shell-host [aria-label="角色向后移动"]',
-        ),
+        document.querySelector<HTMLElement>('.order-dialog'),
       )
       .not.toBeNull();
-    const moveCharacterLater =
-      document.querySelector<HTMLButtonElement>(
-        '.caelian-shell-host [aria-label="角色向后移动"]',
-      );
-    expect(moveCharacterLater).not.toBeNull();
-    moveCharacterLater?.click();
+    const orderButtons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '.order-pick-grid > button',
+      ),
+    );
+    const affinityButton = orderButtons.find(
+      (button) => button.textContent?.includes('凯利安'),
+    );
+    const characterButton = orderButtons.find(
+      (button) => button.textContent?.includes('角色'),
+    );
+    affinityButton?.click();
+    characterButton?.click();
+
     await expect
-      .poll(
-        () =>
-          document.querySelector(
-            '.caelian-shell-host .order-list li:first-child span',
-          )?.textContent,
-      )
-      .toBe('凯利安');
+      .poll(() => affinityButton?.querySelector('i')?.textContent)
+      .toContain('1');
+    expect(characterButton?.querySelector('i')?.textContent).toContain('2');
     document
       .querySelector<HTMLButtonElement>(
-        '.caelian-shell-host .order-actions .primary',
+        '.order-dialog-actions .primary',
       )
       ?.click();
 
@@ -221,6 +223,43 @@ describe('CaelianKernel integration', () => {
           )?.src,
       )
       .toBe(new URL('/avatars/avatar/caelian.png', document.baseURI).href);
+
+    const crest = document.querySelector<HTMLElement>(
+      '[data-caelian-panel="affinity"] .crest',
+    );
+    expect(crest).not.toBeNull();
+    expect(crest?.classList.contains('adjustable-avatar-host')).toBe(true);
+    expect(crest?.querySelector('.adjustable-avatar')).not.toBeNull();
+    crest
+      ?.querySelector<HTMLButtonElement>('.adjustable-avatar')
+      ?.click();
+    await expect
+      .poll(() => document.querySelector('.avatar-editor'))
+      .not.toBeNull();
+    document
+      .querySelector<HTMLButtonElement>('.avatar-editor [aria-label="关闭"]')
+      ?.click();
+
+    await kernel.api.openPanel('deck');
+    await expect
+      .poll(() =>
+        Array.from(
+          document.querySelectorAll<HTMLButtonElement>(
+            '[data-caelian-panel="deck"] button',
+          ),
+        ).find((button) => button.textContent?.trim() === '创意工坊'),
+      )
+      .not.toBeUndefined();
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[data-caelian-panel="deck"] button',
+      ),
+    )
+      .find((button) => button.textContent?.trim() === '创意工坊')
+      ?.click();
+    await expect
+      .poll(() => document.querySelector('.workshop-dialog'))
+      .not.toBeNull();
 
     await kernel.api.shutdown();
   });
@@ -414,6 +453,15 @@ describe('CaelianKernel integration', () => {
     });
 
     await kernel.initialize();
+    await kernel.api.openPanel('affinity');
+    await expect
+      .poll(
+        () =>
+          document.querySelector(
+            '[data-caelian-panel="affinity"]',
+          )?.textContent,
+      )
+      .toContain('先继续观察。');
     const writesBeforeAiUpdate = replaceMvuData.mock.calls.length;
     const eventMvuData = structuredClone(persistedMvuData);
     const caelian = (
@@ -476,6 +524,14 @@ describe('CaelianKernel integration', () => {
         mainStage: 1,
         mainStep: 2,
       });
+    await expect
+      .poll(
+        () =>
+          document.querySelector(
+            '[data-caelian-panel="affinity"]',
+          )?.textContent,
+      )
+      .toContain('或许可以再相信他一些。');
     expect(replaceMvuData).toHaveBeenCalledTimes(
       writesBeforeAiUpdate,
     );

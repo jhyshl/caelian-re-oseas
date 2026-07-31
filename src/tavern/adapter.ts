@@ -43,12 +43,14 @@ export function resolveTavernHost(sourceWindow: Window): Window {
 
 export class TavernAdapter {
   readonly host: Window;
+  private readonly runtime: Window;
   private readonly disposers: Array<() => void> = [];
   private userAvatarUrl: string | undefined;
   private characterAvatarUrl: string | undefined;
   private userAvatarId: string | undefined;
 
   constructor(sourceWindow: Window = window) {
+    this.runtime = sourceWindow;
     this.host = this.resolveHost(sourceWindow);
   }
 
@@ -199,7 +201,7 @@ export class TavernAdapter {
   }
 
   hasMvu(): boolean {
-    const mvu = this.host.Mvu;
+    const mvu = this.resolveMvuApi();
     return Boolean(
       mvu &&
         typeof mvu.getMvuData === 'function' &&
@@ -208,7 +210,7 @@ export class TavernAdapter {
   }
 
   readMvuData(): Record<string, unknown> | null {
-    const mvu = this.host.Mvu;
+    const mvu = this.resolveMvuApi();
     if (!mvu || !this.hasMvu()) return null;
     try {
       const option: MvuOption = { type: 'message', message_id: 'latest' };
@@ -219,7 +221,7 @@ export class TavernAdapter {
   }
 
   async writeProjection(projection: AiProjection): Promise<boolean> {
-    const mvu = this.host.Mvu;
+    const mvu = this.resolveMvuApi();
     if (!mvu || !this.hasMvu()) return false;
 
     const option: MvuOption = { type: 'message', message_id: 'latest' };
@@ -269,53 +271,95 @@ export class TavernAdapter {
       );
     }
 
-    const eventOn = this.host.eventOn;
-    const events = this.host.tavern_events;
-    if (typeof eventOn !== 'function') return;
+    const tavernEventNames = [
+      'CHAT_CHANGED',
+      'MESSAGE_RECEIVED',
+      'MESSAGE_UPDATED',
+      'PERSONA_CHANGED',
+      'PERSONA_UPDATED',
+      'CHARACTER_EDITED',
+    ] as const;
+    const boundTavernEvents = new Set<string>();
+    let mvuEventBound = false;
+    let debounceTimer: number | undefined;
+    let retryTimer: number | undefined;
+    let cancelled = false;
+    let pendingPayload: TavernEventPayload | undefined;
 
-    if (events) {
-      for (const eventName of [
-        'CHAT_CHANGED',
-        'MESSAGE_RECEIVED',
-        'MESSAGE_UPDATED',
-        'PERSONA_CHANGED',
-        'PERSONA_UPDATED',
-        'CHARACTER_EDITED',
-      ]) {
-        const event = events[eventName];
-        if (event === undefined) continue;
-        this.addEventDisposer(
-          eventOn(event, (...args) => {
-            const payload = this.handleAvatarEvent(eventName, args);
-            void handler(eventName, payload);
-          }),
+    const bindAvailableEvents = (): boolean => {
+      if (cancelled) return false;
+      const eventOn = this.resolveEventOnApi();
+      if (typeof eventOn !== 'function') return false;
+
+      const events = this.resolveTavernEventsApi();
+      if (events) {
+        for (const eventName of tavernEventNames) {
+          if (boundTavernEvents.has(eventName)) continue;
+          const event = events[eventName];
+          if (event === undefined) continue;
+          this.addEventDisposer(
+            eventOn(event, (...args) => {
+              const payload = this.handleAvatarEvent(eventName, args);
+              void handler(eventName, payload);
+            }),
+          );
+          boundTavernEvents.add(eventName);
+        }
+      }
+
+      const mvuEvent =
+        this.resolveMvuApi()?.events?.VARIABLE_UPDATE_ENDED;
+      if (!mvuEventBound && mvuEvent !== undefined) {
+        const possibleDisposer = eventOn(
+          mvuEvent,
+          (variables, variablesBeforeUpdate) => {
+            pendingPayload = {
+              mvuData: this.cloneIfRecord(variables),
+              previousMvuData: this.cloneIfRecord(variablesBeforeUpdate),
+            };
+            if (debounceTimer !== undefined) {
+              this.host.clearTimeout(debounceTimer);
+            }
+            debounceTimer = this.host.setTimeout(() => {
+              debounceTimer = undefined;
+              const payload = pendingPayload;
+              pendingPayload = undefined;
+              void handler('MVU_VARIABLE_UPDATE_ENDED', payload);
+            }, 180);
+          },
         );
+        this.addEventDisposer(possibleDisposer);
+        mvuEventBound = true;
+      }
+      return mvuEventBound;
+    };
+
+    const retryDeadline = Date.now() + 15_000;
+    const retryBinding = (): void => {
+      retryTimer = undefined;
+      if (cancelled || bindAvailableEvents()) return;
+      if (Date.now() >= retryDeadline) return;
+      retryTimer = this.host.setTimeout(retryBinding, 250);
+    };
+
+    if (!bindAvailableEvents()) {
+      retryTimer = this.host.setTimeout(retryBinding, 250);
+      const waitForMvu = this.resolveWaitGlobalInitializedApi();
+      if (typeof waitForMvu === 'function') {
+        void Promise.resolve(waitForMvu('Mvu'))
+          .catch(() => undefined)
+          .then(() => {
+            if (!cancelled) bindAvailableEvents();
+          });
       }
     }
 
-    const mvuEvent = this.host.Mvu?.events?.VARIABLE_UPDATE_ENDED;
-    if (mvuEvent === undefined) return;
-    let timer: number | undefined;
-    let pendingPayload: TavernEventPayload | undefined;
-    const possibleDisposer = eventOn(
-      mvuEvent,
-      (variables, variablesBeforeUpdate) => {
-        pendingPayload = {
-          mvuData: this.cloneIfRecord(variables),
-          previousMvuData: this.cloneIfRecord(variablesBeforeUpdate),
-        };
-        if (timer !== undefined) this.host.clearTimeout(timer);
-        timer = this.host.setTimeout(() => {
-          timer = undefined;
-          const payload = pendingPayload;
-          pendingPayload = undefined;
-          void handler('MVU_VARIABLE_UPDATE_ENDED', payload);
-        }, 180);
-      },
-    );
-    this.addEventDisposer(possibleDisposer);
     this.disposers.push(() => {
-      if (timer !== undefined) this.host.clearTimeout(timer);
+      cancelled = true;
+      if (debounceTimer !== undefined) {
+        this.host.clearTimeout(debounceTimer);
+      }
+      if (retryTimer !== undefined) this.host.clearTimeout(retryTimer);
       pendingPayload = undefined;
     });
   }
@@ -381,6 +425,49 @@ export class TavernAdapter {
     return resolveTavernHost(sourceWindow);
   }
 
+  private apiScopes(): Window[] {
+    return this.runtime === this.host
+      ? [this.host]
+      : [this.runtime, this.host];
+  }
+
+  private resolveMvuApi(): MvuLike | undefined {
+    for (const scope of this.apiScopes()) {
+      const mvu = scope.Mvu;
+      if (
+        mvu &&
+        typeof mvu.getMvuData === 'function' &&
+        typeof mvu.replaceMvuData === 'function'
+      ) {
+        return mvu;
+      }
+    }
+    return undefined;
+  }
+
+  private resolveEventOnApi(): Window['eventOn'] {
+    for (const scope of this.apiScopes()) {
+      if (typeof scope.eventOn === 'function') return scope.eventOn;
+    }
+    return undefined;
+  }
+
+  private resolveTavernEventsApi(): Record<string, unknown> | undefined {
+    for (const scope of this.apiScopes()) {
+      if (scope.tavern_events) return scope.tavern_events;
+    }
+    return undefined;
+  }
+
+  private resolveWaitGlobalInitializedApi(): Window['waitGlobalInitialized'] {
+    for (const scope of this.apiScopes()) {
+      if (typeof scope.waitGlobalInitialized === 'function') {
+        return scope.waitGlobalInitialized;
+      }
+    }
+    return undefined;
+  }
+
   private resolveUserAvatar(context: TavernContext): string {
     const document = this.host.document;
     const selectedPersona = document.querySelector<HTMLElement>(
@@ -420,6 +507,20 @@ export class TavernAdapter {
   }
 
   private resolveCharacterAvatar(context: TavernContext): string {
+    const helperScopes =
+      this.runtime === this.host
+        ? [this.host]
+        : [this.runtime, this.host];
+    for (const scope of helperScopes) {
+      try {
+        const helper = scope.getCharAvatarPath?.('current');
+        const helperUrl = this.safeAvatarUrl(helper);
+        if (helperUrl) return helperUrl;
+      } catch {
+        // The helper may not be ready while Tavern is switching character data.
+      }
+    }
+
     const characters = context.characters ?? [];
     const characterIndex = Number(context.characterId);
     const directCharacter = Number.isInteger(characterIndex)
@@ -438,14 +539,6 @@ export class TavernAdapter {
       character?.avatar,
     );
     if (thumbnail) return thumbnail;
-
-    try {
-      const helper = this.host.getCharAvatarPath?.('current');
-      const helperUrl = this.safeAvatarUrl(helper);
-      if (helperUrl) return helperUrl;
-    } catch {
-      // Tavern Helper may not expose this optional convenience API.
-    }
 
     const messageImages = this.host.document.querySelectorAll<HTMLImageElement>(
       '.mes[is_user="false"] .avatar img[src]',

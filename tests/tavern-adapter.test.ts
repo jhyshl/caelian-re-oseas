@@ -294,6 +294,95 @@ describe('TavernAdapter', () => {
     expect(stop).toHaveBeenCalledTimes(1);
   });
 
+  it('从酒馆助手脚本运行窗口绑定 MVU 更新事件', async () => {
+    vi.useFakeTimers();
+    window.SillyTavern = { getContext: () => ({ chatId: 'runtime-mvu' }) };
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    const stop = vi.fn();
+    const runtimeMvuData = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            companion: { affinity: 26 },
+          },
+        },
+      },
+    };
+    const runtime = {
+      parent: window,
+      eventOn: vi.fn((event, eventHandler) => {
+        handlers.set(event, eventHandler);
+        return { stop };
+      }),
+      tavern_events: {},
+      Mvu: {
+        events: { VARIABLE_UPDATE_ENDED: 'runtime-mvu-ended' },
+        getMvuData: () => runtimeMvuData,
+        replaceMvuData: vi.fn(),
+      },
+    } as unknown as Window;
+    const listener = vi.fn();
+    const adapter = new TavernAdapter(runtime);
+
+    expect(adapter.hasMvu()).toBe(true);
+    expect(adapter.readMvuData()).toEqual(runtimeMvuData);
+    adapter.subscribe(listener);
+    handlers.get('runtime-mvu-ended')?.(runtimeMvuData, {});
+    await vi.advanceTimersByTimeAsync(180);
+
+    expect(listener).toHaveBeenCalledWith(
+      'MVU_VARIABLE_UPDATE_ENDED',
+      expect.objectContaining({ mvuData: runtimeMvuData }),
+    );
+    adapter.unsubscribeAll();
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('变量管理器晚于 Alpha 初始化时会自动补绑更新事件', async () => {
+    vi.useFakeTimers();
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return { stop: () => handlers.delete(event) };
+    });
+    window.tavern_events = {};
+    const listener = vi.fn();
+    const adapter = new TavernAdapter(window);
+    adapter.subscribe(listener);
+
+    expect(handlers.has('late-mvu-ended')).toBe(false);
+    window.Mvu = {
+      events: { VARIABLE_UPDATE_ENDED: 'late-mvu-ended' },
+      getMvuData: () => ({}),
+      replaceMvuData: vi.fn(),
+    };
+    await vi.advanceTimersByTimeAsync(250);
+    expect(handlers.has('late-mvu-ended')).toBe(true);
+
+    handlers.get('late-mvu-ended')?.(
+      {
+        stat_data: {
+          caelian: {
+            narrative: {
+              companion: { mood: '已实时刷新' },
+            },
+          },
+        },
+      },
+      {},
+    );
+    await vi.advanceTimersByTimeAsync(180);
+    expect(listener).toHaveBeenCalledWith(
+      'MVU_VARIABLE_UPDATE_ENDED',
+      expect.objectContaining({
+        mvuData: expect.objectContaining({
+          stat_data: expect.any(Object),
+        }),
+      }),
+    );
+    adapter.unsubscribeAll();
+  });
+
   it('把行动文字写入酒馆输入框并派发输入事件', () => {
     const textarea = document.createElement('textarea');
     textarea.id = 'send_textarea';
@@ -340,6 +429,29 @@ describe('TavernAdapter', () => {
         document.baseURI,
       ).href,
     });
+  });
+
+  it('优先从酒馆助手脚本运行窗口读取当前角色头像', async () => {
+    window.SillyTavern = {
+      getContext: () => ({
+        characterId: '0',
+        name2: '凯利安',
+        characters: [],
+      }),
+    };
+    const runtime = {
+      parent: window,
+      getCharAvatarPath: vi.fn(() => '/characters/caelian-helper.png'),
+    } as unknown as Window;
+    const adapter = new TavernAdapter(runtime);
+
+    await expect(adapter.avatarUrls()).resolves.toMatchObject({
+      character: new URL(
+        '/characters/caelian-helper.png',
+        document.baseURI,
+      ).href,
+    });
+    expect(runtime.getCharAvatarPath).toHaveBeenCalledWith('current');
   });
 
   it('缓存官方缩略图地址，并只在头像事件后重新解析', async () => {

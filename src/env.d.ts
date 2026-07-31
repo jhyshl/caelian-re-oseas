@@ -14,6 +14,7 @@ interface Window {
     event: unknown,
     handler: (...args: unknown[]) => void,
   ) => unknown;
+  waitGlobalInitialized?: (name: string) => unknown;
   tavern_events?: Record<string, unknown>;
   getCharAvatarPath?: (name: 'current' | string) => string | null;
   toastr?: {

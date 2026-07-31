@@ -344,7 +344,7 @@ async function importFile(event: Event): Promise<void> {
 </script>
 
 <template>
-  <Teleport to="body">
+  <Teleport :to="context.document.body">
     <div class="workshop-backdrop" @click.self="emit('close')">
       <section
         class="workshop-dialog"

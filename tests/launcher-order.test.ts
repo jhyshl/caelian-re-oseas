@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { PanelName } from '@/kernel/public-api';
 import {
-  moveLauncherPanel,
-  moveLauncherPanelBefore,
   normalizeLauncherOrder,
+  prioritizeLauncherPanels,
 } from '@/modules/shell/launcher-order';
 
 const available: PanelName[] = [
@@ -24,23 +23,19 @@ describe('Floating launcher order', () => {
     ).toEqual(['deck', 'character', 'affinity', 'inventory', 'guild']);
   });
 
-  it('支持逐格移动并阻止越界', () => {
-    expect(moveLauncherPanel(available, 'deck', -1)).toEqual([
-      'character',
-      'deck',
-      'affinity',
-      'inventory',
+  it('按玩家依次点击的编号优先排序，其余入口保持原顺序', () => {
+    expect(
+      prioritizeLauncherPanels(available, [
+        'guild',
+        'deck',
+        'guild',
+        'diagnostics',
+      ]),
+    ).toEqual([
       'guild',
-    ]);
-    expect(moveLauncherPanel(available, 'character', -1)).toEqual(available);
-  });
-
-  it('支持桌面拖动到另一个入口之前', () => {
-    expect(moveLauncherPanelBefore(available, 'guild', 'affinity')).toEqual([
-      'character',
-      'guild',
-      'affinity',
       'deck',
+      'character',
+      'affinity',
       'inventory',
     ]);
   });

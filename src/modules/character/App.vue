@@ -157,6 +157,7 @@ onUnmounted(() => {
           :alt="`${snapshot.player.name || '玩家'}的头像`"
           :fallback="snapshot.player.name.trim().slice(0, 1) || '冒'"
           preference-id="player"
+          :teleport-target="context.document.body"
           @image-error="handlePlayerAvatarError"
         />
         <div class="identity">
