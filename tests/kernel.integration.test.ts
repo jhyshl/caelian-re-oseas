@@ -217,7 +217,9 @@ describe('CaelianKernel integration', () => {
             '[data-caelian-panel="character"] .avatar img',
           )?.src,
       )
-      .toBe(new URL('/avatars/persona/player.png', document.baseURI).href);
+      .toBe(
+        new URL('/User Avatars/player.png', document.baseURI).href,
+      );
     await expect
       .poll(
         () =>
@@ -225,7 +227,7 @@ describe('CaelianKernel integration', () => {
             '[data-caelian-panel="affinity"] .crest img',
           )?.src,
       )
-      .toBe(new URL('/avatars/avatar/caelian.png', document.baseURI).href);
+      .toBe(new URL('/characters/caelian.png', document.baseURI).href);
 
     const crest = document.querySelector<HTMLElement>(
       '[data-caelian-panel="affinity"] .crest',
@@ -239,6 +241,11 @@ describe('CaelianKernel integration', () => {
     await expect
       .poll(() => document.querySelector('.avatar-editor'))
       .not.toBeNull();
+    expect(
+      document.querySelector<HTMLImageElement>(
+        '.avatar-source-preview img',
+      )?.src,
+    ).toBe(new URL('/characters/caelian.png', document.baseURI).href);
     const thumbnail = crest?.querySelector<HTMLImageElement>('img');
     const editorInputs = Array.from(
       document.querySelectorAll<HTMLInputElement>(
@@ -360,7 +367,7 @@ describe('CaelianKernel integration', () => {
         { timeout: 2_000 },
       )
       .toBe(
-        new URL('/avatars/avatar/caelian-late.png', document.baseURI).href,
+        new URL('/characters/caelian-late.png', document.baseURI).href,
       );
 
     await kernel.api.shutdown();
@@ -454,16 +461,9 @@ describe('CaelianKernel integration', () => {
     await kernel.api.shutdown();
   });
 
-  it('MVU 完成 AI 更新后实时刷新凯利安与世界状态', async () => {
-    const databaseName = `caelian-alpha-mvu-live-${crypto.randomUUID()}`;
+  it('每次打开凯利安状态页时主动读取变量管理器', async () => {
+    const databaseName = `caelian-alpha-mvu-on-open-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
-    const handlers = new Map<unknown, (...args: unknown[]) => void>();
-    window.eventOn = vi.fn((event, handler) => {
-      handlers.set(event, handler);
-      return { stop: () => handlers.delete(event) };
-    });
-    window.tavern_events = {};
-
     let persistedMvuData: Record<string, unknown> = {
       stat_data: {
         caelian: {
@@ -494,14 +494,13 @@ describe('CaelianKernel integration', () => {
       persistedMvuData = next;
     });
     window.Mvu = {
-      events: { VARIABLE_UPDATE_ENDED: 'mvu-ended' },
       getMvuData: () => persistedMvuData,
       replaceMvuData,
     };
     const kernel = createKernel({
       channel: 'alpha',
       version: '0.2.0-alpha.test',
-      buildId: 'mvu-live-test-build',
+      buildId: 'mvu-on-open-test-build',
       databaseName,
       sourceWindow: window,
     });
@@ -516,78 +515,8 @@ describe('CaelianKernel integration', () => {
           )?.textContent,
       )
       .toContain('先继续观察。');
-    const writesBeforeAiUpdate = replaceMvuData.mock.calls.length;
-    const eventMvuData = structuredClone(persistedMvuData);
-    const caelian = (
-      (eventMvuData.stat_data as Record<string, unknown>)
-        .caelian as Record<string, unknown>
-    );
-    caelian.narrative = {
-      companion: {
-        affinity: 37,
-        mood: '期待',
-        location: '中央广场',
-        clothing: '学院制服',
-        innerThought: '或许可以再相信他一些。',
-      },
-      world: {
-        region: '伊拉亚城',
-        place: '中央广场',
-        location: '伊拉亚城-中央广场',
-        gameDate: '新圣约历1385-09-02',
-        gameTime: '10:30',
-        weather: '多云',
-        mainStage: 1,
-        mainStep: 2,
-      },
-      storyFlags: { 已经出发: true },
-    };
-    handlers
-      .get('mvu-ended')
-      ?.(eventMvuData, persistedMvuData);
-
-    await expect
-      .poll(async () => {
-        const state = await kernel.api.query('state');
-        return {
-          affinity: state.social.affinity,
-          mood: state.social.mood,
-          companionLocation: state.social.location,
-          clothing: state.social.clothing,
-          innerThought: state.social.innerThought,
-          worldPlace: state.world.place,
-          worldLocation: state.world.location,
-          gameDate: state.world.gameDate,
-          gameTime: state.world.gameTime,
-          weather: state.world.weather,
-          mainStage: state.world.mainStage,
-          mainStep: state.world.mainStep,
-        };
-      })
-      .toEqual({
-        affinity: 37,
-        mood: '期待',
-        companionLocation: '中央广场',
-        clothing: '学院制服',
-        innerThought: '或许可以再相信他一些。',
-        worldPlace: '中央广场',
-        worldLocation: '伊拉亚城-中央广场',
-        gameDate: '新圣约历1385-09-02',
-        gameTime: '10:30',
-        weather: '多云',
-        mainStage: 1,
-        mainStep: 2,
-      });
-    await expect
-      .poll(
-        () =>
-          document.querySelector(
-            '[data-caelian-panel="affinity"]',
-          )?.textContent,
-      )
-      .toContain('或许可以再相信他一些。');
-
-    persistedMvuData = structuredClone(eventMvuData);
+    const writesBeforeManagerEdit = replaceMvuData.mock.calls.length;
+    persistedMvuData = structuredClone(persistedMvuData);
     const directlyEditedCaelian = (
       (persistedMvuData.stat_data as Record<string, unknown>)
         .caelian as Record<string, unknown>
@@ -598,7 +527,7 @@ describe('CaelianKernel integration', () => {
         mood: '变量管理器已保存',
         location: '学院钟楼',
         clothing: '白色暗纹衬衫',
-        innerThought: '这次应当不刷新页面也能看到。',
+        innerThought: '重新打开状态页后应当显示这一段。',
       },
       world: {
         region: '伊拉亚城',
@@ -612,8 +541,15 @@ describe('CaelianKernel integration', () => {
       },
       storyFlags: { 已经出发: true },
     };
-    handlers.get('mvu-ended')?.();
 
+    expect(
+      document.querySelector(
+        '[data-caelian-panel="affinity"]',
+      )?.textContent,
+    ).not.toContain('重新打开状态页后应当显示这一段。');
+
+    await kernel.api.closePanel('affinity');
+    await kernel.api.openPanel('affinity');
     await expect
       .poll(
         () =>
@@ -621,16 +557,26 @@ describe('CaelianKernel integration', () => {
             '[data-caelian-panel="affinity"]',
           )?.textContent,
       )
-      .toContain('这次应当不刷新页面也能看到。');
+      .toContain('重新打开状态页后应当显示这一段。');
     const directlyEditedState = await kernel.api.query('state');
     expect(directlyEditedState.social).toMatchObject({
       affinity: 64,
       mood: '变量管理器已保存',
       location: '学院钟楼',
-      innerThought: '这次应当不刷新页面也能看到。',
+      clothing: '白色暗纹衬衫',
+      innerThought: '重新打开状态页后应当显示这一段。',
+    });
+    expect(directlyEditedState.world).toMatchObject({
+      place: '学院钟楼',
+      location: '圣德里安学院-学院钟楼',
+      gameDate: '新圣约历1385-09-03',
+      gameTime: '16:20',
+      weather: '晚霞',
+      mainStage: 1,
+      mainStep: 3,
     });
     expect(replaceMvuData).toHaveBeenCalledTimes(
-      writesBeforeAiUpdate,
+      writesBeforeManagerEdit,
     );
 
     await kernel.api.shutdown();

@@ -10,6 +10,7 @@ import {
 
 const props = defineProps<{
   src?: string;
+  fallbackSrc?: string;
   alt: string;
   fallback: string;
   preferenceId: string;
@@ -18,6 +19,7 @@ const props = defineProps<{
 const emit = defineEmits<{ imageError: []; imageLoad: [] }>();
 defineOptions({ inheritAttrs: false });
 const attrs = useAttrs();
+const activeSrc = ref(props.src || props.fallbackSrc || '');
 
 function storage(): Storage | undefined {
   if (
@@ -63,6 +65,12 @@ watch(
   ([preferenceId]) => {
     saved.value = readAvatarPreference(preferenceId, storage());
     draft.value = { ...saved.value };
+  },
+);
+watch(
+  () => [props.src, props.fallbackSrc] as const,
+  ([src, fallbackSrc]) => {
+    activeSrc.value = src || fallbackSrc || '';
   },
 );
 
@@ -160,6 +168,18 @@ function pointerUp(): void {
   dragging.value = false;
   pointerStart = undefined;
 }
+
+function handleImageError(): void {
+  if (
+    activeSrc.value === props.src &&
+    props.fallbackSrc &&
+    props.fallbackSrc !== props.src
+  ) {
+    activeSrc.value = props.fallbackSrc;
+    return;
+  }
+  emit('imageError');
+}
 </script>
 
 <template>
@@ -176,12 +196,12 @@ function pointerUp(): void {
     >
       <span class="avatar-viewport">
         <img
-          v-if="src"
-          :src="src"
+          v-if="activeSrc"
+          :src="activeSrc"
           :alt="alt"
           :style="thumbnailStyle"
           @load="emit('imageLoad')"
-          @error="emit('imageError')"
+          @error="handleImageError"
         />
         <span v-else class="avatar-fallback" aria-hidden="true">
           {{ fallback }}
@@ -211,23 +231,41 @@ function pointerUp(): void {
             <button type="button" aria-label="关闭" @click="closeEditor">×</button>
           </header>
 
-          <div
-            class="avatar-preview"
-            :class="{ dragging }"
-            @pointerdown="pointerDown"
-            @pointermove="pointerMove"
-            @pointerup="pointerUp"
-            @pointercancel="pointerUp"
-          >
-            <img
-              v-if="src"
-              :src="src"
-              :alt="alt"
-              :style="previewStyle"
-              draggable="false"
-            />
-            <span v-else>{{ fallback }}</span>
-            <em>拖动图片调整展示位置</em>
+          <div class="avatar-preview-grid">
+            <figure class="avatar-source-preview">
+              <div>
+                <img
+                  v-if="activeSrc"
+                  :src="activeSrc"
+                  :alt="`${alt}完整原图`"
+                  draggable="false"
+                />
+                <span v-else>{{ fallback }}</span>
+              </div>
+              <figcaption>完整原图</figcaption>
+            </figure>
+
+            <figure class="avatar-crop-preview">
+              <div
+                class="avatar-preview"
+                :class="{ dragging }"
+                @pointerdown="pointerDown"
+                @pointermove="pointerMove"
+                @pointerup="pointerUp"
+                @pointercancel="pointerUp"
+              >
+                <img
+                  v-if="activeSrc"
+                  :src="activeSrc"
+                  :alt="alt"
+                  :style="previewStyle"
+                  draggable="false"
+                />
+                <span v-else>{{ fallback }}</span>
+                <em>拖动图片调整展示位置</em>
+              </div>
+              <figcaption>面板实际取景</figcaption>
+            </figure>
           </div>
 
           <div class="avatar-controls">
@@ -366,7 +404,7 @@ function pointerUp(): void {
 }
 
 .avatar-editor {
-  width: min(460px, 100%);
+  width: min(660px, 100%);
   max-height: calc(100vh - 36px);
   overflow: auto;
   padding: 18px;
@@ -411,14 +449,53 @@ function pointerUp(): void {
   cursor: pointer;
 }
 
+.avatar-preview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  margin: 18px 0;
+}
+
+.avatar-source-preview,
+.avatar-crop-preview {
+  min-width: 0;
+  margin: 0;
+}
+
+.avatar-source-preview > div {
+  width: 100%;
+  height: min(290px, 48vh);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(212, 168, 67, 0.28);
+  border-radius: 18px;
+  color: #f0d68a;
+  background:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.025) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.025) 25%, transparent 25%),
+    #100e0b;
+  background-size: 18px 18px;
+  font: 700 72px/1 Georgia, serif;
+}
+
+.avatar-source-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  user-select: none;
+}
+
 .avatar-preview {
   position: relative;
-  width: min(290px, 76vw);
+  width: 100%;
   aspect-ratio: 1;
   overflow: hidden;
   display: grid;
   place-items: center;
-  margin: 18px auto;
+  margin: 0 auto;
   border: 1px solid rgba(212, 168, 67, 0.48);
   border-radius: 18px;
   color: #f0d68a;
@@ -426,6 +503,14 @@ function pointerUp(): void {
   font: 700 72px/1 Georgia, serif;
   cursor: grab;
   touch-action: none;
+}
+
+.avatar-source-preview figcaption,
+.avatar-crop-preview figcaption {
+  margin-top: 7px;
+  color: #9e8e77;
+  font: normal 10px/1.3 sans-serif;
+  text-align: center;
 }
 
 .avatar-preview.dragging {
@@ -494,6 +579,14 @@ function pointerUp(): void {
 
   .avatar-editor footer > span {
     display: none;
+  }
+
+  .avatar-preview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .avatar-source-preview > div {
+    height: min(240px, 34vh);
   }
 }
 </style>

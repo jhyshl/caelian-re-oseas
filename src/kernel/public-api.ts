@@ -54,6 +54,8 @@ export interface QueryResultMap {
 export interface TavernAvatarUrls {
   user: string;
   character: string;
+  userOriginal: string;
+  characterOriginal: string;
 }
 
 export interface TavernAvatarRequest {
@@ -73,6 +75,7 @@ export interface CaelianPublicApi {
   closePanel(panel: PanelName): Promise<void>;
   listOpenPanels(): PanelName[];
   getAvatarUrls(options?: TavernAvatarRequest): Promise<TavernAvatarUrls>;
+  refreshNarrativeFromMvu(): Promise<boolean>;
   setUserInput(text: string): boolean;
   notify(input: NotificationInput): number;
   confirm(input: ConfirmationInput): Promise<boolean>;
@@ -97,6 +100,7 @@ export type PanelApi = Pick<
   | 'navigatePanel'
   | 'closePanel'
   | 'getAvatarUrls'
+  | 'refreshNarrativeFromMvu'
   | 'syncProjection'
   | 'syncManagedContent'
   | 'getManagedContentAutoUpdate'

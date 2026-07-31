@@ -12,6 +12,7 @@ import MeterBar from '@/ui/adventurer/MeterBar.vue';
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
 const playerAvatarUrl = ref('');
+const playerAvatarFallbackUrl = ref('');
 const busyStat = ref('');
 const statEditMode = ref(false);
 const professionDialog = ref<'create' | 'reclass'>();
@@ -63,9 +64,12 @@ async function refreshState() {
 }
 
 async function refreshAvatar() {
-  playerAvatarUrl.value = (
-    await props.context.api.getAvatarUrls()
-  ).user;
+  const next = await props.context.api.getAvatarUrls();
+  playerAvatarUrl.value = next.userOriginal || next.user;
+  playerAvatarFallbackUrl.value =
+    next.userOriginal && next.userOriginal !== next.user
+      ? next.user
+      : '';
 }
 
 async function refresh() {
@@ -74,6 +78,7 @@ async function refresh() {
 
 function handlePlayerAvatarError() {
   playerAvatarUrl.value = '';
+  playerAvatarFallbackUrl.value = '';
 }
 
 async function allocate(
@@ -154,6 +159,7 @@ onUnmounted(() => {
         <AdjustableAvatar
           class="avatar"
           :src="playerAvatarUrl"
+          :fallback-src="playerAvatarFallbackUrl"
           :alt="`${snapshot.player.name || '玩家'}的头像`"
           :fallback="snapshot.player.name.trim().slice(0, 1) || '冒'"
           preference-id="player"

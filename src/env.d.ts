@@ -5,9 +5,6 @@ declare const __CAELIAN_BUILD_ID__: string;
 declare const Mvu: MvuLike | undefined;
 declare const eventOn: Window['eventOn'];
 declare const tavern_events: Record<string, unknown> | undefined;
-declare const waitGlobalInitialized:
-  | Window['waitGlobalInitialized']
-  | undefined;
 
 interface Window {
   Caelian?: import('./kernel/public-api').CaelianPublicApi;
@@ -20,7 +17,6 @@ interface Window {
     event: unknown,
     handler: (...args: unknown[]) => void,
   ) => unknown;
-  waitGlobalInitialized?: (name: string) => unknown;
   tavern_events?: Record<string, unknown>;
   getCharAvatarPath?: (name: 'current' | string) => string | null;
   toastr?: {

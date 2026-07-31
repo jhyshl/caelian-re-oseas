@@ -30,10 +30,7 @@ import {
 import { NotificationCenter } from '@/notifications/notification-center';
 import type { NotificationKind } from '@/notifications/types';
 import { GameRepository } from '@/storage/repository';
-import {
-  TavernAdapter,
-  type TavernEventPayload,
-} from '@/tavern/adapter';
+import { TavernAdapter } from '@/tavern/adapter';
 import {
   ManagedContentUpdater,
   type ManagedContentSyncResult,
@@ -128,8 +125,8 @@ export class CaelianKernel {
           await this.syncProjection();
         }),
       );
-      this.adapter.subscribe((eventName, payload) => {
-        this.queueTavernUpdate(eventName, payload);
+      this.adapter.subscribe((eventName) => {
+        this.queueTavernUpdate(eventName);
       });
       this.status = 'ready';
       await this.syncProjection();
@@ -258,11 +255,8 @@ export class CaelianKernel {
     this.events.clear();
   }
 
-  private queueTavernUpdate(
-    eventName: string,
-    payload?: TavernEventPayload,
-  ): void {
-    const task = this.handleTavernUpdate(eventName, payload)
+  private queueTavernUpdate(eventName: string): void {
+    const task = this.handleTavernUpdate(eventName)
       .catch((error) => {
         if (this.status === 'stopped') return;
         this.lastError =
@@ -279,10 +273,7 @@ export class CaelianKernel {
     this.pendingTavernUpdates.add(task);
   }
 
-  private async handleTavernUpdate(
-    eventName: string,
-    payload?: TavernEventPayload,
-  ): Promise<void> {
+  private async handleTavernUpdate(eventName: string): Promise<void> {
     if (eventName === 'ACHIEVEMENT_PATCH_CHANGED') {
       await this.syncAchievementPatches();
       await this.events.emit('tavern.changed', { event: eventName });
@@ -297,8 +288,7 @@ export class CaelianKernel {
       return;
     }
     if (
-      (eventName === 'MESSAGE_UPDATED' ||
-        eventName === 'MVU_VARIABLE_UPDATE_ENDED') &&
+      eventName === 'MESSAGE_UPDATED' &&
       this.projectionWriteInProgress
     ) {
       return;
@@ -306,15 +296,9 @@ export class CaelianKernel {
     if (eventName === 'CHAT_CHANGED') {
       await this.activateCurrentProfile();
     }
-    await this.ingestMvuNarrative(
-      payload?.mvuData,
-      payload?.managerMvuData,
-      payload?.previousMvuData,
-    );
+    await this.ingestMvuNarrative();
     await this.scanCurrentAchievements();
-    if (eventName !== 'MVU_VARIABLE_UPDATE_ENDED') {
-      await this.syncProjection();
-    }
+    await this.syncProjection();
     await this.events.emit('tavern.changed', { event: eventName });
   }
 
@@ -332,6 +316,7 @@ export class CaelianKernel {
       closePanel: (panel) => this.panels.close(panel),
       listOpenPanels: () => this.panels.list(),
       getAvatarUrls: (options) => this.adapter.avatarUrls(options),
+      refreshNarrativeFromMvu: () => this.ingestMvuNarrative(),
       setUserInput: (text) => this.adapter.setUserInput(text),
       notify: (input) => this.notifications.show(input),
       confirm: (input) => this.notifications.confirm(input),
@@ -356,6 +341,7 @@ export class CaelianKernel {
       navigatePanel: (panel) => this.panels.navigate(panel),
       closePanel: (panel) => this.panels.close(panel),
       getAvatarUrls: (options) => this.adapter.avatarUrls(options),
+      refreshNarrativeFromMvu: () => this.ingestMvuNarrative(),
       setUserInput: (text) => this.adapter.setUserInput(text),
       notify: (input) => this.notifications.show(input),
       confirm: (input) => this.notifications.confirm(input),
@@ -415,40 +401,21 @@ export class CaelianKernel {
     );
   }
 
-  private async ingestMvuNarrative(
-    eventMvuData?: Record<string, unknown>,
-    managerMvuData?: Record<string, unknown>,
-    previousMvuData?: Record<string, unknown>,
-  ): Promise<void> {
-    if (!this.profileId) return;
-    const fallbackMvuData =
-      managerMvuData ?? this.adapter.readMvuData() ?? undefined;
-    const eventPatch = this.extractNormalizedNarrative(eventMvuData);
-    const previousPatch = this.extractNormalizedNarrative(previousMvuData);
-    const fallbackPatch = this.extractNormalizedNarrative(fallbackMvuData);
-    const eventRepeatsPrevious =
-      eventPatch !== null &&
-      previousPatch !== null &&
-      this.hashJson(eventPatch) === this.hashJson(previousPatch);
-    const fallbackDiffersFromPrevious =
-      fallbackPatch !== null &&
-      (previousPatch === null ||
-        this.hashJson(fallbackPatch) !== this.hashJson(previousPatch));
-    const useFallback =
-      eventPatch === null ||
-      (eventRepeatsPrevious && fallbackDiffersFromPrevious);
-    const mvuData = useFallback ? fallbackMvuData : eventMvuData;
-    const patch = useFallback ? fallbackPatch : eventPatch;
-    if (!mvuData) return;
+  private async ingestMvuNarrative(): Promise<boolean> {
+    if (!this.profileId) return false;
+    const mvuData = this.adapter.readMvuData();
+    if (!mvuData) return false;
 
     if (hasLegacyMvuState(mvuData)) {
       await this.repository.archiveLegacyMvu(this.profileId, mvuData);
     }
 
-    if (!patch) return;
+    const extracted = extractMvuNarrativePatch(mvuData);
+    if (!extracted) return false;
+    const patch = normalizeNarrativePatch(extracted);
     const snapshot = await this.repository.snapshot(this.profileId);
     const changed = this.changedNarrativePatch(patch, snapshot);
-    if (!changed) return;
+    if (!changed) return false;
 
     this.mvuIngestDepth += 1;
     try {
@@ -460,14 +427,7 @@ export class CaelianKernel {
     } finally {
       this.mvuIngestDepth -= 1;
     }
-  }
-
-  private extractNormalizedNarrative(
-    mvuData?: Record<string, unknown>,
-  ): MvuNarrativePatch | null {
-    if (!mvuData) return null;
-    const extracted = extractMvuNarrativePatch(mvuData);
-    return extracted ? normalizeNarrativePatch(extracted) : null;
+    return true;
   }
 
   private changedNarrativePatch(

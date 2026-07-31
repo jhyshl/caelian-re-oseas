@@ -13,6 +13,7 @@ import AdjustableAvatar from '@/ui/AdjustableAvatar.vue';
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
 const characterAvatarUrl = ref('');
+const characterAvatarFallbackUrl = ref('');
 const error = ref('');
 const disposers: Array<() => void> = [];
 let refreshSequence = 0;
@@ -81,19 +82,26 @@ async function refreshAvatar(force = false): Promise<void> {
       force ? { refresh: 'character' } : undefined,
     );
     if (avatarDisposed) return;
-    characterAvatarUrl.value = next.character;
-    if (!next.character) scheduleAvatarRetry();
+    characterAvatarUrl.value =
+      next.characterOriginal || next.character;
+    characterAvatarFallbackUrl.value =
+      next.characterOriginal && next.characterOriginal !== next.character
+        ? next.character
+        : '';
+    if (!characterAvatarUrl.value) scheduleAvatarRetry();
   } catch {
     if (!avatarDisposed) scheduleAvatarRetry();
   }
 }
 
 async function refresh(): Promise<void> {
+  await props.context.api.refreshNarrativeFromMvu();
   await Promise.all([refreshState(), refreshAvatar()]);
 }
 
 function handleCharacterAvatarError(): void {
   characterAvatarUrl.value = '';
+  characterAvatarFallbackUrl.value = '';
   scheduleAvatarRetry();
 }
 
@@ -156,6 +164,7 @@ onUnmounted(() => {
         <AdjustableAvatar
           class="crest"
           :src="characterAvatarUrl"
+          :fallback-src="characterAvatarFallbackUrl"
           alt="凯利安的头像"
           fallback="C"
           preference-id="caelian"
