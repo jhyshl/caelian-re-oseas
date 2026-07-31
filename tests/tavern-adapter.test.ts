@@ -359,9 +359,10 @@ describe('TavernAdapter', () => {
     selectedPersona.dataset.avatarId = 'first.png';
     personaBlock.appendChild(selectedPersona);
     document.body.appendChild(personaBlock);
+    let characterAvatar = 'caelian.png';
     const getContext = vi.fn(() => ({
       characterId: '0',
-      characters: [{ name: '凯利安', avatar: 'caelian.png' }],
+      characters: [{ name: '凯利安', avatar: characterAvatar }],
       getThumbnailUrl: (type: 'avatar' | 'persona', file: string) =>
         `/thumbnail?type=${type}&file=${encodeURIComponent(file)}`,
     }));
@@ -379,6 +380,12 @@ describe('TavernAdapter', () => {
     expect(changed.user).toContain('file=second.png');
     expect(changed.character).toBe(first.character);
     expect(getContext).toHaveBeenCalledTimes(2);
+
+    characterAvatar = 'caelian-new.png';
+    const refreshed = await adapter.avatarUrls({ refresh: 'character' });
+    expect(refreshed.user).toBe(changed.user);
+    expect(refreshed.character).toContain('file=caelian-new.png');
+    expect(getContext).toHaveBeenCalledTimes(3);
   });
 
   it('普通 iframe 不会因为父窗口可访问就被误判为酒馆宿主', () => {

@@ -14,7 +14,7 @@ const props = defineProps<{
   fallback: string;
   preferenceId: string;
 }>();
-const emit = defineEmits<{ imageError: [] }>();
+const emit = defineEmits<{ imageError: []; imageLoad: [] }>();
 defineOptions({ inheritAttrs: false });
 const attrs = useAttrs();
 
@@ -134,6 +134,7 @@ function pointerUp(): void {
         :src="src"
         :alt="alt"
         :style="thumbnailStyle"
+        @load="emit('imageLoad')"
         @error="emit('imageError')"
       />
       <span v-else class="avatar-fallback" aria-hidden="true">

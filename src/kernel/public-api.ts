@@ -56,6 +56,10 @@ export interface TavernAvatarUrls {
   character: string;
 }
 
+export interface TavernAvatarRequest {
+  refresh?: 'all' | 'user' | 'character';
+}
+
 export interface CaelianPublicApi {
   readonly channel: 'alpha';
   readonly version: string;
@@ -68,7 +72,7 @@ export interface CaelianPublicApi {
   navigatePanel(panel: PanelName): Promise<void>;
   closePanel(panel: PanelName): Promise<void>;
   listOpenPanels(): PanelName[];
-  getAvatarUrls(): Promise<TavernAvatarUrls>;
+  getAvatarUrls(options?: TavernAvatarRequest): Promise<TavernAvatarUrls>;
   setUserInput(text: string): boolean;
   notify(input: NotificationInput): number;
   confirm(input: ConfirmationInput): Promise<boolean>;

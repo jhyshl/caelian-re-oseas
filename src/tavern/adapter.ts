@@ -1,5 +1,8 @@
 import type { AiProjection } from '@/domain/types';
-import type { TavernAvatarUrls } from '@/kernel/public-api';
+import type {
+  TavernAvatarRequest,
+  TavernAvatarUrls,
+} from '@/kernel/public-api';
 import { LEGACY_STAT_DATA_KEYS } from '@/mvu/contracts';
 import type { LegacyAchievementPayload } from '@/storage/repositories/achievement-repository';
 import {
@@ -76,7 +79,15 @@ export class TavernAdapter {
     };
   }
 
-  async avatarUrls(): Promise<TavernAvatarUrls> {
+  async avatarUrls(
+    options: TavernAvatarRequest = {},
+  ): Promise<TavernAvatarUrls> {
+    if (options.refresh === 'all' || options.refresh === 'user') {
+      this.userAvatarUrl = undefined;
+    }
+    if (options.refresh === 'all' || options.refresh === 'character') {
+      this.characterAvatarUrl = undefined;
+    }
     if (
       this.userAvatarUrl !== undefined &&
       this.characterAvatarUrl !== undefined

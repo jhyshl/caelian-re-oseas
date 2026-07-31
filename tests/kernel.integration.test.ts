@@ -11,6 +11,7 @@ afterEach(async () => {
   delete window.SillyTavern;
   delete window.eventOn;
   delete window.tavern_events;
+  localStorage.removeItem('caelian_launcher_order_v1');
   document
     .querySelectorAll('[data-caelian-panel]')
     .forEach((element) => element.remove());
@@ -64,6 +65,82 @@ describe('CaelianKernel integration', () => {
       document.querySelector('[data-caelian-panel="character"]'),
     ).toBeNull();
     expect(document.body.textContent).toContain('凯利安状态栏');
+
+    await kernel.api.shutdown();
+  });
+
+  it('悬浮面板允许玩家调整入口顺序并保存在浏览器本地', async () => {
+    const databaseName = `caelian-alpha-launcher-order-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'launcher-order-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    document
+      .querySelector<HTMLButtonElement>('.caelian-shell-host .orb')
+      ?.click();
+    await expect
+      .poll(() =>
+        document.querySelector<HTMLButtonElement>(
+          '.caelian-shell-host .order-trigger',
+        ),
+      )
+      .not.toBeNull();
+    document
+      .querySelector<HTMLButtonElement>('.caelian-shell-host .order-trigger')
+      ?.click();
+
+    await expect
+      .poll(() =>
+        document.querySelector<HTMLButtonElement>(
+          '.caelian-shell-host [aria-label="角色向后移动"]',
+        ),
+      )
+      .not.toBeNull();
+    const moveCharacterLater =
+      document.querySelector<HTMLButtonElement>(
+        '.caelian-shell-host [aria-label="角色向后移动"]',
+      );
+    expect(moveCharacterLater).not.toBeNull();
+    moveCharacterLater?.click();
+    await expect
+      .poll(
+        () =>
+          document.querySelector(
+            '.caelian-shell-host .order-list li:first-child span',
+          )?.textContent,
+      )
+      .toBe('凯利安');
+    document
+      .querySelector<HTMLButtonElement>(
+        '.caelian-shell-host .order-actions .primary',
+      )
+      ?.click();
+
+    expect(
+      JSON.parse(
+        localStorage.getItem('caelian_launcher_order_v1') ?? '[]',
+      ),
+    ).toEqual([
+      'affinity',
+      'character',
+      'deck',
+      'inventory',
+      'guild',
+      'mailbox',
+      'market',
+      'map',
+      'battle',
+      'achievements',
+      'settings',
+      'feedback',
+      'release-notes',
+    ]);
 
     await kernel.api.shutdown();
   });
@@ -144,6 +221,54 @@ describe('CaelianKernel integration', () => {
           )?.src,
       )
       .toBe(new URL('/avatars/avatar/caelian.png', document.baseURI).href);
+
+    await kernel.api.shutdown();
+  });
+
+  it('凯利安头像首次读取为空时会自动重试', async () => {
+    const databaseName = `caelian-alpha-avatar-retry-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    let avatarReady = false;
+    window.SillyTavern = {
+      getContext: () => ({
+        chatId: 'avatar-retry-chat',
+        characterId: '0',
+        name1: '测试玩家',
+        name2: '凯利安',
+        characters: avatarReady
+          ? [{ name: '凯利安', avatar: 'caelian-late.png' }]
+          : [],
+        getThumbnailUrl: (type, file) => `/avatars/${type}/${file}`,
+      }),
+    };
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'avatar-retry-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    await kernel.api.openPanel('affinity');
+    expect(
+      document.querySelector(
+        '[data-caelian-panel="affinity"] .crest img',
+      ),
+    ).toBeNull();
+
+    avatarReady = true;
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLImageElement>(
+            '[data-caelian-panel="affinity"] .crest img',
+          )?.src,
+        { timeout: 2_000 },
+      )
+      .toBe(
+        new URL('/avatars/avatar/caelian-late.png', document.baseURI).href,
+      );
 
     await kernel.api.shutdown();
   });

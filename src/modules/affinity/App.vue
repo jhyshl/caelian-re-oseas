@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* global window */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type { GameSnapshot } from '@/domain/types';
 import type { PanelContext } from '@/kernel/public-api';
@@ -15,6 +16,10 @@ const characterAvatarUrl = ref('');
 const error = ref('');
 const disposers: Array<() => void> = [];
 let refreshSequence = 0;
+let avatarRetryTimer: number | undefined;
+let avatarRetryIndex = 0;
+let avatarDisposed = false;
+const AVATAR_RETRY_DELAYS = [250, 700, 1500, 3000] as const;
 
 const status = computed(() =>
   snapshot.value
@@ -46,10 +51,41 @@ async function refreshState(): Promise<void> {
   }
 }
 
-async function refreshAvatar(): Promise<void> {
-  characterAvatarUrl.value = (
-    await props.context.api.getAvatarUrls()
-  ).character;
+function clearAvatarRetry(): void {
+  if (avatarRetryTimer === undefined) return;
+  const win = props.context.document.defaultView ?? window;
+  win.clearTimeout(avatarRetryTimer);
+  avatarRetryTimer = undefined;
+}
+
+function scheduleAvatarRetry(): void {
+  if (
+    avatarDisposed ||
+    avatarRetryTimer !== undefined ||
+    avatarRetryIndex >= AVATAR_RETRY_DELAYS.length
+  ) {
+    return;
+  }
+  const win = props.context.document.defaultView ?? window;
+  const delay = AVATAR_RETRY_DELAYS[avatarRetryIndex] ?? 3000;
+  avatarRetryTimer = win.setTimeout(() => {
+    avatarRetryTimer = undefined;
+    avatarRetryIndex += 1;
+    void refreshAvatar(true);
+  }, delay);
+}
+
+async function refreshAvatar(force = false): Promise<void> {
+  try {
+    const next = await props.context.api.getAvatarUrls(
+      force ? { refresh: 'character' } : undefined,
+    );
+    if (avatarDisposed) return;
+    characterAvatarUrl.value = next.character;
+    if (!next.character) scheduleAvatarRetry();
+  } catch {
+    if (!avatarDisposed) scheduleAvatarRetry();
+  }
 }
 
 async function refresh(): Promise<void> {
@@ -58,22 +94,38 @@ async function refresh(): Promise<void> {
 
 function handleCharacterAvatarError(): void {
   characterAvatarUrl.value = '';
+  scheduleAvatarRetry();
+}
+
+function handleCharacterAvatarLoad(): void {
+  avatarRetryIndex = 0;
+  clearAvatarRetry();
 }
 
 onMounted(async () => {
+  avatarDisposed = false;
   await refresh();
   disposers.push(
-    props.context.api.on('state.changed', refreshState),
+    props.context.api.on('state.changed', async () => {
+      await refreshState();
+      if (!characterAvatarUrl.value) scheduleAvatarRetry();
+    }),
     props.context.api.on('tavern.changed', async ({ event }) => {
       await refreshState();
       if (event === 'CHAT_CHANGED' || event === 'CHARACTER_EDITED') {
-        await refreshAvatar();
+        avatarRetryIndex = 0;
+        clearAvatarRetry();
+        await refreshAvatar(true);
+      } else if (!characterAvatarUrl.value) {
+        scheduleAvatarRetry();
       }
     }),
   );
 });
 
 onUnmounted(() => {
+  avatarDisposed = true;
+  clearAvatarRetry();
   refreshSequence += 1;
   for (const dispose of disposers.splice(0)) dispose();
 });
@@ -107,6 +159,7 @@ onUnmounted(() => {
           alt="凯利安的头像"
           fallback="C"
           preference-id="caelian"
+          @image-load="handleCharacterAvatarLoad"
           @image-error="handleCharacterAvatarError"
         />
         <div>
