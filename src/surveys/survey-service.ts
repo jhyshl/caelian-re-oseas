@@ -33,6 +33,9 @@ const identifierSchema = z
 const optionSchema = z.object({
   value: identifierSchema,
   label: z.string().min(1).max(160),
+  freeText: z.boolean().optional(),
+  textPlaceholder: z.string().max(160).optional(),
+  textMaxLength: z.number().int().min(1).max(1_000).optional(),
 });
 
 const questionSchema = z
@@ -52,6 +55,12 @@ const questionSchema = z
     maxSelections: z.number().int().min(1).max(30).optional(),
     minLength: z.number().int().min(0).max(2_000).optional(),
     maxLength: z.number().int().min(1).max(4_000).optional(),
+    legacyFallbackFor: z
+      .object({
+        questionId: identifierSchema,
+        optionValue: identifierSchema,
+      })
+      .optional(),
   })
   .superRefine((question, context) => {
     const isChoice =
@@ -71,6 +80,27 @@ const questionSchema = z
           code: 'custom',
           path: ['options'],
           message: '同一题的选项值不能重复',
+        });
+      }
+      if (
+        question.type !== 'multiple-choice' &&
+        question.options.some((option) => option.freeText)
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['options'],
+          message: '自由填写选项仅支持多选题',
+        });
+      }
+      if (
+        question.options.some(
+          (option) => option.freeText && option.value.includes('::'),
+        )
+      ) {
+        context.addIssue({
+          code: 'custom',
+          path: ['options'],
+          message: '自由填写选项值不能包含双冒号',
         });
       }
     }
@@ -182,6 +212,36 @@ function allowedOptions(question: SurveyQuestion): Set<string> {
   return new Set((question.options ?? []).map((option) => option.value));
 }
 
+function normalizeMultipleChoiceValue(
+  question: SurveyQuestion,
+  value: string,
+): { value?: string; optionValue?: string; error?: string } {
+  const exact = question.options?.find((option) => option.value === value);
+  if (exact && !exact.freeText) {
+    return { value, optionValue: exact.value };
+  }
+  const freeTextOption = question.options?.find(
+    (option) => option.freeText && value.startsWith(`${option.value}::`),
+  );
+  if (!freeTextOption) {
+    if (exact?.freeText) {
+      return { error: `“${exact.label}”需要填写具体内容。` };
+    }
+    return { error: '包含无效选项。' };
+  }
+  const text = value.slice(freeTextOption.value.length + 2).trim();
+  const maximum = freeTextOption.textMaxLength ?? 500;
+  if (text.length === 0 || text.length > maximum) {
+    return {
+      error: `“${freeTextOption.label}”需要填写 1–${maximum} 个字。`,
+    };
+  }
+  return {
+    value: `${freeTextOption.value}::${text}`,
+    optionValue: freeTextOption.value,
+  };
+}
+
 function validateQuestionAnswer(
   question: SurveyQuestion,
   rawAnswer: SurveyAnswer | undefined,
@@ -206,10 +266,22 @@ function validateQuestionAnswer(
     if (!Array.isArray(rawAnswer)) {
       return { error: `“${question.title}”的答案格式不正确。` };
     }
-    const answer = [...new Set(rawAnswer)];
-    const allowed = allowedOptions(question);
-    if (answer.some((value) => !allowed.has(value))) {
-      return { error: `“${question.title}”包含无效选项。` };
+    const answer: string[] = [];
+    const selectedOptionValues = new Set<string>();
+    for (const value of rawAnswer) {
+      const normalized = normalizeMultipleChoiceValue(question, value);
+      if (
+        normalized.error ||
+        !normalized.value ||
+        !normalized.optionValue
+      ) {
+        return {
+          error: `“${question.title}”${normalized.error ?? '包含无效选项。'}`,
+        };
+      }
+      if (selectedOptionValues.has(normalized.optionValue)) continue;
+      selectedOptionValues.add(normalized.optionValue);
+      answer.push(normalized.value);
     }
     const minimum = question.minSelections ?? (question.required ? 1 : 0);
     const maximum = question.maxSelections ?? question.options?.length ?? 30;

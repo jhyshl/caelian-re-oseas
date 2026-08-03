@@ -1,6 +1,112 @@
 {
   "schemaVersion": 1,
   "channel": "alpha",
-  "revision": "2026-08-03.0",
-  "surveys": []
+  "revision": "2026-08-03.1",
+  "surveys": [
+    {
+      "id": "2026-08-caelian-interactions",
+      "revision": 1,
+      "kind": "survey",
+      "title": "凯利安额外交互功能调查",
+      "description": "了解大家对远程通讯、外接 API 与额外交互内容的实际需求。问卷提交后无法修改，请按自己的真实想法填写。",
+      "active": true,
+      "questions": [
+        {
+          "id": "more_interactions",
+          "type": "single-choice",
+          "title": "是否期望在前端增加更多与凯利安的互动，例如互寄信件、类似小手机的远程通讯系统？",
+          "required": true,
+          "options": [
+            { "value": "yes", "label": "是" },
+            { "value": "no", "label": "否" },
+            { "value": "neutral", "label": "无所谓" }
+          ]
+        },
+        {
+          "id": "external_api_acceptance",
+          "type": "single-choice",
+          "title": "如果添加更多的交互内容，你是否接受需要外接 API？",
+          "required": true,
+          "options": [
+            { "value": "accept", "label": "接受" },
+            { "value": "reject", "label": "不接受" },
+            { "value": "neutral", "label": "无所谓" }
+          ]
+        },
+        {
+          "id": "main_story_continuity",
+          "type": "single-choice",
+          "title": "如果采用外接 API，你希望交互内容可以被主线中的凯利安读取并延续交互吗？",
+          "description": "如果你不考虑使用外接 API，可以选择“无所谓”。",
+          "required": true,
+          "options": [
+            { "value": "yes", "label": "是" },
+            { "value": "no", "label": "否" },
+            { "value": "neutral", "label": "无所谓" }
+          ]
+        },
+        {
+          "id": "external_api_model",
+          "type": "single-choice",
+          "title": "如果使用外接 API，你会选择什么模型？",
+          "required": false,
+          "options": [
+            { "value": "gemini", "label": "Gemini" },
+            { "value": "claude", "label": "Claude" },
+            { "value": "gpt", "label": "GPT" },
+            { "value": "deepseek", "label": "deepseek" },
+            { "value": "kimi", "label": "kimi" },
+            { "value": "other", "label": "其他" }
+          ]
+        },
+        {
+          "id": "main_api_model",
+          "type": "single-choice",
+          "title": "你当前走主线时使用的主 API 模型是什么？",
+          "required": true,
+          "options": [
+            { "value": "gemini", "label": "Gemini" },
+            { "value": "claude", "label": "Claude" },
+            { "value": "gpt", "label": "GPT" },
+            { "value": "deepseek", "label": "deepseek" },
+            { "value": "kimi", "label": "kimi" },
+            { "value": "other", "label": "其他" }
+          ]
+        },
+        {
+          "id": "preferred_interactions",
+          "type": "multiple-choice",
+          "title": "你更想添加什么类型的额外交互？",
+          "required": true,
+          "minSelections": 1,
+          "maxSelections": 5,
+          "options": [
+            { "value": "letters", "label": "互寄信件" },
+            { "value": "communications", "label": "通讯系统" },
+            { "value": "raise_treiao", "label": "共同喂养特莱奥" },
+            { "value": "travel_album", "label": "旅行相册（通过前往地区探索解锁相片）" },
+            {
+              "value": "other_idea",
+              "label": "其他更好的点子",
+              "freeText": true,
+              "textPlaceholder": "请填写你的具体想法",
+              "textMaxLength": 500
+            }
+          ]
+        },
+        {
+          "id": "preferred_interactions_other_legacy",
+          "type": "long-text",
+          "title": "如果你在上一题选择了“其他更好的点子”，请填写具体内容",
+          "description": "仅在上一题选择“其他更好的点子”时填写；未选择可以留空。",
+          "required": false,
+          "maxLength": 500,
+          "legacyFallbackFor": {
+            "questionId": "preferred_interactions",
+            "optionValue": "other_idea"
+          }
+        }
+      ]
+    }
+  ]
 }

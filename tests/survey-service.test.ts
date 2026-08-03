@@ -34,6 +34,32 @@ const survey: SurveyDefinition = {
       required: false,
       maxLength: 500,
     },
+    {
+      id: 'ideas',
+      type: 'multiple-choice',
+      title: '希望添加哪些内容？',
+      required: false,
+      options: [
+        { value: 'letters', label: '互寄信件' },
+        {
+          value: 'other',
+          label: '其他想法',
+          freeText: true,
+          textMaxLength: 100,
+        },
+      ],
+    },
+    {
+      id: 'ideas_other_legacy',
+      type: 'long-text',
+      title: '请填写其他想法',
+      required: false,
+      maxLength: 100,
+      legacyFallbackFor: {
+        questionId: 'ideas',
+        optionValue: 'other',
+      },
+    },
   ],
 };
 
@@ -80,6 +106,48 @@ describe('问卷回答校验', () => {
         details: '希望翻页动画更明显。',
       },
       discordId: 'player.123',
+    });
+  });
+
+  it('多选题的其他选项必须填写具体内容并会规范空白', () => {
+    const interactionSurvey: SurveyDefinition = {
+      ...survey,
+      id: 'interaction-survey',
+      questions: [
+        {
+          id: 'interactions',
+          type: 'multiple-choice',
+          title: '希望添加哪些交互？',
+          required: true,
+          options: [
+            { value: 'letters', label: '互寄信件' },
+            {
+              value: 'other',
+              label: '其他想法',
+              freeText: true,
+              textMaxLength: 100,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(
+      validateSurveySubmission(interactionSurvey, {
+        answers: { interactions: ['other'] },
+        discordId: '',
+      }).valid,
+    ).toBe(false);
+    expect(
+      validateSurveySubmission(interactionSurvey, {
+        answers: { interactions: ['letters', 'other::  新增小游戏  '] },
+        discordId: '',
+      }),
+    ).toMatchObject({
+      valid: true,
+      answers: {
+        interactions: ['letters', 'other::新增小游戏'],
+      },
     });
   });
 });

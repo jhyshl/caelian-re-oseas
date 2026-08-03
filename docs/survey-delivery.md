@@ -65,3 +65,5 @@
 ```
 
 支持的问题类型：`single-choice`、`multiple-choice`、`short-text`、`long-text`。选择题的 `value` 只使用小写英文字母、数字、点、下划线、冒号或短横线。
+
+多选题的选项可设置 `"freeText": true`，玩家勾选后会展开填写框；可用 `textPlaceholder` 自定义提示，并用 `textMaxLength` 限制长度。自由填写选项的 `value` 不要包含 `::`。

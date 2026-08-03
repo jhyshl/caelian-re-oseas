@@ -9,6 +9,9 @@ export type SurveyQuestionType =
 export interface SurveyOption {
   value: string;
   label: string;
+  freeText?: boolean;
+  textPlaceholder?: string;
+  textMaxLength?: number;
 }
 
 export interface SurveyQuestion {
@@ -22,6 +25,10 @@ export interface SurveyQuestion {
   maxSelections?: number;
   minLength?: number;
   maxLength?: number;
+  legacyFallbackFor?: {
+    questionId: string;
+    optionValue: string;
+  };
 }
 
 export interface SurveyDefinition {

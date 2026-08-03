@@ -6,6 +6,7 @@ import type {
   SurveyAnswer,
   SurveyAnswers,
   SurveyListEntry,
+  SurveyOption,
   SurveyQuestion,
 } from '@/surveys/types';
 
@@ -103,16 +104,62 @@ function selectedOptions(questionId: string): string[] {
   return Array.isArray(answer) ? answer : [];
 }
 
-function toggleOption(questionId: string, value: string): void {
+function choiceValue(option: SurveyOption, text = ''): string {
+  return option.freeText ? `${option.value}::${text}` : option.value;
+}
+
+function matchesOption(value: string, option: SurveyOption): boolean {
+  return (
+    value === option.value ||
+    (Boolean(option.freeText) && value.startsWith(`${option.value}::`))
+  );
+}
+
+function optionSelected(questionId: string, option: SurveyOption): boolean {
+  return selectedOptions(questionId).some((value) =>
+    matchesOption(value, option),
+  );
+}
+
+function optionText(questionId: string, option: SurveyOption): string {
+  const value = selectedOptions(questionId).find((candidate) =>
+    matchesOption(candidate, option),
+  );
+  return value?.startsWith(`${option.value}::`)
+    ? value.slice(option.value.length + 2)
+    : '';
+}
+
+function toggleOption(questionId: string, option: SurveyOption): void {
   const current = selectedOptions(questionId);
-  answers[questionId] = current.includes(value)
-    ? current.filter((candidate) => candidate !== value)
-    : [...current, value];
+  answers[questionId] = optionSelected(questionId, option)
+    ? current.filter((candidate) => !matchesOption(candidate, option))
+    : [...current, choiceValue(option)];
+}
+
+function setOptionText(
+  questionId: string,
+  option: SurveyOption,
+  event: Event,
+): void {
+  const text = (event.target as HTMLInputElement).value;
+  const current = selectedOptions(questionId);
+  answers[questionId] = current.map((candidate) =>
+    matchesOption(candidate, option) ? choiceValue(option, text) : candidate,
+  );
+}
+
+function visibleQuestions(
+  questions: readonly SurveyQuestion[],
+): SurveyQuestion[] {
+  return questions.filter((question) => !question.legacyFallbackFor);
 }
 
 function answerLabel(
   question: SurveyQuestion,
   answer: SurveyAnswer | undefined,
+  allAnswers: SurveyAnswers = {},
+  questions: readonly SurveyQuestion[] = [],
 ): string {
   if (answer === undefined || answer === '') return '未填写';
   const values = Array.isArray(answer) ? answer : [answer];
@@ -120,10 +167,29 @@ function answerLabel(
     question.type === 'single-choice' ||
     question.type === 'multiple-choice'
   ) {
-    const labels = new Map(
-      (question.options ?? []).map((option) => [option.value, option.label]),
-    );
-    return values.map((value) => labels.get(value) ?? value).join('、');
+    return values
+      .map((value) => {
+        const option = question.options?.find((candidate) =>
+          matchesOption(value, candidate),
+        );
+        if (!option) return value;
+        const text = value.startsWith(`${option.value}::`)
+          ? value.slice(option.value.length + 2)
+          : '';
+        const fallbackQuestion = questions.find(
+          (candidate) =>
+            candidate.legacyFallbackFor?.questionId === question.id &&
+            candidate.legacyFallbackFor.optionValue === option.value,
+        );
+        const fallbackAnswer = fallbackQuestion
+          ? allAnswers[fallbackQuestion.id]
+          : undefined;
+        const fallbackText =
+          typeof fallbackAnswer === 'string' ? fallbackAnswer.trim() : '';
+        const detail = text || fallbackText;
+        return detail ? `${option.label}：${detail}` : option.label;
+      })
+      .join('、');
   }
   return values.join('');
 }
@@ -285,12 +351,12 @@ onUnmounted(() => {
               </time>
             </header>
             <article
-              v-for="(question, index) in selected.definition.questions"
+              v-for="(question, index) in visibleQuestions(selected.definition.questions)"
               :key="question.id"
             >
               <small>问题 {{ index + 1 }}</small>
               <h4>{{ question.title }}</h4>
-              <p>{{ answerLabel(question, selected.response?.answers[question.id]) }}</p>
+              <p>{{ answerLabel(question, selected.response?.answers[question.id], selected.response?.answers, selected.definition.questions) }}</p>
             </article>
             <article>
               <small>选填信息</small>
@@ -304,7 +370,7 @@ onUnmounted(() => {
 
           <form v-else class="survey-form" @submit.prevent="submitCurrent">
             <fieldset
-              v-for="(question, index) in selected.definition.questions"
+              v-for="(question, index) in visibleQuestions(selected.definition.questions)"
               :key="question.id"
               class="question"
             >
@@ -337,15 +403,30 @@ onUnmounted(() => {
                 v-else-if="question.type === 'multiple-choice'"
                 class="choice-list"
               >
-                <label v-for="option in question.options" :key="option.value">
+                <div
+                  v-for="option in question.options"
+                  :key="option.value"
+                  class="choice-with-text"
+                >
+                  <label>
+                    <input
+                      type="checkbox"
+                      :value="option.value"
+                      :checked="optionSelected(question.id, option)"
+                      @change="toggleOption(question.id, option)"
+                    />
+                    <span>{{ option.label }}</span>
+                  </label>
                   <input
-                    type="checkbox"
-                    :value="option.value"
-                    :checked="selectedOptions(question.id).includes(option.value)"
-                    @change="toggleOption(question.id, option.value)"
+                    v-if="option.freeText && optionSelected(question.id, option)"
+                    class="option-text-answer"
+                    type="text"
+                    :value="optionText(question.id, option)"
+                    :maxlength="option.textMaxLength ?? 500"
+                    :placeholder="option.textPlaceholder ?? '请填写具体内容'"
+                    @input="setOptionText(question.id, option, $event)"
                   />
-                  <span>{{ option.label }}</span>
-                </label>
+                </div>
               </div>
 
               <input
@@ -513,6 +594,9 @@ onUnmounted(() => {
 .question legend strong { color: #e5ddd2; font-size: 14px; line-height: 1.5; }
 .question legend strong i { margin-left: 6px; color: #d5ab4e; font: normal 9px/1 inherit; }
 .question legend > span { color: #8d887f; font-size: 11px; line-height: 1.55; }
+.choice-with-text { display: grid; gap: 8px; }
+.option-text-answer { width: calc(100% - 28px); margin-left: 28px; padding: 10px 12px; border: 1px solid rgba(212, 168, 67, 0.32); border-radius: 10px; background: rgba(8, 9, 12, 0.72); color: #eee6dc; font: inherit; box-sizing: border-box; }
+.option-text-answer:focus { outline: none; border-color: rgba(212, 168, 67, 0.7); }
 .choice-list { display: grid; gap: 8px; margin-top: 13px; }
 .choice-list label { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border: 1px solid #30343d; border-radius: 10px; color: #bbb4a9; background: rgba(0, 0, 0, 0.14); cursor: pointer; }
 .choice-list label:has(input:checked) { border-color: rgba(212, 168, 67, 0.58); color: #f0d68a; background: rgba(212, 168, 67, 0.08); }
