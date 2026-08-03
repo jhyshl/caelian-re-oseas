@@ -18,6 +18,7 @@ export function mountVuePanel(
     panel === 'shell'
       ? 'caelian-panel-host caelian-shell-host'
       : panel === 'feedback' ||
+          panel === 'surveys' ||
           panel === 'release-notes' ||
           panel === 'achievement-letter'
         ? 'caelian-panel-host caelian-modal-host'
@@ -28,7 +29,17 @@ export function mountVuePanel(
 
   const app = createApp(component, { context });
   app.use(createPinia());
-  app.mount(root);
+  try {
+    app.mount(root);
+  } catch (error) {
+    try {
+      app.unmount();
+    } catch {
+      // Vue can throw before the application reaches a mounted state.
+    }
+    host.remove();
+    throw error;
+  }
 
   return () => {
     app.unmount();

@@ -14,6 +14,7 @@ import {
 } from '@/modules/shell/floating-position';
 import {
   horizontalSwipeDirection,
+  launcherPageDirection,
   paginateLauncherItems,
 } from '@/modules/shell/launcher-pagination';
 import LauncherOrderDialog from '@/modules/shell/LauncherOrderDialog.vue';
@@ -42,6 +43,7 @@ const retracted = ref(initialPlacement.dockSide !== null);
 const shellElement = ref<HTMLElement | null>(null);
 const info = computed(() => props.context.api.getRuntimeInfo());
 const pageIndex = ref(0);
+const pageDirection = ref<-1 | 1>(1);
 const ordering = ref(false);
 
 let idleTimer: number | undefined;
@@ -78,6 +80,7 @@ const primary: Array<{ panel: PanelName; icon: string; label: string }> = [
   { panel: 'achievements', icon: '♛', label: '成就' },
   { panel: 'settings', icon: '⚙', label: '设置' },
   { panel: 'feedback', icon: '✎', label: '反馈' },
+  { panel: 'surveys', icon: '◫', label: '问卷' },
   { panel: 'release-notes', icon: '◉', label: '公告' },
 ];
 const defaultLauncherOrder = primary.map((item) => item.panel);
@@ -108,6 +111,9 @@ const launcherPages = computed(() =>
 );
 const currentPage = computed(
   () => launcherPages.value[pageIndex.value] ?? launcherPages.value[0]!,
+);
+const pageTransitionName = computed(() =>
+  pageDirection.value > 0 ? 'launcher-next' : 'launcher-previous',
 );
 
 const renderedPosition = computed(() => {
@@ -348,7 +354,17 @@ function activateLauncher(wasExpanded: boolean): void {
 
 function open(panel: PanelName): void {
   if (info.value.status !== 'ready' && panel !== 'diagnostics') return;
-  void props.context.api.navigatePanel(panel);
+  void props.context.api.navigatePanel(panel).catch((error) => {
+    props.context.api.notify({
+      kind: 'error',
+      title: '页面打开失败',
+      description:
+        error instanceof Error
+          ? `${error.message}。请再试一次。`
+          : '页面挂载失败，请再试一次。',
+      duration: 6_000,
+    });
+  });
   closeWheel();
 }
 
@@ -398,7 +414,20 @@ function clearOrdering(): void {
 function changePage(direction: -1 | 1): void {
   const count = launcherPages.value.length;
   if (count <= 1) return;
+  pageDirection.value = direction;
   pageIndex.value = (pageIndex.value + direction + count) % count;
+  recordActivity();
+}
+
+function goToPage(target: number): void {
+  const count = launcherPages.value.length;
+  if (target < 0 || target >= count || target === pageIndex.value) return;
+  pageDirection.value = launcherPageDirection(
+    pageIndex.value,
+    target,
+    count,
+  );
+  pageIndex.value = target;
   recordActivity();
 }
 
@@ -633,20 +662,24 @@ onUnmounted(() => {
       <p v-if="info.status !== 'ready'" class="warning">
         {{ info.lastError || `内核状态：${info.status}` }}
       </p>
-      <div class="wheel-grid">
-        <button
-          v-for="item in currentPage"
-          :key="item.panel"
-          type="button"
-          role="menuitem"
-          :disabled="
-            info.status !== 'ready' && item.panel !== 'diagnostics'
-          "
-          @click="open(item.panel)"
-        >
-          <b>{{ item.icon }}</b>
-          <span>{{ item.label }}</span>
-        </button>
+      <div class="wheel-page-viewport">
+        <Transition :name="pageTransitionName" mode="out-in">
+          <div :key="pageIndex" class="wheel-grid">
+            <button
+              v-for="item in currentPage"
+              :key="item.panel"
+              type="button"
+              role="menuitem"
+              :disabled="
+                info.status !== 'ready' && item.panel !== 'diagnostics'
+              "
+              @click="open(item.panel)"
+            >
+              <b>{{ item.icon }}</b>
+              <span>{{ item.label }}</span>
+            </button>
+          </div>
+        </Transition>
       </div>
       <footer class="page-controls">
         <button
@@ -663,7 +696,7 @@ onUnmounted(() => {
             type="button"
             :class="{ active: pageIndex === index }"
             :aria-label="`第 ${index + 1} 页`"
-            @click="pageIndex = index"
+            @click="goToPage(index)"
           ></button>
         </div>
         <button
@@ -901,6 +934,32 @@ onUnmounted(() => {
   gap: 6px;
 }
 
+.wheel-page-viewport {
+  min-height: 124px;
+  overflow: hidden;
+}
+
+.launcher-next-enter-active,
+.launcher-next-leave-active,
+.launcher-previous-enter-active,
+.launcher-previous-leave-active {
+  transition:
+    opacity 0.16s ease,
+    transform 0.2s cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+
+.launcher-next-enter-from,
+.launcher-previous-leave-to {
+  opacity: 0;
+  transform: translateX(34px);
+}
+
+.launcher-next-leave-to,
+.launcher-previous-enter-from {
+  opacity: 0;
+  transform: translateX(-34px);
+}
+
 .wheel-grid button {
   min-height: 59px;
   display: grid;
@@ -1003,7 +1062,11 @@ onUnmounted(() => {
 @media (prefers-reduced-motion: reduce) {
   .shell,
   .orb,
-  .wheel {
+  .wheel,
+  .launcher-next-enter-active,
+  .launcher-next-leave-active,
+  .launcher-previous-enter-active,
+  .launcher-previous-leave-active {
     animation: none;
     transition: none;
   }

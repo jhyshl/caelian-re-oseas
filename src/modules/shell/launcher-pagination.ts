@@ -27,3 +27,14 @@ export function horizontalSwipeDirection(
   }
   return deltaX < 0 ? 1 : -1;
 }
+
+export function launcherPageDirection(
+  current: number,
+  target: number,
+  pageCount: number,
+): -1 | 1 {
+  if (pageCount <= 1 || current === target) return 1;
+  const forward = (target - current + pageCount) % pageCount;
+  const backward = (current - target + pageCount) % pageCount;
+  return forward <= backward ? 1 : -1;
+}

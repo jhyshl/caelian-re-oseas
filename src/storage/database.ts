@@ -34,8 +34,12 @@ import type {
   TutorialProgressRecord,
   WorldStateRecord,
 } from '@/domain/types';
+import type {
+  SurveyResponseRecord,
+  SurveyTokenRecord,
+} from '@/surveys/types';
 
-export const DATABASE_SCHEMA_VERSION = 5;
+export const DATABASE_SCHEMA_VERSION = 6;
 
 export class CaelianDatabase extends Dexie {
   profiles!: Table<ProfileRecord, string>;
@@ -78,6 +82,8 @@ export class CaelianDatabase extends Dexie {
   settings!: Table<SettingsRecord, string>;
   contentVersions!: Table<ContentVersionRecord, string>;
   legacySnapshots!: Table<LegacySnapshotRecord, string>;
+  surveyTokens!: Table<SurveyTokenRecord, string>;
+  surveyResponses!: Table<SurveyResponseRecord, string>;
 
   constructor(
     channel: ReleaseChannel,
@@ -146,5 +152,11 @@ export class CaelianDatabase extends Dexie {
           .startsWith('daily:')
           .delete();
       });
+
+    this.version(6).stores({
+      surveyTokens: 'surveyId, createdAt',
+      surveyResponses:
+        'id, &surveyId, status, surveyRevision, submittedAt, updatedAt',
+    });
   }
 }

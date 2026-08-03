@@ -22,6 +22,78 @@ afterEach(async () => {
 });
 
 describe('CaelianKernel integration', () => {
+  it('运行中发现新问卷时弹出提示，并可直接打开独立问卷面板', async () => {
+    const databaseName = `caelian-alpha-survey-notice-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const catalog = {
+      schemaVersion: 1,
+      channel: 'alpha',
+      revision: 'test.1',
+      surveys: [
+        {
+          id: 'test-runtime-survey',
+          revision: 1,
+          kind: 'single',
+          title: '运行时新问卷',
+          description: '不刷新酒馆也应收到提醒。',
+          active: true,
+          questions: [
+            {
+              id: 'opinion',
+              type: 'short-text',
+              title: '你的意见',
+              required: true,
+            },
+          ],
+        },
+      ],
+    };
+    const fetchMock = vi
+      .spyOn(window, 'fetch')
+      .mockImplementation(async (input) => {
+        if (String(input).includes('/managed-content/surveys/alpha.json')) {
+          return new Response(JSON.stringify(catalog), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        return new Response(null, { status: 404 });
+      });
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'survey-notice-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    if (kernel.api.listOpenPanels().includes('achievement-letter')) {
+      await kernel.api.closePanel('achievement-letter');
+    }
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLElement>('.confirm-dialog h2')
+            ?.textContent,
+      )
+      .toContain('新的意见征集');
+    expect(document.body.textContent).toContain('运行时新问卷');
+
+    document
+      .querySelector<HTMLButtonElement>('.confirm-actions .confirm')
+      ?.click();
+    await expect
+      .poll(() => document.querySelector('[data-caelian-panel="surveys"]'))
+      .not.toBeNull();
+    await expect
+      .poll(() => document.querySelector('.survey-content')?.textContent)
+      .toContain('你的意见');
+
+    await kernel.api.shutdown();
+    fetchMock.mockRestore();
+  });
+
   it('双击悬浮入口直接打开独立的凯利安状态栏', async () => {
     const databaseName = `caelian-alpha-affinity-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
@@ -144,6 +216,7 @@ describe('CaelianKernel integration', () => {
       'achievements',
       'settings',
       'feedback',
+      'surveys',
       'release-notes',
     ]);
 
@@ -179,6 +252,18 @@ describe('CaelianKernel integration', () => {
     expect(
       document.querySelector('[data-caelian-panel="inventory"]'),
     ).toBeNull();
+
+    await kernel.api.openPanel('feedback');
+    const feedbackHost = document.querySelector(
+      '[data-caelian-panel="feedback"]',
+    );
+    expect(feedbackHost).not.toBeNull();
+    feedbackHost?.remove();
+    await kernel.api.openPanel('feedback');
+    expect(
+      document.querySelector('[data-caelian-panel="feedback"]'),
+    ).not.toBeNull();
+    await kernel.api.closePanel('feedback');
 
     await kernel.api.shutdown();
     expect(document.querySelector('[data-caelian-panel]')).toBeNull();

@@ -14,6 +14,12 @@ import type {
   NotificationInput,
 } from '@/notifications/types';
 import type { ManagedContentSyncResult } from '@/content-updates/managed-content';
+import type {
+  SurveyCatalogSyncResult,
+  SurveyListEntry,
+  SurveyResponseRecord,
+  SurveySubmissionDraft,
+} from '@/surveys/types';
 
 export type PanelName =
   | 'shell'
@@ -29,6 +35,7 @@ export type PanelName =
   | 'mailbox'
   | 'settings'
   | 'feedback'
+  | 'surveys'
   | 'release-notes'
   | 'achievement-letter'
   | 'diagnostics';
@@ -83,6 +90,13 @@ export interface CaelianPublicApi {
   syncManagedContent(options?: {
     force?: boolean;
   }): Promise<ManagedContentSyncResult>;
+  listSurveys(options?: { refresh?: boolean }): Promise<SurveyListEntry[]>;
+  submitSurvey(
+    surveyId: string,
+    draft: SurveySubmissionDraft,
+  ): Promise<SurveyResponseRecord>;
+  ignoreSurvey(surveyId: string): Promise<SurveyResponseRecord>;
+  syncSurveyCatalog(): Promise<SurveyCatalogSyncResult>;
   getManagedContentAutoUpdate(): boolean;
   setManagedContentAutoUpdate(enabled: boolean): void;
   on<K extends keyof KernelEventMap>(
@@ -103,6 +117,10 @@ export type PanelApi = Pick<
   | 'refreshNarrativeFromMvu'
   | 'syncProjection'
   | 'syncManagedContent'
+  | 'listSurveys'
+  | 'submitSurvey'
+  | 'ignoreSurvey'
+  | 'syncSurveyCatalog'
   | 'getManagedContentAutoUpdate'
   | 'setManagedContentAutoUpdate'
   | 'getRuntimeInfo'

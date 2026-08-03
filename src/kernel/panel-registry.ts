@@ -19,6 +19,7 @@ const definitions: Record<PanelName, () => Promise<PanelModule>> = {
   mailbox: () => import('@/modules/mailbox/mount'),
   settings: () => import('@/modules/settings/mount'),
   feedback: () => import('@/modules/feedback/mount'),
+  surveys: () => import('@/modules/surveys/mount'),
   'release-notes': () => import('@/modules/release-notes/mount'),
   'achievement-letter': () => import('@/modules/achievement-letter/mount'),
   diagnostics: () => import('@/modules/diagnostics/mount'),
@@ -37,6 +38,7 @@ const gamePanels = new Set<PanelName>([
   'mailbox',
   'settings',
   'feedback',
+  'surveys',
 ]);
 
 export class PanelRegistry {
@@ -49,13 +51,35 @@ export class PanelRegistry {
   ) {}
 
   async open(panel: PanelName): Promise<void> {
-    if (this.mounted.has(panel)) return;
+    const mounted = this.mounted.get(panel);
+    if (mounted) {
+      const host = this.context.document.querySelector(
+        `[data-caelian-panel="${panel}"]`,
+      );
+      if (host?.isConnected) return;
+
+      // SillyTavern may replace a parent subtree while Vue still considers the
+      // panel mounted. Tear down that stale app before recreating its host.
+      try {
+        mounted();
+      } catch {
+        // The host is already gone; deleting the stale registry entry is enough.
+      }
+      this.mounted.delete(panel);
+    }
     const inFlight = this.opening.get(panel);
     if (inFlight) return inFlight;
 
     const task = (async () => {
       const module = await definitions[panel]();
       const unmount = await module.mount(this.context);
+      const host = this.context.document.querySelector(
+        `[data-caelian-panel="${panel}"]`,
+      );
+      if (!host?.isConnected) {
+        unmount();
+        throw new Error(`面板 ${panel} 挂载后未进入可见文档`);
+      }
       this.mounted.set(panel, unmount);
       await this.events.emit('panel.opened', { panel });
     })().finally(() => {

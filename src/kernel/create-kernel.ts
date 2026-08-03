@@ -35,6 +35,13 @@ import {
   ManagedContentUpdater,
   type ManagedContentSyncResult,
 } from '@/content-updates/managed-content';
+import { SurveyService } from '@/surveys/survey-service';
+import type {
+  SurveyCatalogSyncResult,
+  SurveyDefinition,
+} from '@/surveys/types';
+
+const SURVEY_POLL_INTERVAL_MS = 2 * 60 * 1_000;
 
 interface KernelOptions {
   channel: ReleaseChannel;
@@ -56,6 +63,7 @@ export class CaelianKernel {
   private readonly panels: PanelRegistry;
   private readonly notifications: NotificationCenter;
   private readonly managedContent: ManagedContentUpdater;
+  private readonly surveys: SurveyService;
   private readonly stateDisposers: Array<() => void> = [];
   private status: RuntimeStatus = 'starting';
   private profileId?: string;
@@ -64,6 +72,10 @@ export class CaelianKernel {
   private projectionWriteInProgress = false;
   private mvuIngestDepth = 0;
   private managedContentTimer?: number;
+  private surveyTimer?: number;
+  private surveyPromptActive = false;
+  private shuttingDown = false;
+  private readonly promptedSurveyIds = new Set<string>();
   private readonly pendingTavernUpdates = new Set<Promise<void>>();
 
   constructor(options: KernelOptions) {
@@ -89,6 +101,7 @@ export class CaelianKernel {
       this.adapter.host.document,
     );
     this.managedContent = new ManagedContentUpdater(this.adapter.host);
+    this.surveys = new SurveyService(this.db, this.adapter.host);
     this.api = this.createPublicApi();
   }
 
@@ -125,6 +138,11 @@ export class CaelianKernel {
           await this.syncProjection();
         }),
       );
+      this.stateDisposers.push(
+        this.events.on('panel.closed', () => {
+          void this.offerPendingSurvey();
+        }),
+      );
       this.adapter.subscribe((eventName) => {
         this.queueTavernUpdate(eventName);
       });
@@ -134,6 +152,7 @@ export class CaelianKernel {
       await this.openReleaseNotesIfNew();
       await this.openAchievementSpecialIfNeeded();
       this.startManagedContentUpdates();
+      this.startSurveyUpdates();
       await this.events.emit('runtime.ready', this.getRuntimeInfo());
     } catch (error) {
       this.status = 'error';
@@ -240,6 +259,11 @@ export class CaelianKernel {
 
   async shutdown(): Promise<void> {
     if (this.status === 'stopped') return;
+    this.shuttingDown = true;
+    if (this.surveyTimer !== undefined) {
+      this.adapter.host.clearInterval(this.surveyTimer);
+      this.surveyTimer = undefined;
+    }
     await this.panels.closeAll();
     this.notifications.destroy();
     this.adapter.unsubscribeAll();
@@ -323,6 +347,11 @@ export class CaelianKernel {
       syncProjection: () => this.syncProjection(),
       syncManagedContent: (options) =>
         this.syncManagedContent(options?.force ?? true),
+      listSurveys: (options) => this.surveys.list(options),
+      submitSurvey: (surveyId, draft) =>
+        this.surveys.submit(surveyId, draft),
+      ignoreSurvey: (surveyId) => this.surveys.ignore(surveyId),
+      syncSurveyCatalog: () => this.syncSurveyCatalog(true),
       getManagedContentAutoUpdate: () =>
         this.managedContent.autoUpdateEnabled(),
       setManagedContentAutoUpdate: (enabled) =>
@@ -348,6 +377,11 @@ export class CaelianKernel {
       syncProjection: () => this.syncProjection(),
       syncManagedContent: (options) =>
         this.syncManagedContent(options?.force ?? true),
+      listSurveys: (options) => this.surveys.list(options),
+      submitSurvey: (surveyId, draft) =>
+        this.surveys.submit(surveyId, draft),
+      ignoreSurvey: (surveyId) => this.surveys.ignore(surveyId),
+      syncSurveyCatalog: () => this.syncSurveyCatalog(true),
       getManagedContentAutoUpdate: () =>
         this.managedContent.autoUpdateEnabled(),
       setManagedContentAutoUpdate: (enabled) =>
@@ -491,6 +525,81 @@ export class CaelianKernel {
       () => void this.syncManagedContent(false),
       10 * 60 * 1_000,
     );
+  }
+
+  private startSurveyUpdates(): void {
+    void this.syncSurveyCatalog(true).catch(() => {
+      // Background checks stay quiet when the player is offline. The survey
+      // panel exposes a visible retry state when it is opened manually.
+    });
+    this.surveyTimer = this.adapter.host.setInterval(
+      () =>
+        void this.syncSurveyCatalog(true).catch(() => {
+          // A later polling cycle retries both managed catalog mirrors.
+        }),
+      SURVEY_POLL_INTERVAL_MS,
+    );
+  }
+
+  private async syncSurveyCatalog(
+    offer: boolean,
+  ): Promise<SurveyCatalogSyncResult> {
+    const result = await this.surveys.refreshCatalog();
+    if (offer) await this.offerPendingSurvey();
+    return result;
+  }
+
+  private async offerPendingSurvey(): Promise<void> {
+    if (
+      this.status !== 'ready' ||
+      this.shuttingDown ||
+      this.surveyPromptActive
+    ) {
+      return;
+    }
+    const blockingPanels = new Set([
+      'feedback',
+      'surveys',
+      'release-notes',
+      'achievement-letter',
+    ]);
+    if (this.panels.list().some((panel) => blockingPanels.has(panel))) return;
+
+    let pending: SurveyDefinition[];
+    try {
+      pending = await this.surveys.pending();
+    } catch {
+      return;
+    }
+    const survey = pending.find(
+      (candidate) => !this.promptedSurveyIds.has(candidate.id),
+    );
+    if (!survey) return;
+
+    this.promptedSurveyIds.add(survey.id);
+    this.surveyPromptActive = true;
+    try {
+      const shouldView = await this.notifications.confirm({
+        title:
+          survey.kind === 'single' ? '有一项新的意见征集' : '有一份新的调查问卷',
+        description: `${survey.title}${survey.description ? `：${survey.description}` : ''}`,
+        confirmText: '查看',
+        cancelText: '忽略',
+      });
+      if (shouldView) {
+        await this.panels.navigate('surveys');
+      } else {
+        await this.surveys.ignore(survey.id);
+      }
+    } catch (error) {
+      this.notifyRuntime(
+        'error',
+        error instanceof Error ? error.message : String(error),
+        '问卷窗口打开失败',
+      );
+    } finally {
+      this.surveyPromptActive = false;
+    }
   }
 
   private async syncManagedContent(
