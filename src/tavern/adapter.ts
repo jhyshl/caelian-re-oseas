@@ -13,6 +13,7 @@ import {
   ACHIEVEMENT_PATCHES,
   type AchievementPatchSignal,
 } from '@/achievements/patch-registry';
+import type { RegionWorldbookApi } from '@/worldbook/region-switcher';
 
 export interface TavernEventPayload {
   avatarId?: string;
@@ -281,6 +282,58 @@ export class TavernAdapter {
     return messages.slice(-Math.max(1, limit));
   }
 
+  async currentCharacterName(): Promise<string | null> {
+    const context = await this.context();
+    return context.name2?.trim() || null;
+  }
+
+  currentInputText(): string {
+    const input =
+      this.host.document.querySelector<HTMLTextAreaElement>(
+        '#send_textarea',
+      ) ??
+      this.host.document.querySelector<HTMLElement>(
+        '[contenteditable="true"][role="textbox"]',
+      );
+    if (!input) return '';
+    const value =
+      'value' in input && typeof input.value === 'string'
+        ? input.value
+        : input.textContent ?? '';
+    return value.trim();
+  }
+
+  async lastUserMessageText(): Promise<string> {
+    const context = await this.context();
+    const chat = context.chat ?? [];
+    for (let index = chat.length - 1; index >= 0; index -= 1) {
+      const message = chat[index];
+      if (!message?.is_user && !message?.isUser) continue;
+      return String(
+        message.mes ?? message.message ?? message.content ?? '',
+      ).trim();
+    }
+    const messages = this.host.document.querySelectorAll<HTMLElement>(
+      '.mes[is_user="true"] .mes_text',
+    );
+    const last = messages.item(messages.length - 1);
+    return (last?.innerText || last?.textContent || '').trim();
+  }
+
+  regionWorldbookApi(): RegionWorldbookApi {
+    for (const scope of this.apiScopes()) {
+      const record = scope as unknown as Record<string, unknown>;
+      const helper = record.TavernHelper;
+      if (typeof helper === 'object' && helper !== null) {
+        const api = helper as RegionWorldbookApi;
+        if (api.updateWorldbookWith || api.getCharWorldbookNames) return api;
+      }
+      const api = record as RegionWorldbookApi;
+      if (api.updateWorldbookWith || api.getCharWorldbookNames) return api;
+    }
+    return {};
+  }
+
   async setQuestContext(value: string): Promise<boolean> {
     if (this.questContext === value) return true;
     const context = await this.context();
@@ -380,6 +433,10 @@ export class TavernAdapter {
       'MESSAGE_EDITED',
       'MESSAGE_DELETED',
       'MESSAGE_SWIPED',
+      'USER_MESSAGE_RENDERED',
+      'CHARACTER_MESSAGE_RENDERED',
+      'GENERATE_BEFORE_COMBINE_PROMPTS',
+      'GENERATION_AFTER_COMMANDS',
       'PERSONA_CHANGED',
       'PERSONA_UPDATED',
       'CHARACTER_EDITED',

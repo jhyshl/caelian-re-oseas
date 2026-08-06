@@ -12,6 +12,7 @@ afterEach(async () => {
   delete window.SillyTavern;
   delete window.eventOn;
   delete window.tavern_events;
+  delete (window as unknown as Record<string, unknown>).TavernHelper;
   localStorage.removeItem('caelian_launcher_order_v1');
   localStorage.removeItem('caelian_quest_judge_preferences_v1');
   sessionStorage.removeItem('caelian_quest_judge_api_key_session_v1');
@@ -24,6 +25,108 @@ afterEach(async () => {
 });
 
 describe('CaelianKernel integration', () => {
+  it('清理旧剧情，并在玩家前往可访问地区时预载对应世界书', async () => {
+    const databaseName = `caelian-alpha-region-book-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return { stop: () => handlers.delete(event) };
+    });
+    window.tavern_events = {
+      USER_MESSAGE_RENDERED: 'user-message-rendered',
+    };
+    const chat: Array<{ mes: string; is_user: boolean }> = [];
+    window.SillyTavern = {
+      getContext: () => ({
+        chatId: 'region-book-chat',
+        name1: '测试冒险者',
+        name2: '凯利安',
+        chat,
+      }),
+    };
+    let worldbook = [
+      {
+        uid: 85,
+        name: '主线｜总控 [AUTO_MAINQUEST_GLOBAL]',
+        enabled: true,
+        disable: false,
+      },
+      {
+        uid: 43,
+        name: '全局设定 [AUTO_GLOBAL]',
+        enabled: false,
+        disable: true,
+      },
+      {
+        uid: 79,
+        name: '伊拉亚资料 [AUTO_REGION:伊拉亚城]',
+        enabled: false,
+        disable: true,
+      },
+      {
+        uid: 78,
+        name: '学院资料 [AUTO_REGION:圣德里安学院]',
+        enabled: true,
+        disable: false,
+      },
+      { uid: 500, name: '玩家自建资料', enabled: true },
+    ];
+    const helper = {
+      getCurrentCharacterName: () => '凯利安',
+      getCharWorldbookNames: () => ({
+        primary: '孔雀开屏你说看不见',
+        additional: [],
+      }),
+      updateWorldbookWith: vi.fn(
+        async (
+          _name: string,
+          updater: (entries: typeof worldbook) => typeof worldbook,
+        ) => {
+          worldbook = updater(worldbook);
+          return worldbook;
+        },
+      ),
+    };
+    (window as unknown as Record<string, unknown>).TavernHelper = helper;
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'region-book-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+
+    expect(worldbook.map((entry) => entry.uid)).toEqual([43, 79, 78, 500]);
+    expect(worldbook.find((entry) => entry.uid === 79)).toMatchObject({
+      enabled: true,
+      disable: false,
+    });
+    expect(worldbook.find((entry) => entry.uid === 78)).toMatchObject({
+      enabled: false,
+      disable: true,
+    });
+
+    chat.push({ mes: '从伊拉亚城前往圣德里安学院', is_user: true });
+    handlers.get('user-message-rendered')?.(0);
+    await expect
+      .poll(() => worldbook.find((entry) => entry.uid === 78)?.enabled)
+      .toBe(true);
+    expect(worldbook.find((entry) => entry.uid === 79)).toMatchObject({
+      enabled: false,
+      disable: true,
+    });
+    expect(worldbook.find((entry) => entry.uid === 500)).toEqual({
+      uid: 500,
+      name: '玩家自建资料',
+      enabled: true,
+    });
+
+    await kernel.api.shutdown();
+  });
+
   it('运行中发现新问卷时弹出提示，并可直接打开独立问卷面板', async () => {
     const databaseName = `caelian-alpha-survey-notice-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);

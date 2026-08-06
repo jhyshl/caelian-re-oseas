@@ -9,6 +9,16 @@ const MAX_VISIBLE_RELEASES = 5;
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.25',
+    label: 'Alpha 25',
+    releasedAt: '2026-08-06',
+    changes: [
+      '实装地区世界书自动切换：以 AI 已确认的当前地区为准启用对应资料；玩家明确前往可访问地区时，会在生成前预载目的地资料。',
+      '自动切换只处理带 AUTO_REGION、AUTO_GLOBAL 或 AUTO_MANUAL 标记的凯利安官方世界书条目，不修改玩家自建条目，也不会由脚本擅自改变当前位置。',
+      '修复更新角色卡后旧剧情条目仍残留：新版运行时会幂等删除旧主线、支线、任务卡规则与已迁移剧情条目，同时保留人物、世界观、战斗和地区资料。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.24',
     label: 'Alpha 24',
     releasedAt: '2026-08-06',

@@ -5,6 +5,10 @@ import {
   applyTextMutation,
   ManagedContentUpdater,
 } from '@/content-updates/managed-content';
+import {
+  isLegacyQuestWorldbookEntry,
+  type RegionWorldbookEntry,
+} from '@/worldbook/region-switcher';
 
 function createHarness(options: {
   characterName?: string;
@@ -83,6 +87,36 @@ function createHarness(options: {
 }
 
 describe('ManagedContentUpdater', () => {
+  it('发布角色卡不含旧剧情条目，并保留地区自动切换资料', () => {
+    const card = JSON.parse(
+      readFileSync(
+        path.resolve(
+          'public/managed-content/cards/caelian-alpha-mvu-v3.json',
+        ),
+        'utf8',
+      ),
+    );
+    const entries = card.data.character_book.entries as Array<
+      Record<string, unknown>
+    >;
+    const normalized: RegionWorldbookEntry[] = entries.map((entry) => ({
+      ...entry,
+      uid: entry.id as number | string | undefined,
+      name: String(entry.comment ?? ''),
+    }));
+    expect(normalized.filter(isLegacyQuestWorldbookEntry)).toEqual([]);
+    expect(
+      normalized.filter((entry) =>
+        String(entry.name).includes('[AUTO_REGION:'),
+      ),
+    ).toHaveLength(27);
+    expect(
+      normalized.filter((entry) =>
+        String(entry.name).includes('[AUTO_GLOBAL]'),
+      ),
+    ).toHaveLength(4);
+  });
+
   it('发布清单可在最新版角色卡上幂等执行且不产生额外改动', async () => {
     const manifest = JSON.parse(
       readFileSync(

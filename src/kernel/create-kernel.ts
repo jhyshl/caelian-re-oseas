@@ -74,8 +74,22 @@ import type {
   SurveyCatalogSyncResult,
   SurveyDefinition,
 } from '@/surveys/types';
+import { loadRegions } from '@/content/catalogs/world';
+import {
+  inferRegionFromTravelText,
+  normalizeRegion,
+  RegionWorldbookSwitcher,
+  type LegacyQuestWorldbookCleanupResult,
+  type RegionWorldbookSyncResult,
+} from '@/worldbook/region-switcher';
 
 const SURVEY_POLL_INTERVAL_MS = 2 * 60 * 1_000;
+const REGION_WORLDBOOK_RETRY_DELAYS = [300, 1_000, 2_500, 5_000, 10_000];
+const REGION_WORLDBOOK_PRELOAD_EVENTS = new Set([
+  'USER_MESSAGE_RENDERED',
+  'GENERATE_BEFORE_COMBINE_PROMPTS',
+  'GENERATION_AFTER_COMMANDS',
+]);
 
 interface KernelOptions {
   channel: ReleaseChannel;
@@ -100,6 +114,7 @@ export class CaelianKernel {
   private readonly surveys: SurveyService;
   private readonly questCatalogs: QuestCatalogLoader;
   private readonly questProgress: QuestProgressRepository;
+  private readonly regionWorldbook: RegionWorldbookSwitcher;
   private readonly stateDisposers: Array<() => void> = [];
   private status: RuntimeStatus = 'starting';
   private profileId?: string;
@@ -108,6 +123,8 @@ export class CaelianKernel {
   private projectionWriteInProgress = false;
   private mvuIngestDepth = 0;
   private managedContentTimer?: number;
+  private regionWorldbookRetryTimer?: number;
+  private regionWorldbookRetryAttempt = 0;
   private surveyTimer?: number;
   private surveyPromptActive = false;
   private questTracker?: QuestTrackerService;
@@ -129,6 +146,10 @@ export class CaelianKernel {
     this.version = options.version;
     this.buildId = options.buildId;
     this.adapter = new TavernAdapter(options.sourceWindow);
+    this.regionWorldbook = new RegionWorldbookSwitcher(
+      () => this.adapter.regionWorldbookApi(),
+      () => this.adapter.currentCharacterName(),
+    );
     this.db = new CaelianDatabase(
       this.channel,
       options.databaseName ?? `caelian-${this.channel}-v2`,
@@ -178,10 +199,12 @@ export class CaelianKernel {
       );
       await this.activateCurrentProfile();
       await this.ingestMvuNarrative();
+      await this.initializeWorldbookAutomation();
       await this.syncQuestContext();
       await this.scanCurrentAchievements();
       this.stateDisposers.push(
         this.events.on('state.changed', async () => {
+          await this.syncRegionWorldbook('state.changed');
           if (this.mvuIngestDepth > 0) return;
           await this.syncProjection();
         }),
@@ -627,6 +650,10 @@ export class CaelianKernel {
       this.adapter.host.clearInterval(this.surveyTimer);
       this.surveyTimer = undefined;
     }
+    if (this.regionWorldbookRetryTimer !== undefined) {
+      this.adapter.host.clearTimeout(this.regionWorldbookRetryTimer);
+      this.regionWorldbookRetryTimer = undefined;
+    }
     await this.panels.closeAll();
     this.notifications.destroy();
     this.adapter.unsubscribeAll();
@@ -676,6 +703,11 @@ export class CaelianKernel {
       await this.events.emit('tavern.changed', { event: eventName });
       return;
     }
+    if (REGION_WORLDBOOK_PRELOAD_EVENTS.has(eventName)) {
+      await this.syncRegionWorldbook(eventName);
+      await this.events.emit('tavern.changed', { event: eventName });
+      return;
+    }
     if (
       eventName === 'PERSONA_CHANGED' ||
       eventName === 'PERSONA_UPDATED' ||
@@ -692,9 +724,12 @@ export class CaelianKernel {
     }
     if (eventName === 'CHAT_CHANGED') {
       await this.activateCurrentProfile();
+      this.regionWorldbook.reset();
+      await this.initializeWorldbookAutomation();
     }
     await this.reconcileQuestFloors(eventName, payload);
     await this.ingestMvuNarrative();
+    await this.syncRegionWorldbook(eventName);
     if (eventName === 'MESSAGE_RECEIVED') {
       await this.evaluateTrackedQuest(payload);
       await this.advanceTrackedQuestFromLocalState();
@@ -703,6 +738,105 @@ export class CaelianKernel {
     await this.scanCurrentAchievements();
     await this.syncProjection();
     await this.events.emit('tavern.changed', { event: eventName });
+  }
+
+  private async initializeWorldbookAutomation(): Promise<void> {
+    const cleanup = await this.regionWorldbook.cleanupLegacyQuestEntries();
+    if (cleanup.status === 'applied') {
+      this.notifyRuntime(
+        'success',
+        `已删除 ${cleanup.removed} 条旧版任务/剧情世界书条目；地区与人物资料均已保留。`,
+        '旧剧情世界书清理完成',
+      );
+    }
+    const sync = await this.syncRegionWorldbook('initialize', true);
+    if (this.worldbookNeedsRetry(cleanup, sync)) {
+      this.scheduleRegionWorldbookRetry();
+    } else {
+      this.regionWorldbookRetryAttempt = 0;
+    }
+  }
+
+  private async syncRegionWorldbook(
+    reason: string,
+    force = false,
+  ): Promise<RegionWorldbookSyncResult> {
+    if (!this.profileId) {
+      return {
+        status: 'invalid-region',
+        region: '',
+        touched: 0,
+        changed: 0,
+      };
+    }
+    const snapshot = await this.repository.snapshot(this.profileId);
+    const authoritative = normalizeRegion(
+      snapshot.world.region || snapshot.world.location,
+    );
+    let region = authoritative;
+    if (REGION_WORLDBOOK_PRELOAD_EVENTS.has(reason)) {
+      const candidate =
+        inferRegionFromTravelText(this.adapter.currentInputText()) ||
+        inferRegionFromTravelText(
+          await this.adapter.lastUserMessageText(),
+        );
+      if (candidate && (await this.canPreloadRegion(candidate, snapshot))) {
+        region = candidate;
+      }
+    }
+    const result = await this.regionWorldbook.sync(region, { force });
+    if (
+      ['unavailable', 'no-tagged-entries', 'failed'].includes(result.status)
+    ) {
+      this.scheduleRegionWorldbookRetry();
+    }
+    return result;
+  }
+
+  private async canPreloadRegion(
+    regionName: string,
+    snapshot: Awaited<ReturnType<GameRepository['snapshot']>>,
+  ): Promise<boolean> {
+    const regions = await loadRegions();
+    const region = regions.find(
+      (candidate) => normalizeRegion(candidate.name) === regionName,
+    );
+    if (!region || snapshot.player.level < region.minLevel) return false;
+    return (
+      snapshot.regionAccess.find(
+        (access) => access.regionId === region.id,
+      )?.accessible ?? region.unlocked
+    );
+  }
+
+  private worldbookNeedsRetry(
+    cleanup: LegacyQuestWorldbookCleanupResult,
+    sync: RegionWorldbookSyncResult,
+  ): boolean {
+    return (
+      ['unavailable', 'failed'].includes(cleanup.status) ||
+      ['unavailable', 'no-tagged-entries', 'failed'].includes(sync.status)
+    );
+  }
+
+  private scheduleRegionWorldbookRetry(): void {
+    if (
+      this.shuttingDown ||
+      this.regionWorldbookRetryTimer !== undefined ||
+      this.regionWorldbookRetryAttempt >= REGION_WORLDBOOK_RETRY_DELAYS.length
+    ) {
+      return;
+    }
+    const delay =
+      REGION_WORLDBOOK_RETRY_DELAYS[this.regionWorldbookRetryAttempt] ??
+      10_000;
+    this.regionWorldbookRetryAttempt += 1;
+    this.regionWorldbookRetryTimer = this.adapter.host.setTimeout(() => {
+      this.regionWorldbookRetryTimer = undefined;
+      void this.initializeWorldbookAutomation().catch(() => {
+        this.scheduleRegionWorldbookRetry();
+      });
+    }, delay);
   }
 
   private async reconcileQuestFloors(
