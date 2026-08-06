@@ -7,9 +7,9 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回，且最多展示五个版本', () => {
-    const releases = releaseNotesFor('0.2.0-alpha.23');
+    const releases = releaseNotesFor('0.2.0-alpha.24');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.23');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.24');
     expect(releases.length).toBeLessThanOrEqual(5);
     expect(releases).toEqual(RELEASE_NOTES.slice(0, 5));
   });

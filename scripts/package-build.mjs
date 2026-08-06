@@ -26,7 +26,7 @@ const managedContentManifest = JSON.parse(
 function resolveBuildId() {
   if (process.env.CAELIAN_BUILD_ID) return process.env.CAELIAN_BUILD_ID;
   try {
-    const sha = execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], {
       cwd: root,
       encoding: 'utf8',
     }).trim();
