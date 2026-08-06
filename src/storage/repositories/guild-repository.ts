@@ -43,6 +43,7 @@ export class GuildRepository {
     const quest: QuestRecord = {
       id,
       profileId,
+      definitionId: input.taskId,
       kind: 'commission',
       title: input.title,
       region: input.region,

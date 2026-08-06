@@ -10,6 +10,15 @@ export type RuntimeStatus =
 export type EquipmentSlot = 'weapon' | 'armor' | 'accessory';
 export type QuestKind = 'main' | 'side' | 'commission';
 export type QuestStatus = 'active' | 'ready' | 'completed' | 'failed';
+export type QuestTrackerState =
+  | 'idle'
+  | 'armed'
+  | 'tracking'
+  | 'detour'
+  | 'suspended'
+  | 'evaluating'
+  | 'manualPaused'
+  | 'ended';
 
 export interface ProfileRecord {
   id: string;
@@ -95,6 +104,7 @@ export interface GuildRecord {
 export interface QuestRecord {
   id: string;
   profileId: string;
+  definitionId?: string;
   kind: QuestKind;
   title: string;
   region: string;
@@ -105,7 +115,64 @@ export interface QuestRecord {
   rewardExperience: number;
   rewardGold: number;
   rewardGuildExperience: number;
+  ending?: string;
   updatedAt: number;
+}
+
+export interface QuestProgressSnapshot {
+  status: QuestStatus;
+  trackerState: QuestTrackerState;
+  currentStage: number;
+  currentNodeId: string;
+  currentStageId?: string;
+  currentSceneId?: string;
+  currentBeatId?: string;
+  completedSceneIds?: string[];
+  objective: string;
+  summary: string;
+  ending?: string;
+  rewardExperience?: number;
+  rewardGold?: number;
+  rewardGuildExperience?: number;
+}
+
+export interface QuestTrackerRecord {
+  id: string;
+  profileId: string;
+  questId: string;
+  selected: boolean;
+  baseline: QuestProgressSnapshot;
+  current: QuestProgressSnapshot;
+  updatedAt: number;
+}
+
+export interface TavernFloorReference {
+  id: string;
+  index: number;
+  role: 'user' | 'assistant' | 'system';
+  fingerprint: string;
+  lineageHash: string;
+}
+
+export interface TavernConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface QuestFloorCheckpointRecord {
+  id: string;
+  profileId: string;
+  questId: string;
+  floorId: string;
+  floorIndex: number;
+  floorFingerprint: string;
+  lineageHash: string;
+  source: 'judge' | 'local';
+  judgeResult: unknown;
+  summary: string;
+  before: QuestProgressSnapshot;
+  after: QuestProgressSnapshot;
+  createdAt: number;
 }
 
 export interface QuestHistoryRecord {
@@ -113,8 +180,26 @@ export interface QuestHistoryRecord {
   profileId: string;
   kind: QuestKind;
   title: string;
+  definitionId?: string;
+  ending?: string;
+  rewardExperience?: number;
+  rewardGold?: number;
+  rewardGuildExperience?: number;
+  rewardCollectibles?: string[];
   completedDate: string;
   updatedAt: number;
+}
+
+export interface QuestCompletionResult {
+  questId: string;
+  definitionId: string;
+  title: string;
+  ending?: string;
+  experience: number;
+  gold: number;
+  guildExperience: number;
+  collectibles: string[];
+  levelsGained: number;
 }
 
 export interface InventoryStackRecord {

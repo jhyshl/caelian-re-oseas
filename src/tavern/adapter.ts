@@ -1,4 +1,8 @@
-import type { AiProjection } from '@/domain/types';
+import type {
+  AiProjection,
+  TavernConversationMessage,
+  TavernFloorReference,
+} from '@/domain/types';
 import type {
   TavernAvatarRequest,
   TavernAvatarUrls,
@@ -12,6 +16,7 @@ import {
 
 export interface TavernEventPayload {
   avatarId?: string;
+  messageId?: number;
 }
 
 type TavernEventHandler = (
@@ -48,6 +53,7 @@ export class TavernAdapter {
   private userAvatarOriginalUrl: string | undefined;
   private characterAvatarOriginalUrl: string | undefined;
   private userAvatarId: string | undefined;
+  private questContext?: string;
 
   constructor(sourceWindow: Window = window) {
     this.runtime = sourceWindow;
@@ -216,6 +222,81 @@ export class TavernAdapter {
     });
   }
 
+  async chatFloors(): Promise<TavernFloorReference[] | null> {
+    const context = await this.context();
+    if (Array.isArray(context.chat)) {
+      return this.createFloorReferences(
+        context.chat.map((message) => ({
+          text: message.mes ?? message.message ?? message.content ?? '',
+          role: message.is_system
+            ? 'system'
+            : message.is_user || message.isUser
+              ? 'user'
+              : 'assistant',
+        })),
+      );
+    }
+
+    const elements = [
+      ...this.host.document.querySelectorAll<HTMLElement>('.mes'),
+    ];
+    if (elements.length === 0) return null;
+    return this.createFloorReferences(
+      elements.map((element) => ({
+        text:
+          element.querySelector<HTMLElement>('.mes_text')?.innerText ??
+          element.querySelector<HTMLElement>('.mes_text')?.textContent ??
+          '',
+        role:
+          element.getAttribute('is_system') === 'true'
+            ? 'system'
+            : element.getAttribute('is_user') === 'true'
+              ? 'user'
+              : 'assistant',
+      })),
+    );
+  }
+
+  async chatConversation(
+    limit = 8,
+  ): Promise<TavernConversationMessage[]> {
+    const context = await this.context();
+    const messages = Array.isArray(context.chat)
+      ? context.chat.flatMap((message) => {
+          if (message.is_system) return [];
+          const content =
+            message.mes ?? message.message ?? message.content ?? '';
+          if (!content.trim()) return [];
+          return [
+            {
+              role:
+                message.is_user || message.isUser
+                  ? ('user' as const)
+                  : ('assistant' as const),
+              content,
+            },
+          ];
+        })
+      : [];
+    return messages.slice(-Math.max(1, limit));
+  }
+
+  async setQuestContext(value: string): Promise<boolean> {
+    if (this.questContext === value) return true;
+    const context = await this.context();
+    if (typeof context.setExtensionPrompt !== 'function') return false;
+    context.setExtensionPrompt(
+      'caelian.quest.current-node',
+      value,
+      1,
+      1,
+      false,
+      0,
+    );
+    this.questContext = value;
+    return true;
+  }
+
   hasLegacyRuntime(): boolean {
     return Boolean(this.host.__CaelianRuntime);
   }
@@ -293,8 +374,12 @@ export class TavernAdapter {
 
     const tavernEventNames = [
       'CHAT_CHANGED',
+      'CHAT_LOADED',
       'MESSAGE_RECEIVED',
       'MESSAGE_UPDATED',
+      'MESSAGE_EDITED',
+      'MESSAGE_DELETED',
+      'MESSAGE_SWIPED',
       'PERSONA_CHANGED',
       'PERSONA_UPDATED',
       'CHARACTER_EDITED',
@@ -827,13 +912,14 @@ export class TavernAdapter {
     eventName: string,
     args: unknown[],
   ): TavernEventPayload | undefined {
+    const messageId = this.messageEventId(eventName, args[0]);
     if (eventName === 'CHAT_CHANGED') {
       this.userAvatarUrl = undefined;
       this.characterAvatarUrl = undefined;
       this.userAvatarOriginalUrl = undefined;
       this.characterAvatarOriginalUrl = undefined;
       this.userAvatarId = undefined;
-      return undefined;
+      return messageId === undefined ? undefined : { messageId };
     }
     if (eventName === 'PERSONA_CHANGED') {
       const avatarId =
@@ -843,18 +929,72 @@ export class TavernAdapter {
       this.userAvatarId = avatarId;
       this.userAvatarUrl = undefined;
       this.userAvatarOriginalUrl = undefined;
-      return avatarId ? { avatarId } : undefined;
+      return avatarId || messageId !== undefined
+        ? { avatarId, messageId }
+        : undefined;
     }
     if (eventName === 'PERSONA_UPDATED') {
       this.userAvatarUrl = undefined;
       this.userAvatarOriginalUrl = undefined;
-      return undefined;
+      return messageId === undefined ? undefined : { messageId };
     }
     if (eventName === 'CHARACTER_EDITED') {
       this.characterAvatarUrl = undefined;
       this.characterAvatarOriginalUrl = undefined;
     }
-    return undefined;
+    return messageId === undefined ? undefined : { messageId };
+  }
+
+  private messageEventId(
+    eventName: string,
+    value: unknown,
+  ): number | undefined {
+    if (
+      ![
+        'MESSAGE_RECEIVED',
+        'MESSAGE_UPDATED',
+        'MESSAGE_EDITED',
+        'MESSAGE_DELETED',
+        'MESSAGE_SWIPED',
+      ].includes(eventName)
+    ) {
+      return undefined;
+    }
+    const parsed = typeof value === 'number' ? value : Number(value);
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+  }
+
+  private createFloorReferences(
+    messages: Array<{
+      text: string;
+      role: TavernFloorReference['role'];
+    }>,
+  ): TavernFloorReference[] {
+    let lineageHash = 'caelian-chat-root';
+    return messages.map((message, index) => {
+      const fingerprint = this.hashText(
+        `${message.role}\u0000${message.text}`,
+      );
+      lineageHash = this.hashText(
+        `${lineageHash}\u0000${message.role}\u0000${message.text}`,
+      );
+      return {
+        id: `${index}:${fingerprint}`,
+        index,
+        role: message.role,
+        fingerprint,
+        lineageHash,
+      };
+    });
+  }
+
+  private hashText(source: string): string {
+    let hash = 2_166_136_261;
+    for (let index = 0; index < source.length; index += 1) {
+      hash ^= source.charCodeAt(index);
+      hash = Math.imul(hash, 16_777_619);
+    }
+    return (hash >>> 0).toString(36);
   }
 
   private addEventDisposer(value: unknown): void {

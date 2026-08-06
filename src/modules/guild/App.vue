@@ -7,7 +7,11 @@ import {
 } from '@/content/catalogs/guild';
 import type { GameSnapshot, QuestRecord } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
-import type { PanelContext } from '@/kernel/public-api';
+import type {
+  PanelContext,
+  TrackedQuestView,
+} from '@/kernel/public-api';
+import type { QuestListEntry } from '@/quests/catalog';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
@@ -18,9 +22,12 @@ const rankRequirements = ref<Record<string, GuildRankRequirement>>({});
 const typeNames = ref<Record<string, string>>({});
 const typeIcons = ref<Record<string, string>>({});
 const difficultyNames = ref<Record<string, string>>({});
+const storyQuests = ref<QuestListEntry[]>([]);
+const trackedQuest = ref<TrackedQuestView | null>(null);
 const activeTab = ref<'quests' | 'board' | 'history'>('quests');
 const notice = ref('');
 const busyTask = ref('');
+const busyManagedTask = ref('');
 
 const activeQuests = computed(() =>
   (snapshot.value?.quests ?? []).filter((quest) =>
@@ -72,7 +79,112 @@ function taskId(task: GuildTaskDefinition) {
 }
 
 async function refresh() {
-  snapshot.value = await props.context.api.query('state');
+  const [state, available, tracked] = await Promise.all([
+    props.context.api.query('state'),
+    props.context.api.listAvailableQuests(),
+    props.context.api.getTrackedQuest(),
+  ]);
+  snapshot.value = state;
+  storyQuests.value = available;
+  trackedQuest.value = tracked;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isTracked(quest: QuestRecord) {
+  return trackedQuest.value?.quest.id === quest.id;
+}
+
+async function acceptStory(quest: QuestListEntry) {
+  busyManagedTask.value = quest.id;
+  notice.value = '';
+  try {
+    await props.context.api.acceptManagedQuest(quest.id);
+    await refresh();
+    activeTab.value = 'quests';
+    notice.value = `已接取任务“${quest.name}”，前往任务地点的内容已填入聊天框。`;
+  } catch (error) {
+    notice.value = errorMessage(error);
+  } finally {
+    busyManagedTask.value = '';
+  }
+}
+
+async function trackManaged(quest: QuestRecord) {
+  busyManagedTask.value = quest.id;
+  notice.value = '';
+  try {
+    await props.context.api.trackQuest(quest.id);
+    await refresh();
+    notice.value = `已开始追踪“${quest.title}”。`;
+  } catch (error) {
+    notice.value = errorMessage(error);
+  } finally {
+    busyManagedTask.value = '';
+  }
+}
+
+async function toggleTracking(quest: QuestRecord) {
+  busyManagedTask.value = quest.id;
+  notice.value = '';
+  try {
+    const paused = ['manualPaused', 'suspended'].includes(
+      trackedQuest.value?.tracker.current.trackerState ?? '',
+    );
+    if (paused) {
+      await props.context.api.resumeTrackedQuest();
+      notice.value = `已继续追踪“${quest.title}”。`;
+    } else {
+      await props.context.api.pauseTrackedQuest();
+      notice.value = `已暂停追踪“${quest.title}”，任务进度会保留。`;
+    }
+    await refresh();
+  } catch (error) {
+    notice.value = errorMessage(error);
+  } finally {
+    busyManagedTask.value = '';
+  }
+}
+
+async function performTrackedAction(quest: QuestRecord) {
+  busyManagedTask.value = quest.id;
+  notice.value = '';
+  try {
+    const action = trackedQuest.value?.action;
+    await props.context.api.performTrackedQuestAction();
+    await refresh();
+    notice.value =
+      action?.type === 'start_battle'
+        ? '任务战斗已载入。'
+        : `已完成任务动作“${action?.label ?? '确认'}”。`;
+  } catch (error) {
+    notice.value = errorMessage(error);
+  } finally {
+    busyManagedTask.value = '';
+  }
+}
+
+async function completeManaged(quest: QuestRecord) {
+  const confirmed = await props.context.api.confirm({
+    title: `结算任务“${quest.title}”`,
+    description: '结算后将发放奖励并写入完成记录，此操作不会随聊天楼层删除而回退。',
+    confirmText: '确认结算',
+    cancelText: '暂不结算',
+  });
+  if (!confirmed) return;
+  busyManagedTask.value = quest.id;
+  notice.value = '';
+  try {
+    const result = await props.context.api.completeTrackedQuest();
+    await refresh();
+    notice.value = `“${result.title}”已结算：${result.experience} EXP、${result.gold} 金币、${result.guildExperience} GXP。`;
+  } catch (error) {
+    notice.value = errorMessage(error);
+  } finally {
+    busyManagedTask.value = '';
+  }
 }
 
 async function accept(task: GuildTaskDefinition) {
@@ -119,17 +231,14 @@ async function abandon(quest: QuestRecord) {
 }
 
 onMounted(async () => {
-  const [state, catalogs] = await Promise.all([
-    props.context.api.query('state'),
-    loadGuildCatalogs(),
-  ]);
-  snapshot.value = state;
+  const catalogs = await loadGuildCatalogs();
   tasks.value = catalogs.tasks;
   rankNames.value = catalogs.rankNames;
   rankRequirements.value = catalogs.rankRequirements;
   typeNames.value = catalogs.typeNames;
   typeIcons.value = catalogs.typeIcons;
   difficultyNames.value = catalogs.difficultyNames;
+  await refresh();
 });
 </script>
 
@@ -207,6 +316,23 @@ onMounted(async () => {
               <b>{{ quest.region }}</b>
             </header>
             <p>{{ quest.objective }}</p>
+            <p v-if="isTracked(quest)" class="tracking-state">
+              当前追踪 · {{ trackedQuest?.tracker.current.trackerState }}
+              <template v-if="trackedQuest?.position">
+                · {{ trackedQuest.position.stageTitle }} / {{ trackedQuest.position.sceneTitle }} /
+                {{ trackedQuest.position.beatTitle }}
+              </template>
+            </p>
+            <p
+              v-if="isTracked(quest) && trackedQuest?.action"
+              class="required-action"
+            >
+              <template v-if="trackedQuest.action.type === 'submit_item'">
+                需要提交 {{ trackedQuest.action.itemName }} ×{{ trackedQuest.action.count }}，
+                当前持有 {{ trackedQuest.action.ownedCount ?? 0 }}。
+              </template>
+              <template v-else>需要本地确认：{{ trackedQuest.action.label }}。</template>
+            </p>
             <div class="quest-progress">
               <i
                 :style="{
@@ -215,26 +341,113 @@ onMounted(async () => {
               ></i>
             </div>
             <footer>
-              <span>进度 {{ quest.currentStage }}/{{ quest.totalStages }}</span>
-              <span>
-                奖励 {{ quest.rewardExperience }} EXP ·
-                {{ quest.rewardGold }} 金币 ·
-                {{ quest.rewardGuildExperience }} GXP
-              </span>
-              <button
-                v-if="quest.kind !== 'main'"
-                type="button"
-                class="ca-button"
-                @click="abandon(quest)"
-              >
-                放弃
-              </button>
+              <div class="quest-meta">
+                <span>进度 {{ quest.currentStage }}/{{ quest.totalStages }}</span>
+                <span>
+                  奖励 {{ quest.rewardExperience }} EXP ·
+                  {{ quest.rewardGold }} 金币 ·
+                  {{ quest.rewardGuildExperience }} GXP
+                </span>
+              </div>
+              <div class="quest-actions">
+                <button
+                  v-if="quest.definitionId && quest.status === 'ready' && isTracked(quest)"
+                  type="button"
+                  class="ca-button primary"
+                  :disabled="busyManagedTask === quest.id"
+                  @click="completeManaged(quest)"
+                >
+                  确认结算
+                </button>
+                <button
+                  v-else-if="quest.definitionId && !isTracked(quest)"
+                  type="button"
+                  class="ca-button primary"
+                  :disabled="busyManagedTask === quest.id"
+                  @click="trackManaged(quest)"
+                >
+                  追踪任务
+                </button>
+                <button
+                  v-if="
+                    quest.definitionId &&
+                      quest.status === 'active' &&
+                      isTracked(quest) &&
+                      trackedQuest?.action
+                  "
+                  type="button"
+                  class="ca-button primary"
+                  :disabled="
+                    !trackedQuest.action.available || busyManagedTask === quest.id
+                  "
+                  @click="performTrackedAction(quest)"
+                >
+                  {{ trackedQuest.action.label }}
+                </button>
+                <button
+                  v-if="quest.definitionId && quest.status === 'active' && isTracked(quest)"
+                  type="button"
+                  class="ca-button"
+                  :disabled="busyManagedTask === quest.id"
+                  @click="toggleTracking(quest)"
+                >
+                  {{
+                    ['manualPaused', 'suspended'].includes(
+                      trackedQuest?.tracker.current.trackerState ?? '',
+                    )
+                      ? '继续追踪'
+                      : '暂停追踪'
+                  }}
+                </button>
+                <button
+                  v-if="quest.kind !== 'main' && quest.status === 'active'"
+                  type="button"
+                  class="ca-button"
+                  @click="abandon(quest)"
+                >
+                  放弃
+                </button>
+              </div>
             </footer>
           </article>
         </div>
       </section>
 
       <section v-else-if="activeTab === 'board'" class="ca-section">
+        <h2 class="ca-section-title">
+          当前地区剧情任务
+          <small>{{ snapshot.world.region }} · Lv.{{ snapshot.player.level }}</small>
+        </h2>
+        <div v-if="storyQuests.length === 0" class="ca-empty story-empty">
+          当前地区和等级暂时没有新的剧情任务。
+        </div>
+        <div v-else class="task-grid story-grid">
+          <article v-for="quest in storyQuests" :key="quest.id">
+            <header>
+              <span>{{ quest.kind === 'main' ? '主线' : '支线' }}</span>
+              <b>Lv.{{ quest.minimumLevel }}</b>
+            </header>
+            <h3>{{ quest.name }}</h3>
+            <p>{{ quest.publicSummary }}</p>
+            <dl>
+              <div><dt>地区</dt><dd>{{ quest.region }}</dd></div>
+              <div>
+                <dt>奖励</dt>
+                <dd>{{ quest.rewardExperience }} EXP / {{ quest.rewardGold }} G</dd>
+              </div>
+              <div><dt>协会经验</dt><dd>{{ quest.rewardGuildExperience }} GXP</dd></div>
+            </dl>
+            <button
+              type="button"
+              class="ca-button primary"
+              :disabled="busyManagedTask === quest.id"
+              @click="acceptStory(quest)"
+            >
+              {{ busyManagedTask === quest.id ? '接取中…' : '接取剧情任务' }}
+            </button>
+          </article>
+        </div>
+
         <h2 class="ca-section-title">
           委托告示板
           <small>{{ availableTasks.length }} 项符合当前等级</small>
@@ -463,14 +676,49 @@ onMounted(async () => {
 }
 
 .quest-list footer {
+  align-items: stretch;
+  flex-direction: column;
   margin-top: 9px;
   color: var(--ca-muted);
   font-size: 9px;
 }
 
-.quest-list footer span:nth-child(2) {
-  flex: 1;
-  text-align: right;
+.quest-meta,
+.quest-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.quest-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.tracking-state {
+  color: var(--ca-gold-light) !important;
+}
+
+.required-action {
+  padding: 8px 10px;
+  border: 1px solid rgba(212, 168, 67, 0.28);
+  border-radius: 8px;
+  color: var(--ca-text) !important;
+  background: rgba(212, 168, 67, 0.07);
+}
+
+.story-grid {
+  margin-bottom: 20px;
+}
+
+.story-grid + .ca-section-title {
+  padding-top: 16px;
+  border-top: 1px solid var(--ca-border);
+}
+
+.story-empty {
+  margin-bottom: 20px;
 }
 
 .task-grid {
@@ -550,11 +798,11 @@ onMounted(async () => {
 
   .quest-list footer {
     align-items: flex-start;
-    flex-direction: column;
   }
 
-  .quest-list footer span:nth-child(2) {
-    text-align: left;
+  .quest-meta {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>

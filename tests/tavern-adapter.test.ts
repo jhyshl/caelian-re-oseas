@@ -527,4 +527,74 @@ describe('TavernAdapter', () => {
     );
     delete hostState.__CAELIAN_SPECIAL_PATCH_REPO_REWARD__;
   });
+
+  it('为楼层生成内容指纹和包含前文的因果指纹', async () => {
+    const chat = [
+      { mes: '我前往森林。', is_user: true },
+      { mes: '你在林间发现了足迹。', is_user: false },
+    ];
+    window.SillyTavern = { getContext: () => ({ chat }) };
+    const adapter = new TavernAdapter(window);
+
+    const original = await adapter.chatFloors();
+    chat[0] = { mes: '我返回旅店。', is_user: true };
+    const edited = await adapter.chatFloors();
+
+    expect(original).toHaveLength(2);
+    expect(original?.[1]?.fingerprint).toBe(edited?.[1]?.fingerprint);
+    expect(original?.[1]?.lineageHash).not.toBe(edited?.[1]?.lineageHash);
+  });
+
+  it('读取最近对话并用官方扩展提示接口注入当前任务节点', async () => {
+    const setExtensionPrompt = vi.fn();
+    window.SillyTavern = {
+      getContext: () => ({
+        chat: [
+          { mes: '系统消息', is_system: true },
+          { mes: '我去帮芙萝拉。', is_user: true },
+          { mes: '芙萝拉点了点头。', is_user: false },
+        ],
+        setExtensionPrompt,
+      }),
+    };
+    const adapter = new TavernAdapter(window);
+
+    await expect(adapter.chatConversation()).resolves.toEqual([
+      { role: 'user', content: '我去帮芙萝拉。' },
+      { role: 'assistant', content: '芙萝拉点了点头。' },
+    ]);
+    await expect(
+      adapter.setQuestContext('只提供当前节点'),
+    ).resolves.toBe(true);
+    await adapter.setQuestContext('只提供当前节点');
+
+    expect(setExtensionPrompt).toHaveBeenCalledOnce();
+    expect(setExtensionPrompt).toHaveBeenCalledWith(
+      'caelian.quest.current-node',
+      '只提供当前节点',
+      1,
+      1,
+      false,
+      0,
+    );
+  });
+
+  it('把酒馆删除楼层事件和楼层序号传给内核', () => {
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return { stop: () => handlers.delete(event) };
+    });
+    window.tavern_events = { MESSAGE_DELETED: 'message-deleted' };
+    const listener = vi.fn();
+    const adapter = new TavernAdapter(window);
+    adapter.subscribe(listener);
+
+    handlers.get('message-deleted')?.(7);
+
+    expect(listener).toHaveBeenCalledWith('MESSAGE_DELETED', {
+      messageId: 7,
+    });
+    adapter.unsubscribeAll();
+  });
 });

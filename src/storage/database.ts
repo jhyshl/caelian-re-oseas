@@ -22,7 +22,9 @@ import type {
   PlayerRecord,
   ProfileRecord,
   QuestHistoryRecord,
+  QuestFloorCheckpointRecord,
   QuestRecord,
+  QuestTrackerRecord,
   RegionAccessRecord,
   ReleaseChannel,
   RollbackSnapshotRecord,
@@ -39,7 +41,7 @@ import type {
   SurveyTokenRecord,
 } from '@/surveys/types';
 
-export const DATABASE_SCHEMA_VERSION = 6;
+export const DATABASE_SCHEMA_VERSION = 7;
 
 export class CaelianDatabase extends Dexie {
   profiles!: Table<ProfileRecord, string>;
@@ -54,6 +56,8 @@ export class CaelianDatabase extends Dexie {
   guildStates!: Table<GuildRecord, string>;
   questRecords!: Table<QuestRecord, string>;
   questHistory!: Table<QuestHistoryRecord, string>;
+  questTrackerStates!: Table<QuestTrackerRecord, string>;
+  questFloorCheckpoints!: Table<QuestFloorCheckpointRecord, string>;
 
   inventoryStacks!: Table<InventoryStackRecord, string>;
   equipmentInstances!: Table<EquipmentInstanceRecord, string>;
@@ -157,6 +161,13 @@ export class CaelianDatabase extends Dexie {
       surveyTokens: 'surveyId, createdAt',
       surveyResponses:
         'id, &surveyId, status, surveyRevision, submittedAt, updatedAt',
+    });
+
+    this.version(7).stores({
+      questTrackerStates:
+        'id, profileId, questId, selected, [profileId+questId], updatedAt',
+      questFloorCheckpoints:
+        'id, profileId, questId, floorId, floorIndex, [profileId+questId], [profileId+questId+floorIndex], createdAt',
     });
   }
 }

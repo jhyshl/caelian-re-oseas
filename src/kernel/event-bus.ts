@@ -1,6 +1,7 @@
 import type { CommandResult } from '@/domain/commands';
 import type {
   AchievementUnlockNotice,
+  QuestTrackerState,
   RuntimeInfo,
 } from '@/domain/types';
 
@@ -12,6 +13,26 @@ export interface KernelEventMap {
   'panel.opened': { panel: string };
   'panel.closed': { panel: string };
   'tavern.changed': { event: string };
+  'quest.progress-rolled-back': {
+    questIds: string[];
+    cutoffFloorIndex: number;
+  };
+  'quest.evaluated': {
+    questId: string;
+    floorIndex: number;
+    transitionAccepted: boolean;
+    currentNodeId: string;
+    trackerState: QuestTrackerState;
+  };
+  'quest.judge-failed': {
+    questId: string;
+    floorIndex: number;
+    message: string;
+  };
+  'quest.tracking-changed': {
+    questId?: string;
+    trackerState: QuestTrackerState | 'none';
+  };
   'achievement.unlocked': AchievementUnlockNotice;
 }
 

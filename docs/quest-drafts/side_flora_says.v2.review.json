@@ -1,0 +1,1069 @@
+{
+  "schemaVersion": 2,
+  "documentType": "quest-review-draft",
+  "reviewStatus": "awaiting-user-review",
+  "runtimeCompatible": false,
+  "source": {
+    "legacyFile": "凯利安 (13).json",
+    "legacyEntries": [107, 108, 109, 110],
+    "scope": "旧版支线“芙萝拉说”的接取条目与三个阶段条目",
+    "preservationRule": "保留旧版剧情事实、分支语义、原始台词、奖励与结算限制；新增内容仅限节点拆分、推进门槛和防抢跑约束。"
+  },
+  "quest": {
+    "id": "side_flora_says",
+    "name": "芙萝拉说",
+    "kind": "side",
+    "storyType": "side_story",
+    "region": "伊拉亚城",
+    "minimumLevel": 1,
+    "visibility": "public",
+    "trigger": {
+      "type": "location_and_quest_state",
+      "locations": ["中央商业区"],
+      "condition": "玩家前往伊拉亚城中央商业区，且任务尚未接取、完成、失败或放弃。"
+    },
+    "tone": "温柔日常支线，围绕卖花小女孩芙萝拉、父亲尼尔和已故母亲梅娅展开。",
+    "publicSummary": "帮助中央商业区的卖花女孩芙萝拉完成今天的心愿。",
+    "directorSynopsis": "玩家在中央商业区帮助芙萝拉卖花，随后陪她到城郊采集圣心百合。采够八朵后，芙萝拉的父亲尼尔出现，并邀请玩家同行前往已故妻子梅娅的墓园。尼尔在那里讲述一家人与花的往事。玩家可以献上八朵圣心百合达成结局A，也可以在关键请求处明确拒绝并进入结局B。",
+    "totalStages": 3,
+    "startBeatId": "flora-encounter",
+    "cast": [
+      {
+        "id": "flora",
+        "name": "芙萝拉",
+        "facts": [
+          "约七八岁的卖花女孩。",
+          "声音轻，在中央商业区容易被人潮淹没。",
+          "熟悉花朵，只采摘已经盛开的圣心百合，不摘花苞。",
+          "梅娅患病时只有四岁。"
+        ]
+      },
+      {
+        "id": "neil",
+        "name": "尼尔",
+        "facts": [
+          "芙萝拉的父亲，梅娅的丈夫。",
+          "曾与梅娅共同经营花店。",
+          "为了治疗梅娅耗尽家产。"
+        ]
+      },
+      {
+        "id": "maya",
+        "name": "梅娅",
+        "facts": [
+          "芙萝拉已故的母亲，尼尔的妻子。",
+          "生前是一名花匠。",
+          "感染了实际由深渊暗潮侵蚀造成的恶疾。"
+        ]
+      }
+    ],
+    "rewards": {
+      "A": {
+        "experience": 120,
+        "gold": 240,
+        "guildExperience": 45,
+        "collectibles": ["盛放的百合"],
+        "achievement": "花语："
+      },
+      "B": {
+        "experience": 80,
+        "gold": 180,
+        "guildExperience": 25,
+        "collectibles": [],
+        "achievement": "旧版说明允许触发对应结局成就，具体名称沿用现有成就定义。"
+      }
+    },
+    "pacingPolicy": {
+      "mainApiReceivesFullRoadmap": true,
+      "futureBeatDetailVisibility": "summary_only_locked",
+      "currentBeatDetailVisibility": "full",
+      "defaultMaxBeatAdvance": 0,
+      "maxBeatAdvanceWhenCurrentGateSatisfied": 1,
+      "maxSceneAdvancePerReply": 0,
+      "maxStageAdvancePerReply": 0,
+      "defaultMaxNewFacts": 2,
+      "maxLocationChangesPerReply": 0,
+      "maxNewNamedCharactersPerReply": 1,
+      "playerDecisionAuthority": "user_only",
+      "localStateAuthority": [
+        "location_entered",
+        "inventory_adjust",
+        "inventory_at_least",
+        "submit_item",
+        "reward_settlement"
+      ],
+      "oneCheckpointPerAssistantFloor": true,
+      "noMultiHop": true,
+      "futureLeakDoesNotAdvanceState": true,
+      "summaryMayContainOnlyRevealedFacts": true
+    },
+    "roadmap": [
+      { "id": "flora-encounter", "summary": "玩家在中央商业区遇见正在卖花的芙萝拉。" },
+      { "id": "selling-flowers", "summary": "玩家通过买花、吆喝、介绍花束或陪伴帮助芙萝拉卖完今天的花。" },
+      { "id": "violet-offer", "summary": "芙萝拉询问玩家是否愿意收下最后一束带有残叶的紫罗兰。" },
+      { "id": "lily-invitation", "summary": "芙萝拉请求玩家陪她前往城郊采集圣心百合。" },
+      { "id": "travel-to-outskirts", "summary": "玩家前往伊拉亚城城郊。" },
+      { "id": "find-lily-slope", "summary": "玩家和芙萝拉找到适合圣心百合生长的坡地。" },
+      { "id": "gathering-lilies", "summary": "玩家采集圣心百合，本地背包目标为八朵。" },
+      { "id": "neil-arrives", "summary": "采够八朵后，提着东西的尼尔出现并向玩家道谢。" },
+      { "id": "memorial-invitation", "summary": "尼尔说明今天是梅娅的忌日，并邀请玩家一同去墓园。" },
+      { "id": "travel-to-cemetery", "summary": "玩家跟随父女前往城郊墓园。" },
+      { "id": "cemetery-arrival", "summary": "一行人抵达经常有人整理的梅娅墓碑。" },
+      { "id": "florists-past", "summary": "尼尔讲述自己与梅娅曾共同经营花店。" },
+      { "id": "maya-illness", "summary": "尼尔讲述梅娅在芙萝拉四岁时患上恶疾。" },
+      { "id": "woxiwei-hardship", "summary": "尼尔讲述耗尽家产并搬到沃西微贫民窟仍未能治好梅娅。" },
+      { "id": "bedside-lilies", "summary": "尼尔回忆父女为病中的梅娅采集床头百合，以及梅娅对他的安慰。" },
+      { "id": "maya-final-words", "summary": "尼尔讲述梅娅留给芙萝拉的临终寄语。" },
+      { "id": "await-lily-offering", "summary": "剧情停在墓前，等待玩家亲自提交八朵圣心百合。" },
+      { "id": "offering-reaction", "summary": "献花成功后描写芙萝拉和尼尔的反应，但不发放奖励。" },
+      { "id": "ending-a-ready", "summary": "结局A剧情收束，等待玩家在任务面板确认结算。" },
+      { "id": "ending-b-early-closing", "summary": "玩家在前期拒绝关键帮助，芙萝拉自然结束这段相遇。" },
+      { "id": "ending-b-early-ready", "summary": "前期结局B收束后等待玩家确认结算。" },
+      { "id": "ending-b-late-closing", "summary": "玩家在后期拒绝同行或献花，父女自然与玩家告别。" },
+      { "id": "ending-b-late-ready", "summary": "后期结局B收束后等待玩家确认结算。" }
+    ],
+    "globalInterrupts": [
+      {
+        "id": "early-refusal-ending-b",
+        "fromBeatIds": ["flora-encounter", "selling-flowers", "lily-invitation"],
+        "to": "ending-b-early-closing",
+        "authority": "judge",
+        "condition": "玩家明确拒绝买花、拒绝帮助卖花、拒绝吆喝或陪伴、拒绝继续陪同，或者明确离开、无视芙萝拉并结束相遇。普通犹豫、询问和暂时闲聊不算拒绝。",
+        "minConfidence": 0.9
+      },
+      {
+        "id": "late-refusal-ending-b",
+        "fromBeatIds": [
+          "memorial-invitation",
+          "travel-to-cemetery",
+          "cemetery-arrival",
+          "florists-past",
+          "maya-illness",
+          "woxiwei-hardship",
+          "bedside-lilies",
+          "maya-final-words",
+          "await-lily-offering"
+        ],
+        "to": "ending-b-late-closing",
+        "authority": "judge",
+        "condition": "玩家明确拒绝同行、拒绝前往墓园、拒绝献花，或者明确把花交给父女后离开并结束任务。",
+        "minConfidence": 0.9
+      }
+    ],
+    "stages": [
+      {
+        "stage": 1,
+        "id": "todays-flowers",
+        "title": "今天的花",
+        "displayObjective": "帮助芙萝拉卖完今天的花。",
+        "scenes": [
+          {
+            "id": "central-market-flower-stall",
+            "title": "中央商业区的花摊",
+            "locations": ["中央商业区"],
+            "beats": [
+              {
+                "id": "flora-encounter",
+                "title": "人潮里的卖花声",
+                "purpose": "让玩家注意到芙萝拉，并由玩家决定是否回应她。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "描写中央商业区的人潮，以及一个提着花篮、约七八岁的女孩正在努力卖花。她的声音很轻，容易被人潮淹没；她看起来有些急切，似乎想尽快卖完今天的花。让芙萝拉询问玩家是否要买花，或者请求玩家帮她向路人招呼几句。",
+                  "availableFacts": [
+                    { "id": "flora-age", "text": "芙萝拉看起来约七八岁。" },
+                    { "id": "flora-selling", "text": "她提着花篮在中央商业区卖花。" },
+                    { "id": "flora-voice", "text": "她的声音轻，容易被人潮淹没。" },
+                    { "id": "flora-urgent", "text": "她看起来急切，似乎想尽快卖完今天的花。" }
+                  ],
+                  "forbiddenFacts": [
+                    "不要透露芙萝拉要去采集圣心百合。",
+                    "不要透露尼尔、梅娅、忌日或墓园。",
+                    "不要透露任何结局、奖励、藏品或成就。",
+                    "不要替玩家买花、答应帮助或直接离开。"
+                  ],
+                  "stopAfter": "芙萝拉询问玩家是否买花或愿意帮忙，然后等待玩家回应。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 3,
+                  "maxNewNamedCharacters": 1
+                },
+                "completionGate": {
+                  "type": "next_user_intent",
+                  "acceptedIntents": ["buy_flowers", "help_sell", "talk_and_engage"]
+                },
+                "transitions": [
+                  {
+                    "id": "engage-with-flora",
+                    "to": "selling-flowers",
+                    "authority": "judge",
+                    "condition": "在芙萝拉提出询问后，玩家明确买花、愿意帮助卖花、愿意帮忙招呼路人，或以积极态度留下来继续互动。",
+                    "minConfidence": 0.82
+                  }
+                ]
+              },
+              {
+                "id": "selling-flowers",
+                "title": "帮忙卖完今天的花",
+                "purpose": "允许玩家通过不同方式参与卖花，并在花真正卖完前维持日常互动。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "根据玩家选择描写买花、帮忙吆喝、向路人介绍花束、陪芙萝拉等待或其他合理帮助。芙萝拉会努力向路人介绍花，但因为年纪小、声音轻，常常被人潮盖过。允许这个节拍持续多轮，不要因为玩家只做了一个很小的动作就立刻宣布所有花已经卖完。",
+                  "availableFacts": [
+                    { "id": "selling-options", "text": "玩家可以买花、帮忙吆喝、向过路人介绍花，或陪芙萝拉等待。" },
+                    { "id": "flora-effort", "text": "芙萝拉会努力向路人介绍花束。" },
+                    { "id": "crowd-drowns-voice", "text": "她的声音经常被商业区的人潮淹没。" }
+                  ],
+                  "forbiddenFacts": [
+                    "花尚未合理卖完前，不要出现最后一束紫罗兰。",
+                    "不要提出采集圣心百合。",
+                    "不要透露尼尔、梅娅、墓园或未来奖励。",
+                    "不要替玩家决定如何帮助。"
+                  ],
+                  "stopAfter": "本轮只回应玩家当前的卖花行动；如果尚未满足卖完条件，就停留在卖花过程。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 1,
+                  "maxNewFacts": 2,
+                  "minimumPlayerFloorsAfterEntry": 1
+                },
+                "completionGate": {
+                  "type": "judged_narrative_milestone",
+                  "condition": "玩家已经进行了足以推动卖花的明确行动，剧情也已合理表现最后几束花卖完；不得只因主API自行宣布而通过。"
+                },
+                "transitions": [
+                  {
+                    "id": "flowers-sold-out",
+                    "to": "violet-offer",
+                    "authority": "judge",
+                    "condition": "玩家已明确参与买花、吆喝、介绍或陪伴，并且经过合理过程后今天的花已经卖完。",
+                    "minConfidence": 0.86
+                  }
+                ]
+              },
+              {
+                "id": "violet-offer",
+                "title": "最后的紫罗兰",
+                "purpose": "让芙萝拉询问玩家是否愿意收下最后一束有残叶的紫罗兰。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "花卖完后，描写花篮里还剩一束有些残叶的紫罗兰。芙萝拉有些不好意思地把它拿起来，询问玩家是否愿意收下。",
+                  "availableFacts": [
+                    { "id": "flowers-finished", "text": "今天的花已经卖完。" },
+                    { "id": "violet-left", "text": "花篮里还剩一束有些残叶的紫罗兰。" },
+                    { "id": "flora-embarrassed", "text": "芙萝拉有些不好意思把它送给玩家。" }
+                  ],
+                  "forbiddenFacts": [
+                    "不要在本节拍提出去城郊采花。",
+                    "不要把拒绝紫罗兰判定为拒绝任务。",
+                    "不要替玩家接受或拒绝紫罗兰。",
+                    "不要透露尼尔、梅娅、墓园或奖励。"
+                  ],
+                  "stopAfter": "芙萝拉问玩家是否愿意收下紫罗兰，然后立即等待玩家回答。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 2
+                },
+                "completionGate": {
+                  "type": "next_user_intent",
+                  "acceptedIntents": ["accept_violet", "decline_violet"]
+                },
+                "transitions": [
+                  {
+                    "id": "accept-violet",
+                    "to": "lily-invitation",
+                    "authority": "judge",
+                    "condition": "玩家在紫罗兰被询问后明确愿意收下。",
+                    "minConfidence": 0.82,
+                    "summaryEffect": "记录玩家接受了紫罗兰，只影响对话氛围。"
+                  },
+                  {
+                    "id": "decline-violet",
+                    "to": "lily-invitation",
+                    "authority": "judge",
+                    "condition": "玩家只是不接受紫罗兰，但没有拒绝芙萝拉本人、卖花帮助或后续任务。",
+                    "minConfidence": 0.82,
+                    "summaryEffect": "记录玩家婉拒了紫罗兰，只影响对话氛围，不结束任务。"
+                  }
+                ]
+              },
+              {
+                "id": "lily-invitation",
+                "title": "另一个小忙",
+                "purpose": "让芙萝拉请求玩家陪她去城郊采集圣心百合，并等待玩家决定。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "根据玩家是否收下紫罗兰作出相应但克制的反应。随后让芙萝拉鼓起勇气，请求玩家再帮一个小忙：陪她前往城郊采集一些圣心百合。",
+                  "availableFacts": [
+                    { "id": "flora-needs-help", "text": "芙萝拉还有另一件重要的事想请玩家帮忙。" },
+                    { "id": "lily-request", "text": "她想请玩家陪她去城郊采集圣心百合。" }
+                  ],
+                  "forbiddenFacts": [
+                    "不要透露采花的真实用途。",
+                    "不要透露梅娅已经去世或今天是忌日。",
+                    "不要让尼尔提前出现。",
+                    "不要替玩家答应或拒绝。",
+                    "不要自动输出选择卡片。"
+                  ],
+                  "stopAfter": "芙萝拉提出陪同采花的请求，正文停在等待玩家回应的位置。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 2
+                },
+                "completionGate": {
+                  "type": "next_user_intent",
+                  "acceptedIntents": ["accept", "decline"]
+                },
+                "transitions": [
+                  {
+                    "id": "agree-to-gather-lilies",
+                    "to": "travel-to-outskirts",
+                    "authority": "judge",
+                    "condition": "玩家在芙萝拉提出请求后明确同意陪她前往城郊采集圣心百合。",
+                    "minConfidence": 0.86
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "stage": 2,
+        "id": "outskirts-lilies",
+        "title": "城郊的圣心百合",
+        "displayObjectiveTemplate": "陪芙萝拉在城郊采集圣心百合 {inventory.圣心百合}/8。",
+        "scenes": [
+          {
+            "id": "outskirts-lily-slope",
+            "title": "城郊的百合坡",
+            "locations": ["城郊", "幽光森林", "圣心百合采集地"],
+            "beats": [
+              {
+                "id": "travel-to-outskirts",
+                "title": "前往城郊",
+                "purpose": "引导玩家实际移动到城郊，而不是直接切换场景。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "芙萝拉已经得到玩家的同意。只自然承接准备出发或前往城郊的行动；在本地地点尚未确认抵达前，不要描写已经站在百合坡地。",
+                  "availableFacts": [
+                    { "id": "destination-outskirts", "text": "下一目标是伊拉亚城城郊。" }
+                  ],
+                  "forbiddenFacts": [
+                    "不要在中央商业区直接开始采花。",
+                    "不要用对白声称玩家已经抵达来覆盖本地地点。",
+                    "不要让尼尔出现。",
+                    "不要透露梅娅或墓园。"
+                  ],
+                  "stopAfter": "停在准备出发或途中；只有本地地点确认后才进入城郊场景。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxLocationChanges": 0
+                },
+                "completionGate": {
+                  "type": "location_entered",
+                  "authority": "local",
+                  "allowedLocations": ["城郊", "幽光森林", "圣心百合采集地"]
+                },
+                "transitions": [
+                  {
+                    "id": "arrive-at-outskirts",
+                    "to": "find-lily-slope",
+                    "authority": "local",
+                    "condition": "本地世界状态确认玩家已经进入城郊、幽光森林或圣心百合采集地。",
+                    "minConfidence": 1
+                  }
+                ]
+              },
+              {
+                "id": "find-lily-slope",
+                "title": "有阳光和风的坡地",
+                "purpose": "建立圣心百合的生长环境和芙萝拉挑花的习惯，等待玩家开始采集。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "描写玩家和芙萝拉来到城郊。圣心百合生长在光照充足、又有风经过的坡地。芙萝拉认真观察花朵，只摘已经盛开的花，不摘尚未开放的花苞。",
+                  "availableFacts": [
+                    { "id": "lily-habitat", "text": "圣心百合生长在光照充足且有风经过的坡地。" },
+                    { "id": "flora-selects-blooms", "text": "芙萝拉只摘已经盛开的花，不摘花苞。" },
+                    { "id": "flora-knows-flowers", "text": "芙萝拉对花朵非常熟悉。" }
+                  ],
+                  "forbiddenFacts": [
+                    "不要自动替玩家采花。",
+                    "不要声称背包获得任何数量的圣心百合。",
+                    "不要让尼尔出现。",
+                    "不要透露梅娅、忌日或墓园。"
+                  ],
+                  "stopAfter": "建立采集环境后，等待玩家明确开始寻找或采摘圣心百合。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 2
+                },
+                "completionGate": {
+                  "type": "player_action",
+                  "acceptedActions": ["search_lilies", "gather_lilies"]
+                },
+                "transitions": [
+                  {
+                    "id": "begin-gathering",
+                    "to": "gathering-lilies",
+                    "authority": "judge",
+                    "condition": "玩家明确开始寻找、辨认或采摘圣心百合。",
+                    "minConfidence": 0.82
+                  }
+                ]
+              },
+              {
+                "id": "gathering-lilies",
+                "title": "采集圣心百合",
+                "purpose": "允许多轮采集和交谈，数量完全由本地背包决定。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "根据玩家本轮明确的采集行动描写寻找和采摘过程，可以描写城郊风景、芙萝拉对花朵的熟悉以及她坚持只采盛开的花。本轮目标数量必须读取本地背包，不得根据文字自行声称已经采够。数量不足八朵时继续停留在采集节拍。",
+                  "availableFacts": [
+                    { "id": "gathering-scenery", "text": "采集过程可以自然描写城郊风景。" },
+                    { "id": "flora-flower-knowledge", "text": "芙萝拉对花朵非常熟悉。" },
+                    { "id": "only-open-lilies", "text": "芙萝拉坚持只采盛开的圣心百合。" }
+                  ],
+                  "dynamicFacts": [
+                    { "id": "lily-count", "template": "本地背包当前持有圣心百合 {inventory.圣心百合}/8。" }
+                  ],
+                  "forbiddenFacts": [
+                    "背包不足八朵时，不要让尼尔出现。",
+                    "不要根据正文中的数字覆盖本地背包。",
+                    "不要提前透露梅娅病情、忌日或墓园。",
+                    "不要一次描写多次采集并直接凑满八朵。"
+                  ],
+                  "stopAfter": "只描写玩家本轮明确执行的一次采集行动；如果数量不足八朵，继续等待下一次行动。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 1,
+                  "maxCollectionActionsPerFloor": 1
+                },
+                "localAction": {
+                  "type": "gather_item",
+                  "trigger": "副API确认玩家本轮明确执行了一次采集圣心百合的行动后，由本地脚本结算。",
+                  "itemId": "圣心百合",
+                  "itemName": "圣心百合",
+                  "amountRange": [1, 3],
+                  "questTarget": 8,
+                  "authority": "local",
+                  "reviewNote": "数值范围沿用旧版通用采集物规则；具体随机方式和重复防护待实现时确认。"
+                },
+                "completionGate": {
+                  "type": "inventory_at_least",
+                  "authority": "local",
+                  "itemId": "圣心百合",
+                  "count": 8
+                },
+                "transitions": [
+                  {
+                    "id": "inventory-has-eight-lilies",
+                    "to": "neil-arrives",
+                    "authority": "local",
+                    "condition": "本地背包确认玩家持有圣心百合至少八朵。",
+                    "minConfidence": 1
+                  }
+                ]
+              },
+              {
+                "id": "neil-arrives",
+                "title": "提着东西的男人",
+                "purpose": "让尼尔在采集完成后登场并先向玩家道谢，不在同一轮倾倒墓园背景。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "圣心百合已经由本地背包确认达到八朵。让芙萝拉的父亲尼尔出现：他手里提着不少东西，态度温和，并向帮助芙萝拉的玩家道谢。本轮先完成登场和道谢。",
+                  "availableFacts": [
+                    { "id": "neil-is-father", "text": "尼尔是芙萝拉的父亲。" },
+                    { "id": "neil-carries-things", "text": "尼尔手里提着不少东西。" },
+                    { "id": "neil-thanks-player", "text": "尼尔温和地向玩家道谢。" }
+                  ],
+                  "forbiddenFacts": [
+                    "本轮不要完整讲述梅娅的过去。",
+                    "不要直接切换到墓园。",
+                    "不要自动替玩家同意同行。",
+                    "不要发放奖励或扣除圣心百合。"
+                  ],
+                  "stopAfter": "尼尔完成登场和道谢后停下，让玩家有机会回应。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 2,
+                  "maxNewNamedCharacters": 1
+                },
+                "completionGate": {
+                  "type": "next_user_engagement",
+                  "condition": "尼尔已经完成登场和道谢，且玩家随后回应、询问或继续与父女互动。"
+                },
+                "transitions": [
+                  {
+                    "id": "continue-after-neil-arrival",
+                    "to": "memorial-invitation",
+                    "authority": "judge",
+                    "condition": "尼尔登场和道谢已经呈现，玩家在之后继续参与当前对话。",
+                    "minConfidence": 0.78
+                  }
+                ]
+              },
+              {
+                "id": "memorial-invitation",
+                "title": "今天是梅娅的忌日",
+                "purpose": "让尼尔说明采花的原因，并等待玩家是否愿意同行前往墓园。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "让尼尔说明今天是芙萝拉母亲梅娅的忌日，他们原本打算去墓园看望梅娅，并希望把采来的圣心百合带到她的墓前。自然询问或等待玩家是否愿意同行。",
+                  "availableFacts": [
+                    { "id": "maya-is-mother", "text": "梅娅是芙萝拉的母亲。" },
+                    { "id": "maya-memorial-day", "text": "今天是梅娅的忌日。" },
+                    { "id": "planned-cemetery-visit", "text": "尼尔和芙萝拉原本打算去墓园看望梅娅。" },
+                    { "id": "lilies-for-maya", "text": "圣心百合准备带到梅娅墓前。" }
+                  ],
+                  "forbiddenFacts": [
+                    "不要在本轮讲述花店、病情、沃西微或临终遗言。",
+                    "不要直接把玩家带到墓园。",
+                    "不要替玩家同意同行。",
+                    "不要扣除圣心百合或进入结局A。"
+                  ],
+                  "stopAfter": "尼尔说明忌日和墓园计划后，等待玩家是否同行。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 2,
+                  "maxLocationChanges": 0
+                },
+                "completionGate": {
+                  "type": "next_user_intent",
+                  "acceptedIntents": ["accept", "decline"]
+                },
+                "transitions": [
+                  {
+                    "id": "agree-to-cemetery",
+                    "to": "travel-to-cemetery",
+                    "authority": "judge",
+                    "condition": "玩家在得知忌日和墓园计划后明确愿意同行。",
+                    "minConfidence": 0.86
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "stage": 3,
+        "id": "before-mayas-grave",
+        "title": "梅娅墓前",
+        "displayObjective": "跟芙萝拉与尼尔前往墓园。",
+        "scenes": [
+          {
+            "id": "cemetery-memorial",
+            "title": "梅娅墓前",
+            "locations": ["城郊墓园", "墓园"],
+            "beats": [
+              {
+                "id": "travel-to-cemetery",
+                "title": "跟随父女前往墓园",
+                "purpose": "要求本地地点确认，防止采花完成后直接瞬移到墓碑前。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "玩家已经同意同行。只承接与芙萝拉、尼尔前往城郊墓园的准备或路途，不要在本地地点确认前描写已经抵达墓碑。",
+                  "availableFacts": [
+                    { "id": "destination-cemetery", "text": "下一目标是城郊墓园。" }
+                  ],
+                  "forbiddenFacts": [
+                    "不要通过对白替代地点移动。",
+                    "不要提前讲述墓碑、花店、病情或梅娅遗言。",
+                    "不要扣除圣心百合。"
+                  ],
+                  "stopAfter": "停在准备出发或前往墓园的途中，等待本地地点确认。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxLocationChanges": 0
+                },
+                "completionGate": {
+                  "type": "location_entered",
+                  "authority": "local",
+                  "allowedLocations": ["城郊墓园", "墓园"]
+                },
+                "transitions": [
+                  {
+                    "id": "arrive-at-cemetery",
+                    "to": "cemetery-arrival",
+                    "authority": "local",
+                    "condition": "本地世界状态确认玩家已经进入城郊墓园或墓园。",
+                    "minConfidence": 1
+                  }
+                ]
+              },
+              {
+                "id": "cemetery-arrival",
+                "title": "经常有人整理的墓碑",
+                "purpose": "单独建立墓园环境和梅娅墓碑的第一印象。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "描写尼尔和芙萝拉带玩家来到城郊墓园。梅娅的墓碑前很干净，显然有人经常整理。允许玩家观察、询问或短暂停留。",
+                  "availableFacts": [
+                    { "id": "arrived-at-maya-grave", "text": "一行人来到梅娅的墓前。" },
+                    { "id": "grave-well-kept", "text": "墓碑前很干净，显然有人经常整理。" }
+                  ],
+                  "forbiddenFacts": [
+                    "不要在抵达同一轮讲完梅娅的一生。",
+                    "不要直接进入献花或结算。",
+                    "不要替玩家提交圣心百合。"
+                  ],
+                  "stopAfter": "完成墓碑和现场氛围的第一层描写后停下，让玩家观察或回应。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 2
+                },
+                "completionGate": {
+                  "type": "next_user_engagement",
+                  "condition": "墓碑环境已经呈现，并且玩家随后观察、询问、安慰或继续听尼尔讲述。"
+                },
+                "transitions": [
+                  {
+                    "id": "ask-about-maya",
+                    "to": "florists-past",
+                    "authority": "judge",
+                    "condition": "抵达墓碑后，玩家表现出愿意倾听、询问梅娅或继续参与纪念。",
+                    "minConfidence": 0.78
+                  }
+                ]
+              },
+              {
+                "id": "florists-past",
+                "title": "曾经的花店",
+                "purpose": "先讲述梅娅与尼尔作为花匠的过去，不在同一轮进入病情。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "让尼尔讲述自己和梅娅过去都是花匠，曾一起在伊拉亚城经营一家花店。可以穿插克制的生活回忆，但不要新增会改变设定的重要事件。",
+                  "availableFacts": [
+                    { "id": "maya-and-neil-florists", "text": "梅娅与尼尔都是花匠。" },
+                    { "id": "family-flower-shop", "text": "他们曾经一起在伊拉亚城经营一家花店。" }
+                  ],
+                  "forbiddenFacts": [
+                    "本轮不要讲述梅娅患病、深渊暗潮、耗尽家产或沃西微。",
+                    "不要提前说出梅娅床头的话或临终遗言。",
+                    "不要直接进入献花。"
+                  ],
+                  "stopAfter": "尼尔讲完两人经营花店的过去后停下，让玩家回应。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 2
+                },
+                "completionGate": {
+                  "type": "next_user_engagement",
+                  "condition": "花店往事已经呈现，玩家随后继续倾听、回应或询问。"
+                },
+                "transitions": [
+                  {
+                    "id": "continue-to-illness",
+                    "to": "maya-illness",
+                    "authority": "judge",
+                    "condition": "花店往事已经讲述，玩家在之后继续倾听、回应或追问梅娅。",
+                    "minConfidence": 0.76
+                  }
+                ]
+              },
+              {
+                "id": "maya-illness",
+                "title": "芙萝拉四岁那年",
+                "purpose": "讲述梅娅患病以及病因真相，但暂不展开贫困生活和临终台词。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "让尼尔讲述芙萝拉四岁时，梅娅意外感染恶疾。说明那场恶疾实际上是深渊暗潮的侵蚀。保持叙述克制，不要一次讲完后续困境。",
+                  "availableFacts": [
+                    { "id": "flora-was-four", "text": "梅娅患病时芙萝拉只有四岁。" },
+                    { "id": "maya-became-ill", "text": "梅娅意外感染恶疾。" },
+                    { "id": "abyssal-corruption", "text": "那场恶疾实际上是深渊暗潮的侵蚀。" }
+                  ],
+                  "forbiddenFacts": [
+                    "本轮不要讲述耗尽家产和沃西微贫民窟。",
+                    "不要提前说出床头百合的回忆或梅娅临终遗言。",
+                    "不要进入献花。"
+                  ],
+                  "stopAfter": "说明梅娅患病和病因真相后停下，让玩家消化或回应。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 2
+                },
+                "completionGate": {
+                  "type": "next_user_engagement",
+                  "condition": "梅娅患病和病因已经呈现，玩家随后继续倾听、回应或追问。"
+                },
+                "transitions": [
+                  {
+                    "id": "continue-to-woxiwei",
+                    "to": "woxiwei-hardship",
+                    "authority": "judge",
+                    "condition": "梅娅患病的事实已经讲述，玩家在之后继续当前对话。",
+                    "minConfidence": 0.76
+                  }
+                ]
+              },
+              {
+                "id": "woxiwei-hardship",
+                "title": "没有治好的病",
+                "purpose": "讲述尼尔耗尽家产、搬进沃西微贫民窟和治疗失败。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "让尼尔继续讲述：他为了治疗梅娅耗尽家产，一家人搬进沃西微的贫民窟，却仍没能治好妻子。不要在本轮继续说出床头百合和梅娅的台词。",
+                  "availableFacts": [
+                    { "id": "fortune-spent", "text": "尼尔为了治疗梅娅耗尽家产。" },
+                    { "id": "moved-to-woxiwei", "text": "一家人搬进沃西微的贫民窟。" },
+                    { "id": "treatment-failed", "text": "即使如此，尼尔仍没能治好梅娅。" }
+                  ],
+                  "forbiddenFacts": [
+                    "不要提前说出床头百合的回忆。",
+                    "不要提前说出梅娅的临终遗言。",
+                    "不要进入献花或奖励结算。"
+                  ],
+                  "stopAfter": "讲到所有努力仍没能治好梅娅后停下，让玩家回应。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 3
+                },
+                "completionGate": {
+                  "type": "next_user_engagement",
+                  "condition": "沃西微困境已经呈现，玩家随后继续倾听、安慰或追问。"
+                },
+                "transitions": [
+                  {
+                    "id": "continue-to-bedside-lilies",
+                    "to": "bedside-lilies",
+                    "authority": "judge",
+                    "condition": "治疗失败与沃西微经历已经讲述，玩家在之后继续参与对话。",
+                    "minConfidence": 0.76
+                  }
+                ]
+              },
+              {
+                "id": "bedside-lilies",
+                "title": "床头盛开的百合",
+                "purpose": "完整保留父女采花、尼尔落泪以及梅娅安慰他的原始台词。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "让尼尔回忆梅娅最后的日子：他总会和芙萝拉一起去郊外采圣心百合放在床头；他看着妻子总忍不住落泪；梅娅会笑着安慰他。必须保持原意，不要把下一段临终寄语也塞进本轮。",
+                  "availableFacts": [
+                    { "id": "father-daughter-gathered-lilies", "text": "在梅娅最后的日子里，尼尔总会和芙萝拉一起去郊外采圣心百合放在床头。" },
+                    { "id": "neil-cried", "text": "尼尔看着妻子总忍不住落泪。" }
+                  ],
+                  "requiredQuote": "不要哭，你们看这洁白的圣心百合开得多么漂亮。我每天醒着的时候都可以看见如此漂亮的花儿，这是多么令人开心的事啊。",
+                  "forbiddenFacts": [
+                    "本轮不要继续说出梅娅对芙萝拉的临终寄语。",
+                    "不要直接要求玩家献花。",
+                    "不要发放奖励或特殊藏品。"
+                  ],
+                  "stopAfter": "梅娅安慰尼尔的这段话说完后停下，让玩家回应。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 2,
+                  "maxRequiredQuotes": 1
+                },
+                "completionGate": {
+                  "type": "next_user_engagement",
+                  "condition": "床头百合的回忆和梅娅安慰尼尔的话已经呈现，玩家随后继续倾听或回应。"
+                },
+                "transitions": [
+                  {
+                    "id": "continue-to-final-words",
+                    "to": "maya-final-words",
+                    "authority": "judge",
+                    "condition": "床头百合的回忆已经讲述，玩家在之后继续当前纪念对话。",
+                    "minConfidence": 0.76
+                  }
+                ]
+              },
+              {
+                "id": "maya-final-words",
+                "title": "像花儿一样盛开",
+                "purpose": "完整保留梅娅留给芙萝拉的临终寄语。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "让尼尔讲述梅娅弥留之际留给芙萝拉的话。保持原意和完整内容，不在同一轮自动替玩家献花。",
+                  "availableFacts": [
+                    { "id": "maya-final-message", "text": "梅娅希望芙萝拉像花儿一样面对风霜雪雨，在阳光下继续盛开。" },
+                    { "id": "wild-lilies-comparison", "text": "梅娅认为生长在城郊的圣心百合比花房里认真培育的花儿更加娇艳。" }
+                  ],
+                  "requiredQuote": "我亲爱的孩子，你要和花儿一样在阳光下绽放，风霜雪雨都不会成为阻碍你盛开的阴云。就像圣心百合一样，它们只长在城郊，却比花房里认真培育的花儿更加娇艳。",
+                  "forbiddenFacts": [
+                    "不要替玩家提交圣心百合。",
+                    "不要直接进入结局A或待结算。",
+                    "不要宣称奖励已经到账。"
+                  ],
+                  "stopAfter": "梅娅的临终寄语讲完后停下，让玩家回应或决定接下来的行动。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 2,
+                  "maxRequiredQuotes": 1
+                },
+                "completionGate": {
+                  "type": "next_user_engagement",
+                  "condition": "梅娅的临终寄语已经完整呈现，玩家随后继续纪念、回应或准备献花。"
+                },
+                "transitions": [
+                  {
+                    "id": "prepare-lily-offering",
+                    "to": "await-lily-offering",
+                    "authority": "judge",
+                    "condition": "梅娅的临终寄语已经呈现，玩家在之后表现出继续纪念或准备处理圣心百合。",
+                    "minConfidence": 0.78
+                  }
+                ]
+              },
+              {
+                "id": "await-lily-offering",
+                "title": "邀请梅娅看看今年的花",
+                "purpose": "把剧情停在献花前，由玩家亲自点击按钮提交八朵圣心百合。",
+                "status": "active",
+                "mainApi": {
+                  "instruction": "自然把注意力落到玩家与采来的圣心百合上。可以使用互动标题“邀请梅娅看看今年花儿盛开的如此美丽”，但不得替玩家献花、扣除物品或宣布任务完成。",
+                  "availableFacts": [
+                    { "id": "offering-is-ready", "text": "玩家已经站在梅娅墓前，并持有用于纪念的圣心百合。" },
+                    { "id": "offering-title", "text": "互动标题为“邀请梅娅看看今年花儿盛开的如此美丽”。" }
+                  ],
+                  "forbiddenFacts": [
+                    "玩家点击提交按钮前禁止进入结局A。",
+                    "禁止替玩家自动扣除或献上圣心百合。",
+                    "禁止输出任务已完成、奖励到账或获得特殊藏品。"
+                  ],
+                  "stopAfter": "停在等待玩家点击“提交圣心百合”的位置。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 1
+                },
+                "requiredAction": {
+                  "type": "submit_item",
+                  "authority": "local",
+                  "actionId": "flora_lily_grave_submit",
+                  "title": "邀请梅娅看看今年花儿盛开的如此美丽",
+                  "button": "提交圣心百合",
+                  "itemId": "圣心百合",
+                  "itemName": "圣心百合",
+                  "count": 8,
+                  "successText": "道具已提交。",
+                  "successHint": "风霜雪雨都不会成为阻碍花儿盛开的阴云。"
+                },
+                "completionGate": {
+                  "type": "submit_item",
+                  "authority": "local",
+                  "itemId": "圣心百合",
+                  "count": 8
+                },
+                "transitions": [
+                  {
+                    "id": "submit-eight-lilies",
+                    "to": "offering-reaction",
+                    "authority": "local",
+                    "condition": "玩家点击提交按钮，并且本地背包事务成功扣除八朵圣心百合。",
+                    "minConfidence": 1
+                  }
+                ]
+              },
+              {
+                "id": "offering-reaction",
+                "title": "盛开的百合",
+                "purpose": "在结算前给主API一轮描写父女反应和情绪收束的机会。",
+                "status": "active_closing",
+                "ending": "A",
+                "mainApi": {
+                  "instruction": "本地脚本已经确认玩家亲自提交了八朵圣心百合。描写花被献到梅娅墓前，以及芙萝拉和尼尔克制、符合既有性格的反应。可以呼应“风霜雪雨都不会成为阻碍花儿盛开的阴云”，但不要新增重大身世、承诺或未来事件。",
+                  "availableFacts": [
+                    { "id": "lilies-submitted", "text": "八朵圣心百合已经由玩家亲自献到梅娅墓前。" },
+                    { "id": "flowers-bloom-despite-storms", "text": "风霜雪雨都不会成为阻碍花儿盛开的阴云。" }
+                  ],
+                  "forbiddenFacts": [
+                    "不要再次扣除圣心百合。",
+                    "不要宣称经验、金币、协会经验或特殊藏品已经到账。",
+                    "不要替玩家点击确认结算。"
+                  ],
+                  "stopAfter": "完成献花后的情绪收束，明确停在等待任务面板确认结算的状态。"
+                },
+                "pacing": {
+                  "maxBeatAdvance": 0,
+                  "maxNewFacts": 1
+                },
+                "completionGate": {
+                  "type": "narration_delivered",
+                  "authority": "local_after_assistant_floor",
+                  "condition": "主API已经完成献花后的反应和情绪收束。"
+                },
+                "transitions": [
+                  {
+                    "id": "finish-ending-a-narration",
+                    "to": "ending-a-ready",
+                    "authority": "local_after_assistant_floor",
+                    "condition": "献花后的收束回复已经生成并绑定楼层。",
+                    "minConfidence": 1
+                  }
+                ]
+              },
+              {
+                "id": "ending-a-ready",
+                "title": "结局A待结算",
+                "purpose": "等待玩家在任务面板确认结算。",
+                "status": "ready",
+                "ending": "A",
+                "displayObjective": "圣心百合已经献给梅娅，等待玩家确认结算。",
+                "rewardKey": "A",
+                "settlementAuthority": "manual_button",
+                "forbiddenActions": [
+                  "主API不得自动结算。",
+                  "副API不得发放奖励。",
+                  "删除结算前关联楼层时，应回退任务并返还已提交物品。"
+                ],
+                "transitions": []
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "branchBeats": [
+      {
+        "id": "ending-b-early-closing",
+        "stage": 1,
+        "title": "提前结束的相遇",
+        "status": "active_closing",
+        "ending": "B",
+        "locations": ["中央商业区"],
+        "mainApi": {
+          "instruction": "玩家已经明确拒绝芙萝拉的关键请求或结束相遇。自然收束当前互动，不要让芙萝拉强行挽留，不要继续卖花或推进采集圣心百合。",
+          "availableFacts": [
+            { "id": "early-refusal-confirmed", "text": "玩家在中央商业区明确拒绝了芙萝拉的关键请求。" }
+          ],
+          "forbiddenFacts": [
+            "不要惩罚、指责或道德绑架玩家。",
+            "不要继续推进默认路线。",
+            "不要发放结局A的特殊藏品。",
+            "不要宣称奖励已经到账。"
+          ],
+          "stopAfter": "完成简短自然的告别，停在等待确认结算的状态。"
+        },
+        "completionGate": {
+          "type": "narration_delivered",
+          "authority": "local_after_assistant_floor"
+        },
+        "transitions": [
+          {
+            "id": "finish-early-ending-b-narration",
+            "to": "ending-b-early-ready",
+            "authority": "local_after_assistant_floor",
+            "condition": "早期拒绝后的自然收束回复已经生成并绑定楼层。",
+            "minConfidence": 1
+          }
+        ]
+      },
+      {
+        "id": "ending-b-early-ready",
+        "stage": 1,
+        "title": "结局B待结算·中央商业区",
+        "status": "ready",
+        "ending": "B",
+        "locations": ["中央商业区"],
+        "displayObjective": "你拒绝了芙萝拉的请求，这段相遇在中央商业区提前结束。",
+        "displayHint": "支线目标已结束，请在任务面板确认结算。",
+        "rewardKey": "B",
+        "settlementAuthority": "manual_button",
+        "transitions": []
+      },
+      {
+        "id": "ending-b-late-closing",
+        "stage": 3,
+        "title": "在墓园前告别",
+        "status": "active_closing",
+        "ending": "B",
+        "locations": ["城郊", "城郊墓园", "墓园"],
+        "mainApi": {
+          "instruction": "玩家已经明确拒绝同行、拒绝去墓园、拒绝献花，或者把花交给父女后选择离开。自然收束父女与玩家的告别，不要强行挽留，也不要擅自把玩家的行为改写成献花成功。",
+          "availableFacts": [
+            { "id": "late-refusal-confirmed", "text": "玩家在后期明确结束了同行或献花路线。" }
+          ],
+          "forbiddenFacts": [
+            "不要让芙萝拉或尼尔强行挽留玩家。",
+            "不要进入结局A。",
+            "不要发放特殊藏品“盛放的百合”。",
+            "不要宣称奖励已经到账。"
+          ],
+          "stopAfter": "完成克制自然的告别，停在等待确认结算的状态。"
+        },
+        "completionGate": {
+          "type": "narration_delivered",
+          "authority": "local_after_assistant_floor"
+        },
+        "transitions": [
+          {
+            "id": "finish-late-ending-b-narration",
+            "to": "ending-b-late-ready",
+            "authority": "local_after_assistant_floor",
+            "condition": "后期拒绝后的自然收束回复已经生成并绑定楼层。",
+            "minConfidence": 1
+          }
+        ]
+      },
+      {
+        "id": "ending-b-late-ready",
+        "stage": 3,
+        "title": "结局B待结算·墓园前",
+        "status": "ready",
+        "ending": "B",
+        "locations": ["城郊", "城郊墓园", "墓园"],
+        "displayObjective": "你已经选择离开，等待玩家在任务面板确认结算。",
+        "displayHint": "本次支线将按结局B结算，不发放特殊藏品。",
+        "rewardKey": "B",
+        "settlementAuthority": "manual_button",
+        "transitions": []
+      }
+    ],
+    "settlementRules": [
+      "任务阶段达到3不等于完成。",
+      "结局A只有在玩家点击提交圣心百合×8、物品被本地事务成功扣除、献花后的剧情收束完成后，才能进入ready。",
+      "结局B只有在玩家明确拒绝关键请求并完成自然收束后，才能进入ready。",
+      "ready只表示等待玩家在任务面板确认结算，不会自动发放奖励。",
+      "奖励、特殊藏品、成就和完成历史只能由本地结算事务写入。",
+      "结算前删除或修改关联楼层时，任务进度必须回退；若提交物品检查点被撤销，八朵圣心百合必须返还。",
+      "玩家确认结算后，奖励和完成历史不再随聊天楼层回退。"
+    ],
+    "sourceCoverage": [
+      { "legacyContent": "中央商业区初遇、芙萝拉约七八岁、声音被人潮淹没、急着卖花", "newBeatIds": ["flora-encounter"] },
+      { "legacyContent": "买花、吆喝、介绍花束、陪伴等卖花方式", "newBeatIds": ["selling-flowers"] },
+      { "legacyContent": "最后一束带残叶的紫罗兰，接受或拒绝只影响氛围", "newBeatIds": ["violet-offer"] },
+      { "legacyContent": "请求陪同去城郊采集圣心百合", "newBeatIds": ["lily-invitation", "travel-to-outskirts"] },
+      { "legacyContent": "早期明确拒绝进入结局B且不得强行挽留", "newBeatIds": ["ending-b-early-closing", "ending-b-early-ready"] },
+      { "legacyContent": "城郊坡地、阳光和风、只摘盛开花朵", "newBeatIds": ["find-lily-slope", "gathering-lilies"] },
+      { "legacyContent": "每次明确采集按通用采集规则增加1至3个，目标八朵", "newBeatIds": ["gathering-lilies"] },
+      { "legacyContent": "不足八朵不进入墓园阶段", "newBeatIds": ["gathering-lilies"] },
+      { "legacyContent": "八朵后尼尔提着东西出现、道谢并说明忌日", "newBeatIds": ["neil-arrives", "memorial-invitation"] },
+      { "legacyContent": "实际前往城郊墓园而不是直接瞬移", "newBeatIds": ["travel-to-cemetery", "cemetery-arrival"] },
+      { "legacyContent": "墓碑干净且经常有人整理", "newBeatIds": ["cemetery-arrival"] },
+      { "legacyContent": "梅娅与尼尔都是花匠并共同经营花店", "newBeatIds": ["florists-past"] },
+      { "legacyContent": "芙萝拉四岁时梅娅患病，病因是深渊暗潮侵蚀", "newBeatIds": ["maya-illness"] },
+      { "legacyContent": "耗尽家产、搬进沃西微贫民窟、仍未治好", "newBeatIds": ["woxiwei-hardship"] },
+      { "legacyContent": "父女采集床头百合、尼尔落泪、梅娅安慰尼尔的原话", "newBeatIds": ["bedside-lilies"] },
+      { "legacyContent": "梅娅给芙萝拉的临终寄语原话", "newBeatIds": ["maya-final-words"] },
+      { "legacyContent": "献花互动标题、提交八朵、成功文本和提示", "newBeatIds": ["await-lily-offering"] },
+      { "legacyContent": "提交后先收束剧情，再等待面板确认结算", "newBeatIds": ["offering-reaction", "ending-a-ready"] },
+      { "legacyContent": "后期拒绝同行、拒绝墓园或把花交给父女后离开进入结局B", "newBeatIds": ["ending-b-late-closing", "ending-b-late-ready"] },
+      { "legacyContent": "A/B奖励、特殊藏品、成就和手动结算限制", "newBeatIds": ["ending-a-ready", "ending-b-early-ready", "ending-b-late-ready"] }
+    ],
+    "reviewQuestions": [
+      "卖花过程是否需要增加可见的“剩余花束”本地计数，还是继续由副API根据多轮互动判定花已卖完？",
+      "圣心百合每次采集1至3朵是否继续沿用旧版随机规则，还是改为固定数量或玩家按钮操作？",
+      "梅娅病情是否应该在此支线直接明确为深渊暗潮侵蚀，还是只作为玩家已经解锁相关世界观后才能公开的条件事实？",
+      "旧版成就名称“花语：”本身是不完整命名，是否需要在正式迁移前补全？",
+      "结局B是否保留80经验、180金币、25协会经验，还是拒绝初遇时只记录结局、不发放奖励？"
+    ]
+  }
+}

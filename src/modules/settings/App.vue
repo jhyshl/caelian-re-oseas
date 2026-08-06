@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue';
 import type { GameSnapshot, SettingsRecord } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
+import type { QuestJudgeModel } from '@/quests/judge-client';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
@@ -17,6 +18,17 @@ const contentSyncing = ref(false);
 const managedContentAutoUpdate = ref(
   props.context.api.getManagedContentAutoUpdate(),
 );
+const questJudgeStatus = ref(props.context.api.getQuestJudgeStatus());
+const questJudgeDraft = ref({
+  endpoint: questJudgeStatus.value.endpoint ?? '',
+  modelsEndpoint: questJudgeStatus.value.modelsEndpoint ?? '',
+  apiKey: '',
+  model: questJudgeStatus.value.model ?? '',
+  jsonMode: questJudgeStatus.value.jsonMode ?? true,
+});
+const questJudgeModels = ref<QuestJudgeModel[]>([]);
+const fetchingQuestModels = ref(false);
+const applyingQuestJudge = ref(false);
 const runtime = props.context.api.getRuntimeInfo();
 
 async function save() {
@@ -82,6 +94,73 @@ function updateManagedContentPreference() {
     : '已关闭自动内容更新；仍可随时手动检查。';
 }
 
+async function fetchQuestModels() {
+  const endpoint = questJudgeDraft.value.endpoint.trim();
+  if (!endpoint) {
+    notice.value = '请先填写副 API 聊天补全地址。';
+    return;
+  }
+  fetchingQuestModels.value = true;
+  notice.value = '';
+  try {
+    questJudgeModels.value = await props.context.api.fetchQuestJudgeModels({
+      endpoint,
+      modelsEndpoint:
+        questJudgeDraft.value.modelsEndpoint.trim() || undefined,
+      apiKey: questJudgeDraft.value.apiKey.trim() || undefined,
+    });
+    notice.value = `已拉取 ${questJudgeModels.value.length} 个模型，请在模型栏中选择。`;
+  } catch (error) {
+    notice.value =
+      error instanceof Error ? error.message : '模型列表拉取失败';
+  } finally {
+    fetchingQuestModels.value = false;
+  }
+}
+
+async function applyQuestJudge() {
+  const endpoint = questJudgeDraft.value.endpoint.trim();
+  const model = questJudgeDraft.value.model.trim();
+  if (!endpoint || !model) {
+    notice.value = '请填写副 API 地址并选择模型。';
+    return;
+  }
+  applyingQuestJudge.value = true;
+  notice.value = '';
+  try {
+    props.context.api.configureQuestJudge({
+      endpoint,
+      modelsEndpoint:
+        questJudgeDraft.value.modelsEndpoint.trim() || undefined,
+      model,
+      apiKey: questJudgeDraft.value.apiKey.trim() || undefined,
+      jsonMode: questJudgeDraft.value.jsonMode,
+    });
+    questJudgeDraft.value.apiKey = '';
+    questJudgeStatus.value = props.context.api.getQuestJudgeStatus();
+    notice.value = `任务剧情判定器已启用，当前模型：${model}。`;
+  } catch (error) {
+    notice.value =
+      error instanceof Error ? error.message : '副 API 配置失败';
+  } finally {
+    applyingQuestJudge.value = false;
+  }
+}
+
+function clearQuestJudge() {
+  props.context.api.configureQuestJudge(null);
+  questJudgeStatus.value = props.context.api.getQuestJudgeStatus();
+  questJudgeDraft.value = {
+    endpoint: '',
+    modelsEndpoint: '',
+    apiKey: '',
+    model: '',
+    jsonMode: true,
+  };
+  questJudgeModels.value = [];
+  notice.value = '已停用任务剧情判定器，并清除保存的连接信息。';
+}
+
 onMounted(async () => {
   snapshot.value = await props.context.api.query('state');
   draft.value = {
@@ -103,11 +182,117 @@ onMounted(async () => {
         <div>
           <span>SYSTEM SETTINGS</span>
           <h1>冒险者面板设置</h1>
-          <p>这些选项保存在浏览器 IndexedDB，不会把完整配置写入 MVU。</p>
+          <p>这些选项只保存在本机浏览器，不会把完整配置写入 MVU。</p>
         </div>
         <button type="button" class="ca-button" @click="context.api.openPanel('diagnostics')">
           打开诊断
         </button>
+      </section>
+
+      <section class="ca-section judge-settings">
+        <div class="judge-heading">
+          <div>
+            <h2 class="ca-section-title">任务剧情判定器</h2>
+            <p>
+              副 API 只判断当前任务节点是否推进、偏离或离场，不负责续写正文。
+            </p>
+          </div>
+          <span :class="{ active: questJudgeStatus.configured }">
+            {{ questJudgeStatus.configured ? '已启用' : '未配置' }}
+          </span>
+        </div>
+
+        <div class="judge-form">
+          <label>
+            <span>聊天补全地址</span>
+            <input
+              v-model="questJudgeDraft.endpoint"
+              type="url"
+              placeholder="https://example.com/v1/chat/completions"
+              spellcheck="false"
+            />
+          </label>
+          <label>
+            <span>API Key</span>
+            <input
+              v-model="questJudgeDraft.apiKey"
+              type="password"
+              :placeholder="
+                questJudgeStatus.apiKeyPresent
+                  ? '当前会话已有密钥；留空则继续使用'
+                  : '仅保留在当前浏览器会话'
+              "
+              autocomplete="new-password"
+              spellcheck="false"
+            />
+          </label>
+          <label>
+            <span>模型列表地址（可选）</span>
+            <input
+              v-model="questJudgeDraft.modelsEndpoint"
+              type="url"
+              placeholder="留空时根据聊天补全地址自动推导"
+              spellcheck="false"
+            />
+          </label>
+          <label>
+            <span>判定模型</span>
+            <div class="model-picker">
+              <input
+                v-model="questJudgeDraft.model"
+                list="caelian-quest-judge-models"
+                placeholder="拉取后选择，也可以手动填写"
+                spellcheck="false"
+              />
+              <datalist id="caelian-quest-judge-models">
+                <option
+                  v-for="model in questJudgeModels"
+                  :key="model.id"
+                  :value="model.id"
+                >
+                  {{ model.ownedBy ? `${model.id} · ${model.ownedBy}` : model.id }}
+                </option>
+              </datalist>
+              <button
+                type="button"
+                class="ca-button"
+                :disabled="fetchingQuestModels"
+                @click="fetchQuestModels"
+              >
+                {{ fetchingQuestModels ? '拉取中……' : '拉取模型' }}
+              </button>
+            </div>
+          </label>
+          <label class="judge-toggle">
+            <div>
+              <strong>JSON 模式</strong>
+              <small>接口支持 response_format 时建议开启。</small>
+            </div>
+            <input v-model="questJudgeDraft.jsonMode" type="checkbox" />
+          </label>
+        </div>
+
+        <div class="judge-actions">
+          <button
+            type="button"
+            class="ca-button primary"
+            :disabled="applyingQuestJudge"
+            @click="applyQuestJudge"
+          >
+            {{ applyingQuestJudge ? '应用中……' : '应用副 API 配置' }}
+          </button>
+          <button
+            v-if="questJudgeStatus.configured"
+            type="button"
+            class="ca-button"
+            @click="clearQuestJudge"
+          >
+            停用并清除
+          </button>
+        </div>
+        <p class="judge-security">
+          地址、模型和 JSON 模式保存在本机；API Key 只保留在当前浏览器会话，关闭会话后需要重新填写。
+        </p>
       </section>
 
       <section class="ca-section">
@@ -274,6 +459,100 @@ onMounted(async () => {
   accent-color: var(--ca-gold);
 }
 
+.judge-settings {
+  display: grid;
+  gap: 14px;
+}
+
+.judge-heading,
+.judge-actions,
+.model-picker,
+.judge-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.judge-heading {
+  justify-content: space-between;
+}
+
+.judge-heading p,
+.judge-security,
+.judge-toggle small {
+  margin: 4px 0 0;
+  color: var(--ca-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.judge-heading > span {
+  padding: 4px 8px;
+  border: 1px solid var(--ca-border);
+  border-radius: 99px;
+  color: var(--ca-muted);
+  font-size: 9px;
+}
+
+.judge-heading > span.active {
+  border-color: rgba(93, 190, 133, 0.45);
+  color: #9bdfb9;
+  background: rgba(93, 190, 133, 0.08);
+}
+
+.judge-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px;
+}
+
+.judge-form > label {
+  display: grid;
+  gap: 6px;
+  color: var(--ca-text-bright);
+  font-size: 10px;
+}
+
+.judge-form input:not([type="checkbox"]) {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--ca-border-light);
+  border-radius: 8px;
+  color: var(--ca-text);
+  background: #11141b;
+  font: inherit;
+}
+
+.model-picker input {
+  flex: 1;
+}
+
+.judge-toggle {
+  justify-content: space-between;
+  padding: 9px 10px;
+  border: 1px solid var(--ca-border);
+  border-radius: 8px;
+  background: var(--ca-surface-soft);
+}
+
+.judge-toggle > div {
+  display: grid;
+}
+
+.judge-toggle input {
+  width: 19px;
+  height: 19px;
+  accent-color: var(--ca-gold);
+}
+
+.judge-actions {
+  justify-content: flex-end;
+}
+
+.judge-security {
+  text-align: right;
+}
+
 .settings-actions {
   display: flex;
   justify-content: flex-end;
@@ -338,8 +617,14 @@ onMounted(async () => {
   }
 
   .boundary-grid,
-  .runtime-grid {
+  .runtime-grid,
+  .judge-form {
     grid-template-columns: 1fr;
+  }
+
+  .model-picker {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 </style>

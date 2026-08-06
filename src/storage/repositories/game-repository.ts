@@ -6,10 +6,14 @@ import type {
   MailboxState,
   MarketView,
   ProfileRecord,
+  QuestCompletionResult,
+  QuestProgressSnapshot,
+  TavernFloorReference,
 } from '@/domain/types';
 import type { AchievementPatchSignal } from '@/achievements/patch-registry';
 import type { EventBus } from '@/kernel/event-bus';
 import type { CaelianDatabase } from '@/storage/database';
+import type { QuestDefinition } from '@/quests/schema';
 import { BattleRepository } from '@/storage/repositories/battle-repository';
 import {
   AchievementRepository,
@@ -23,6 +27,12 @@ import { GuildRepository } from '@/storage/repositories/guild-repository';
 import { PlayerRepository } from '@/storage/repositories/player-repository';
 import { ProfileRepository } from '@/storage/repositories/profile-repository';
 import { WorldRepository } from '@/storage/repositories/world-repository';
+import {
+  QuestProgressRepository,
+  type ApplyLocalQuestTransitionInput,
+  type BindQuestFloorInput,
+  type QuestFloorRollbackResult,
+} from '@/storage/repositories/quest-progress-repository';
 
 export class GameRepository {
   private readonly profiles: ProfileRepository;
@@ -35,6 +45,7 @@ export class GameRepository {
   private readonly narrative: NarrativeRepository;
   private readonly achievements: AchievementRepository;
   private readonly market: MarketRepository;
+  private readonly questProgress: QuestProgressRepository;
 
   constructor(
     private readonly db: CaelianDatabase,
@@ -50,6 +61,7 @@ export class GameRepository {
     this.narrative = new NarrativeRepository(db);
     this.achievements = new AchievementRepository(db, events);
     this.market = new MarketRepository(db);
+    this.questProgress = new QuestProgressRepository(db);
   }
 
   ensureProfile(
@@ -272,6 +284,98 @@ export class GameRepository {
     return this.market.view(profileId);
   }
 
+  bindQuestFloor(
+    profileId: string,
+    input: BindQuestFloorInput,
+  ) {
+    return this.questProgress.bindFloor(profileId, input);
+  }
+
+  acceptQuestDefinition(
+    profileId: string,
+    definition: QuestDefinition,
+  ) {
+    return this.questProgress.acceptDefinition(profileId, definition);
+  }
+
+  selectTrackedQuest(
+    profileId: string,
+    questId: string,
+    baseline: QuestProgressSnapshot,
+  ) {
+    return this.questProgress.selectQuest(profileId, questId, baseline);
+  }
+
+  pauseTrackedQuest(profileId: string) {
+    return this.questProgress.setSelectedTrackerState(
+      profileId,
+      'manualPaused',
+    );
+  }
+
+  resumeTrackedQuest(profileId: string) {
+    return this.questProgress.setSelectedTrackerState(profileId, 'armed');
+  }
+
+  selectedQuestTracker(profileId: string) {
+    return this.questProgress.selectedTracker(profileId);
+  }
+
+  applyLocalQuestTransition(
+    profileId: string,
+    input: ApplyLocalQuestTransitionInput,
+  ) {
+    return this.questProgress.applyLocalQuestTransition(profileId, input);
+  }
+
+  availableAutomaticQuestTransition(
+    profileId: string,
+    questId: string,
+    definition: QuestDefinition,
+  ) {
+    return this.questProgress.availableAutomaticTransition(
+      profileId,
+      questId,
+      definition,
+    );
+  }
+
+  async completeQuestDefinition(
+    profileId: string,
+    definition: QuestDefinition,
+  ): Promise<QuestCompletionResult> {
+    const result = await this.questProgress.completeDefinition(
+      profileId,
+      definition,
+    );
+    await this.achievements.recordExternal(profileId, {
+      event: 'quest.complete',
+      questId: definition.id,
+      ending: result.ending,
+    });
+    await this.events.emit('state.changed', {
+      command: {
+        id: `managed-quest-complete:${result.questId}`,
+        status: 'applied',
+      },
+    });
+    return result;
+  }
+
+  rollbackQuestProgressFromFloor(
+    profileId: string,
+    floorIndex: number,
+  ): Promise<QuestFloorRollbackResult[]> {
+    return this.questProgress.rollbackFromFloor(profileId, floorIndex);
+  }
+
+  reconcileQuestProgress(
+    profileId: string,
+    floors: TavernFloorReference[],
+  ): Promise<QuestFloorRollbackResult[]> {
+    return this.questProgress.reconcileFloors(profileId, floors);
+  }
+
   private async applyCommand(
     profileId: string,
     command: DomainCommand,
@@ -296,7 +400,11 @@ export class GameRepository {
       case 'quest.accept':
         return this.guild.acceptCommission(profileId, command.payload);
       case 'quest.abandon':
-        return this.guild.abandon(profileId, command.payload.questId);
+        await this.guild.abandon(profileId, command.payload.questId);
+        return this.questProgress.clearQuest(
+          profileId,
+          command.payload.questId,
+        );
       case 'inventory.adjust':
         return this.inventory.adjust(profileId, command.payload);
       case 'deck.update':
@@ -370,6 +478,8 @@ export class GameRepository {
       this.db.guildStates,
       this.db.questRecords,
       this.db.questHistory,
+      this.db.questTrackerStates,
+      this.db.questFloorCheckpoints,
       this.db.inventoryStacks,
       this.db.equipmentInstances,
       this.db.equipmentLoadouts,

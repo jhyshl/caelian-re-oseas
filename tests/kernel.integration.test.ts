@@ -13,6 +13,8 @@ afterEach(async () => {
   delete window.eventOn;
   delete window.tavern_events;
   localStorage.removeItem('caelian_launcher_order_v1');
+  localStorage.removeItem('caelian_quest_judge_preferences_v1');
+  sessionStorage.removeItem('caelian_quest_judge_api_key_session_v1');
   localStorage.removeItem(avatarPreferenceKey('caelian'));
   localStorage.removeItem(avatarPreferenceKey('player'));
   document
@@ -773,5 +775,330 @@ describe('CaelianKernel integration', () => {
       'achievement-letter',
     ]);
     await repeatedKernel.api.shutdown();
+  });
+
+  it('设置面板可拉取模型并由玩家选择判定模型', async () => {
+    const databaseName = `caelian-alpha-judge-settings-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const fetchMock = vi.spyOn(window, 'fetch').mockImplementation(
+      async (input) =>
+        String(input) === 'https://judge.example/v1/models'
+          ? new Response(
+              JSON.stringify({
+                data: [{ id: 'judge-small' }, { id: 'judge-large' }],
+              }),
+              {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+              },
+            )
+          : new Response(null, { status: 404 }),
+    );
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'judge-settings-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+    const setInput = (input: HTMLInputElement, value: string) => {
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    await kernel.initialize();
+    await kernel.api.openPanel('settings');
+    await expect
+      .poll(() =>
+        document.querySelector<HTMLInputElement>(
+          '[data-caelian-panel="settings"] input[placeholder*="chat/completions"]',
+        ),
+      )
+      .not.toBeNull();
+    const panel = document.querySelector<HTMLElement>(
+      '[data-caelian-panel="settings"]',
+    );
+    const endpoint = panel?.querySelector<HTMLInputElement>(
+      'input[placeholder*="chat/completions"]',
+    );
+    const apiKey = panel?.querySelector<HTMLInputElement>(
+      'input[type="password"]',
+    );
+    expect(endpoint).not.toBeNull();
+    expect(apiKey).not.toBeNull();
+    setInput(endpoint!, 'https://judge.example/v1/chat/completions');
+    setInput(apiKey!, 'settings-session-secret');
+    Array.from(panel?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+      .find((button) => button.textContent?.trim() === '拉取模型')
+      ?.click();
+
+    await expect
+      .poll(
+        () =>
+          panel?.querySelectorAll<HTMLDataListElement>(
+            '#caelian-quest-judge-models option',
+          ).length,
+      )
+      .toBe(2);
+    const model = panel?.querySelector<HTMLInputElement>(
+      'input[list="caelian-quest-judge-models"]',
+    );
+    expect(model).not.toBeNull();
+    setInput(model!, 'judge-large');
+    Array.from(panel?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+      .find(
+        (button) =>
+          button.textContent?.trim() === '应用副 API 配置',
+      )
+      ?.click();
+
+    await expect
+      .poll(() => kernel.api.getQuestJudgeStatus())
+      .toMatchObject({
+        configured: true,
+        endpoint: 'https://judge.example/v1/chat/completions',
+        model: 'judge-large',
+        apiKeyPresent: true,
+      });
+    expect(
+      localStorage.getItem('caelian_quest_judge_preferences_v1'),
+    ).not.toContain('settings-session-secret');
+    expect(
+      sessionStorage.getItem('caelian_quest_judge_api_key_session_v1'),
+    ).toBe('settings-session-secret');
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://judge.example/v1/models',
+      expect.objectContaining({ method: 'GET' }),
+    );
+
+    await kernel.api.shutdown();
+    fetchMock.mockRestore();
+  });
+
+  it('从内置目录接取地区任务并控制任务追踪提示', async () => {
+    const databaseName = `caelian-alpha-quest-runtime-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const setExtensionPrompt = vi.fn();
+    window.SillyTavern = {
+      getContext: () => ({
+        chatId: 'quest-runtime-chat',
+        name1: '测试冒险者',
+        chat: [],
+        setExtensionPrompt,
+      }),
+    };
+    const textarea = document.createElement('textarea');
+    textarea.id = 'send_textarea';
+    document.body.appendChild(textarea);
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'quest-runtime-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    await kernel.api.execute({
+      id: 'create-quest-test-adventurer',
+      type: 'player.create',
+      payload: {
+        name: '测试冒险者',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    await expect(kernel.api.listAvailableQuests()).resolves.toEqual([
+      expect.objectContaining({
+        id: 'side_flora_says',
+        name: '芙萝拉说',
+        region: '伊拉亚城',
+      }),
+    ]);
+
+    await kernel.api.openPanel('guild');
+    const guildPanel = document.querySelector<HTMLElement>(
+      '[data-caelian-panel="guild"]',
+    );
+    await expect
+      .poll(() => guildPanel?.textContent)
+      .toContain('委托告示板');
+    Array.from(guildPanel?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+      .find((button) => button.textContent?.trim() === '委托告示板')
+      ?.click();
+    await expect
+      .poll(() => guildPanel?.textContent)
+      .toContain('当前地区剧情任务');
+    expect(guildPanel?.textContent).toContain('芙萝拉说');
+    Array.from(guildPanel?.querySelectorAll<HTMLButtonElement>('button') ?? [])
+      .find((button) => button.textContent?.trim() === '接取剧情任务')
+      ?.click();
+    await expect
+      .poll(async () => kernel.api.getTrackedQuest())
+      .not.toBeNull();
+    const accepted = await kernel.api.getTrackedQuest();
+    expect(accepted).toMatchObject({
+      quest: { definitionId: 'side_flora_says', status: 'active' },
+      tracker: {
+        selected: true,
+        current: { trackerState: 'armed' },
+      },
+    });
+    expect(textarea.value).toContain('前往中央商业区');
+    await expect
+      .poll(() => guildPanel?.textContent)
+      .toContain('暂停追踪');
+    expect(setExtensionPrompt.mock.calls.at(-1)?.[1]).toContain(
+      '[凯利安任务导航｜芙萝拉说]',
+    );
+
+    await kernel.api.pauseTrackedQuest();
+    expect(setExtensionPrompt.mock.calls.at(-1)?.[1]).toBe('');
+    await kernel.api.resumeTrackedQuest();
+    expect(setExtensionPrompt.mock.calls.at(-1)?.[1]).toContain(
+      '[凯利安任务导航｜芙萝拉说]',
+    );
+
+    kernel.api.configureQuestJudge({
+      endpoint: 'https://judge.example/v1/chat/completions',
+      model: 'judge-model',
+      apiKey: 'runtime-only-secret',
+    });
+    expect(kernel.api.getQuestJudgeStatus()).toMatchObject({
+      configured: true,
+      endpoint: 'https://judge.example/v1/chat/completions',
+      model: 'judge-model',
+      apiKeyPresent: true,
+    });
+
+    await kernel.api.shutdown();
+    textarea.remove();
+  });
+
+  it('收到主 API 楼层后自动判定，并在删除楼层时回退节点', async () => {
+    const databaseName = `caelian-alpha-quest-floor-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return { stop: () => handlers.delete(event) };
+    });
+    window.tavern_events = {
+      MESSAGE_RECEIVED: 'message-received',
+      MESSAGE_DELETED: 'message-deleted',
+    };
+    const chat: Array<{
+      mes: string;
+      is_user: boolean;
+    }> = [];
+    const setExtensionPrompt = vi.fn();
+    window.SillyTavern = {
+      getContext: () => ({
+        chatId: 'quest-floor-chat',
+        name1: '测试冒险者',
+        chat,
+        setExtensionPrompt,
+      }),
+    };
+    let mvuData: Record<string, unknown> = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            world: {
+              region: '伊拉亚城',
+              place: '中央商业区',
+              location: '伊拉亚城-中央商业区',
+              gameDate: '新圣约历1385-09-01',
+              gameTime: '10:00',
+              weather: '晴朗',
+              mainStage: 0,
+              mainStep: 0,
+            },
+          },
+        },
+      },
+    };
+    window.Mvu = {
+      getMvuData: () => mvuData,
+      replaceMvuData: (next) => {
+        mvuData = next;
+      },
+    };
+    const judgeResult = {
+      sceneState: 'in_scene',
+      progress: 'transition',
+      completionGateSatisfied: true,
+      matchedTransitionId: 'advance-flora-encounter',
+      suggestedNodeId: 'flora-selling-flowers',
+      confidence: 0.96,
+      evidence: ['玩家明确答应，并和芙萝拉准备前往城郊。'],
+      summary: '花已经卖完，玩家答应陪芙萝拉去采花。',
+    };
+    const fetchMock = vi.spyOn(window, 'fetch').mockImplementation(
+      async (input) =>
+        String(input).includes('judge.example')
+          ? new Response(
+              JSON.stringify({
+                choices: [
+                  { message: { content: JSON.stringify(judgeResult) } },
+                ],
+              }),
+              {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+              },
+            )
+          : new Response(null, { status: 404 }),
+    );
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'quest-floor-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    await kernel.api.execute({
+      id: 'create-quest-floor-adventurer',
+      type: 'player.create',
+      payload: {
+        name: '测试冒险者',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    await kernel.api.acceptManagedQuest('side_flora_says');
+    kernel.api.configureQuestJudge({
+      endpoint: 'https://judge.example/v1/chat/completions',
+      model: 'judge-model',
+    });
+    chat.push(
+      { mes: '好，我陪你去采花。', is_user: true },
+      { mes: '芙萝拉开心地点头，收好花篮准备出发。', is_user: false },
+    );
+    handlers.get('message-received')?.(1);
+
+    await expect
+      .poll(async () => (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId)
+      .toBe('flora-selling-flowers');
+
+    chat.splice(1, 1);
+    handlers.get('message-deleted')?.(1);
+    await expect
+      .poll(async () => (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId)
+      .toBe('flora-encounter');
+
+    chat.push({
+      mes: '芙萝拉开心地点了点头，收好花篮准备出发。',
+      is_user: false,
+    });
+    handlers.get('message-received')?.(1);
+    await expect
+      .poll(async () => (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId)
+      .toBe('flora-selling-flowers');
+
+    await kernel.api.shutdown();
+    fetchMock.mockRestore();
   });
 });

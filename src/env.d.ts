@@ -59,6 +59,7 @@ interface TavernContext {
     content?: string;
     is_user?: boolean;
     isUser?: boolean;
+    is_system?: boolean;
     force_avatar?: string;
   }>;
   characters?: Array<{
@@ -77,4 +78,12 @@ interface TavernContext {
     file: string,
     cacheBust?: boolean,
   ) => string;
+  setExtensionPrompt?: (
+    key: string,
+    value: string,
+    position: number,
+    depth: number,
+    scan?: boolean,
+    role?: number,
+  ) => void;
 }

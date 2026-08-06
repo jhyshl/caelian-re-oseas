@@ -4,6 +4,8 @@ import {
   releaseNotesFor,
 } from '@/content/release-notes';
 import type {
+  QuestCompletionResult,
+  QuestRecord,
   ReleaseChannel,
   RuntimeInfo,
   RuntimeStatus,
@@ -15,6 +17,8 @@ import type {
   PanelContext,
   QueryName,
   QueryResultMap,
+  QuestJudgeStatus,
+  TrackedQuestView,
 } from '@/kernel/public-api';
 import { createAiProjection } from '@/mvu/projection';
 import {
@@ -30,7 +34,37 @@ import {
 import { NotificationCenter } from '@/notifications/notification-center';
 import type { NotificationKind } from '@/notifications/types';
 import { GameRepository } from '@/storage/repository';
-import { TavernAdapter } from '@/tavern/adapter';
+import {
+  QuestCatalogLoader,
+  type QuestListEntry,
+} from '@/quests/catalog';
+import {
+  fetchOpenAiCompatibleModels,
+  OpenAiCompatibleQuestJudgeClient,
+  type OpenAiCompatibleJudgeConfig,
+  type QuestJudgeModel,
+  type QuestJudgeModelListConfig,
+} from '@/quests/judge-client';
+import {
+  clearQuestJudgePreferences,
+  loadQuestJudgePreferences,
+  saveQuestJudgePreferences,
+} from '@/quests/judge-preferences';
+import {
+  buildCurrentNodeContext,
+  buildQuestNavigationContext,
+} from '@/quests/prompt-builder';
+import { questNode, type QuestDefinition } from '@/quests/schema';
+import { initialQuestProgress } from '@/quests/state-machine';
+import {
+  questLocationMatches,
+  QuestTrackerService,
+} from '@/quests/tracker-service';
+import { QuestProgressRepository } from '@/storage/repositories/quest-progress-repository';
+import {
+  TavernAdapter,
+  type TavernEventPayload,
+} from '@/tavern/adapter';
 import {
   ManagedContentUpdater,
   type ManagedContentSyncResult,
@@ -64,6 +98,8 @@ export class CaelianKernel {
   private readonly notifications: NotificationCenter;
   private readonly managedContent: ManagedContentUpdater;
   private readonly surveys: SurveyService;
+  private readonly questCatalogs: QuestCatalogLoader;
+  private readonly questProgress: QuestProgressRepository;
   private readonly stateDisposers: Array<() => void> = [];
   private status: RuntimeStatus = 'starting';
   private profileId?: string;
@@ -74,9 +110,16 @@ export class CaelianKernel {
   private managedContentTimer?: number;
   private surveyTimer?: number;
   private surveyPromptActive = false;
+  private questTracker?: QuestTrackerService;
+  private questJudgeApiKey?: string;
+  private questJudge: QuestJudgeStatus = {
+    configured: false,
+    apiKeyPresent: false,
+  };
   private shuttingDown = false;
   private readonly promptedSurveyIds = new Set<string>();
   private readonly pendingTavernUpdates = new Set<Promise<void>>();
+  private tavernUpdateQueue: Promise<void> = Promise.resolve();
 
   constructor(options: KernelOptions) {
     if (options.channel !== 'alpha') {
@@ -102,6 +145,10 @@ export class CaelianKernel {
     );
     this.managedContent = new ManagedContentUpdater(this.adapter.host);
     this.surveys = new SurveyService(this.db, this.adapter.host);
+    this.questCatalogs = new QuestCatalogLoader(this.adapter.host);
+    this.questProgress = new QuestProgressRepository(this.db);
+    const savedQuestJudge = loadQuestJudgePreferences(this.adapter.host);
+    if (savedQuestJudge) this.configureQuestJudge(savedQuestJudge);
     this.api = this.createPublicApi();
   }
 
@@ -131,6 +178,7 @@ export class CaelianKernel {
       );
       await this.activateCurrentProfile();
       await this.ingestMvuNarrative();
+      await this.syncQuestContext();
       await this.scanCurrentAchievements();
       this.stateDisposers.push(
         this.events.on('state.changed', async () => {
@@ -143,8 +191,8 @@ export class CaelianKernel {
           void this.offerPendingSurvey();
         }),
       );
-      this.adapter.subscribe((eventName) => {
-        this.queueTavernUpdate(eventName);
+      this.adapter.subscribe((eventName, payload) => {
+        this.queueTavernUpdate(eventName, payload);
       });
       this.status = 'ready';
       await this.syncProjection();
@@ -186,7 +234,23 @@ export class CaelianKernel {
       };
     }
     try {
-      return await this.repository.execute(this.profileId, command);
+      const result = await this.repository.execute(this.profileId, command);
+      const type = this.commandType(command);
+      if (
+        result.status === 'applied' &&
+        type &&
+        ['inventory.adjust', 'battle.finish'].includes(type)
+      ) {
+        await this.advanceTrackedQuestFromLocalState();
+      }
+      if (
+        result.status === 'applied' &&
+        type &&
+        ['world.move', 'quest.abandon', 'inventory.adjust', 'battle.finish'].includes(type)
+      ) {
+        await this.syncQuestContext();
+      }
+      return result;
     } catch (error) {
       return {
         id: this.commandId(command),
@@ -228,6 +292,305 @@ export class CaelianKernel {
       return snapshot.inventory as QueryResultMap[K];
     }
     return snapshot as QueryResultMap[K];
+  }
+
+  configureQuestJudge(
+    config: OpenAiCompatibleJudgeConfig | null,
+  ): void {
+    if (!config) {
+      this.questTracker = undefined;
+      this.questJudgeApiKey = undefined;
+      this.questJudge = { configured: false, apiKeyPresent: false };
+      clearQuestJudgePreferences(this.adapter.host);
+      return;
+    }
+    const endpoint = config.endpoint.trim();
+    const model = config.model.trim();
+    if (!endpoint || !model) {
+      throw new Error('副 API 地址和模型不能为空');
+    }
+    const modelsEndpoint = config.modelsEndpoint?.trim() || undefined;
+    const apiKey = config.apiKey?.trim() || this.questJudgeApiKey;
+    const resolvedConfig: OpenAiCompatibleJudgeConfig = {
+      ...config,
+      endpoint,
+      ...(modelsEndpoint ? { modelsEndpoint } : {}),
+      model,
+      ...(apiKey ? { apiKey } : {}),
+    };
+    const client = new OpenAiCompatibleQuestJudgeClient(
+      resolvedConfig,
+      (input, init) => this.adapter.host.fetch(input, init),
+    );
+    this.questTracker = new QuestTrackerService(
+      this.questProgress,
+      client,
+    );
+    this.questJudgeApiKey = apiKey;
+    this.questJudge = {
+      configured: true,
+      endpoint,
+      ...(modelsEndpoint ? { modelsEndpoint } : {}),
+      model,
+      jsonMode: config.jsonMode !== false,
+      apiKeyPresent: Boolean(apiKey),
+    };
+    saveQuestJudgePreferences(this.adapter.host, resolvedConfig);
+  }
+
+  getQuestJudgeStatus(): QuestJudgeStatus {
+    return { ...this.questJudge };
+  }
+
+  fetchQuestJudgeModels(
+    config: QuestJudgeModelListConfig,
+  ): Promise<QuestJudgeModel[]> {
+    const apiKey = config.apiKey?.trim() || this.questJudgeApiKey;
+    return fetchOpenAiCompatibleModels(
+      {
+        ...config,
+        ...(apiKey ? { apiKey } : {}),
+      },
+      (input, init) => this.adapter.host.fetch(input, init),
+    );
+  }
+
+  async listAvailableQuests(
+    options: { refresh?: boolean } = {},
+  ): Promise<QuestListEntry[]> {
+    const profileId = this.requireProfile();
+    const [catalog, snapshot] = await Promise.all([
+      this.questCatalogs.load({ force: options.refresh }),
+      this.repository.snapshot(profileId),
+    ]);
+    const activeQuestIds = new Set(
+      snapshot.quests.flatMap((quest) =>
+        quest.definitionId ? [quest.definitionId] : [],
+      ),
+    );
+    const completedQuestIds = new Set(
+      snapshot.questHistory.flatMap((quest) =>
+        quest.definitionId ? [quest.definitionId] : [],
+      ),
+    );
+    return catalog.listAvailable({
+      region: snapshot.world.region,
+      location: snapshot.world.location,
+      level: snapshot.player.level,
+      activeQuestIds,
+      completedQuestIds,
+    });
+  }
+
+  async acceptManagedQuest(
+    definitionId: string,
+  ): Promise<TrackedQuestView> {
+    const profileId = this.requireProfile();
+    const [catalog, snapshot] = await Promise.all([
+      this.questCatalogs.load(),
+      this.repository.snapshot(profileId),
+    ]);
+    const definition = catalog.get(definitionId);
+    if (!definition) throw new Error('任务定义不存在');
+    const available = catalog.available({
+      region: snapshot.world.region,
+      location: snapshot.world.location,
+      level: snapshot.player.level,
+      activeQuestIds: new Set(
+        snapshot.quests.flatMap((quest) =>
+          quest.definitionId ? [quest.definitionId] : [],
+        ),
+      ),
+      completedQuestIds: new Set(
+        snapshot.questHistory.flatMap((quest) =>
+          quest.definitionId ? [quest.definitionId] : [],
+        ),
+      ),
+    });
+    if (!available.some((quest) => quest.id === definition.id)) {
+      throw new Error('该任务当前不可接取，请检查所在地区和等级');
+    }
+
+    const quest = await this.repository.acceptQuestDefinition(
+      profileId,
+      definition,
+    );
+    const tracker = await this.repository.selectTrackedQuest(
+      profileId,
+      quest.id,
+      initialQuestProgress(definition),
+    );
+    const target = questNode(definition, definition.startNodeId).locations[0];
+    this.adapter.setUserInput(
+      target
+        ? `已接取任务「${definition.name}」，前往${target}。`
+        : `已接取任务「${definition.name}」。`,
+    );
+    await this.syncQuestContext();
+    await this.syncProjection();
+    await this.events.emit('quest.tracking-changed', {
+      questId: quest.id,
+      trackerState: tracker.current.trackerState,
+    });
+    return this.trackedQuestView(profileId, quest, tracker, definition);
+  }
+
+  async trackQuest(questId: string): Promise<TrackedQuestView> {
+    const profileId = this.requireProfile();
+    const quest = await this.requireManagedQuest(profileId, questId);
+    const definition = await this.questDefinition(quest);
+    let tracker = await this.repository.selectTrackedQuest(
+      profileId,
+      quest.id,
+      initialQuestProgress(definition),
+    );
+    if (quest.status === 'active') {
+      await this.advanceTrackedQuestFromLocalState();
+      tracker =
+        (await this.repository.selectedQuestTracker(profileId)) ?? tracker;
+    }
+    const currentQuest = await this.requireManagedQuest(profileId, quest.id);
+    await this.syncQuestContext();
+    await this.events.emit('quest.tracking-changed', {
+      questId: quest.id,
+      trackerState: tracker.current.trackerState,
+    });
+    return this.trackedQuestView(
+      profileId,
+      currentQuest,
+      tracker,
+      definition,
+    );
+  }
+
+  async pauseTrackedQuest(): Promise<TrackedQuestView | null> {
+    const profileId = this.requireProfile();
+    const tracker = await this.repository.pauseTrackedQuest(profileId);
+    if (!tracker) return null;
+    const quest = await this.requireManagedQuest(
+      profileId,
+      tracker.questId,
+    );
+    await this.syncQuestContext();
+    await this.events.emit('quest.tracking-changed', {
+      questId: quest.id,
+      trackerState: tracker.current.trackerState,
+    });
+    return this.trackedQuestView(profileId, quest, tracker);
+  }
+
+  async resumeTrackedQuest(): Promise<TrackedQuestView | null> {
+    const profileId = this.requireProfile();
+    let tracker = await this.repository.resumeTrackedQuest(profileId);
+    if (!tracker) return null;
+    await this.advanceTrackedQuestFromLocalState();
+    tracker =
+      (await this.repository.selectedQuestTracker(profileId)) ?? tracker;
+    const quest = await this.requireManagedQuest(
+      profileId,
+      tracker.questId,
+    );
+    await this.syncQuestContext();
+    await this.events.emit('quest.tracking-changed', {
+      questId: quest.id,
+      trackerState: tracker.current.trackerState,
+    });
+    return this.trackedQuestView(profileId, quest, tracker);
+  }
+
+  async getTrackedQuest(): Promise<TrackedQuestView | null> {
+    const profileId = this.requireProfile();
+    const tracker = await this.repository.selectedQuestTracker(profileId);
+    if (!tracker) return null;
+    const quest = await this.requireManagedQuest(
+      profileId,
+      tracker.questId,
+    );
+    return this.trackedQuestView(profileId, quest, tracker);
+  }
+
+  async submitTrackedQuestAction(): Promise<TrackedQuestView> {
+    return this.performTrackedQuestAction();
+  }
+
+  async performTrackedQuestAction(): Promise<TrackedQuestView> {
+    const profileId = this.requireProfile();
+    const tracker = await this.repository.selectedQuestTracker(profileId);
+    if (!tracker) throw new Error('当前没有正在追踪的任务');
+    const quest = await this.requireManagedQuest(profileId, tracker.questId);
+    const definition = await this.questDefinition(quest);
+    const node = questNode(definition, tracker.current.currentNodeId);
+    const action = node.requiredAction;
+    if (!action) throw new Error('当前任务节点没有需要提交的本地动作');
+    if (action.openPanel) {
+      await this.panels.open(action.openPanel);
+    }
+    if (action.type === 'start_battle') {
+      if (!action.monsterId) throw new Error('当前任务战斗缺少怪物编号');
+      const result = await this.execute({
+        id: `quest-battle:${quest.id}:${action.monsterId}:${Date.now()}`,
+        type: 'battle.start',
+        payload: {
+          monsterId: action.monsterId,
+          count: action.battleCount ?? 1,
+          source: action.battleReason ?? `任务：${quest.title}`,
+          relatedQuestId: quest.id,
+        },
+      });
+      if (result.status !== 'applied') {
+        throw new Error(result.message ?? '任务战斗启动失败');
+      }
+      await this.panels.open('battle');
+      return this.trackedQuestView(profileId, quest, tracker, definition);
+    }
+    if (!action.transitionId) throw new Error('当前任务动作缺少本地跳转');
+    const floor = await this.currentAssistantFloor();
+    if (!floor) throw new Error('当前对话中没有可绑定任务进度的 AI 楼层');
+    let updated = await this.repository.applyLocalQuestTransition(
+      profileId,
+      {
+        questId: quest.id,
+        definition,
+        transitionId: action.transitionId,
+        floor,
+        mode: action.type === 'submit_item' ? 'submit' : 'action',
+      },
+    );
+    await this.advanceTrackedQuestFromLocalState();
+    updated =
+      (await this.repository.selectedQuestTracker(profileId)) ?? updated;
+    const updatedQuest = await this.requireManagedQuest(profileId, quest.id);
+    await this.syncQuestContext();
+    await this.syncProjection();
+    await this.events.emit('quest.tracking-changed', {
+      questId: quest.id,
+      trackerState: updated.current.trackerState,
+    });
+    return this.trackedQuestView(
+      profileId,
+      updatedQuest,
+      updated,
+      definition,
+    );
+  }
+
+  async completeTrackedQuest(): Promise<QuestCompletionResult> {
+    const profileId = this.requireProfile();
+    const tracker = await this.repository.selectedQuestTracker(profileId);
+    if (!tracker) throw new Error('当前没有等待结算的任务');
+    const quest = await this.requireManagedQuest(profileId, tracker.questId);
+    if (quest.status !== 'ready') throw new Error('当前任务尚未达到结算条件');
+    const definition = await this.questDefinition(quest);
+    const result = await this.repository.completeQuestDefinition(
+      profileId,
+      definition,
+    );
+    await this.syncQuestContext();
+    await this.syncProjection();
+    await this.events.emit('quest.tracking-changed', {
+      trackerState: 'none',
+    });
+    return result;
   }
 
   async syncProjection(): Promise<boolean> {
@@ -272,6 +635,7 @@ export class CaelianKernel {
       this.managedContentTimer = undefined;
     }
     await Promise.all([...this.pendingTavernUpdates]);
+    await this.adapter.setQuestContext('');
     for (const dispose of this.stateDisposers.splice(0)) dispose();
     this.db.close();
     this.status = 'stopped';
@@ -279,8 +643,13 @@ export class CaelianKernel {
     this.events.clear();
   }
 
-  private queueTavernUpdate(eventName: string): void {
-    const task = this.handleTavernUpdate(eventName)
+  private queueTavernUpdate(
+    eventName: string,
+    payload?: TavernEventPayload,
+  ): void {
+    const task = this.tavernUpdateQueue
+      .catch(() => undefined)
+      .then(() => this.handleTavernUpdate(eventName, payload))
       .catch((error) => {
         if (this.status === 'stopped') return;
         this.lastError =
@@ -294,10 +663,14 @@ export class CaelianKernel {
       .finally(() => {
         this.pendingTavernUpdates.delete(task);
       });
+    this.tavernUpdateQueue = task;
     this.pendingTavernUpdates.add(task);
   }
 
-  private async handleTavernUpdate(eventName: string): Promise<void> {
+  private async handleTavernUpdate(
+    eventName: string,
+    payload?: TavernEventPayload,
+  ): Promise<void> {
     if (eventName === 'ACHIEVEMENT_PATCH_CHANGED') {
       await this.syncAchievementPatches();
       await this.events.emit('tavern.changed', { event: eventName });
@@ -320,10 +693,245 @@ export class CaelianKernel {
     if (eventName === 'CHAT_CHANGED') {
       await this.activateCurrentProfile();
     }
+    await this.reconcileQuestFloors(eventName, payload);
     await this.ingestMvuNarrative();
+    if (eventName === 'MESSAGE_RECEIVED') {
+      await this.evaluateTrackedQuest(payload);
+      await this.advanceTrackedQuestFromLocalState();
+    }
+    await this.syncQuestContext();
     await this.scanCurrentAchievements();
     await this.syncProjection();
     await this.events.emit('tavern.changed', { event: eventName });
+  }
+
+  private async reconcileQuestFloors(
+    eventName: string,
+    payload?: TavernEventPayload,
+  ): Promise<void> {
+    if (!this.profileId) return;
+    const causalMutation = [
+      'MESSAGE_EDITED',
+      'MESSAGE_DELETED',
+      'MESSAGE_SWIPED',
+    ].includes(eventName);
+    const direct =
+      causalMutation && payload?.messageId !== undefined
+        ? await this.repository.rollbackQuestProgressFromFloor(
+            this.profileId,
+            payload.messageId,
+          )
+        : [];
+    const floors = await this.adapter.chatFloors();
+    const reconciled = floors
+      ? await this.repository.reconcileQuestProgress(
+          this.profileId,
+          floors,
+        )
+      : [];
+    const rollbacks = [...direct, ...reconciled];
+    if (rollbacks.length === 0) return;
+
+    await this.events.emit('quest.progress-rolled-back', {
+      questIds: [...new Set(rollbacks.map((result) => result.questId))],
+      cutoffFloorIndex: Math.min(
+        ...rollbacks.map((result) => result.cutoffFloorIndex),
+      ),
+    });
+  }
+
+  private async evaluateTrackedQuest(
+    payload?: TavernEventPayload,
+  ): Promise<void> {
+    if (!this.profileId || !this.questTracker) return;
+    const tracker = await this.repository.selectedQuestTracker(
+      this.profileId,
+    );
+    if (!tracker) return;
+    const snapshot = await this.repository.snapshot(this.profileId);
+    const quest = snapshot.quests.find(
+      (candidate) => candidate.id === tracker.questId,
+    );
+    if (!quest?.definitionId) return;
+    const catalog = await this.questCatalogs.load();
+    const definition = catalog.get(quest.definitionId);
+    if (!definition) return;
+    const floors = await this.adapter.chatFloors();
+    if (!floors) return;
+    const direct =
+      payload?.messageId === undefined
+        ? undefined
+        : floors.find((floor) => floor.index === payload.messageId);
+    const floor =
+      direct?.role === 'assistant'
+        ? direct
+        : [...floors].reverse().find((item) => item.role === 'assistant');
+    if (!floor) return;
+
+    try {
+      const result = await this.questTracker.evaluateAssistantTurn({
+        profileId: this.profileId,
+        questRecord: quest,
+        quest: definition,
+        floor,
+        currentLocation: this.snapshotLocation(snapshot),
+        recentMessages: await this.adapter.chatConversation(),
+      });
+      if (result.status !== 'evaluated') return;
+      await this.events.emit('quest.evaluated', {
+        questId: quest.id,
+        floorIndex: floor.index,
+        transitionAccepted: result.decision.accepted,
+        currentNodeId: result.tracker.current.currentNodeId,
+        trackerState: result.tracker.current.trackerState,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.events.emit('quest.judge-failed', {
+        questId: quest.id,
+        floorIndex: floor.index,
+        message,
+      });
+      this.notifications.show({
+        kind: 'warning',
+        title: '任务剧情判定暂时失败',
+        description: `${message}。本轮不会推进任务进度。`,
+        duration: 6_000,
+      });
+    }
+  }
+
+  private async advanceTrackedQuestFromLocalState(): Promise<boolean> {
+    if (!this.profileId) return false;
+    const tracker = await this.repository.selectedQuestTracker(
+      this.profileId,
+    );
+    if (
+      !tracker ||
+      tracker.current.status !== 'active' ||
+      ['idle', 'manualPaused', 'suspended', 'ended'].includes(
+        tracker.current.trackerState,
+      )
+    ) {
+      return false;
+    }
+    const quest = await this.requireManagedQuest(
+      this.profileId,
+      tracker.questId,
+    );
+    const definition = await this.questDefinition(quest);
+    const floor = await this.currentAssistantFloor();
+    if (!floor) return false;
+    let current = tracker;
+    let changed = false;
+    for (let index = 0; index < 4; index += 1) {
+      const transitionId =
+        await this.repository.availableAutomaticQuestTransition(
+          this.profileId,
+          quest.id,
+          definition,
+        );
+      if (!transitionId) break;
+      const updated = await this.repository.applyLocalQuestTransition(
+        this.profileId,
+        {
+          questId: quest.id,
+          definition,
+          transitionId,
+          floor,
+          mode: 'automatic',
+        },
+      );
+      changed ||= updated.current.currentNodeId !== current.current.currentNodeId;
+      current = updated;
+      if (updated.current.status !== 'active') break;
+    }
+    if (changed) {
+      await this.events.emit('quest.tracking-changed', {
+        questId: quest.id,
+        trackerState: current.current.trackerState,
+      });
+    }
+    return changed;
+  }
+
+  private async currentAssistantFloor() {
+    const floors = await this.adapter.chatFloors();
+    return floors
+      ? [...floors].reverse().find((floor) => floor.role === 'assistant')
+      : undefined;
+  }
+
+  private async trackedQuestView(
+    profileId: string,
+    quest: QuestRecord,
+    tracker: TrackedQuestView['tracker'],
+    suppliedDefinition?: QuestDefinition,
+  ): Promise<TrackedQuestView> {
+    const definition = suppliedDefinition ?? (await this.questDefinition(quest));
+    const node = questNode(definition, tracker.current.currentNodeId);
+    const position = {
+      stageTitle: node.stageTitle,
+      sceneTitle: node.sceneTitle,
+      beatTitle: node.title,
+    };
+    if (!node.requiredAction) return { quest, tracker, position };
+    const snapshot = await this.repository.snapshot(profileId);
+    const action = node.requiredAction;
+    const ownedCount = action.itemId
+      ? (snapshot.inventory.find((stack) => stack.itemId === action.itemId)
+          ?.quantity ?? 0)
+      : undefined;
+    return {
+      quest,
+      tracker,
+      position,
+      action: {
+        type: action.type,
+        label: action.label,
+        ...(action.transitionId
+          ? { transitionId: action.transitionId }
+          : {}),
+        ...(action.itemId ? { itemId: action.itemId } : {}),
+        ...(action.itemName ? { itemName: action.itemName } : {}),
+        ...(action.count !== undefined ? { count: action.count } : {}),
+        ...(action.monsterId ? { monsterId: action.monsterId } : {}),
+        ...(action.openPanel ? { openPanel: action.openPanel } : {}),
+        ...(ownedCount !== undefined ? { ownedCount } : {}),
+        available:
+          action.type !== 'submit_item' ||
+          (ownedCount ?? 0) >= (action.count ?? 0),
+      },
+    };
+  }
+
+  private async syncQuestContext(): Promise<boolean> {
+    if (!this.profileId) return this.adapter.setQuestContext('');
+    const tracker = await this.repository.selectedQuestTracker(
+      this.profileId,
+    );
+    if (!tracker) return this.adapter.setQuestContext('');
+    if (
+      ['idle', 'manualPaused', 'suspended', 'ended'].includes(
+        tracker.current.trackerState,
+      )
+    ) {
+      return this.adapter.setQuestContext('');
+    }
+    const quest = await this.requireManagedQuest(
+      this.profileId,
+      tracker.questId,
+    );
+    const definition = await this.questDefinition(quest);
+    const node = questNode(definition, tracker.current.currentNodeId);
+    const snapshot = await this.repository.snapshot(this.profileId);
+    const location = this.snapshotLocation(snapshot);
+    const content =
+      tracker.current.trackerState === 'armed' &&
+      !questLocationMatches(location, node.locations)
+        ? buildQuestNavigationContext(definition, tracker.current)
+        : buildCurrentNodeContext(definition, tracker.current);
+    return this.adapter.setQuestContext(content);
   }
 
   private createPublicApi(): CaelianPublicApi {
@@ -356,6 +964,22 @@ export class CaelianKernel {
         this.managedContent.autoUpdateEnabled(),
       setManagedContentAutoUpdate: (enabled) =>
         this.managedContent.setAutoUpdateEnabled(enabled),
+      configureQuestJudge: (config) =>
+        this.configureQuestJudge(config),
+      getQuestJudgeStatus: () => this.getQuestJudgeStatus(),
+      fetchQuestJudgeModels: (config) =>
+        this.fetchQuestJudgeModels(config),
+      listAvailableQuests: (options) =>
+        this.listAvailableQuests(options),
+      acceptManagedQuest: (definitionId) =>
+        this.acceptManagedQuest(definitionId),
+      trackQuest: (questId) => this.trackQuest(questId),
+      pauseTrackedQuest: () => this.pauseTrackedQuest(),
+      resumeTrackedQuest: () => this.resumeTrackedQuest(),
+      getTrackedQuest: () => this.getTrackedQuest(),
+      submitTrackedQuestAction: () => this.submitTrackedQuestAction(),
+      performTrackedQuestAction: () => this.performTrackedQuestAction(),
+      completeTrackedQuest: () => this.completeTrackedQuest(),
       on: (event, handler) => this.events.on(event, handler),
       shutdown: () => this.shutdown(),
     };
@@ -386,6 +1010,22 @@ export class CaelianKernel {
         this.managedContent.autoUpdateEnabled(),
       setManagedContentAutoUpdate: (enabled) =>
         this.managedContent.setAutoUpdateEnabled(enabled),
+      configureQuestJudge: (config) =>
+        this.configureQuestJudge(config),
+      getQuestJudgeStatus: () => this.getQuestJudgeStatus(),
+      fetchQuestJudgeModels: (config) =>
+        this.fetchQuestJudgeModels(config),
+      listAvailableQuests: (options) =>
+        this.listAvailableQuests(options),
+      acceptManagedQuest: (definitionId) =>
+        this.acceptManagedQuest(definitionId),
+      trackQuest: (questId) => this.trackQuest(questId),
+      pauseTrackedQuest: () => this.pauseTrackedQuest(),
+      resumeTrackedQuest: () => this.resumeTrackedQuest(),
+      getTrackedQuest: () => this.getTrackedQuest(),
+      submitTrackedQuestAction: () => this.submitTrackedQuestAction(),
+      performTrackedQuestAction: () => this.performTrackedQuestAction(),
+      completeTrackedQuest: () => this.completeTrackedQuest(),
       on: (event, handler) => this.events.on(event, handler),
     };
   }
@@ -664,11 +1304,56 @@ export class CaelianKernel {
     await this.panels.open('achievement-letter');
   }
 
+  private requireProfile(): string {
+    if (this.status !== 'ready' || !this.profileId) {
+      throw new Error(this.lastError ?? 'Alpha 内核尚未就绪');
+    }
+    return this.profileId;
+  }
+
+  private async requireManagedQuest(
+    profileId: string,
+    questId: string,
+  ): Promise<QuestRecord> {
+    const snapshot = await this.repository.snapshot(profileId);
+    const quest = snapshot.quests.find((candidate) => candidate.id === questId);
+    if (!quest || !quest.definitionId) {
+      throw new Error('任务不存在，或尚未接入剧情追踪系统');
+    }
+    return quest;
+  }
+
+  private async questDefinition(
+    quest: QuestRecord,
+  ): Promise<QuestDefinition> {
+    const catalog = await this.questCatalogs.load();
+    const definition = quest.definitionId
+      ? catalog.get(quest.definitionId)
+      : undefined;
+    if (!definition) throw new Error('任务定义已不存在');
+    return definition;
+  }
+
+  private snapshotLocation(
+    snapshot: Awaited<ReturnType<GameRepository['snapshot']>>,
+  ): string {
+    return [snapshot.world.region, snapshot.world.location]
+      .filter(Boolean)
+      .join('·');
+  }
+
   private commandId(input: unknown): string {
     if (typeof input === 'object' && input !== null && 'id' in input) {
       return String(input.id);
     }
     return 'unknown-command';
+  }
+
+  private commandType(input: unknown): string | undefined {
+    if (typeof input === 'object' && input !== null && 'type' in input) {
+      return String(input.type);
+    }
+    return undefined;
   }
 
   private notifyRuntime(
