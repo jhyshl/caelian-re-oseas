@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalWorldLocation } from '@/worldbook/location-state';
+import {
+  canonicalWorldLocation,
+  mapTravelPrompt,
+} from '@/worldbook/location-state';
 
 const school = {
   region: '圣德里安学院',
@@ -8,6 +11,13 @@ const school = {
 };
 
 describe('统一世界地点状态', () => {
+  it('地图跳转只向聊天框填入大地区和小地点', () => {
+    expect(mapTravelPrompt('索拉维亚', '圣心大教堂')).toBe(
+      '前往索拉维亚的圣心大教堂',
+    );
+    expect(mapTravelPrompt('银月之城')).toBe('前往银月之城');
+  });
+
   it('只更新完整位置时也会同步推导大地区与地区内地点', () => {
     expect(
       canonicalWorldLocation(school, {

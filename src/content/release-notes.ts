@@ -9,6 +9,14 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.32',
+    label: 'Alpha 32',
+    releasedAt: '2026-08-07',
+    changes: [
+      '精简地图跳转提示词：选择地区内地点时直接填入“前往大地区的小地点”，只选择大地区时填入“前往大地区”；世界书联动、地点写入和关闭地图行为保持不变。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.31',
     label: 'Alpha 31',
     releasedAt: '2026-08-07',

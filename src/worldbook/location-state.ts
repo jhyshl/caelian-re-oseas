@@ -8,6 +8,14 @@ type WorldLocationFields = Pick<
 
 const KNOWN_REGIONS = new Set<string>(Object.keys(REGION_ALIASES));
 
+export function mapTravelPrompt(region: string, place = ''): string {
+  const destinationRegion = clean(region);
+  const destinationPlace = clean(place);
+  return destinationPlace
+    ? `前往${destinationRegion}的${destinationPlace}`
+    : `前往${destinationRegion}`;
+}
+
 export function canonicalWorldLocation(
   current: WorldLocationFields,
   patch: Partial<WorldLocationFields>,

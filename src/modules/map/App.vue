@@ -13,6 +13,7 @@ import type { GameSnapshot } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
+import { mapTravelPrompt } from '@/worldbook/location-state';
 import { normalizeRegion } from '@/worldbook/region-switcher';
 
 const props = defineProps<{ context: PanelContext }>();
@@ -89,9 +90,7 @@ async function travel(region: RegionDefinition, place?: RegionPlaceDefinition) {
     });
     if (moveResult.status === 'rejected') throw new Error(moveResult.message);
 
-    const prompt = destinationPlace
-      ? `我已从${previousRegion}出发，前往${nextRegion}的${destinationPlace}。请从抵达后的场景继续剧情。`
-      : `我已从${previousRegion}出发，前往${nextRegion}。请从抵达后的场景继续剧情。`;
+    const prompt = mapTravelPrompt(nextRegion, destinationPlace);
     const filled = props.context.api.setUserInput(prompt);
     if (!filled) {
       props.context.api.notify({
