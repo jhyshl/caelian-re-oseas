@@ -60,7 +60,10 @@ export class TavernAdapter {
   private userAvatarId: string | undefined;
   private questContext?: string;
 
-  constructor(sourceWindow: Window = window) {
+  constructor(
+    sourceWindow: Window = window,
+    private readonly channelLabel: 'Alpha' | 'Beta' = 'Alpha',
+  ) {
     this.runtime = sourceWindow;
     this.host = this.resolveHost(sourceWindow);
   }
@@ -609,13 +612,16 @@ export class TavernAdapter {
     if (typeof this.host.Caelian?.notify === 'function') {
       this.host.Caelian.notify({
         kind: level,
-        title: 'Re∞：欧西亚斯 Alpha',
+        title: `Re∞：欧西亚斯 ${this.channelLabel}`,
         description: message,
         duration: level === 'error' ? 7_000 : 5_000,
       });
       return;
     }
-    this.host.toastr?.[level]?.(message, 'Re∞：欧西亚斯 Alpha');
+    this.host.toastr?.[level]?.(
+      message,
+      `Re∞：欧西亚斯 ${this.channelLabel}`,
+    );
   }
 
   private resolveHost(sourceWindow: Window): Window {

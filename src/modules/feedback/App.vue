@@ -154,7 +154,7 @@ onUnmounted(() => {
         <div class="success-mark">✓</div>
         <h2>反馈已送达</h2>
         <p>
-          谢谢你帮助完善欧西亚斯 Alpha。处理完成或决定不采纳后，这条记录会被删除。
+          谢谢你帮助完善欧西亚斯 {{ runtime.channel === 'beta' ? 'Beta' : 'Alpha' }}。处理完成或决定不采纳后，这条记录会被删除。
         </p>
         <code v-if="submittedId !== 'received'">
           反馈编号：{{ submittedId }}
@@ -289,7 +289,7 @@ onUnmounted(() => {
         </label>
 
         <p class="privacy-note">
-          提交时会自动附带 Alpha
+          提交时会自动附带 {{ runtime.channel === 'beta' ? 'Beta' : 'Alpha' }}
           版本、构建号和基本浏览器环境，方便定位问题；不会上传聊天正文、角色存档或
           MVU 内容。
         </p>

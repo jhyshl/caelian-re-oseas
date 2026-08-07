@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,6 +7,9 @@ const distRoot = path.join(root, 'dist');
 const packageJson = JSON.parse(
   await readFile(path.join(root, 'package.json'), 'utf8'),
 );
+const channel = process.env.CAELIAN_CHANNEL === 'beta' ? 'beta' : 'alpha';
+const channelLabel = channel === 'beta' ? 'Beta' : 'Alpha';
+const releaseVersion = process.env.CAELIAN_VERSION ?? packageJson.version;
 const publicBase = (
   process.env.CAELIAN_PUBLIC_BASE ??
   'https://jhyshl.github.io/caelian-re-oseas'
@@ -19,7 +22,7 @@ const sitesBase = (
   process.env.CAELIAN_SITES_BASE ??
   'https://caelian-re-oseas-alpha.jianghailou7.chatgpt.site'
 ).replace(/\/+$/, '');
-const manifestUrl = `${publicBase}/channels/alpha.json`;
+const manifestUrl = `${publicBase}/channels/${channel}.json`;
 const manifestSources = [
   {
     name: 'GitHub Pages',
@@ -27,11 +30,11 @@ const manifestSources = [
   },
   {
     name: 'Sites CDN',
-    url: `${sitesBase}/channels/alpha.json`,
+    url: `${sitesBase}/channels/${channel}.json`,
   },
   {
     name: 'Supabase CDN',
-    url: `${proxyBase}/channels/alpha.json`,
+    url: `${proxyBase}/channels/${channel}.json`,
   },
 ];
 const allowedBases = [
@@ -827,20 +830,36 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
   console.error('[Caelian Alpha Bridge]', error);
 });`;
 
+const renderedBridge =
+  channel === 'alpha'
+    ? bridge
+    : bridge
+        .replaceAll('Alpha', 'Beta')
+        .replaceAll('alpha', 'beta')
+        .replaceAll(
+          'caelian-re-oseas-beta.jianghailou7.chatgpt.site',
+          'caelian-re-oseas-alpha.jianghailou7.chatgpt.site',
+        );
 const folder = {
   type: 'folder',
   enabled: true,
-  name: 'Re∞：欧西亚斯 Alpha 接入口',
-  id: '51e90831-e25a-4afe-b6c6-c3187dd53dc9',
+  name: `Re∞：欧西亚斯 ${channelLabel} 接入口`,
+  id:
+    channel === 'alpha'
+      ? '51e90831-e25a-4afe-b6c6-c3187dd53dc9'
+      : '9e445fde-b1b2-4a6f-9d43-4ef0e42fd8b1',
   icon: 'fa-infinity',
   color: 'rgba(104, 81, 145, 1)',
   scripts: [
     {
       type: 'script',
       enabled: true,
-      name: 'Re∞：欧西亚斯 Alpha Bridge',
-      id: '11dc566b-8d62-4892-912d-b9f5b25df1b0',
-      content: bridge,
+      name: `Re∞：欧西亚斯 ${channelLabel} Bridge`,
+      id:
+        channel === 'alpha'
+          ? '11dc566b-8d62-4892-912d-b9f5b25df1b0'
+          : 'fd9cf9c7-fabe-47f8-beb4-63d17839f379',
+      content: renderedBridge,
     },
   ],
 };
@@ -848,10 +867,13 @@ const folder = {
 const standaloneScript = {
   type: 'script',
   enabled: true,
-  name: 'Re∞：欧西亚斯Alpha',
-  id: 'f56df46e-b198-4d84-9e94-269079a31e17',
-  content: bridge,
-  info: '固定读取公网 Alpha 通道；每 10 分钟自动检查更新，主线路不可达时切换备用公网 CDN。',
+  name: `Re∞：欧西亚斯${channelLabel}`,
+  id:
+    channel === 'alpha'
+      ? 'f56df46e-b198-4d84-9e94-269079a31e17'
+      : '4cd6194c-ed4f-418c-a3e2-216351c95efe',
+  content: renderedBridge,
+  info: `固定读取公网 ${channelLabel} 通道；每 10 分钟自动检查更新，主线路不可达时切换备用公网 CDN。`,
   button: {
     enabled: true,
     buttons: [],
@@ -863,36 +885,32 @@ const standaloneScript = {
   },
 };
 
-await rm(path.join(distRoot, 'tavern-helper'), {
-  recursive: true,
-  force: true,
-});
 await mkdir(path.join(distRoot, 'tavern-helper'), { recursive: true });
 await writeFile(
-  path.join(distRoot, 'tavern-helper', 'caelian-alpha.json'),
+  path.join(distRoot, 'tavern-helper', `caelian-${channel}.json`),
   `${JSON.stringify(folder, null, 2)}\n`,
   'utf8',
 );
 
 await writeFile(
-  path.join(distRoot, 'tavern-helper', 'caelian-alpha-script.json'),
+  path.join(distRoot, 'tavern-helper', `caelian-${channel}-script.json`),
   `${JSON.stringify(standaloneScript, null, 2)}\n`,
   'utf8',
 );
 
 await writeFile(
-  path.join(distRoot, 'tavern-helper', 'caelian-alpha-bridge.js'),
-  `${bridge}\n`,
+  path.join(distRoot, 'tavern-helper', `caelian-${channel}-bridge.js`),
+  `${renderedBridge}\n`,
   'utf8',
 );
 
 await writeFile(
-  path.join(distRoot, 'tavern-helper', 'bridge-meta.json'),
+  path.join(distRoot, 'tavern-helper', `bridge-meta-${channel}.json`),
   `${JSON.stringify(
     {
-      channel: 'alpha',
+      channel,
       bridgeApi: 1,
-      packageVersion: packageJson.version,
+      packageVersion: releaseVersion,
       manifestUrl,
       manifestSources,
     },
@@ -901,3 +919,21 @@ await writeFile(
   )}\n`,
   'utf8',
 );
+
+if (channel === 'alpha') {
+  await writeFile(
+    path.join(distRoot, 'tavern-helper', 'bridge-meta.json'),
+    `${JSON.stringify(
+      {
+        channel,
+        bridgeApi: 1,
+        packageVersion: releaseVersion,
+        manifestUrl,
+        manifestSources,
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+}

@@ -6,7 +6,7 @@ import type { PanelContext } from '@/kernel/public-api';
 
 const props = defineProps<{ context: PanelContext }>();
 const runtime = props.context.api.getRuntimeInfo();
-const releases = releaseNotesFor(runtime.version);
+const releases = releaseNotesFor(runtime.channel, runtime.version);
 const currentRelease = releases[0];
 let previousBodyOverflow = '';
 let previousRootOverflow = '';

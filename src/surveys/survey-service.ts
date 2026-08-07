@@ -19,7 +19,7 @@ const SUPABASE_PUBLISHABLE_KEY =
 const SURVEY_RESPONSE_ENDPOINT =
   `${SUPABASE_URL}/rest/v1/caelian_survey_responses`;
 
-const CATALOG_SOURCES = [
+const ALPHA_CATALOG_SOURCES = [
   'https://jhyshl.github.io/caelian-re-oseas/managed-content/surveys/alpha.json',
   'https://caelian-re-oseas-alpha.jianghailou7.chatgpt.site/managed-content/surveys/alpha.json',
 ] as const;
@@ -381,6 +381,8 @@ export class SurveyService {
   constructor(
     private readonly db: CaelianDatabase,
     private readonly sourceWindow: Window,
+    channel: 'alpha' | 'beta' = 'alpha',
+    private readonly catalogSources = defaultCatalogSources(channel),
   ) {}
 
   async refreshCatalog(): Promise<SurveyCatalogSyncResult> {
@@ -394,7 +396,7 @@ export class SurveyService {
 
   private async performCatalogRefresh(): Promise<SurveyCatalogSyncResult> {
     const errors: string[] = [];
-    for (const source of CATALOG_SOURCES) {
+    for (const source of this.catalogSources) {
       const controller = new AbortController();
       const timeout = this.sourceWindow.setTimeout(
         () => controller.abort(),
@@ -591,4 +593,11 @@ export class SurveyService {
     if (fallback) return fallback;
     throw new Error('找不到这份问卷，可能已经被撤回。');
   }
+}
+
+function defaultCatalogSources(channel: 'alpha' | 'beta'): readonly string[] {
+  if (channel === 'alpha') return ALPHA_CATALOG_SOURCES;
+  return [
+    new URL('../managed-content/surveys/alpha.json', import.meta.url).href,
+  ];
 }

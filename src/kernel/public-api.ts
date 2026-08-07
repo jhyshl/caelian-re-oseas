@@ -118,7 +118,7 @@ export interface TavernAvatarRequest {
 }
 
 export interface CaelianPublicApi {
-  readonly channel: 'alpha';
+  readonly channel: 'alpha' | 'beta';
   readonly version: string;
   readonly buildId: string;
   readonly bridgeApi: 1;

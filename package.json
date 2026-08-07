@@ -5,8 +5,9 @@
   "type": "module",
   "description": "Re∞ Oseas browser-first rewrite for SillyTavern.",
   "scripts": {
-    "build": "vite build && node scripts/package-build.mjs && node scripts/export-tavern-helper.mjs && node scripts/prepare-sites-build.mjs",
-    "build:alpha": "npm run build",
+    "build": "npm run build:alpha",
+    "build:alpha": "node scripts/build-channel.mjs alpha",
+    "build:beta": "node scripts/build-channel.mjs beta",
     "check": "npm run typecheck && npm run lint",
     "content:extract": "node scripts/legacy-content.mjs extract",
     "content:verify": "node scripts/legacy-content.mjs verify",

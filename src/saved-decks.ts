@@ -79,10 +79,21 @@ export function saveNamedDeckBuild(
   const kept = readSavedDeckBuilds(sourceWindow).filter(
     (entry) => entry.id !== normalized.id,
   );
-  storage(sourceWindow)?.setItem(
+  const targetStorage = storage(sourceWindow);
+  if (!targetStorage) {
+    throw new Error('当前酒馆窗口无法使用本地存储。');
+  }
+  targetStorage.setItem(
     SAVED_DECKS_STORAGE_KEY,
     JSON.stringify([normalized, ...kept].slice(0, 100)),
   );
+  if (
+    !readSavedDeckBuilds(sourceWindow).some(
+      (entry) => entry.id === normalized.id,
+    )
+  ) {
+    throw new Error('构筑没有成功写入当前酒馆窗口。');
+  }
   return normalized;
 }
 

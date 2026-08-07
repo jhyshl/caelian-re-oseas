@@ -6,7 +6,7 @@ const ALLOWED_WORLDBOOK_NAMES = new Set([
 const APPLIED_STORAGE_KEY = 'caelian:managed-content:applied:v1';
 const CONFLICT_STORAGE_KEY = 'caelian:managed-content:conflicts:v1';
 const AUTO_UPDATE_STORAGE_KEY = 'caelian:managed-content:auto:v1';
-const MANIFEST_SOURCES = [
+const ALPHA_MANIFEST_SOURCES = [
   'https://jhyshl.github.io/caelian-re-oseas/managed-content/alpha.json',
   'https://caelian-re-oseas-alpha.jianghailou7.chatgpt.site/managed-content/alpha.json',
 ] as const;
@@ -188,15 +188,23 @@ export interface ManagedContentSyncResult {
 export class ManagedContentUpdater {
   private syncTask?: Promise<ManagedContentSyncResult>;
 
-  constructor(private readonly host: Window) {}
+  constructor(
+    private readonly host: Window,
+    private readonly channel: 'alpha' | 'beta' = 'alpha',
+    private readonly manifestSources = defaultManifestSources(channel),
+  ) {}
 
   autoUpdateEnabled(): boolean {
-    return this.host.localStorage.getItem(AUTO_UPDATE_STORAGE_KEY) !== 'off';
+    return (
+      this.host.localStorage.getItem(
+        this.storageKey(AUTO_UPDATE_STORAGE_KEY),
+      ) !== 'off'
+    );
   }
 
   setAutoUpdateEnabled(enabled: boolean): void {
     this.host.localStorage.setItem(
-      AUTO_UPDATE_STORAGE_KEY,
+      this.storageKey(AUTO_UPDATE_STORAGE_KEY),
       enabled ? 'on' : 'off',
     );
   }
@@ -311,7 +319,7 @@ export class ManagedContentUpdater {
   }
 
   private async fetchManifest(): Promise<ManagedContentManifest | null> {
-    for (const source of MANIFEST_SOURCES) {
+    for (const source of this.manifestSources) {
       try {
         const url = `${source}?managed-content=${Date.now()}`;
         const response = await this.host.fetch(url, {
@@ -518,7 +526,9 @@ export class ManagedContentUpdater {
   private readAppliedState(): Record<string, AppliedOperation> {
     try {
       const value = JSON.parse(
-        this.host.localStorage.getItem(APPLIED_STORAGE_KEY) || '{}',
+        this.host.localStorage.getItem(
+          this.storageKey(APPLIED_STORAGE_KEY),
+        ) || '{}',
       );
       return isRecord(value)
         ? (value as Record<string, AppliedOperation>)
@@ -532,7 +542,7 @@ export class ManagedContentUpdater {
     state: Record<string, AppliedOperation>,
   ): void {
     this.host.localStorage.setItem(
-      APPLIED_STORAGE_KEY,
+      this.storageKey(APPLIED_STORAGE_KEY),
       JSON.stringify(state),
     );
   }
@@ -542,10 +552,19 @@ export class ManagedContentUpdater {
     conflicts: ManagedContentSyncResult['conflicts'],
   ): void {
     this.host.localStorage.setItem(
-      CONFLICT_STORAGE_KEY,
+      this.storageKey(CONFLICT_STORAGE_KEY),
       JSON.stringify({ revision, conflicts, checkedAt: Date.now() }),
     );
   }
+
+  private storageKey(base: string): string {
+    return this.channel === 'alpha' ? base : `${base}:${this.channel}`;
+  }
+}
+
+function defaultManifestSources(channel: 'alpha' | 'beta'): readonly string[] {
+  if (channel === 'alpha') return ALPHA_MANIFEST_SOURCES;
+  return [new URL('../managed-content/alpha.json', import.meta.url).href];
 }
 
 export function applyTextMutation(

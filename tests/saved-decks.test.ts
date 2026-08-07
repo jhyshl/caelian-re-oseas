@@ -62,4 +62,27 @@ describe('本地命名构筑预设', () => {
     expect(deleteSavedDeckBuild(saved.id, hostWindow)).toBe(true);
     expect(readSavedDeckBuilds(hostWindow)).toEqual([]);
   });
+
+  it('本地存储不可用时明确报错，不会伪装成保存成功', () => {
+    const unavailable = {} as Pick<Window, 'localStorage'>;
+    Object.defineProperty(unavailable, 'localStorage', {
+      get: () => {
+        throw new Error('storage blocked');
+      },
+    });
+
+    expect(() =>
+      saveNamedDeckBuild(
+        {
+          id: 'saved_build_blocked',
+          name: '无法保存的构筑',
+          professionId: 'holy_knight',
+          professionName: '圣骑士',
+          mainClass: 'knight',
+          cardIds: ['card_a'],
+        },
+        unavailable,
+      ),
+    ).toThrow('当前酒馆窗口无法使用本地存储');
+  });
 });

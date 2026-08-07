@@ -58,6 +58,50 @@ describe('Tavern Helper Alpha bridge export', () => {
     expect(receiver.info).toContain('备用公网 CDN');
   });
 
+  it('exports an independent Beta receiver without overwriting Alpha', async () => {
+    await execFileAsync(process.execPath, ['scripts/export-tavern-helper.mjs'], {
+      cwd: root,
+      env: {
+        ...process.env,
+        CAELIAN_CHANNEL: 'beta',
+        CAELIAN_VERSION: '1.0.0-beta.1',
+      },
+    });
+
+    const betaReceiver = JSON.parse(
+      await readFile(
+        path.join(
+          root,
+          'dist',
+          'tavern-helper',
+          'caelian-beta-script.json',
+        ),
+        'utf8',
+      ),
+    ) as { content: string; info: string };
+    const alphaReceiver = JSON.parse(
+      await readFile(
+        path.join(
+          root,
+          'dist',
+          'tavern-helper',
+          'caelian-alpha-script.json',
+        ),
+        'utf8',
+      ),
+    ) as { content: string };
+
+    expect(betaReceiver.content).toContain('/channels/beta.json');
+    expect(betaReceiver.content).toContain("manifest?.channel !== 'beta'");
+    expect(betaReceiver.content).toContain('__CaelianBetaUpdateWatcher');
+    expect(betaReceiver.content).toContain(
+      "'Beta ' + candidate.version + ' 更新完成",
+    );
+    expect(betaReceiver.content).not.toContain('/channels/alpha.json');
+    expect(betaReceiver.info).toContain('Beta 通道');
+    expect(alphaReceiver.content).toContain('/channels/alpha.json');
+  });
+
   it('switches away from GitHub when WebKit reports Load failed', async () => {
     const receiver = JSON.parse(
       await readFile(

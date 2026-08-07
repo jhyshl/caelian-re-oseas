@@ -13,7 +13,7 @@ async function initializeCaelian(): Promise<void> {
   if (existing) await existing.shutdown();
 
   const kernel = createKernel({
-    channel: 'alpha',
+    channel: __CAELIAN_CHANNEL__,
     version: __CAELIAN_VERSION__,
     buildId: __CAELIAN_BUILD_ID__,
     sourceWindow: window,
@@ -45,5 +45,5 @@ export function bootstrapCaelian(): Promise<void> {
 // Keep old fixed bridges compatible without blocking this module's evaluation.
 // The current bridge calls bootstrapCaelian() again and receives the same task.
 void bootstrapCaelian().catch((error: unknown) => {
-  console.error('[Caelian Alpha]', error);
+  console.error(`[Caelian ${__CAELIAN_CHANNEL__}]`, error);
 });

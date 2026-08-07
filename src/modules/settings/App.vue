@@ -363,7 +363,7 @@ onMounted(async () => {
           <article>
             <strong>GitHub 内容通道</strong>
             <p>
-              Alpha 接入口只读取通道清单，自动加载最新不可变构建，不要求玩家修改版本号。
+              {{ runtime.channel === 'beta' ? 'Beta' : 'Alpha' }} 接入口只读取自己的通道清单，自动加载该通道最新的不可变构建，不要求玩家修改版本号。
             </p>
           </article>
         </div>

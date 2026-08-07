@@ -1,3 +1,5 @@
+import type { ReleaseChannel } from '@/domain/types';
+
 export interface ReleaseNote {
   version: string;
   label: string;
@@ -5,7 +7,7 @@ export interface ReleaseNote {
   changes: readonly string[];
 }
 
-export const RELEASE_NOTES: readonly ReleaseNote[] = [
+export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
     version: '0.2.0-alpha.29',
     label: 'Alpha 29',
@@ -15,7 +17,11 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
       '修复投稿审核结果不可见的问题：进入“我的投稿”会自动刷新，也可逐条查询；兼容数据库带时区的审核时间，作者后台会确认并校验实际保存的状态与意见。',
       '“我的投稿”新增修改入口：可重新编辑名称、署名、简介、标签和作品内容；任何投稿修改后都会撤下公开版本、清空旧审核结论并重新进入待审核队列。',
       '修复构筑预设点击保存无反应的问题：预设统一保存到牌组面板所在的酒馆窗口，并在“我的构筑预设”中立即显示一键切换与删除入口。',
+      '牌组面板新增常驻“选择构筑”入口；没有已保存预设时明确显示“无”，保存成功、存储受限和写入失败都会给出可见反馈。',
       '修复移动端点击创意工坊草稿后工坊异常关闭且无法重开的问题：旧草稿会先补齐编辑器结构，并兼容缺少原生 structuredClone 的旧 WebView。',
+      '建立独立的 Alpha 与 Beta 发布通道：版本清单、更新公告、接收器、运行时数据库和回退记录互不混用。',
+      'Alpha 保持持续更新策略：main 分支每次产生新构建都会自动发布，并在上一版基础上自动提升 Alpha 序号。',
+      'Beta 改为人工发布策略：只有作者明确要求时才会生成新 Beta，普通 Alpha 更新不会改变 Beta 版本或公告。',
     ],
   },
   {
@@ -324,14 +330,40 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
   },
 ] as const;
 
-export function releaseNotesFor(version: string): readonly ReleaseNote[] {
-  const currentIndex = RELEASE_NOTES.findIndex(
+export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.0.0-beta.1',
+    label: 'Beta 1.0',
+    releasedAt: '2026-08-07',
+    changes: [
+      '发布首个 Beta 版本，整合当前任务追踪、剧情战斗、卡组与背包、创意工坊、卡牌广场及投稿审核功能。',
+      'Beta 使用独立运行通道和本地数据库，不与 Alpha 存档及版本公告混用。',
+      'Beta 内容固定在本次发布快照；后续 Alpha 更新不会自动进入 Beta，只有作者确认发布时才会更新。',
+      '修复构筑预设保存无反馈的问题，并新增常驻“选择构筑”入口；没有已保存预设时显示“无”。',
+    ],
+  },
+] as const;
+
+/** @deprecated Use the channel-specific release-note collections. */
+export const RELEASE_NOTES = ALPHA_RELEASE_NOTES;
+
+export function releaseNotesFor(
+  channel: ReleaseChannel,
+  version: string,
+): readonly ReleaseNote[] {
+  if (channel === 'release') return [];
+  const releases =
+    channel === 'beta' ? BETA_RELEASE_NOTES : ALPHA_RELEASE_NOTES;
+  const currentIndex = releases.findIndex(
     (release) => release.version === version,
   );
   if (currentIndex < 0) return [];
-  return RELEASE_NOTES.slice(currentIndex);
+  return releases.slice(currentIndex);
 }
 
-export function releaseAnnouncementId(version: string): string {
-  return `release-announcement:${version}`;
+export function releaseAnnouncementId(
+  channel: ReleaseChannel,
+  version: string,
+): string {
+  return `release-announcement:${channel}:${version}`;
 }

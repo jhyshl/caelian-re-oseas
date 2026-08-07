@@ -34,6 +34,10 @@ const notice = ref('');
 const workshopOpen = ref(false);
 const presetName = ref('');
 const savedDecks = ref(readSavedDeckBuilds(sourceWindow()));
+const selectedPresetId = ref('');
+const selectedPreset = computed(() =>
+  savedDecks.value.find((build) => build.id === selectedPresetId.value),
+);
 
 const typeNames: Record<string, string> = {
   all: '全部',
@@ -140,37 +144,55 @@ async function saveDeck() {
 
 function savePreset(): void {
   notice.value = '';
-  const name = presetName.value.trim();
-  const player = snapshot.value?.player;
-  const deck = snapshot.value?.decks.find((entry) => entry.active);
-  if (name.length < 2) {
-    notice.value = '请先填写至少 2 个字的构筑名称。';
+  try {
+    const name = presetName.value.trim();
+    const player = snapshot.value?.player;
+    const deck = snapshot.value?.decks.find((entry) => entry.active);
+    if (name.length < 2) {
+      notice.value = '请先填写至少 2 个字的构筑名称。';
+      return;
+    }
+    if (!player || !deck?.cardIds.length) {
+      notice.value = '当前没有可以保存的构筑。';
+      return;
+    }
+    const existing = savedDecks.value.find(
+      (entry) => entry.name === name && entry.professionId === player.subclass,
+    );
+    const saved = saveNamedDeckBuild(
+      {
+        id: existing?.id ?? commandId('saved-deck').replace(':', '-'),
+        name,
+        professionId: player.subclass,
+        professionName: subclassNames[player.subclass] ?? player.subclass,
+        mainClass: mainClassForSubclass(player.subclass),
+        cardIds: [...deck.cardIds],
+        createdAt: existing?.createdAt,
+      },
+      sourceWindow(),
+    );
+    savedDecks.value = readSavedDeckBuilds(sourceWindow());
+    selectedPresetId.value = saved.id;
+    presetName.value = '';
+    notice.value = existing
+      ? `已覆盖更新构筑「${saved.name}」。`
+      : `已保存构筑「${saved.name}」。`;
+  } catch (caught) {
+    notice.value = `构筑预设保存失败：${
+      caught instanceof Error ? caught.message : String(caught)
+    }`;
+  }
+}
+
+async function applySelectedPreset(): Promise<void> {
+  const build = selectedPreset.value;
+  if (!build) {
+    notice.value = savedDecks.value.length
+      ? '请先选择一份构筑预设。'
+      : '当前没有已保存的构筑预设。';
     return;
   }
-  if (!player || !deck?.cardIds.length) {
-    notice.value = '当前没有可以保存的构筑。';
-    return;
-  }
-  const existing = savedDecks.value.find(
-    (entry) => entry.name === name && entry.professionId === player.subclass,
-  );
-  const saved = saveNamedDeckBuild(
-    {
-      id: existing?.id ?? commandId('saved-deck'),
-      name,
-      professionId: player.subclass,
-      professionName: subclassNames[player.subclass] ?? player.subclass,
-      mainClass: mainClassForSubclass(player.subclass),
-      cardIds: [...deck.cardIds],
-      createdAt: existing?.createdAt,
-    },
-    sourceWindow(),
-  );
-  savedDecks.value = readSavedDeckBuilds(sourceWindow());
-  presetName.value = '';
-  notice.value = existing
-    ? `已覆盖更新构筑「${saved.name}」。`
-    : `已保存构筑「${saved.name}」。`;
+  await applyPreset(build);
 }
 
 async function applyPreset(build: SavedDeckBuild): Promise<void> {
@@ -214,6 +236,7 @@ function removePreset(build: SavedDeckBuild): void {
   if (!window.confirm(`确认删除构筑预设「${build.name}」？`)) return;
   deleteSavedDeckBuild(build.id, sourceWindow());
   savedDecks.value = readSavedDeckBuilds(sourceWindow());
+  if (selectedPresetId.value === build.id) selectedPresetId.value = '';
   notice.value = `已删除构筑预设「${build.name}」。`;
 }
 
@@ -300,8 +323,33 @@ onMounted(async () => {
         <p v-if="notice" class="deck-notice preset-notice" role="status">
           {{ notice }}
         </p>
+        <div class="preset-select">
+          <label>
+            <span>选择构筑</span>
+            <select v-model="selectedPresetId">
+              <option value="">
+                {{ savedDecks.length === 0 ? '无' : '请选择构筑' }}
+              </option>
+              <option
+                v-for="build in savedDecks"
+                :key="build.id"
+                :value="build.id"
+              >
+                {{ build.name }} · {{ build.professionName }} · {{ build.cardIds.length }} 张
+              </option>
+            </select>
+          </label>
+          <button
+            type="button"
+            class="ca-button primary"
+            :disabled="!selectedPreset"
+            @click="applySelectedPreset"
+          >
+            使用所选构筑
+          </button>
+        </div>
         <div v-if="savedDecks.length === 0" class="preset-empty">
-          还没有预设。完成一套构筑后，为它命名并保存。
+          当前已保存构筑：无。完成一套构筑后，为它命名并保存。
         </div>
         <div v-else class="preset-list">
           <article v-for="build in savedDecks" :key="build.id">
@@ -660,6 +708,36 @@ onMounted(async () => {
   margin-top: 12px;
 }
 
+.preset-select {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.preset-select label {
+  display: grid;
+  min-width: 220px;
+  flex: 1;
+  gap: 5px;
+}
+
+.preset-select label > span {
+  color: var(--ca-gold);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.preset-select select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--ca-border);
+  border-radius: 8px;
+  color: var(--ca-text);
+  background: var(--ca-surface);
+  font: inherit;
+}
+
 .preset-list article {
   display: flex;
   align-items: center;
@@ -701,7 +779,8 @@ onMounted(async () => {
   }
 
   .saved-builds > header,
-  .preset-save {
+  .preset-save,
+  .preset-select {
     align-items: stretch;
     flex-direction: column;
   }

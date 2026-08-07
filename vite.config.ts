@@ -24,12 +24,15 @@ function resolveBuildId(): string {
 }
 
 const buildId = resolveBuildId();
+const channel = process.env.CAELIAN_CHANNEL === 'beta' ? 'beta' : 'alpha';
+const version = process.env.CAELIAN_VERSION ?? packageJson.version;
 
 export default defineConfig({
   base: './',
   plugins: [vue()],
   define: {
-    __CAELIAN_VERSION__: JSON.stringify(packageJson.version),
+    __CAELIAN_CHANNEL__: JSON.stringify(channel),
+    __CAELIAN_VERSION__: JSON.stringify(version),
     __CAELIAN_BUILD_ID__: JSON.stringify(buildId),
   },
   resolve: {
@@ -52,7 +55,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         demo: fileURLToPath(new URL('./index.html', import.meta.url)),
-        alpha: fileURLToPath(
+        [channel]: fileURLToPath(
           new URL('./src/bridge/alpha-entry.ts', import.meta.url),
         ),
       },

@@ -1,9 +1,6 @@
-name: Alpha
+name: Beta
 
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -11,8 +8,8 @@ permissions:
   actions: read
 
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('alpha-{0}', github.ref) || format('release-pages-{0}', github.repository) }}
-  cancel-in-progress: true
+  group: release-pages-${{ github.repository }}
+  cancel-in-progress: false
 
 jobs:
   verify:
@@ -27,8 +24,7 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run content:verify
-      - name: Restore previous immutable Pages builds
-        if: github.event_name != 'pull_request'
+      - name: Restore latest published Alpha or Beta site
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -44,7 +40,7 @@ jobs:
               --jq '[.[] | select(.workflowName == "Alpha" or .workflowName == "Beta")][0].databaseId // empty'
           )"
           if [[ -z "$previous_run" ]]; then
-            echo "No previous successful Pages artifact is available."
+            echo "No previous Pages artifact is available."
             exit 0
           fi
           mkdir -p .previous-artifact .previous-site
@@ -63,17 +59,16 @@ jobs:
           tar -xf "$archive" -C .previous-site
           mkdir -p dist
           cp -a .previous-site/. dist/
-      - run: npm run build:alpha
+      - run: npm run build:beta
         env:
-          CAELIAN_BUILD_ID: ${{ github.sha }}
+          CAELIAN_BUILD_ID: ${{ github.sha }}-beta
+          CAELIAN_BETA_RELEASE: '1'
       - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
         with:
           path: dist
           retention-days: 30
 
   deploy:
-    if: github.event_name != 'pull_request'
     needs: verify
     runs-on: ubuntu-latest
     permissions:
@@ -88,6 +83,6 @@ jobs:
         uses: actions/configure-pages@v5
         with:
           enablement: true
-      - name: Deploy Alpha to GitHub Pages
+      - name: Deploy Beta to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

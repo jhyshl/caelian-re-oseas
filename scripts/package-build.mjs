@@ -12,6 +12,9 @@ const distRoot = path.join(root, 'dist');
 const packageJson = JSON.parse(
   await readFile(path.join(root, 'package.json'), 'utf8'),
 );
+const channel = process.env.CAELIAN_CHANNEL === 'beta' ? 'beta' : 'alpha';
+const channelLabel = channel === 'beta' ? 'Beta' : 'Alpha';
+const releaseVersion = process.env.CAELIAN_VERSION ?? packageJson.version;
 const publicBase = (
   process.env.CAELIAN_PUBLIC_BASE ??
   'https://jhyshl.github.io/caelian-re-oseas'
@@ -49,15 +52,15 @@ await stat(path.join(buildRoot, '.vite', 'manifest.json'));
 const viteManifest = JSON.parse(
   await readFile(path.join(buildRoot, '.vite', 'manifest.json'), 'utf8'),
 );
-const alphaKey = Object.keys(viteManifest).find((key) =>
+const runtimeKey = Object.keys(viteManifest).find((key) =>
   key.endsWith('src/bridge/alpha-entry.ts'),
 );
 
-if (!alphaKey) {
-  throw new Error('Vite manifest does not contain the Alpha runtime entry.');
+if (!runtimeKey) {
+  throw new Error(`Vite manifest does not contain the ${channelLabel} runtime entry.`);
 }
 
-const alphaEntry = viteManifest[alphaKey];
+const runtimeEntry = viteManifest[runtimeKey];
 const buildId = resolveBuildId().replace(/[^a-zA-Z0-9._-]/g, '-');
 const immutableRoot = path.join(distRoot, 'builds', buildId);
 
@@ -91,7 +94,7 @@ const rebaseManifest = (manifest) => {
 };
 try {
   const previous = JSON.parse(
-    await readFile(path.join(distRoot, 'channels', 'alpha.json'), 'utf8'),
+    await readFile(path.join(distRoot, 'channels', `${channel}.json`), 'utf8'),
   );
   const previousBuildRoot = path.join(
     distRoot,
@@ -107,7 +110,7 @@ try {
   } else if (previous.buildId === buildId) {
     const archived = JSON.parse(
       await readFile(
-        path.join(distRoot, 'channels', 'alpha.previous.json'),
+        path.join(distRoot, 'channels', `${channel}.previous.json`),
         'utf8',
       ),
     );
@@ -142,7 +145,7 @@ await rm(path.join(immutableRoot, '.vite'), { recursive: true, force: true });
 const cssFiles = [
   ...new Set(
     [
-      ...(alphaEntry.css ?? []),
+      ...(runtimeEntry.css ?? []),
       viteManifest['style.css']?.file,
     ].filter((file) => typeof file === 'string' && file.endsWith('.css')),
   ),
@@ -150,7 +153,7 @@ const cssFiles = [
 
 if (cssFiles.length === 0) {
   throw new Error(
-    'Alpha runtime does not expose a host stylesheet for the Tavern bridge.',
+    `${channelLabel} runtime does not expose a host stylesheet for the Tavern bridge.`,
   );
 }
 
@@ -162,25 +165,31 @@ const css = await Promise.all(
 );
 
 const channelManifest = {
-  channel: 'alpha',
-  version: packageJson.version,
+  channel,
+  version: releaseVersion,
   buildId,
   bridgeApi: 1,
   schemaVersion: 1,
   publishedAt: new Date().toISOString(),
   modules: {
     runtime: {
-      url: `${publicBase}/builds/${buildId}/${alphaEntry.file}`,
-      integrity: await sri(alphaEntry.file),
+      url: `${publicBase}/builds/${buildId}/${runtimeEntry.file}`,
+      integrity: await sri(runtimeEntry.file),
       css,
     },
   },
   managedContent: {
-    url: `${publicBase}/managed-content/alpha.json`,
+    url:
+      channel === 'beta'
+        ? `${publicBase}/builds/${buildId}/managed-content/alpha.json`
+        : `${publicBase}/managed-content/alpha.json`,
     revision: managedContentManifest.revision,
     sourceCard: {
       ...managedContentManifest.sourceCard,
-      url: `${publicBase}/managed-content/cards/caelian-alpha-mvu-v3.json`,
+      url:
+        channel === 'beta'
+          ? `${publicBase}/builds/${buildId}/managed-content/cards/caelian-alpha-mvu-v3.json`
+          : `${publicBase}/managed-content/cards/caelian-alpha-mvu-v3.json`,
     },
   },
   ...(previousChannelManifest
@@ -188,7 +197,7 @@ const channelManifest = {
         previous: {
           buildId: previousChannelManifest.buildId,
           version: previousChannelManifest.version,
-          url: `${publicBase}/channels/alpha.previous.json`,
+          url: `${publicBase}/channels/${channel}.previous.json`,
         },
       }
     : {}),
@@ -206,36 +215,51 @@ await cp(
 );
 if (previousChannelManifest) {
   await writeFile(
-    path.join(distRoot, 'channels', 'alpha.previous.json'),
+    path.join(distRoot, 'channels', `${channel}.previous.json`),
     `${JSON.stringify(previousChannelManifest, null, 2)}\n`,
     'utf8',
   );
 }
 await writeFile(
-  path.join(distRoot, 'channels', 'alpha.json'),
+  path.join(distRoot, 'channels', `${channel}.json`),
   `${JSON.stringify(channelManifest, null, 2)}\n`,
   'utf8',
 );
+
+const channelCards = [];
+for (const candidate of ['alpha', 'beta']) {
+  try {
+    const manifest = JSON.parse(
+      await readFile(path.join(distRoot, 'channels', `${candidate}.json`), 'utf8'),
+    );
+    const label = candidate === 'beta' ? 'Beta' : 'Alpha';
+    channelCards.push(
+      `<section><h2>${label}</h2><p>当前版本：<code>${manifest.version}</code></p><p><a href="./channels/${candidate}.json">通道清单</a> · <a href="./builds/${manifest.buildId}/index.html">浏览器演示</a> · <a href="./tavern-helper/caelian-${candidate}.json">酒馆助手接入口</a></p></section>`,
+    );
+  } catch {
+    // A channel appears after its first explicit publication.
+  }
+}
 
 const statusPage = `<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Re∞：欧西亚斯 Alpha</title>
+  <title>Re∞：欧西亚斯发布通道</title>
   <style>
     body{margin:0;min-height:100vh;display:grid;place-items:center;background:#100d18;color:#f8f4ff;font:16px/1.65 system-ui,sans-serif}
     main{width:min(720px,calc(100% - 48px));padding:40px;border:1px solid #6f5c91;border-radius:24px;background:#191326}
-    a{color:#d5b6ff}code{color:#f3d6ff}
+    section{margin-top:20px;padding:18px;border:1px solid #403451;border-radius:14px;background:#120e1c}section h2{margin-top:0}a{color:#d5b6ff}code{color:#f3d6ff}
   </style>
 </head>
 <body>
   <main>
-    <p>ALPHA CHANNEL</p>
+    <p>RELEASE CHANNELS</p>
     <h1>Re∞：欧西亚斯</h1>
-    <p>当前版本：<code>${packageJson.version}</code></p>
-    <p>构建：<code>${buildId}</code></p>
-    <p><a href="./channels/alpha.json">Alpha manifest</a> · <a href="./managed-content/cards/caelian-alpha-mvu-v3.json">最新版角色卡</a> · <a href="./builds/${buildId}/index.html">浏览器演示</a> · <a href="./tavern-helper/caelian-alpha.json">酒馆助手接入口</a></p>
+    <p>Alpha 持续自动更新；Beta 仅在作者明确发布时更新。</p>
+    ${channelCards.join('\n    ')}
+    <p><a href="./managed-content/cards/caelian-alpha-mvu-v3.json">最新版角色卡</a></p>
   </main>
 </body>
 </html>

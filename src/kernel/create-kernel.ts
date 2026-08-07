@@ -96,7 +96,7 @@ const REGION_WORLDBOOK_PRELOAD_EVENTS = new Set([
 ]);
 
 interface KernelOptions {
-  channel: ReleaseChannel;
+  channel: Extract<ReleaseChannel, 'alpha' | 'beta'>;
   version: string;
   buildId: string;
   databaseName?: string;
@@ -105,7 +105,7 @@ interface KernelOptions {
 
 export class CaelianKernel {
   readonly api: CaelianPublicApi;
-  private readonly channel: 'alpha';
+  private readonly channel: Extract<ReleaseChannel, 'alpha' | 'beta'>;
   private readonly version: string;
   private readonly buildId: string;
   private readonly adapter: TavernAdapter;
@@ -144,13 +144,13 @@ export class CaelianKernel {
   private readonly handledStoryBattleFloors = new Set<string>();
 
   constructor(options: KernelOptions) {
-    if (options.channel !== 'alpha') {
-      throw new Error('当前构建只允许 Alpha 通道');
-    }
     this.channel = options.channel;
     this.version = options.version;
     this.buildId = options.buildId;
-    this.adapter = new TavernAdapter(options.sourceWindow);
+    this.adapter = new TavernAdapter(
+      options.sourceWindow,
+      this.channel === 'beta' ? 'Beta' : 'Alpha',
+    );
     this.regionWorldbook = new RegionWorldbookSwitcher(
       () => this.adapter.regionWorldbookApi(),
       () => this.adapter.currentCharacterName(),
@@ -169,8 +169,15 @@ export class CaelianKernel {
     this.notifications = new NotificationCenter(
       this.adapter.host.document,
     );
-    this.managedContent = new ManagedContentUpdater(this.adapter.host);
-    this.surveys = new SurveyService(this.db, this.adapter.host);
+    this.managedContent = new ManagedContentUpdater(
+      this.adapter.host,
+      this.channel,
+    );
+    this.surveys = new SurveyService(
+      this.db,
+      this.adapter.host,
+      this.channel,
+    );
     this.questCatalogs = new QuestCatalogLoader(this.adapter.host);
     this.questProgress = new QuestProgressRepository(this.db);
     const savedQuestJudge = loadQuestJudgePreferences(this.adapter.host);
@@ -182,7 +189,7 @@ export class CaelianKernel {
     this.notifications.mount();
     if (this.adapter.hasLegacyRuntime()) {
       this.status = 'blocked-by-legacy';
-      this.lastError = '检测到旧版 __CaelianRuntime；Alpha 已停止写入。';
+      this.lastError = `检测到旧版 __CaelianRuntime；${this.channelLabel()} 已停止写入。`;
       this.notifyRuntime('error', this.lastError, '旧版脚本仍在运行');
       await this.panels.open('shell');
       return;
@@ -258,7 +265,7 @@ export class CaelianKernel {
       return {
         id: this.commandId(command),
         status: 'rejected',
-        message: this.lastError ?? 'Alpha 内核尚未就绪',
+        message: this.lastError ?? `${this.channelLabel()} 内核尚未就绪`,
       };
     }
     try {
@@ -1156,7 +1163,7 @@ export class CaelianKernel {
 
   private createPublicApi(): CaelianPublicApi {
     return {
-      channel: 'alpha',
+      channel: this.channel,
       version: this.version,
       buildId: this.buildId,
       bridgeApi: 1,
@@ -1484,9 +1491,12 @@ export class CaelianKernel {
   }
 
   private async openReleaseNotesIfNew(): Promise<void> {
-    if (releaseNotesFor(this.version).length === 0) return;
+    if (releaseNotesFor(this.channel, this.version).length === 0) return;
 
-    const announcementId = releaseAnnouncementId(this.version);
+    const announcementId = releaseAnnouncementId(
+      this.channel,
+      this.version,
+    );
     try {
       const existing = await this.db.contentVersions.get(announcementId);
       if (existing) return;
@@ -1526,7 +1536,9 @@ export class CaelianKernel {
 
   private requireProfile(): string {
     if (this.status !== 'ready' || !this.profileId) {
-      throw new Error(this.lastError ?? 'Alpha 内核尚未就绪');
+      throw new Error(
+        this.lastError ?? `${this.channelLabel()} 内核尚未就绪`,
+      );
     }
     return this.profileId;
   }
@@ -1579,7 +1591,7 @@ export class CaelianKernel {
   private notifyRuntime(
     kind: Extract<NotificationKind, 'info' | 'success' | 'warning' | 'error'>,
     message: string,
-    title = 'Re∞：欧西亚斯 Alpha',
+    title = `Re∞：欧西亚斯 ${this.channelLabel()}`,
   ): void {
     this.notifications.show({
       kind,
@@ -1587,6 +1599,10 @@ export class CaelianKernel {
       description: message,
       duration: kind === 'error' ? 7_000 : 5_000,
     });
+  }
+
+  private channelLabel(): 'Alpha' | 'Beta' {
+    return this.channel === 'beta' ? 'Beta' : 'Alpha';
   }
 }
 

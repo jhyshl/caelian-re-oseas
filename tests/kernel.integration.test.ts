@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createKernel } from '@/kernel/create-kernel';
 import { CaelianDatabase } from '@/storage/database';
 import { avatarPreferenceKey } from '@/ui/avatar-preferences';
+import { SAVED_DECKS_STORAGE_KEY } from '@/saved-decks';
 
 const databaseNames: string[] = [];
 
@@ -18,6 +19,7 @@ afterEach(async () => {
   sessionStorage.removeItem('caelian_quest_judge_api_key_session_v1');
   localStorage.removeItem(avatarPreferenceKey('caelian'));
   localStorage.removeItem(avatarPreferenceKey('player'));
+  localStorage.removeItem(SAVED_DECKS_STORAGE_KEY);
   document
     .querySelectorAll('[data-caelian-panel]')
     .forEach((element) => element.remove());
@@ -562,6 +564,15 @@ describe('CaelianKernel integration', () => {
       thumbnail?.style.getPropertyValue('--ca-avatar-position'),
     ).toBe('24% 76%');
 
+    await kernel.api.execute({
+      id: 'create-saved-deck-test-adventurer',
+      type: 'player.create',
+      payload: {
+        name: '测试冒险者',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
     await kernel.api.openPanel('deck');
     await expect
       .poll(() =>
@@ -572,6 +583,37 @@ describe('CaelianKernel integration', () => {
         ).find((button) => button.textContent?.trim() === '创意工坊'),
       )
       .not.toBeUndefined();
+    const presetSelect = document.querySelector<HTMLSelectElement>(
+      '[data-caelian-panel="deck"] .preset-select select',
+    );
+    expect(presetSelect?.selectedOptions[0]?.textContent?.trim()).toBe('无');
+    const presetNameInput = document.querySelector<HTMLInputElement>(
+      '[data-caelian-panel="deck"] .preset-save input',
+    );
+    if (!presetNameInput) throw new Error('没有找到构筑预设名称输入框');
+    presetNameInput.value = '测试构筑预设';
+    presetNameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[data-caelian-panel="deck"] button',
+      ),
+    )
+      .find((button) => button.textContent?.trim() === '保存当前构筑')
+      ?.click();
+    await expect
+      .poll(() =>
+        document
+          .querySelector('[data-caelian-panel="deck"] .preset-notice')
+          ?.textContent?.trim(),
+      )
+      .toContain('已保存构筑');
+    await expect
+      .poll(() =>
+        Array.from(presetSelect?.options ?? []).some((option) =>
+          option.textContent?.trim().startsWith('测试构筑预设 · '),
+        ),
+      )
+      .toBe(true);
     Array.from(
       document.querySelectorAll<HTMLButtonElement>(
         '[data-caelian-panel="deck"] button',
@@ -879,6 +921,32 @@ describe('CaelianKernel integration', () => {
       'achievement-letter',
     ]);
     await repeatedKernel.api.shutdown();
+  });
+
+  it('Beta 使用独立运行通道并只展示 Beta 公告', async () => {
+    const databaseName = `caelian-beta-release-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const kernel = createKernel({
+      channel: 'beta',
+      version: '1.0.0-beta.1',
+      buildId: 'beta-release-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    expect(kernel.api.channel).toBe('beta');
+    expect(kernel.api.getRuntimeInfo()).toMatchObject({
+      channel: 'beta',
+      version: '1.0.0-beta.1',
+      databaseName,
+    });
+    const announcement = document.querySelector(
+      '[data-caelian-panel="release-notes"]',
+    );
+    expect(announcement?.textContent).toContain('Beta 1.0');
+    expect(announcement?.textContent).not.toContain('Alpha 30');
+    await kernel.api.shutdown();
   });
 
   it('设置面板可拉取模型并由玩家选择判定模型', async () => {

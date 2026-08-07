@@ -35,7 +35,7 @@ onMounted(() => void refresh());
     <header>
       <div>
         <small>独立 Vue 应用</small>
-        <h2>Alpha 诊断</h2>
+        <h2>{{ info.channel === 'beta' ? 'Beta' : 'Alpha' }} 诊断</h2>
       </div>
       <button
         type="button"

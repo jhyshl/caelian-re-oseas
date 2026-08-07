@@ -1,8 +1,16 @@
-# Re∞：欧西亚斯 Alpha
+# Re∞：欧西亚斯发布通道
 
 这是 Re∞：欧西亚斯的浏览器本地优先重写仓库，与旧版线上仓库完全隔离。
 
-当前版本实现第一条可运行 Alpha 纵切片：
+当前仓库同时维护 Alpha 与 Beta：
+
+- Alpha 在 `main` 更新后自动验证、递增版本并发布；
+- 仅在作者明确要求沿用当前 Alpha 版号的发布提交中使用 `[preserve-alpha]` 标记；下一次普通提交会恢复自动递增；
+- Beta 仅能通过手动工作流发布，且构建脚本要求显式设置 `CAELIAN_BETA_RELEASE=1`；
+- 两个通道使用独立清单、公告、接收器、回退记录与本地数据库；
+- Beta 固定发布时的内容快照，不会自动吸收之后的 Alpha 内容更新。
+
+运行时实现包括：
 
 - 固定酒馆助手 Bridge 自动读取 Alpha 通道，不需要玩家修改版本号；
 - `caelian-alpha` IndexedDB 是唯一权威状态；
@@ -24,6 +32,7 @@ npm install
 npm run check
 npm test
 npm run build:alpha
+$env:CAELIAN_BETA_RELEASE='1'; npm run build:beta
 npm run preview
 ```
 
@@ -31,8 +40,10 @@ npm run preview
 
 ```text
 dist/channels/alpha.json
+dist/channels/beta.json
 dist/builds/<build-id>/
 dist/tavern-helper/caelian-alpha.json
+dist/tavern-helper/caelian-beta.json
 ```
 
 > Alpha 目前用于验证新内核、存储边界、更新链路和独立 Vue 生命周期，尚未迁移旧版全部玩法数据。

@@ -126,8 +126,7 @@ export default {
 
     if (
       request.method === 'GET' &&
-      (pathname === '/channels/alpha.json' ||
-        pathname === '/channels/alpha.previous.json')
+      /^\/channels\/(alpha|beta)(\.previous)?\.json$/.test(pathname)
     ) {
       const upstreamUrl = new URL(upstreamBase + pathname);
       upstreamUrl.search = requestUrl.search;

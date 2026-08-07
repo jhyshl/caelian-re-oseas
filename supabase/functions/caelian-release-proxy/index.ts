@@ -151,8 +151,7 @@ Deno.serve(async (request: Request) => {
 
     if (
       request.method === 'GET' &&
-      (releasePath === 'channels/alpha.json' ||
-        releasePath === 'channels/alpha.previous.json')
+      /^channels\/(alpha|beta)(\.previous)?\.json$/.test(releasePath)
     ) {
       const manifest = rebaseManifest(
         (await upstream.json()) as Record<string, unknown>,
