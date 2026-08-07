@@ -86,7 +86,6 @@ const version =
   (channel === 'beta'
     ? String(channelConfig.beta.version)
     : nextAlphaVersion(buildId));
-const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const environment = {
   ...process.env,
   CAELIAN_CHANNEL: channel,
@@ -95,7 +94,7 @@ const environment = {
 };
 
 for (const [command, args] of [
-  [npmExecutable, ['exec', '--', 'vite', 'build']],
+  [process.execPath, [path.join(root, 'node_modules', 'vite', 'bin', 'vite.js'), 'build']],
   [process.execPath, ['scripts/package-build.mjs']],
   [process.execPath, ['scripts/export-tavern-helper.mjs']],
   [process.execPath, ['scripts/prepare-sites-build.mjs']],
@@ -105,6 +104,9 @@ for (const [command, args] of [
     env: environment,
     stdio: 'inherit',
   });
+  if (result.error) {
+    console.error(result.error);
+  }
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
