@@ -445,6 +445,8 @@ export class GameRepository {
         return this.battles.start(profileId, command.payload);
       case 'battle.play-card':
         return this.battles.playCard(profileId, command.payload);
+      case 'battle.use-item':
+        return this.battles.useItem(profileId, command.payload);
       case 'battle.end-turn':
         return this.battles.endTurn(
           profileId,

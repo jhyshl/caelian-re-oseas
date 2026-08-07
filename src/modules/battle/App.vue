@@ -6,7 +6,12 @@ import {
   type MonsterDefinition,
 } from '@/content/catalogs/battle';
 import { loadCardCatalog } from '@/content/catalogs/cards';
-import type { CardDefinition } from '@/content/types';
+import { loadBattleItems } from '@/content/catalogs/inventory';
+import type { BattleItemDefinition, CardDefinition } from '@/content/types';
+import {
+  canApplyBattleConsumable,
+  isBattleUsableItem,
+} from '@/battle/consumables';
 import type {
   BattleAnimationEvent,
   BattleEnemyState,
@@ -22,9 +27,11 @@ const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
 const monsters = ref<Record<string, MonsterDefinition>>({});
 const cards = ref<Record<string, CardDefinition>>({});
+const battleItems = ref<Record<string, BattleItemDefinition>>({});
 const selectedTarget = ref(0);
 const selectedHandIndex = ref<number | null>(null);
 const showBattleInfo = ref(false);
+const showBattleInventory = ref(false);
 const notice = ref('');
 const busy = ref(false);
 const animationPlaying = ref(false);
@@ -43,6 +50,13 @@ interface FloatingEffect {
   targetKey: string;
   kind: 'damage' | 'heal' | 'shield' | 'mp' | 'ap' | 'status' | 'draw';
   text: string;
+}
+
+interface BattleInventoryRow {
+  itemId: string;
+  name: string;
+  quantity: number;
+  definition: BattleItemDefinition;
 }
 
 interface CardDragSession {
@@ -74,6 +88,26 @@ const aliveEnemies = computed(
 );
 const recentLog = computed(() =>
   [...(state.value?.log ?? [])].slice(-20).reverse(),
+);
+const battleInventory = computed<BattleInventoryRow[]>(() =>
+  (snapshot.value?.inventory ?? [])
+    .flatMap((stack) => {
+      const definition =
+        battleItems.value[stack.itemId] ?? battleItems.value[stack.name];
+      if (!isBattleUsableItem(definition)) return [];
+      return [
+        {
+          itemId: stack.itemId,
+          name: definition?.name ?? stack.name,
+          quantity: stack.quantity,
+          definition: definition!,
+        },
+      ];
+    })
+    .sort((left, right) => left.name.localeCompare(right.name, 'zh-CN')),
+);
+const battleInventoryCount = computed(() =>
+  battleInventory.value.reduce((total, item) => total + item.quantity, 0),
 );
 const regionalMonsterCount = computed(() => {
   const region = snapshot.value?.world.region;
@@ -116,6 +150,12 @@ const statusNames: Record<string, string> = {
   freeze: '冻结',
   thorns: '荆棘',
   death_save: '不屈',
+  fortitude: '坚韧',
+  agility: '敏捷',
+  regen: '再生',
+  damage_bonus: '伤害强化',
+  spell_damage_bonus: '法术强化',
+  damage_reduce: '减伤',
 };
 const typeNames: Record<string, string> = {
   attack: '攻击',
@@ -183,6 +223,22 @@ function cardStyle(index: number, total: number) {
 
 function effectEntries(effects: LocalBattleState['player']['buffs']) {
   return Object.entries(effects);
+}
+
+function canUseBattleItem(definition: BattleItemDefinition) {
+  const current = state.value;
+  if (
+    !definition.effect ||
+    !current ||
+    current.status !== 'ongoing' ||
+    current.phase !== 'player'
+  ) {
+    return false;
+  }
+  return canApplyBattleConsumable(definition.effect, {
+    player: current.player,
+    hasLivingEnemy: aliveEnemies.value.length > 0,
+  });
 }
 
 function normalizeSelection() {
@@ -675,6 +731,22 @@ async function discardHand() {
   });
 }
 
+async function useBattleItem(item: BattleInventoryRow) {
+  if (!battle.value) return;
+  await executeAnimated(
+    {
+      id: commandId('battle.use-item'),
+      type: 'battle.use-item',
+      payload: {
+        battleId: battle.value.id,
+        itemId: item.itemId,
+        targetIndex: selectedTarget.value,
+      },
+    },
+    `已使用「${item.name}」`,
+  );
+}
+
 async function surrender() {
   if (!battle.value) return;
   const confirmed = await props.context.api.confirm({
@@ -702,10 +774,12 @@ async function closeResult() {
 }
 
 onMounted(async () => {
-  [snapshot.value, monsters.value, cards.value] = await Promise.all([
+  [snapshot.value, monsters.value, cards.value, battleItems.value] =
+    await Promise.all([
     props.context.api.query('state'),
     loadMonsterCatalog(),
     loadCardCatalog(),
+    loadBattleItems(),
   ]);
   selectedTarget.value = state.value?.selectedTarget ?? 0;
   disposeStateListener = props.context.api.on('state.changed', refresh);
@@ -937,6 +1011,14 @@ onUnmounted(() => {
           <div class="hand-actions">
             <button
               type="button"
+              class="inventory-toggle"
+              :aria-expanded="showBattleInventory"
+              @click="showBattleInventory = !showBattleInventory"
+            >
+              背包 {{ battleInventoryCount }}
+            </button>
+            <button
+              type="button"
               class="discard"
               :disabled="busy || state.player.ap < 1 || state.player.hand.length === 0"
               @click="discardHand"
@@ -1023,6 +1105,50 @@ onUnmounted(() => {
               <span>T{{ entry.turn }}</span>{{ entry.text }}
             </li>
           </ol>
+        </aside>
+
+        <aside v-if="showBattleInventory" class="battle-inventory">
+          <header>
+            <div>
+              <strong>战斗背包</strong>
+              <span>
+                HP {{ state.player.hp }}/{{ state.player.hpMax }} · MP
+                {{ state.player.mp }}/{{ state.player.mpMax }}
+              </span>
+            </div>
+            <button
+              type="button"
+              aria-label="关闭战斗背包"
+              @click="showBattleInventory = false"
+            >
+              ×
+            </button>
+          </header>
+          <p v-if="state.phase !== 'player'" class="inventory-hint">
+            敌方行动阶段只能查看，回到玩家行动后才能使用物品。
+          </p>
+          <p v-else-if="!battleInventory.length" class="inventory-empty">
+            背包里没有可在当前战斗即时使用的药剂或道具。
+          </p>
+          <div v-else class="battle-inventory-list">
+            <article v-for="item in battleInventory" :key="item.itemId">
+              <div>
+                <strong>{{ item.name }}</strong>
+                <span>持有 ×{{ item.quantity }}</span>
+                <p>{{ item.definition.desc }}</p>
+              </div>
+              <button
+                type="button"
+                :disabled="busy || !canUseBattleItem(item.definition)"
+                @click="useBattleItem(item)"
+              >
+                {{ canUseBattleItem(item.definition) ? '使用' : '当前无效' }}
+              </button>
+            </article>
+          </div>
+          <small>
+            攻击道具会作用于当前锁定目标；标注“下一场战斗”的药剂不会显示在这里。
+          </small>
         </aside>
 
         <div v-if="animationPlaying && animationCaption" class="animation-caption">
@@ -1482,6 +1608,11 @@ onUnmounted(() => {
   background: linear-gradient(180deg, #ff3b34, #cf1212);
 }
 
+.hand-actions .inventory-toggle {
+  color: #ecf8ff;
+  background: linear-gradient(180deg, #3d94bd, #175578);
+}
+
 .hand-actions .end-turn {
   background: linear-gradient(180deg, #fff58a, #e4bf38);
 }
@@ -1782,6 +1913,145 @@ onUnmounted(() => {
   background: rgba(10, 15, 24, 0.96);
   box-shadow: 0 16px 38px rgba(0, 0, 0, 0.48);
   backdrop-filter: blur(12px);
+}
+
+.battle-inventory {
+  position: absolute;
+  z-index: 1250;
+  inset: 50% auto auto 50%;
+  width: min(520px, calc(100% - 18px));
+  max-height: min(72%, 500px);
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(217, 180, 98, 0.62);
+  border-radius: 15px;
+  color: #f7ead0;
+  background:
+    radial-gradient(circle at 0 0, rgba(217, 180, 98, 0.14), transparent 42%),
+    rgba(10, 15, 24, 0.98);
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(14px);
+  transform: translate(-50%, -50%);
+}
+
+.battle-inventory header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  border-bottom: 1px solid rgba(217, 180, 98, 0.25);
+}
+
+.battle-inventory header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.battle-inventory header strong {
+  color: #fff2bf;
+  font: 900 14px var(--ca-serif);
+}
+
+.battle-inventory header span {
+  color: rgba(245, 231, 199, 0.68);
+  font-size: 9px;
+}
+
+.battle-inventory header button {
+  border: 0;
+  color: #f7ead0;
+  background: transparent;
+  font-size: 23px;
+  cursor: pointer;
+}
+
+.inventory-hint,
+.inventory-empty {
+  margin: 0;
+  padding: 10px 13px;
+  color: rgba(245, 231, 199, 0.7);
+  font-size: 9px;
+}
+
+.inventory-hint {
+  color: #ffdda0;
+  background: rgba(255, 185, 66, 0.08);
+}
+
+.battle-inventory-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 10px 12px;
+  overflow: auto;
+}
+
+.battle-inventory-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(217, 180, 98, 0.24);
+  border-radius: 11px;
+  background: rgba(255, 244, 212, 0.055);
+}
+
+.battle-inventory-list article > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+}
+
+.battle-inventory-list strong {
+  overflow: hidden;
+  color: #fff2bf;
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.battle-inventory-list span {
+  color: #8edcff;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.battle-inventory-list p {
+  grid-column: 1 / 3;
+  margin: 0;
+  color: rgba(245, 231, 199, 0.65);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.battle-inventory-list button {
+  min-width: 66px;
+  min-height: 34px;
+  border: 1px solid rgba(145, 226, 255, 0.45);
+  border-radius: 10px;
+  color: #eafaff;
+  background: linear-gradient(180deg, #3d9dcc, #176089);
+  font: 900 9px var(--ca-ui);
+  cursor: pointer;
+}
+
+.battle-inventory-list button:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.65);
+  opacity: 0.45;
+}
+
+.battle-inventory > small {
+  padding: 8px 12px 10px;
+  border-top: 1px solid rgba(217, 180, 98, 0.16);
+  color: rgba(245, 231, 199, 0.5);
+  font-size: 8px;
+  line-height: 1.45;
 }
 
 .battle-info header {
@@ -2094,6 +2364,12 @@ onUnmounted(() => {
     font-size: 8px;
   }
 
+  .battle-inventory {
+    width: calc(100% - 10px);
+    max-height: 78%;
+    border-radius: 12px;
+  }
+
   .pile-button {
     left: 4px;
     bottom: 5px;
@@ -2182,6 +2458,12 @@ onUnmounted(() => {
 
   .hand-actions .discard {
     display: none;
+  }
+
+  .hand-actions .inventory-toggle {
+    max-width: 76px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .hand-actions {

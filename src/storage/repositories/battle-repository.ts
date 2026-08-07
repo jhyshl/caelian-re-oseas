@@ -7,8 +7,18 @@ import {
   type MonsterSkillDefinition,
   type PassiveDefinition,
 } from '@/content/catalogs/battle';
+import { loadBattleItems } from '@/content/catalogs/inventory';
 import { loadCardCatalog } from '@/content/catalogs/cards';
-import type { CardDefinition, CardEffect } from '@/content/types';
+import type {
+  BattleItemDefinition,
+  CardDefinition,
+  CardEffect,
+} from '@/content/types';
+import {
+  canApplyBattleConsumable,
+  childEffects,
+  isBattleUsableEffect,
+} from '@/battle/consumables';
 import type {
   BattleAnimationEvent,
   BattleEnemyState,
@@ -22,6 +32,7 @@ import type {
   PlayerRecord,
 } from '@/domain/types';
 import type { CaelianDatabase } from '@/storage/database';
+import { grantPlayerExperience } from '@/player/progression';
 
 const DIFFICULTY_SCALE = {
   easy: 0.8,
@@ -79,6 +90,7 @@ export class BattleRepository {
   private monsters?: Record<string, MonsterDefinition>;
   private rules?: BattleRules;
   private passives?: Record<string, PassiveDefinition>;
+  private battleItems?: Record<string, BattleItemDefinition>;
   private animationSequence = 0;
 
   constructor(
@@ -87,12 +99,27 @@ export class BattleRepository {
   ) {}
 
   async prepare(): Promise<void> {
-    if (this.cards && this.monsters && this.rules && this.passives) return;
-    [this.cards, this.monsters, this.rules, this.passives] = await Promise.all([
+    if (
+      this.cards &&
+      this.monsters &&
+      this.rules &&
+      this.passives &&
+      this.battleItems
+    ) {
+      return;
+    }
+    [
+      this.cards,
+      this.monsters,
+      this.rules,
+      this.passives,
+      this.battleItems,
+    ] = await Promise.all([
       loadCardCatalog(),
       loadMonsterCatalog(),
       loadBattleRules(),
       loadPassiveCatalog(),
+      loadBattleItems(),
     ]);
   }
 
@@ -302,6 +329,56 @@ export class BattleRepository {
     state.player.discardPile.push(...state.player.hand.splice(0));
     this.drawCards(state, 3);
     this.log(state, 'player', `弃置 ${count} 张手牌，重新抽取 3 张`);
+    await this.save(session);
+  }
+
+  async useItem(
+    profileId: string,
+    input: { battleId: string; itemId: string; targetIndex?: number },
+  ): Promise<void> {
+    this.assertPrepared();
+    const session = await this.getOngoing(profileId, input.battleId);
+    const state = session.state;
+    this.assertPlayerPhase(state);
+    const stackId = `${profileId}:${input.itemId}`;
+    const stack = await this.db.inventoryStacks.get(stackId);
+    if (!stack || stack.quantity <= 0) throw new Error('背包中没有这个物品');
+    const definition =
+      this.battleItems?.[stack.itemId] ?? this.battleItems?.[stack.name];
+    const effect = definition?.effect;
+    if (!effect || !isBattleUsableEffect(effect)) {
+      throw new Error('这个物品不能在当前战斗中即时使用');
+    }
+    if (
+      !canApplyBattleConsumable(effect, {
+        player: state.player,
+        hasLivingEnemy: this.aliveEnemies(state).length > 0,
+      })
+    ) {
+      throw new Error('这个物品在当前状态下不会产生效果');
+    }
+
+    this.log(state, 'player', `使用消耗品「${definition.name}」`);
+    this.applyConsumableEffect(
+      state,
+      definition.name,
+      effect,
+      input.targetIndex ?? state.selectedTarget,
+    );
+    if (stack.quantity === 1) {
+      await this.db.inventoryStacks.delete(stackId);
+    } else {
+      await this.db.inventoryStacks.put({
+        ...stack,
+        quantity: stack.quantity - 1,
+        updatedAt: Date.now(),
+      });
+    }
+
+    if (this.aliveEnemies(state).length === 0) {
+      await this.finishBattle(session, 'victory');
+      return;
+    }
     await this.save(session);
   }
 
@@ -2067,14 +2144,8 @@ export class BattleRepository {
         ? Math.max(1, Math.round(player.hpMax * 0.3))
         : Math.max(1, state.player.hp);
     player.mp = Math.max(0, state.player.mp);
-    player.experience += rewards.experience;
+    grantPlayerExperience(player, rewards.experience);
     player.gold += rewards.gold;
-    while (player.experience >= player.experienceToNext) {
-      player.experience -= player.experienceToNext;
-      player.level += 1;
-      player.statPoints += 1;
-      player.experienceToNext = 100 + (player.level - 1) * 50;
-    }
     player.updatedAt = Date.now();
     await this.db.playerStates.put(player);
     if (guild) {
@@ -2171,6 +2242,145 @@ export class BattleRepository {
       value: Math.max(value, existing?.value ?? 0),
       turns: Math.max(turns, existing?.turns ?? 0),
     };
+  }
+
+  private applyConsumableEffect(
+    state: LocalBattleState,
+    label: string,
+    effect: CardEffect,
+    targetIndex: number,
+  ): void {
+    switch (effect.type) {
+      case 'heal':
+        this.heal(state, state.player, this.number(effect.value), label);
+        return;
+      case 'gain_mp':
+        this.restoreMp(state, this.number(effect.value), label);
+        return;
+      case 'heal_mp':
+        this.heal(state, state.player, this.number(effect.heal), label);
+        this.restoreMp(state, this.number(effect.mp), label);
+        return;
+      case 'buff': {
+        const buff = String(effect.buff ?? 'strength');
+        const value = this.number(effect.value, 1);
+        const turns = Math.max(1, this.number(effect.turns, 1));
+        this.addTimedEffect(state.player.buffs, buff, value, turns);
+        this.animation(state, {
+          kind: 'status',
+          sourceSide: 'player',
+          sourceId: 'player',
+          targetSide: 'player',
+          targetId: 'player',
+          amount: value,
+          label: buff,
+        });
+        this.log(state, 'player', `${label}赋予 ${buff} ${value}，持续 ${turns} 回合`);
+        return;
+      }
+      case 'cleanse_specific': {
+        const debuff = String(effect.debuff ?? '');
+        if (debuff && state.player.debuffs[debuff]) {
+          delete state.player.debuffs[debuff];
+          this.animation(state, {
+            kind: 'status',
+            sourceSide: 'player',
+            sourceId: 'player',
+            targetSide: 'player',
+            targetId: 'player',
+            label: `解除 ${debuff}`,
+          });
+          this.log(state, 'player', `${label}解除了 ${debuff}`);
+        }
+        return;
+      }
+      case 'cleanse': {
+        const removed = this.removeEffects(
+          state.player.debuffs,
+          effect.amount ?? 'all',
+        );
+        this.animation(state, {
+          kind: 'status',
+          sourceSide: 'player',
+          sourceId: 'player',
+          targetSide: 'player',
+          targetId: 'player',
+          amount: removed,
+          label: '净化',
+        });
+        this.log(state, 'player', `${label}净化了 ${removed} 个负面状态`);
+        return;
+      }
+      case 'shield': {
+        const amount = Math.max(0, Math.round(this.number(effect.value)));
+        state.player.shield += amount;
+        this.animation(state, {
+          kind: 'shield',
+          sourceSide: 'player',
+          sourceId: 'player',
+          targetSide: 'player',
+          targetId: 'player',
+          amount,
+          shieldAfter: state.player.shield,
+          label,
+        });
+        this.log(state, 'player', `${label}获得 ${amount} 点护盾`);
+        return;
+      }
+      case 'damage': {
+        const resolved = this.resolveTargetIndex(state, targetIndex);
+        const target = state.enemies[resolved];
+        if (target) {
+          state.selectedTarget = resolved;
+          this.damage(
+            state,
+            state.player,
+            target,
+            this.number(effect.value),
+            'player',
+            label,
+            true,
+          );
+        }
+        return;
+      }
+      case 'multi':
+        for (const child of childEffects(effect)) {
+          if (
+            canApplyBattleConsumable(child, {
+              player: state.player,
+              hasLivingEnemy: this.aliveEnemies(state).length > 0,
+            })
+          ) {
+            this.applyConsumableEffect(state, label, child, targetIndex);
+          }
+        }
+    }
+  }
+
+  private restoreMp(
+    state: LocalBattleState,
+    rawAmount: number,
+    label: string,
+  ): number {
+    const amount = Math.max(0, Math.round(rawAmount));
+    const before = state.player.mp;
+    state.player.mp = Math.min(state.player.mpMax, state.player.mp + amount);
+    const restored = state.player.mp - before;
+    if (restored > 0) {
+      this.animation(state, {
+        kind: 'mp',
+        sourceSide: 'player',
+        sourceId: 'player',
+        targetSide: 'player',
+        targetId: 'player',
+        amount: restored,
+        mpAfter: state.player.mp,
+        label,
+      });
+      this.log(state, 'player', `${label}恢复 ${restored} MP`);
+    }
+    return restored;
   }
 
   private removeEffects(

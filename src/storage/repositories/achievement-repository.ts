@@ -46,6 +46,7 @@ export interface AchievementCommandCapture {
     turn: number;
     handCount: number;
     handLimit: number;
+    playerHp: number;
     cardId?: string;
   };
 }
@@ -272,6 +273,7 @@ export class AchievementRepository {
     }
     if (
       command.type === 'battle.play-card' ||
+      command.type === 'battle.use-item' ||
       command.type === 'battle.end-turn' ||
       command.type === 'battle.surrender'
     ) {
@@ -285,6 +287,7 @@ export class AchievementRepository {
           turn: state.turn,
           handCount: state.player.hand.length,
           handLimit: state.player.handLimit,
+          playerHp: state.player.hp,
           ...(command.type === 'battle.play-card'
             ? {
                 cardId:
@@ -335,6 +338,13 @@ export class AchievementRepository {
 
     if (command.type === 'battle.play-card' && before.battle) {
       await this.recordPlayedCard(profileId, before.battle);
+    }
+
+    if (command.type === 'battle.use-item' && before.battle) {
+      const session = await this.db.battleSessions.get(before.battle.id);
+      if ((session?.state.player.hp ?? 0) > before.battle.playerHp) {
+        await this.unlock('ach_consumable_heal_hp');
+      }
     }
 
     if (

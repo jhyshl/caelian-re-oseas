@@ -118,6 +118,125 @@ describe('本地战斗仓库', () => {
     expect(snapshot.battle?.state.player.discardPile).toHaveLength(5);
   });
 
+  it('在玩家行动阶段从背包使用回血、回蓝与增益药剂并实时扣除数量', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-battle-item-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:battle-items');
+    await repository.execute(profile.id, {
+      id: 'item-player-create',
+      type: 'player.create',
+      payload: {
+        name: '药剂测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    for (const item of ['小血瓶', '小魔药瓶', '力量药水']) {
+      await repository.execute(profile.id, {
+        id: `grant:${item}`,
+        type: 'inventory.adjust',
+        payload: { itemId: item, name: item, delta: 1 },
+      });
+    }
+    await repository.execute(profile.id, {
+      id: 'item-battle-start',
+      type: 'battle.start',
+      payload: { monsterId: 'mon_slime' },
+    });
+
+    let snapshot = await repository.snapshot(profile.id);
+    const battleId = snapshot.battle!.id;
+    const session = await database.battleSessions.get(battleId);
+    session!.state.player.hp = 35;
+    session!.state.player.mp = 4;
+    const initialAp = session!.state.player.ap;
+    await database.battleSessions.put(session!);
+
+    for (const itemId of ['小血瓶', '小魔药瓶', '力量药水']) {
+      await expect(
+        repository.execute(profile.id, {
+          id: `use:${itemId}`,
+          type: 'battle.use-item',
+          payload: { battleId, itemId },
+        }),
+      ).resolves.toMatchObject({ status: 'applied' });
+    }
+
+    snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.battle?.state.player).toMatchObject({
+      hp: 60,
+      mp: 14,
+      ap: initialAp,
+      buffs: { strength: { value: 5, turns: 3 } },
+    });
+    expect(snapshot.inventory).toEqual([]);
+    expect(snapshot.achievements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          achievementId: 'ach_consumable_heal_hp',
+          unlocked: true,
+        }),
+      ]),
+    );
+    expect(
+      snapshot.battle?.state.log.map((entry) => entry.text),
+    ).toEqual(
+      expect.arrayContaining([
+        '小血瓶恢复 25 HP',
+        '小魔药瓶恢复 10 MP',
+        '力量药水赋予 strength 5，持续 3 回合',
+      ]),
+    );
+  });
+
+  it('拒绝在战斗中即时使用标注为下一场生效的药剂', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-battle-next-item-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:next-battle-item');
+    await repository.execute(profile.id, {
+      id: 'next-item-player-create',
+      type: 'player.create',
+      payload: {
+        name: '秘药测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    await repository.execute(profile.id, {
+      id: 'grant-next-item',
+      type: 'inventory.adjust',
+      payload: { itemId: '力量秘药', name: '力量秘药', delta: 1 },
+    });
+    await repository.execute(profile.id, {
+      id: 'next-item-battle-start',
+      type: 'battle.start',
+      payload: { monsterId: 'mon_slime' },
+    });
+    const snapshot = await repository.snapshot(profile.id);
+
+    await expect(
+      repository.execute(profile.id, {
+        id: 'use-next-item',
+        type: 'battle.use-item',
+        payload: {
+          battleId: snapshot.battle!.id,
+          itemId: '力量秘药',
+        },
+      }),
+    ).rejects.toThrow('不能在当前战斗中即时使用');
+    expect((await repository.snapshot(profile.id)).inventory).toEqual([
+      expect.objectContaining({ itemId: '力量秘药', quantity: 1 }),
+    ]);
+  });
+
   it('按实际结算顺序保存敌方攻击、伤害与回合结束动画事件', async () => {
     const database = new CaelianDatabase(
       'alpha',

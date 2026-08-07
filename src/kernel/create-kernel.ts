@@ -262,14 +262,20 @@ export class CaelianKernel {
       if (
         result.status === 'applied' &&
         type &&
-        ['inventory.adjust', 'battle.finish'].includes(type)
+        ['inventory.adjust', 'battle.use-item', 'battle.finish'].includes(type)
       ) {
         await this.advanceTrackedQuestFromLocalState();
       }
       if (
         result.status === 'applied' &&
         type &&
-        ['world.move', 'quest.abandon', 'inventory.adjust', 'battle.finish'].includes(type)
+        [
+          'world.move',
+          'quest.abandon',
+          'inventory.adjust',
+          'battle.use-item',
+          'battle.finish',
+        ].includes(type)
       ) {
         await this.syncQuestContext();
       }

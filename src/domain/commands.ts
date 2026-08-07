@@ -282,6 +282,15 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...commandBase,
+    type: z.literal('battle.use-item'),
+    payload: z.object({
+      battleId: z.string().trim().min(1).max(220),
+      itemId: z.string().trim().min(1).max(180),
+      targetIndex: z.number().int().min(0).max(20).optional(),
+    }),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal('battle.end-turn'),
     payload: z.object({
       battleId: z.string().trim().min(1).max(220),

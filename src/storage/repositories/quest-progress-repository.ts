@@ -9,6 +9,7 @@ import type {
   TavernFloorReference,
 } from '@/domain/types';
 import type { CaelianDatabase } from '@/storage/database';
+import { grantPlayerExperience } from '@/player/progression';
 import {
   questNode,
   type QuestDefinition,
@@ -525,14 +526,8 @@ export class QuestProgressRepository {
 
         const now = Date.now();
         const startingLevel = player.level;
-        player.experience += reward.experience;
+        grantPlayerExperience(player, reward.experience);
         player.gold += reward.gold;
-        while (player.experience >= player.experienceToNext) {
-          player.experience -= player.experienceToNext;
-          player.level += 1;
-          player.statPoints += 1;
-          player.experienceToNext = 100 + (player.level - 1) * 50;
-        }
         player.updatedAt = now;
         guild.experience += reward.guildExperience;
         guild.completedTaskCount += 1;
