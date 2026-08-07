@@ -312,6 +312,7 @@ describe('CaelianKernel integration', () => {
       'affinity',
       'character',
       'deck',
+      'card-square',
       'inventory',
       'guild',
       'mailbox',

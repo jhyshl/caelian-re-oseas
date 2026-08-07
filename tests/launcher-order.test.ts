@@ -9,6 +9,7 @@ const available: PanelName[] = [
   'character',
   'affinity',
   'deck',
+  'card-square',
   'inventory',
   'guild',
 ];
@@ -20,7 +21,14 @@ describe('Floating launcher order', () => {
         ['deck', 'character', 'deck', 'removed', null],
         available,
       ),
-    ).toEqual(['deck', 'character', 'affinity', 'inventory', 'guild']);
+    ).toEqual([
+      'deck',
+      'character',
+      'affinity',
+      'card-square',
+      'inventory',
+      'guild',
+    ]);
   });
 
   it('按玩家依次点击的编号优先排序，其余入口保持原顺序', () => {
@@ -36,6 +44,7 @@ describe('Floating launcher order', () => {
       'deck',
       'character',
       'affinity',
+      'card-square',
       'inventory',
     ]);
   });

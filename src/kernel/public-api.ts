@@ -73,6 +73,7 @@ export type PanelName =
   | 'character'
   | 'affinity'
   | 'deck'
+  | 'card-square'
   | 'inventory'
   | 'market'
   | 'guild'
