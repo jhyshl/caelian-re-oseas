@@ -49,6 +49,11 @@ describe('Tavern Helper Alpha bridge export', () => {
     expect(receiver.content).toContain('发现新版本');
     expect(receiver.content).toContain('2 小时后提醒');
     expect(receiver.content).toContain('战斗结束后自动更新');
+    expect(receiver.content).toContain("root.location.reload()");
+    expect(receiver.content).toContain('更新完成，正在刷新酒馆');
+    expect(receiver.content).toContain(
+      '自动刷新酒馆失败，请手动刷新页面以加载最新内容',
+    );
     expect(receiver.content).not.toMatch(/127\.0\.0\.1|localhost/);
     expect(receiver.info).toContain('备用公网 CDN');
   });
@@ -124,7 +129,7 @@ describe('Tavern Helper Alpha bridge export', () => {
     );
   });
 
-  it('checks for a newer build without reloading Tavern and prompts once', async () => {
+  it('checks for a newer build, prompts once, and defers refresh during battle', async () => {
     const receiver = JSON.parse(
       await readFile(
         path.join(
@@ -227,7 +232,7 @@ describe('Tavern Helper Alpha bridge export', () => {
     expect(notifications[0]?.title).toBe(
       '发现新版本 0.2.0-alpha.next',
     );
-    expect(notifications[0]?.description).toContain('无需刷新酒馆');
+    expect(notifications[0]?.description).toContain('自动刷新酒馆');
     expect(typeof notifications[0]?.onClick).toBe('function');
     expect(host.Caelian).toMatchObject({ buildId: 'current-build' });
 

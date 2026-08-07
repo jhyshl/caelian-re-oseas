@@ -41,7 +41,7 @@ const allowedBases = [
 ];
 
 const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
-// 启动后持续检查 Alpha manifest；发现新版本时无需刷新酒馆即可提醒并安全更新。
+// 启动后持续检查 Alpha manifest；发现新版本时提醒玩家，验证更新成功后自动刷新酒馆。
 (async function loadCaelianAlpha() {
   'use strict';
 
@@ -152,7 +152,7 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
     const title = d.createElement('strong');
     title.textContent = '发现新版本 ' + manifest.version;
     const description = d.createElement('p');
-    description.textContent = '新内容已经发布。无需刷新酒馆，可直接安全更新欧西亚斯界面。';
+    description.textContent = '新内容已经发布。更新验证成功后将自动刷新一次酒馆，确保加载最新内容。';
     const meta = d.createElement('small');
     meta.textContent = '构建 ' + manifest.buildId.slice(0, 8) + ' · Alpha 通道';
     copy.append(eyebrow, title, description, meta);
@@ -431,6 +431,16 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
     } catch {}
   };
 
+  const reloadTavern = () => {
+    try {
+      if (typeof root.location?.reload === 'function') {
+        root.location.reload();
+        return true;
+      }
+    } catch {}
+    return false;
+  };
+
   const installAvailableUpdate = async (requested) => {
     if (installing || root.Caelian?.buildId === requested.buildId) return;
     installing = true;
@@ -470,7 +480,7 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
           ignored: true,
         });
         await restorePanel(oldPanel);
-        notify('success', 'Alpha ' + candidate.version + ' 更新完成');
+        notify('success', 'Alpha ' + candidate.version + ' 更新完成，正在刷新酒馆……');
         try {
           broadcast?.postMessage({
             type: 'installed',
@@ -478,6 +488,9 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
           });
         } catch {}
         installing = false;
+        if (!reloadTavern()) {
+          notify('warning', '自动刷新酒馆失败，请手动刷新页面以加载最新内容。');
+        }
         return;
       } catch (error) {
         lastError = error;
@@ -588,7 +601,7 @@ const bridge = `// Re∞：欧西亚斯固定 Alpha Bridge
         icon: '↥',
         eyebrow: 'UPDATE AVAILABLE',
         title: '发现新版本 ' + manifest.version,
-        description: '点击此通知立即更新；无需刷新酒馆。',
+        description: '点击此通知立即更新；验证成功后会自动刷新酒馆。',
         duration: 12_000,
         priority: 88,
         onClick: () => requestInstall(manifest),

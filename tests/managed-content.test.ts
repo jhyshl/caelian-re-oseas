@@ -115,6 +115,86 @@ describe('ManagedContentUpdater', () => {
         String(entry.name).includes('[AUTO_GLOBAL]'),
       ),
     ).toHaveLength(4);
+
+    const schema = card.data.extensions.tavern_helper.scripts.find(
+      (script: Record<string, unknown>) =>
+        script.id === 'edfcaddc-2475-46e8-a0d9-f14a2e6558b2',
+    )?.content as string;
+    expect(schema).toContain('export const Schema = z.looseObject({');
+    expect(schema).not.toContain('.passthrough(');
+    expect(schema).not.toContain('.strict(');
+    expect(schema).toContain('registerMvuSchema(Schema);');
+
+    const initvar = normalized.find(
+      (entry) => entry.name === '[initvar]变量初始化勿开',
+    );
+    expect(initvar).toMatchObject({ enabled: false, insertion_order: 200 });
+
+    const rules = normalized.find(
+      (entry) => entry.name === '[mvu_update]变量更新规则',
+    )?.content;
+    expect(rules).toContain('stat_data.caelian.narrative');
+    for (const legacyRule of [
+      '变量更新规则 v2.6',
+      '主线任务更新规则',
+      '支线任务更新规则',
+      '玩家.背包',
+      '玩家.装备背包',
+      '协会.主线任务',
+      '采集与消耗品规则',
+      '成就系统规则',
+      '世界.地区等级限制',
+    ]) {
+      expect(rules).not.toContain(legacyRule);
+    }
+
+    const variableList = normalized.find(
+      (entry) => entry.name === '变量列表',
+    );
+    expect(variableList?.content).toBe(
+      '---\n<status_current_variables>\n{{format_message_variable::stat_data}}\n</status_current_variables>',
+    );
+    expect(variableList).toMatchObject({
+      enabled: true,
+      insertion_order: 200,
+    });
+
+    const output = normalized.find(
+      (entry) => entry.name === '[mvu_update]变量输出格式',
+    );
+    expect(output?.content).toContain('<Analysis>');
+    expect(output?.content).toContain('<JSONPatch>');
+    expect(output?.content).toContain('/caelian/narrative/');
+    expect(output).toMatchObject({ enabled: true, insertion_order: 200 });
+
+    const manifest = JSON.parse(
+      readFileSync(
+        path.resolve('public/managed-content/alpha.json'),
+        'utf8',
+      ),
+    ) as {
+      revision: string;
+      operations: Array<{
+        target: { kind: string };
+        mutation?: { action: string };
+      }>;
+    };
+    expect(manifest.revision).toBe('2026-08-07.2');
+    expect(manifest.operations).toHaveLength(6);
+    expect(
+      manifest.operations.filter(
+        (operation) => operation.target.kind === 'character-script',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        mutation: expect.objectContaining({ action: 'replace-entire' }),
+      }),
+    ]);
+    expect(
+      manifest.operations.filter(
+        (operation) => operation.target.kind === 'worldbook-upsert-entry',
+      ),
+    ).toHaveLength(5);
   });
 
   it('发布清单可在最新版角色卡上幂等执行且不产生额外改动', async () => {
@@ -147,6 +227,7 @@ describe('ManagedContentUpdater', () => {
         uid: entry.id,
         name: entry.comment,
         content: entry.content,
+        extra: entry.extensions,
       }),
     );
     const before = JSON.stringify({ character, worldbook });
@@ -229,6 +310,118 @@ describe('ManagedContentUpdater', () => {
     expect(harness.worldbook[0]?.content).toBe(
       '旧规则\n新增官方规则\n玩家新增世界观',
     );
+  });
+
+  it('整项重建官方核心条目，不保留旧版变量规则', async () => {
+    const harness = createHarness({
+      operations: [
+        {
+          id: 'test.schema.rebuild',
+          target: {
+            kind: 'character-script',
+            scriptId: 'schema-script',
+          },
+          mutation: {
+            action: 'replace-entire',
+            content: 'const Schema = newSchema;',
+          },
+        },
+        {
+          id: 'test.rules.rebuild',
+          target: {
+            kind: 'worldbook-entry',
+            entryName: '变量更新规则',
+          },
+          mutation: {
+            action: 'replace-entire',
+            content: '欧西亚斯 MVU v3 变量规则:\n  只允许写 narrative',
+          },
+        },
+      ],
+    });
+
+    const result = await new ManagedContentUpdater(harness.host).sync({
+      force: true,
+    });
+
+    expect(result).toMatchObject({
+      status: 'applied',
+      applied: 2,
+      conflicts: [],
+    });
+    expect(
+      harness.character.extensions.tavern_helper.scripts[0]?.content,
+    ).toBe('const Schema = newSchema;');
+    expect(harness.worldbook[0]?.content).toBe(
+      '欧西亚斯 MVU v3 变量规则:\n  只允许写 narrative',
+    );
+    expect(harness.worldbook[0]?.content).not.toContain('玩家新增世界观');
+  });
+
+  it('按旧名称迁移 MVU 条目并补建缺失条目', async () => {
+    const harness = createHarness({
+      operations: [
+        {
+          id: 'test.rules.upsert',
+          target: {
+            kind: 'worldbook-upsert-entry',
+            entryNames: ['变量更新规则', '[mvu_update]变量更新规则'],
+          },
+          entry: {
+            uid: 0,
+            name: '[mvu_update]变量更新规则',
+            content: '全新规则',
+            keys: [],
+            secondary_keys: [],
+            constant: true,
+            selective: false,
+            insertion_order: 200,
+            enabled: true,
+            position: 'after_char',
+            use_regex: false,
+            extra: { position: 4, depth: 0, role: 0 },
+          },
+        },
+        {
+          id: 'test.list.upsert',
+          target: {
+            kind: 'worldbook-upsert-entry',
+            entryNames: ['变量列表'],
+          },
+          entry: {
+            uid: 0,
+            name: '变量列表',
+            content: '{{format_message_variable::stat_data}}',
+            keys: [],
+            secondary_keys: [],
+            constant: true,
+            selective: false,
+            insertion_order: 200,
+            enabled: true,
+            position: 'after_char',
+            use_regex: false,
+            extra: { position: 4, depth: 0, role: 0 },
+          },
+        },
+      ],
+    });
+
+    const result = await new ManagedContentUpdater(harness.host).sync({
+      force: true,
+    });
+
+    expect(result.conflicts).toEqual([]);
+    expect(harness.worldbook).toHaveLength(2);
+    expect(harness.worldbook[0]).toMatchObject({
+      uid: 17,
+      name: '[mvu_update]变量更新规则',
+      content: '全新规则',
+      insertion_order: 200,
+    });
+    expect(harness.worldbook[1]).toMatchObject({
+      name: '变量列表',
+      content: '{{format_message_variable::stat_data}}',
+    });
   });
 
   it('角色或绑定世界书不匹配时不读取也不修改', async () => {

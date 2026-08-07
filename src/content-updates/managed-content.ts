@@ -59,6 +59,10 @@ interface ManagedContentApi {
 
 type TextMutation =
   | {
+      action: 'replace-entire';
+      content: string;
+    }
+  | {
       action: 'replace-exact';
       before: string;
       after: string;
@@ -119,6 +123,14 @@ type ManagedContentOperation =
         entryUid?: number | string;
       };
       mutation: TextMutation;
+    }
+  | {
+      id: string;
+      target: {
+        kind: 'worldbook-upsert-entry';
+        entryNames: string[];
+      };
+      entry: Partial<ManagedWorldbookEntry>;
     }
   | {
       id: string;
@@ -418,6 +430,27 @@ export class ManagedContentUpdater {
       worldbookName,
       (entries) => {
         const target = operation.target;
+        if (target.kind === 'worldbook-upsert-entry') {
+          if (!('entry' in operation)) {
+            throw new Error('重建世界书条目的命令缺少条目内容');
+          }
+          const names = new Set(target.entryNames);
+          const matches = entries.filter((entry) => names.has(entry.name));
+          if (matches.length > 1) {
+            throw new Error('世界书旧名称与新名称同时存在，无法安全合并');
+          }
+          const patch = managedWorldbookEntryPatch(operation.entry);
+          if (matches.length === 0) {
+            entries.push({ uid: 0, name: '', content: '', ...patch });
+            return entries;
+          }
+          const entry = matches[0];
+          if (!entry) throw new Error('世界书条目不存在');
+          const uid = entry.uid;
+          Object.assign(entry, patch, { uid });
+          return entries;
+        }
+
         if (target.kind === 'worldbook-create-entry') {
           if (!('entry' in operation)) {
             throw new Error('新增世界书条目的命令缺少条目内容');
@@ -519,6 +552,9 @@ export function applyTextMutation(
   source: string,
   mutation: TextMutation,
 ): string {
+  if (mutation.action === 'replace-entire') {
+    return mutation.content;
+  }
   if (mutation.action === 'replace-exact') {
     if (
       !source.includes(mutation.before) &&
@@ -740,6 +776,22 @@ function validateOperation(operation: Record<string, unknown>): void {
     validateTextMutation(operation.mutation);
     return;
   }
+  if (kind === 'worldbook-upsert-entry') {
+    if (
+      !Array.isArray(target.entryNames) ||
+      target.entryNames.length < 1 ||
+      target.entryNames.length > 8 ||
+      !target.entryNames.every((name) => typeof name === 'string') ||
+      new Set(target.entryNames).size !== target.entryNames.length
+    ) {
+      throw new Error('世界书条目候选名称不合法');
+    }
+    target.entryNames.forEach((name) =>
+      requireBoundedString(name, '世界书条目候选名称', 1, 200),
+    );
+    validateWorldbookEntryPatch(operation.entry);
+    return;
+  }
   if (
     kind === 'worldbook-create-entry' ||
     kind === 'worldbook-delete-entry'
@@ -770,6 +822,10 @@ function validateOperation(operation: Record<string, unknown>): void {
 function validateTextMutation(value: unknown): void {
   if (!isRecord(value) || typeof value.action !== 'string') {
     throw new Error('文本更新命令格式不合法');
+  }
+  if (value.action === 'replace-entire') {
+    requireBoundedString(value.content, '整项替换内容', 0, 200_000);
+    return;
   }
   if (value.action === 'replace-exact') {
     requireBoundedString(value.before, '待替换片段', 1, 200_000);
@@ -819,6 +875,78 @@ function validateTextMutation(value: unknown): void {
     return;
   }
   throw new Error('文本更新动作不在允许列表中');
+}
+
+function validateWorldbookEntryPatch(value: unknown): void {
+  if (!isRecord(value)) {
+    throw new Error('世界书条目重建内容不是对象');
+  }
+  const allowed = new Set([
+    'uid',
+    'name',
+    'content',
+    'keys',
+    'secondary_keys',
+    'constant',
+    'selective',
+    'insertion_order',
+    'enabled',
+    'position',
+    'use_regex',
+    'extra',
+  ]);
+  if (Object.keys(value).some((key) => !allowed.has(key))) {
+    throw new Error('世界书条目重建内容含有不允许的字段');
+  }
+  requireBoundedString(value.name, '世界书条目名称', 1, 200);
+  requireBoundedString(value.content, '世界书条目内容', 0, 200_000);
+  if (
+    !Array.isArray(value.keys) ||
+    !value.keys.every((key) => typeof key === 'string') ||
+    !Array.isArray(value.secondary_keys) ||
+    !value.secondary_keys.every((key) => typeof key === 'string')
+  ) {
+    throw new Error('世界书条目关键词格式不合法');
+  }
+  for (const key of [
+    'constant',
+    'selective',
+    'enabled',
+    'use_regex',
+  ] as const) {
+    if (typeof value[key] !== 'boolean') {
+      throw new Error(`世界书条目字段 ${key} 必须是布尔值`);
+    }
+  }
+  if (
+    !Number.isInteger(value.insertion_order) ||
+    Number(value.insertion_order) < 0 ||
+    Number(value.insertion_order) > 10_000 ||
+    (value.position !== 'before_char' && value.position !== 'after_char') ||
+    !isRecord(value.extra)
+  ) {
+    throw new Error('世界书条目注入配置不合法');
+  }
+}
+
+function managedWorldbookEntryPatch(
+  value: Partial<ManagedWorldbookEntry>,
+): Omit<ManagedWorldbookEntry, 'uid'> {
+  return {
+    name: String(value.name ?? ''),
+    content: String(value.content ?? ''),
+    keys: [...((value.keys as string[] | undefined) ?? [])],
+    secondary_keys: [
+      ...((value.secondary_keys as string[] | undefined) ?? []),
+    ],
+    constant: value.constant,
+    selective: value.selective,
+    insertion_order: value.insertion_order,
+    enabled: value.enabled,
+    position: value.position,
+    use_regex: value.use_regex,
+    extra: { ...(value.extra ?? {}) },
+  };
 }
 
 function requireManagedId(value: unknown): void {
