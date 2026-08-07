@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -850,6 +850,10 @@ const standaloneScript = {
   },
 };
 
+await rm(path.join(distRoot, 'tavern-helper'), {
+  recursive: true,
+  force: true,
+});
 await mkdir(path.join(distRoot, 'tavern-helper'), { recursive: true });
 await writeFile(
   path.join(distRoot, 'tavern-helper', 'caelian-alpha.json'),

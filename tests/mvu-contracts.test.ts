@@ -64,8 +64,6 @@ describe('MVU v3 contracts', () => {
       world: {
         region: ` ${'城'.repeat(140)} `,
         place: '',
-        mainStage: 99_999,
-        mainStep: -12,
       },
     });
 
@@ -75,8 +73,6 @@ describe('MVU v3 contracts', () => {
     expect(Object.keys(normalized.storyFlags ?? {})[0]).toHaveLength(80);
     expect(normalized.world?.region).toHaveLength(120);
     expect(normalized.world?.place).toBe('');
-    expect(normalized.world?.mainStage).toBe(9_999);
-    expect(normalized.world?.mainStep).toBe(0);
   });
 
   it('关系阶段只由本地好感度推导', () => {
@@ -143,7 +139,6 @@ describe('MVU v3 contracts', () => {
     expect(narrative.world).toMatchObject({
       location: '伊拉亚城-中央广场',
       gameTime: '10:30',
-      mainStage: 1,
     });
   });
 
@@ -175,8 +170,6 @@ describe('MVU v3 contracts', () => {
         gameDate: '新圣约历1385-09-04',
         gameTime: '21:15',
         weather: '小雨',
-        mainStage: 2,
-        mainStep: 3,
       },
     });
   });

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import {
   loadGuildCatalogs,
   type GuildRankRequirement,
@@ -28,6 +28,7 @@ const activeTab = ref<'quests' | 'board' | 'history'>('quests');
 const notice = ref('');
 const busyTask = ref('');
 const busyManagedTask = ref('');
+let disposeStateListener: (() => void) | undefined;
 
 const activeQuests = computed(() =>
   (snapshot.value?.quests ?? []).filter((quest) =>
@@ -239,6 +240,11 @@ onMounted(async () => {
   typeIcons.value = catalogs.typeIcons;
   difficultyNames.value = catalogs.difficultyNames;
   await refresh();
+  disposeStateListener = props.context.api.on('state.changed', refresh);
+});
+
+onUnmounted(() => {
+  disposeStateListener?.();
 });
 </script>
 

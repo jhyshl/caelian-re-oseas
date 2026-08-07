@@ -40,8 +40,6 @@ const DEFAULT_WORLD: MvuNarrativeWorldState = {
   gameDate: '新圣约历1385-09-01',
   gameTime: '08:00',
   weather: '晴朗',
-  mainStage: 0,
-  mainStep: 0,
 };
 
 export function defaultMvuNarrative(): MvuNarrativeState {
@@ -88,8 +86,6 @@ export function createMvuNarrative(
       gameDate: cleanText(world.gameDate, 80, DEFAULT_WORLD.gameDate),
       gameTime: cleanText(world.gameTime, 40, DEFAULT_WORLD.gameTime),
       weather: cleanText(world.weather, 80, DEFAULT_WORLD.weather),
-      mainStage: clampStage(world.mainStage),
-      mainStep: clampStage(world.mainStep),
     },
     storyFlags: Object.fromEntries(
       storyFlags
@@ -142,8 +138,6 @@ export function extractMvuNarrativePatch(
   assignWorldText(world, 'gameDate', legacyWorld['日期'], 80);
   assignWorldText(world, 'gameTime', legacyWorld['时间'], 40);
   assignWorldText(world, 'weather', legacyWorld['天气'], 80);
-  assignWorldNumber(world, 'mainStage', legacyWorld['主线阶段']);
-  assignWorldNumber(world, 'mainStep', legacyWorld['主线步骤']);
 
   return {
     ...(Object.keys(companion).length > 0 ? { companion } : {}),
@@ -186,8 +180,6 @@ export function normalizeNarrativePatch(
     assignWorldText(world, 'gameDate', patch.world.gameDate, 80);
     assignWorldText(world, 'gameTime', patch.world.gameTime, 40);
     assignWorldText(world, 'weather', patch.world.weather, 80);
-    assignWorldNumber(world, 'mainStage', patch.world.mainStage);
-    assignWorldNumber(world, 'mainStep', patch.world.mainStep);
   }
   return {
     ...(Object.keys(companion).length > 0 ? { companion } : {}),
@@ -222,8 +214,6 @@ function parseNarrative(
   assignWorldText(world, 'gameDate', rawWorld.gameDate, 80);
   assignWorldText(world, 'gameTime', rawWorld.gameTime, 40);
   assignWorldText(world, 'weather', rawWorld.weather, 80);
-  assignWorldNumber(world, 'mainStage', rawWorld.mainStage);
-  assignWorldNumber(world, 'mainStep', rawWorld.mainStep);
   const rawFlags = asRecord(narrative.storyFlags);
   return {
     ...(Object.keys(companion).length > 0 ? { companion } : {}),
@@ -283,22 +273,8 @@ function assignWorldText<K extends keyof MvuNarrativeWorldState>(
   target[key] = text as MvuNarrativeWorldState[K];
 }
 
-function assignWorldNumber<K extends 'mainStage' | 'mainStep'>(
-  target: Partial<MvuNarrativeWorldState>,
-  key: K,
-  value: unknown,
-): void {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return;
-  target[key] = clampStage(number);
-}
-
 function clampAffinity(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
-}
-
-function clampStage(value: number): number {
-  return Math.max(0, Math.min(9_999, Math.round(value)));
 }
 
 function cleanKey(value: string): string {

@@ -4,6 +4,7 @@ import {
   type QuestDefinition,
 } from '@/quests/schema';
 import bundledQuestCatalog from '../../public/managed-content/quests/alpha.json';
+import { normalizeRegion } from '@/worldbook/region-switcher';
 
 export interface QuestAvailabilityInput {
   region: string;
@@ -41,20 +42,16 @@ export class QuestCatalog {
   }
 
   available(input: QuestAvailabilityInput): QuestDefinition[] {
-    const region = input.region.trim();
-    const location = input.location?.trim() ?? '';
+    const currentRegions = new Set(
+      [input.region, input.location]
+        .map((value) => normalizeRegion(value))
+        .filter(Boolean),
+    );
     return [...this.quests.values()].filter(
       (quest) =>
         quest.visibility !== 'hidden' &&
-        quest.availableRegions.some(
-          (candidate) =>
-            candidate === region ||
-            candidate.includes(region) ||
-            region.includes(candidate) ||
-            (location.length > 0 &&
-              (candidate === location ||
-                candidate.includes(location) ||
-                location.includes(candidate))),
+        quest.availableRegions.some((candidate) =>
+          currentRegions.has(normalizeRegion(candidate)),
         ) &&
         quest.minimumLevel <= input.level &&
         quest.prerequisiteQuestIds.every((questId) =>

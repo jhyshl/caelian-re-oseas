@@ -96,7 +96,9 @@ describe('任务定义与提示词', () => {
     expect(
       catalog.available({ region: '伊拉亚城', level: 1 }),
     ).toEqual([flora]);
-    expect(catalog.available({ region: '沃西微', level: 99 })).toEqual([]);
+    expect(catalog.available({ region: '沃西微', level: 99 })).toEqual([
+      catalog.get('main_solavia_sacred_underground'),
+    ]);
     expect(catalog.available({ region: '阿必塞海', level: 99 })).toEqual([]);
     expect(
       catalog.available({
@@ -107,6 +109,17 @@ describe('任务定义与提示词', () => {
     ).toEqual([
       catalog.get('main_abyss_atlantis_echo'),
     ]);
+
+    for (const quest of catalog.data.quests) {
+      const available = catalog.available({
+        region: quest.availableRegions[0] ?? quest.region,
+        level: quest.minimumLevel,
+        completedQuestIds: new Set(quest.prerequisiteQuestIds),
+      });
+      expect(
+        available.some((candidate) => candidate.id === quest.id),
+      ).toBe(true);
+    }
   });
 
   it('学院主线使用本地动作门槛和可重复返回的并行入口', () => {

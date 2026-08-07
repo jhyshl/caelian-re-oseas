@@ -162,8 +162,6 @@ describe('createAiProjection', () => {
         gameDate: '新圣约历1385-09-01',
         gameTime: '08:00',
         weather: '晴朗',
-        mainStage: 1,
-        mainStep: 2,
       },
       storyFlags: { 'first-meeting': true },
     });

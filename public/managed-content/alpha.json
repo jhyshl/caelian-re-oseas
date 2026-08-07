@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "channel": "alpha",
-  "revision": "2026-07-29.1",
+  "revision": "2026-08-06.2",
   "target": {
     "characterName": "凯利安",
     "worldbookNames": [
@@ -12,11 +12,11 @@
   },
   "sourceCard": {
     "url": "https://jhyshl.github.io/caelian-re-oseas/managed-content/cards/caelian-alpha-mvu-v3.json",
-    "sha256": "1f8625f8569907e7140ace91bfd25df92f9a2e6a837ecf4cc552dd400963e8bc"
+    "sha256": "d08dc2be7718f98e8f61455948bd3c49c04996166bb933fe47a69c192e803deb"
   },
   "operations": [
     {
-      "id": "2026-07-29.mvu-world.script-comment",
+      "id": "2026-08-06.mvu-rules.schema-state-cleanup",
       "target": {
         "kind": "character-script",
         "scriptId": "edfcaddc-2475-46e8-a0d9-f14a2e6558b2",
@@ -24,81 +24,323 @@
       },
       "mutation": {
         "action": "replace-exact",
-        "before": "  // narrative 是唯一允许 AI 更新的区域，浏览器端会校验后写入 IndexedDB。",
-        "after": "  // narrative 是唯一允许 AI 更新的区域；Alpha 只读取、校验并显示，不会自行推进世界状态。"
+        "before": "      weather: z.string().prefault('晴朗'),\n      mainStage: z.coerce.number().int().prefault(0),\n      mainStep: z.coerce.number().int().prefault(0),\n      accessibleRegions: z.array(z.string()).prefault([]),",
+        "after": "      weather: z.string().prefault('晴朗'),\n      accessibleRegions: z.array(z.string()).prefault([]),"
       }
     },
     {
-      "id": "2026-07-29.mvu-world.script-schema",
+      "id": "2026-08-06.mvu-rules.schema-narrative-cleanup",
       "target": {
         "kind": "character-script",
         "scriptId": "edfcaddc-2475-46e8-a0d9-f14a2e6558b2",
         "scriptName": "Alpha MVU 最小变量结构 v3.0"
       },
       "mutation": {
-        "action": "insert-before",
-        "anchor": "    storyFlags: z.record(z.string(), z.boolean()).prefault({}),",
-        "text": "    world: z.object({\n      region: z.string().max(120).prefault('伊拉亚城'),\n      place: z.string().max(120).prefault('宿舍楼'),\n      location: z.string().max(180).prefault('圣德里安学院-宿舍楼'),\n      gameDate: z.string().max(80).prefault('新圣约历1385-09-01'),\n      gameTime: z.string().max(40).prefault('08:00'),\n      weather: z.string().max(80).prefault('晴朗'),\n      mainStage: z.coerce.number().int().min(0).max(9999).prefault(0),\n      mainStep: z.coerce.number().int().min(0).max(9999).prefault(0),\n    }).passthrough().prefault({}),\n"
+        "action": "replace-exact",
+        "before": "    world: z.object({\n      region: z.string().max(120).prefault('伊拉亚城'),\n      place: z.string().max(120).prefault('宿舍楼'),\n      location: z.string().max(180).prefault('圣德里安学院-宿舍楼'),\n      gameDate: z.string().max(80).prefault('新圣约历1385-09-01'),\n      gameTime: z.string().max(40).prefault('08:00'),\n      weather: z.string().max(80).prefault('晴朗'),\n      mainStage: z.coerce.number().int().min(0).max(9999).prefault(0),\n      mainStep: z.coerce.number().int().min(0).max(9999).prefault(0),\n    }).passthrough().prefault({}),\n",
+        "after": "    world: z.object({\n      region: z.string().max(120).prefault('伊拉亚城'),\n      place: z.string().max(120).prefault('宿舍楼'),\n      location: z.string().max(180).prefault('圣德里安学院-宿舍楼'),\n      gameDate: z.string().max(80).prefault('新圣约历1385-09-01'),\n      gameTime: z.string().max(40).prefault('08:00'),\n      weather: z.string().max(80).prefault('晴朗'),\n    }).passthrough().prefault({}),\n"
       }
     },
     {
-      "id": "2026-07-29.mvu-world.initvar",
+      "id": "2026-08-06.mvu-rules.schema-comments",
+      "target": {
+        "kind": "character-script",
+        "scriptId": "edfcaddc-2475-46e8-a0d9-f14a2e6558b2",
+        "scriptName": "Alpha MVU 最小变量结构 v3.0"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "  // narrative 是唯一允许 AI 更新的区域；Alpha 只读取、校验并显示，不会自行推进世界状态。",
+        "after": "  // narrative 是唯一允许 AI 更新的区域；浏览器内核只读取、校验并显示，不会自行推进叙事。"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.schema-state-comment",
+      "target": {
+        "kind": "character-script",
+        "scriptId": "edfcaddc-2475-46e8-a0d9-f14a2e6558b2",
+        "scriptName": "Alpha MVU 最小变量结构 v3.0"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "  // state 完全由 Alpha 浏览器端生成。AI 只能读取，禁止修改。",
+        "after": "  // state 完全由浏览器内核生成。AI 只能读取，禁止修改。"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.init-state-cleanup",
       "target": {
         "kind": "worldbook-entry",
         "entryName": "initvar"
       },
       "mutation": {
-        "action": "insert-before",
-        "anchor": "    storyFlags: {}",
-        "text": "    world:\n      region: 伊拉亚城\n      place: 宿舍楼\n      location: 圣德里安学院-宿舍楼\n      gameDate: 新圣约历1385-09-01\n      gameTime: \"08:00\"\n      weather: 晴朗\n      mainStage: 0\n      mainStep: 0\n"
+        "action": "replace-exact",
+        "before": "      weather: 晴朗\n      mainStage: 0\n      mainStep: 0\n      accessibleRegions: []",
+        "after": "      weather: 晴朗\n      accessibleRegions: []"
       }
     },
     {
-      "id": "2026-07-29.mvu-world.rules",
+      "id": "2026-08-06.mvu-rules.init-narrative-cleanup",
       "target": {
         "kind": "worldbook-entry",
-        "entryName": "变量更新规则"
+        "entryName": "initvar"
       },
       "mutation": {
-        "action": "insert-before",
-        "anchor": "    caelian.narrative.storyFlags:",
-        "text": "    caelian.narrative.world:\n      authority: AI\n      check:\n        - 世界状态必须跟随当前剧情，由 AI 在实际发生变化时更新；Alpha 脚本不得自行推进。\n        - region 填当前大地区；place 填地区内地点；location 填面板显示的完整位置。\n        - gameDate、gameTime 随剧情中真实经过的时间更新；没有时间推进时保持原值。\n        - weather 只在天气确实变化时更新，不要每轮随机改写。\n        - mainStage、mainStep 只在主线里程碑或步骤真正推进时更新，范围为0~9999。\n        - 不得根据玩家点击地图直接假定已经抵达；必须等正文确认行动完成后再更新。\n"
+        "action": "replace-exact",
+        "before": "    world:\n      region: 伊拉亚城\n      place: 宿舍楼\n      location: 圣德里安学院-宿舍楼\n      gameDate: 新圣约历1385-09-01\n      gameTime: \"08:00\"\n      weather: 晴朗\n      mainStage: 0\n      mainStep: 0\n",
+        "after": "    world:\n      region: 伊拉亚城\n      place: 宿舍楼\n      location: 圣德里安学院-宿舍楼\n      gameDate: 新圣约历1385-09-01\n      gameTime: \"08:00\"\n      weather: 晴朗\n"
       }
     },
     {
-      "id": "2026-07-29.mvu-world.authority",
+      "id": "2026-08-06.mvu-rules.full-paths",
       "target": {
         "kind": "worldbook-entry",
         "entryName": "变量更新规则"
       },
       "mutation": {
         "action": "replace-exact",
-        "before": "    - 如果 caelian.state 与叙事文本冲突，以 caelian.state 为当前游戏事实；不要尝试用 MVU 修正本地状态。",
-        "after": "    - 世界剧情事实以 caelian.narrative.world 为 AI 写入源；caelian.state.world 是 Alpha 读取、校验后的只读显示摘要。其他本地游戏数据仍以 caelian.state 为准。"
+        "before": "    - stat_data.caelian 是 Alpha 前端与 AI 之间的最小投影，不是完整存档。\n    - caelian._meta 与 caelian.state 完全由玩家浏览器中的 Alpha 内核生成；AI 只读，绝不能更新、插入或删除其中任何字段。\n    - AI 唯一允许写入的路径是 caelian.narrative。",
+        "after": "    - stat_data.caelian 是浏览器内核与 AI 之间的最小投影，不是完整存档。\n    - 完整读取路径使用 stat_data.caelian；其中 stat_data.caelian._meta 与 stat_data.caelian.state 由浏览器内核生成，AI 只读。\n    - AI 唯一允许写入的完整变量路径是 stat_data.caelian.narrative。\n    - <JSONPatch> 以 stat_data 为根，因此补丁 path 写 /caelian/narrative/...；不要在 JSON Patch 中重复加 /stat_data。"
       }
     },
     {
-      "id": "2026-07-29.mvu-world.output-boundary",
+      "id": "2026-08-06.mvu-rules.path.state-player",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.state.player:",
+        "after": "    stat_data.caelian.state.player:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.path.state-world",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.state.world:",
+        "after": "    stat_data.caelian.state.world:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.path.state-guild",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.state.guild.activeQuests:",
+        "after": "    stat_data.caelian.state.guild.activeQuests:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.path.state-battle",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.state.battle:",
+        "after": "    stat_data.caelian.state.battle:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.path.state-relationship",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.state.companion.relationshipStage:",
+        "after": "    stat_data.caelian.state.companion.relationshipStage:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.path.narrative-affinity",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.narrative.companion.affinity:",
+        "after": "    stat_data.caelian.narrative.companion.affinity:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.path.narrative-mood",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.narrative.companion.mood:",
+        "after": "    stat_data.caelian.narrative.companion.mood:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.path.narrative-location",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.narrative.companion.location:",
+        "after": "    stat_data.caelian.narrative.companion.location:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.path.narrative-clothing",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.narrative.companion.clothing:",
+        "after": "    stat_data.caelian.narrative.companion.clothing:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.path.narrative-thought",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.narrative.companion.innerThought:",
+        "after": "    stat_data.caelian.narrative.companion.innerThought:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.path.narrative-flags",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.narrative.storyFlags:",
+        "after": "    stat_data.caelian.narrative.storyFlags:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.world-fields",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    caelian.narrative.world:\n      authority: AI\n      check:\n        - 世界状态必须跟随当前剧情，由 AI 在实际发生变化时更新；Alpha 脚本不得自行推进。\n        - region 填当前大地区；place 填地区内地点；location 填面板显示的完整位置。\n        - gameDate、gameTime 随剧情中真实经过的时间更新；没有时间推进时保持原值。\n        - weather 只在天气确实变化时更新，不要每轮随机改写。\n        - mainStage、mainStep 只在主线里程碑或步骤真正推进时更新，范围为0~9999。\n        - 不得根据玩家点击地图直接假定已经抵达；必须等正文确认行动完成后再更新。\n",
+        "after": "    stat_data.caelian.narrative.world:\n      authority: AI\n      check:\n        - 世界状态必须跟随当前剧情，由 AI 在实际发生变化时更新；浏览器内核不得自行推进。\n        - region 填当前大地区；place 填地区内地点；location 填面板显示的完整位置。\n        - gameDate、gameTime 随剧情中真实经过的时间更新；没有时间推进时保持原值。\n        - weather 只在天气确实变化时更新，不要每轮随机改写。\n        - 不得根据玩家点击地图直接假定已经抵达；必须等正文确认行动完成后再更新。\n"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.world-summary",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "      - 仅用于了解当前地区、位置、日期、时间、天气、主线摘要和可访问地区。",
+        "after": "      - 仅用于了解当前地区、位置、日期、时间、天气和可访问地区。"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.authority",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    - 世界剧情事实以 caelian.narrative.world 为 AI 写入源；caelian.state.world 是 Alpha 读取、校验后的只读显示摘要。其他本地游戏数据仍以 caelian.state 为准。",
+        "after": "    - 世界剧情事实以 stat_data.caelian.narrative.world 为 AI 写入源；stat_data.caelian.state.world 是浏览器内核读取、校验后的只读显示摘要。其他本地游戏数据仍以 stat_data.caelian.state 为准。"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.local-inventory",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    - 玩家获得或消耗物品时，只在正文描述结果；不要更新 MVU 背包。实际增减由 Alpha 背包/奖励模块处理。",
+        "after": "    - 玩家获得或消耗物品时，只在正文描述结果；不要更新 MVU 背包。实际增减由浏览器背包/奖励模块处理。"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.local-quests",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "    - 任务接取、任务推进、战斗奖励、商店交易、装备变更、卡组变更和成就均由 Alpha 本地模块处理。",
+        "after": "    - 任务接取、任务推进、战斗奖励、商店交易、装备变更、卡组变更和成就均由浏览器本地模块处理。"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.local-tracker",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "      - 仅用于叙事衔接；任务接取、推进、结算由 Alpha 本地任务模块处理。",
+        "after": "      - 仅用于叙事衔接；任务接取、推进、结算由浏览器本地任务模块处理。"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.title",
+      "target": {
+        "kind": "worldbook-entry",
+        "entryName": "变量更新规则"
+      },
+      "mutation": {
+        "action": "replace-exact",
+        "before": "Alpha MVU v3 变量规则:",
+        "after": "欧西亚斯 MVU v3 变量规则:"
+      }
+    },
+    {
+      "id": "2026-08-06.mvu-rules.output-title",
       "target": {
         "kind": "worldbook-entry",
         "entryName": "变量输出格式"
       },
       "mutation": {
         "action": "replace-exact",
-        "before": "    - 禁止创建玩家、世界、协会、战斗、背包、装备、卡牌、任务或成就变量。",
-        "after": "    - 禁止创建玩家、协会、战斗、背包、装备、卡牌、任务或成就变量；世界状态只能写入 /caelian/narrative/world/ 下的既定字段。"
+        "before": "Alpha MVU v3 输出格式:",
+        "after": "欧西亚斯 MVU v3 输出格式:"
       }
     },
     {
-      "id": "2026-07-29.mvu-world.output-example",
+      "id": "2026-08-06.mvu-rules.output-paths",
       "target": {
         "kind": "worldbook-entry",
         "entryName": "变量输出格式"
       },
       "mutation": {
-        "action": "insert-before",
-        "anchor": "      { \"op\": \"insert\", \"path\": \"/caelian/narrative/storyFlags/初次共同冒险\", \"value\": true }",
-        "text": "      { \"op\": \"replace\", \"path\": \"/caelian/narrative/world/region\", \"value\": \"伊拉亚城\" },\n      { \"op\": \"replace\", \"path\": \"/caelian/narrative/world/place\", \"value\": \"中央广场\" },\n      { \"op\": \"replace\", \"path\": \"/caelian/narrative/world/location\", \"value\": \"伊拉亚城-中央广场\" },\n      { \"op\": \"replace\", \"path\": \"/caelian/narrative/world/gameTime\", \"value\": \"10:30\" },\n"
+        "action": "replace-exact",
+        "before": "    - 所有 path 必须以 /caelian/narrative/ 开头。",
+        "after": "    - <JSONPatch> 以 stat_data 为根；所有 path 必须以 /caelian/narrative/ 开头，禁止写成 /stat_data/caelian/...。"
       }
     }
   ]

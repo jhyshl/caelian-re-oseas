@@ -9,6 +9,16 @@ const MAX_VISIBLE_RELEASES = 5;
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.26',
+    label: 'Alpha 26',
+    releasedAt: '2026-08-07',
+    changes: [
+      '修订 MVU 变量规则：明确完整读取路径为 stat_data.caelian.narrative，JSON Patch 仍以 stat_data 为根使用 /caelian/narrative/，避免模型生成错误补丁。',
+      '移除已由本地任务推进器接管的 mainStage、mainStep 旧主线变量；运行时会在下次投影时清理遗留字段，不再让 AI 重复维护两套任务进度。',
+      '修复地区任务列表不随当前位置刷新，以及沃西微、索拉姆等地区别名无法匹配任务的问题；抵达符合等级和前置条件的地区后即可正常接取对应任务。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.25',
     label: 'Alpha 25',
     releasedAt: '2026-08-06',

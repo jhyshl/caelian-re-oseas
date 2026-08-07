@@ -7,7 +7,11 @@ import type {
   TavernAvatarRequest,
   TavernAvatarUrls,
 } from '@/kernel/public-api';
-import { LEGACY_STAT_DATA_KEYS } from '@/mvu/contracts';
+import {
+  extractMvuNarrativePatch,
+  LEGACY_STAT_DATA_KEYS,
+  normalizeNarrativePatch,
+} from '@/mvu/contracts';
 import type { LegacyAchievementPayload } from '@/storage/repositories/achievement-repository';
 import {
   ACHIEVEMENT_PATCHES,
@@ -397,7 +401,30 @@ export class TavernAdapter {
     }
     const nextCaelian: Record<string, unknown> = { ...projection };
     if (hasCurrentNarrative) {
-      nextCaelian.narrative = this.clone(currentNarrative);
+      const extracted = extractMvuNarrativePatch({
+        stat_data: { caelian: { narrative: currentNarrative } },
+      });
+      const sanitized = extracted
+        ? normalizeNarrativePatch(extracted)
+        : {};
+      nextCaelian.narrative = {
+        ...(sanitized.companion
+          ? { companion: sanitized.companion }
+          : {}),
+        ...(sanitized.world ? { world: sanitized.world } : {}),
+        ...(Object.prototype.hasOwnProperty.call(
+          currentNarrative,
+          'storyFlags',
+        )
+          ? {
+              storyFlags: Object.fromEntries(
+                Object.entries(sanitized.storyFlags ?? {}).filter(
+                  ([, value]) => value,
+                ),
+              ),
+            }
+          : {}),
+      };
     } else if (!isLegacyMigration) {
       delete nextCaelian.narrative;
     }

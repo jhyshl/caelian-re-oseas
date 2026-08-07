@@ -832,8 +832,8 @@ describe('CaelianKernel integration', () => {
       gameDate: '新圣约历1385-09-03',
       gameTime: '16:20',
       weather: '晚霞',
-      mainStage: 1,
-      mainStep: 3,
+      mainStage: 0,
+      mainStep: 0,
     });
     expect(replaceMvuData).toHaveBeenCalledTimes(
       writesBeforeManagerEdit,
@@ -1033,6 +1033,34 @@ describe('CaelianKernel integration', () => {
       .poll(() => guildPanel?.textContent)
       .toContain('当前地区剧情任务');
     expect(guildPanel?.textContent).toContain('芙萝拉说');
+    await kernel.api.execute({
+      id: 'move-to-academy-board-test',
+      type: 'narrative.update',
+      payload: {
+        world: {
+          region: '圣德里安学院',
+          place: '任务大厅',
+          location: '圣德里安学院-任务大厅',
+        },
+      },
+    });
+    await expect
+      .poll(() => guildPanel?.textContent)
+      .toContain('圣德里安周年庆筹备日');
+    await kernel.api.execute({
+      id: 'return-to-ilaya-board-test',
+      type: 'narrative.update',
+      payload: {
+        world: {
+          region: '伊拉亚城',
+          place: '冒险者协会总部',
+          location: '伊拉亚城-冒险者协会总部',
+        },
+      },
+    });
+    await expect
+      .poll(() => guildPanel?.textContent)
+      .toContain('芙萝拉说');
     Array.from(guildPanel?.querySelectorAll<HTMLButtonElement>('button') ?? [])
       .find((button) => button.textContent?.trim() === '接取剧情任务')
       ?.click();

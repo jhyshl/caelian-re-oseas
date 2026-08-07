@@ -123,8 +123,6 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
             gameDate: z.string().trim().min(1).max(80).optional(),
             gameTime: z.string().trim().min(1).max(40).optional(),
             weather: z.string().trim().min(1).max(80).optional(),
-            mainStage: z.number().int().min(0).max(9_999).optional(),
-            mainStep: z.number().int().min(0).max(9_999).optional(),
           })
           .refine((value) => Object.keys(value).length > 0, {
             message: '至少需要修改一个世界叙事字段',

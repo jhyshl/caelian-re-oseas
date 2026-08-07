@@ -706,8 +706,6 @@ export interface MvuNarrativeWorldState {
   gameDate: string;
   gameTime: string;
   weather: string;
-  mainStage: number;
-  mainStep: number;
 }
 
 export interface MvuNarrativeState {
@@ -740,8 +738,6 @@ export interface AiProjection {
       gameDate: string;
       gameTime: string;
       weather: string;
-      mainStage: number;
-      mainStep: number;
       accessibleRegions: string[];
     };
     guild: {

@@ -82,8 +82,82 @@ const outputWorldExamples = `      { "op": "replace", "path": "/caelian/narrativ
       { "op": "replace", "path": "/caelian/narrative/world/location", "value": "伊拉亚城-中央广场" },
       { "op": "replace", "path": "/caelian/narrative/world/gameTime", "value": "10:30" },
 `;
+const scriptCommentFinal =
+  '  // narrative 是唯一允许 AI 更新的区域；浏览器内核只读取、校验并显示，不会自行推进叙事。';
+const scriptWorldBlockFinal = `    world: z.object({
+      region: z.string().max(120).prefault('伊拉亚城'),
+      place: z.string().max(120).prefault('宿舍楼'),
+      location: z.string().max(180).prefault('圣德里安学院-宿舍楼'),
+      gameDate: z.string().max(80).prefault('新圣约历1385-09-01'),
+      gameTime: z.string().max(40).prefault('08:00'),
+      weather: z.string().max(80).prefault('晴朗'),
+    }).passthrough().prefault({}),
+`;
+const scriptStateWorldProgress = `      weather: z.string().prefault('晴朗'),
+      mainStage: z.coerce.number().int().prefault(0),
+      mainStep: z.coerce.number().int().prefault(0),
+      accessibleRegions: z.array(z.string()).prefault([]),`;
+const scriptStateWorldFinal = `      weather: z.string().prefault('晴朗'),
+      accessibleRegions: z.array(z.string()).prefault([]),`;
+const initWorldBlockFinal = `    world:
+      region: 伊拉亚城
+      place: 宿舍楼
+      location: 圣德里安学院-宿舍楼
+      gameDate: 新圣约历1385-09-01
+      gameTime: "08:00"
+      weather: 晴朗
+`;
+const initStateWorldProgress = `      weather: 晴朗
+      mainStage: 0
+      mainStep: 0
+      accessibleRegions: []`;
+const initStateWorldFinal = `      weather: 晴朗
+      accessibleRegions: []`;
+const rulesPathBefore = `    - stat_data.caelian 是 Alpha 前端与 AI 之间的最小投影，不是完整存档。
+    - caelian._meta 与 caelian.state 完全由玩家浏览器中的 Alpha 内核生成；AI 只读，绝不能更新、插入或删除其中任何字段。
+    - AI 唯一允许写入的路径是 caelian.narrative。`;
+const rulesPathAfter = `    - stat_data.caelian 是浏览器内核与 AI 之间的最小投影，不是完整存档。
+    - 完整读取路径使用 stat_data.caelian；其中 stat_data.caelian._meta 与 stat_data.caelian.state 由浏览器内核生成，AI 只读。
+    - AI 唯一允许写入的完整变量路径是 stat_data.caelian.narrative。
+    - <JSONPatch> 以 stat_data 为根，因此补丁 path 写 /caelian/narrative/...；不要在 JSON Patch 中重复加 /stat_data。`;
+const outputPathBefore =
+  '    - 所有 path 必须以 /caelian/narrative/ 开头。';
+const outputPathAfter =
+  '    - <JSONPatch> 以 stat_data 为根；所有 path 必须以 /caelian/narrative/ 开头，禁止写成 /stat_data/caelian/...。';
+const rulesWorldBlockFinal = `    stat_data.caelian.narrative.world:
+      authority: AI
+      check:
+        - 世界状态必须跟随当前剧情，由 AI 在实际发生变化时更新；浏览器内核不得自行推进。
+        - region 填当前大地区；place 填地区内地点；location 填面板显示的完整位置。
+        - gameDate、gameTime 随剧情中真实经过的时间更新；没有时间推进时保持原值。
+        - weather 只在天气确实变化时更新，不要每轮随机改写。
+        - 不得根据玩家点击地图直接假定已经抵达；必须等正文确认行动完成后再更新。
+`;
+const rulesConflictFinal =
+  '    - 世界剧情事实以 stat_data.caelian.narrative.world 为 AI 写入源；stat_data.caelian.state.world 是浏览器内核读取、校验后的只读显示摘要。其他本地游戏数据仍以 stat_data.caelian.state 为准。';
+const rulePathRewrites = [
+  ['state-player', '    caelian.state.player:', '    stat_data.caelian.state.player:'],
+  ['state-world', '    caelian.state.world:', '    stat_data.caelian.state.world:'],
+  ['state-guild', '    caelian.state.guild.activeQuests:', '    stat_data.caelian.state.guild.activeQuests:'],
+  ['state-battle', '    caelian.state.battle:', '    stat_data.caelian.state.battle:'],
+  ['state-relationship', '    caelian.state.companion.relationshipStage:', '    stat_data.caelian.state.companion.relationshipStage:'],
+  ['narrative-affinity', '    caelian.narrative.companion.affinity:', '    stat_data.caelian.narrative.companion.affinity:'],
+  ['narrative-mood', '    caelian.narrative.companion.mood:', '    stat_data.caelian.narrative.companion.mood:'],
+  ['narrative-location', '    caelian.narrative.companion.location:', '    stat_data.caelian.narrative.companion.location:'],
+  ['narrative-clothing', '    caelian.narrative.companion.clothing:', '    stat_data.caelian.narrative.companion.clothing:'],
+  ['narrative-thought', '    caelian.narrative.companion.innerThought:', '    stat_data.caelian.narrative.companion.innerThought:'],
+  ['narrative-flags', '    caelian.narrative.storyFlags:', '    stat_data.caelian.narrative.storyFlags:'],
+];
+const legacyQuestWorldbookIds = new Set([
+  42,
+  ...integerRange(85, 145),
+  ...integerRange(168, 176),
+  ...integerRange(184, 188),
+  'ae5e5d48-fd68-4b91-9d26-df7808270437',
+  'cot-universal-task-guard-v1',
+]);
 
-const operations = [
+const previousOperations = [
   {
     id: '2026-07-29.mvu-world.script-comment',
     target: {
@@ -172,6 +246,174 @@ const operations = [
   },
 ];
 
+const operations = [
+  {
+    id: '2026-08-06.mvu-rules.schema-state-cleanup',
+    target: {
+      kind: 'character-script',
+      scriptId: 'edfcaddc-2475-46e8-a0d9-f14a2e6558b2',
+      scriptName: 'Alpha MVU 最小变量结构 v3.0',
+    },
+    mutation: {
+      action: 'replace-exact',
+      before: scriptStateWorldProgress,
+      after: scriptStateWorldFinal,
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.schema-narrative-cleanup',
+    target: {
+      kind: 'character-script',
+      scriptId: 'edfcaddc-2475-46e8-a0d9-f14a2e6558b2',
+      scriptName: 'Alpha MVU 最小变量结构 v3.0',
+    },
+    mutation: {
+      action: 'replace-exact',
+      before: scriptWorldBlock,
+      after: scriptWorldBlockFinal,
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.schema-comments',
+    target: {
+      kind: 'character-script',
+      scriptId: 'edfcaddc-2475-46e8-a0d9-f14a2e6558b2',
+      scriptName: 'Alpha MVU 最小变量结构 v3.0',
+    },
+    mutation: {
+      action: 'replace-exact',
+      before: scriptCommentAfter,
+      after: scriptCommentFinal,
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.schema-state-comment',
+    target: {
+      kind: 'character-script',
+      scriptId: 'edfcaddc-2475-46e8-a0d9-f14a2e6558b2',
+      scriptName: 'Alpha MVU 最小变量结构 v3.0',
+    },
+    mutation: {
+      action: 'replace-exact',
+      before: '  // state 完全由 Alpha 浏览器端生成。AI 只能读取，禁止修改。',
+      after: '  // state 完全由浏览器内核生成。AI 只能读取，禁止修改。',
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.init-state-cleanup',
+    target: { kind: 'worldbook-entry', entryName: 'initvar' },
+    mutation: {
+      action: 'replace-exact',
+      before: initStateWorldProgress,
+      after: initStateWorldFinal,
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.init-narrative-cleanup',
+    target: { kind: 'worldbook-entry', entryName: 'initvar' },
+    mutation: {
+      action: 'replace-exact',
+      before: initWorldBlock,
+      after: initWorldBlockFinal,
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.full-paths',
+    target: { kind: 'worldbook-entry', entryName: '变量更新规则' },
+    mutation: {
+      action: 'replace-exact',
+      before: rulesPathBefore,
+      after: rulesPathAfter,
+    },
+  },
+  ...rulePathRewrites.map(([suffix, before, after]) => ({
+    id: `2026-08-06.mvu-rules.path.${suffix}`,
+    target: { kind: 'worldbook-entry', entryName: '变量更新规则' },
+    mutation: { action: 'replace-exact', before, after },
+  })),
+  {
+    id: '2026-08-06.mvu-rules.world-fields',
+    target: { kind: 'worldbook-entry', entryName: '变量更新规则' },
+    mutation: {
+      action: 'replace-exact',
+      before: rulesWorldBlock,
+      after: rulesWorldBlockFinal,
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.world-summary',
+    target: { kind: 'worldbook-entry', entryName: '变量更新规则' },
+    mutation: {
+      action: 'replace-exact',
+      before: '      - 仅用于了解当前地区、位置、日期、时间、天气、主线摘要和可访问地区。',
+      after: '      - 仅用于了解当前地区、位置、日期、时间、天气和可访问地区。',
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.authority',
+    target: { kind: 'worldbook-entry', entryName: '变量更新规则' },
+    mutation: {
+      action: 'replace-exact',
+      before: rulesConflictAfter,
+      after: rulesConflictFinal,
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.local-inventory',
+    target: { kind: 'worldbook-entry', entryName: '变量更新规则' },
+    mutation: {
+      action: 'replace-exact',
+      before: '    - 玩家获得或消耗物品时，只在正文描述结果；不要更新 MVU 背包。实际增减由 Alpha 背包/奖励模块处理。',
+      after: '    - 玩家获得或消耗物品时，只在正文描述结果；不要更新 MVU 背包。实际增减由浏览器背包/奖励模块处理。',
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.local-quests',
+    target: { kind: 'worldbook-entry', entryName: '变量更新规则' },
+    mutation: {
+      action: 'replace-exact',
+      before: '    - 任务接取、任务推进、战斗奖励、商店交易、装备变更、卡组变更和成就均由 Alpha 本地模块处理。',
+      after: '    - 任务接取、任务推进、战斗奖励、商店交易、装备变更、卡组变更和成就均由浏览器本地模块处理。',
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.local-tracker',
+    target: { kind: 'worldbook-entry', entryName: '变量更新规则' },
+    mutation: {
+      action: 'replace-exact',
+      before: '      - 仅用于叙事衔接；任务接取、推进、结算由 Alpha 本地任务模块处理。',
+      after: '      - 仅用于叙事衔接；任务接取、推进、结算由浏览器本地任务模块处理。',
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.title',
+    target: { kind: 'worldbook-entry', entryName: '变量更新规则' },
+    mutation: {
+      action: 'replace-exact',
+      before: 'Alpha MVU v3 变量规则:',
+      after: '欧西亚斯 MVU v3 变量规则:',
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.output-title',
+    target: { kind: 'worldbook-entry', entryName: '变量输出格式' },
+    mutation: {
+      action: 'replace-exact',
+      before: 'Alpha MVU v3 输出格式:',
+      after: '欧西亚斯 MVU v3 输出格式:',
+    },
+  },
+  {
+    id: '2026-08-06.mvu-rules.output-paths',
+    target: { kind: 'worldbook-entry', entryName: '变量输出格式' },
+    mutation: {
+      action: 'replace-exact',
+      before: outputPathBefore,
+      after: outputPathAfter,
+    },
+  },
+];
+
 const card = JSON.parse(await readFile(sourceCard, 'utf8'));
 if (card.name !== characterName || card.data?.name !== characterName) {
   throw new Error('Refusing to update a character card not named 凯利安.');
@@ -213,6 +455,18 @@ for (const operation of operations) {
   );
 }
 
+const retainedEntries = entries.filter(
+  (entry) => !legacyQuestWorldbookIds.has(entry.uid ?? entry.id),
+);
+entries.splice(0, entries.length, ...retainedEntries);
+card.first_mes = stripLegacyQuestBlocks(card.first_mes);
+card.data.first_mes = stripLegacyQuestBlocks(card.data.first_mes);
+card.mes_example = stripLegacyQuestBlocks(card.mes_example);
+card.data.mes_example = stripLegacyQuestBlocks(card.data.mes_example);
+card.data.alternate_greetings = (card.data.alternate_greetings ?? []).map(
+  stripLegacyQuestBlocks,
+);
+
 card.data.character_book.name = primaryWorldbookName;
 card.data.extensions.world = primaryWorldbookName;
 card.data.extensions.caelian_alpha = {
@@ -234,7 +488,7 @@ const cardSha256 = createHash('sha256').update(cardJson).digest('hex');
 const manifest = {
   schemaVersion: 1,
   channel: 'alpha',
-  revision: '2026-07-29.1',
+  revision: '2026-08-06.2',
   target: {
     characterName,
     worldbookNames: [primaryWorldbookName, legacyWorldbookName],
@@ -344,4 +598,31 @@ function requiredEntry(entryMap, name) {
     throw new Error(`Required delivery entry "${name}" is missing.`);
   }
   return content;
+}
+
+function stripLegacyQuestBlocks(value) {
+  if (typeof value !== 'string') return value;
+  const stripped = value
+    .replace(
+      /<(MainQuestOffer|MainQuestUpdate|MainQuestDiscover|MainQuestParallelOffer|MainQuestParallelUpdate|MainQuestNodeUpdate|SideQuestOffer|SideQuestUpdate|SideQuestDiscover|QuestInteraction)>[\s\S]*?<\/\1>/g,
+      '',
+    )
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const guidance =
+    '如要参与周年庆筹备，请在冒险者面板的任务列表中接取“圣德里安周年庆筹备日”。';
+  if (
+    stripped.includes('【首次游玩专用开场：圣德里安周年庆筹备日】') &&
+    !stripped.includes(guidance)
+  ) {
+    return stripped + '\n\n' + guidance;
+  }
+  return stripped;
+}
+
+function integerRange(first, last) {
+  return Array.from(
+    { length: last - first + 1 },
+    (_, index) => first + index,
+  );
 }

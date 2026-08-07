@@ -26,8 +26,6 @@ const projection: AiProjection = {
       gameDate: '',
       gameTime: '',
       weather: '',
-      mainStage: 0,
-      mainStep: 0,
       accessibleRegions: [],
     },
     guild: { rank: 'copper', activeQuests: [] },
@@ -58,8 +56,6 @@ const projection: AiProjection = {
       gameDate: '新圣约历1385-09-01',
       gameTime: '08:00',
       weather: '晴朗',
-      mainStage: 0,
-      mainStep: 0,
     },
     storyFlags: {},
   },
@@ -191,7 +187,17 @@ describe('TavernAdapter', () => {
     const next = replaceMvuData.mock.calls[0]?.[0] as {
       stat_data: { caelian: AiProjection };
     };
-    expect(next.stat_data.caelian.narrative).toEqual(aiNarrative);
+    expect(next.stat_data.caelian.narrative).toEqual({
+      ...aiNarrative,
+      world: {
+        region: '伊拉亚城',
+        place: '中央广场',
+        location: '伊拉亚城-中央广场',
+        gameDate: '新圣约历1385-09-02',
+        gameTime: '10:30',
+        weather: '多云',
+      },
+    });
   });
 
   it('新版 narrative 缺少字段时保持变量管理器原样，不由脚本补写', async () => {

@@ -46,8 +46,6 @@ export function createAiProjection(
         gameDate: snapshot.world.gameDate,
         gameTime: snapshot.world.gameTime,
         weather: snapshot.world.weather,
-        mainStage: snapshot.world.mainStage,
-        mainStep: snapshot.world.mainStep,
         accessibleRegions: snapshot.regionAccess
           .filter((region) => region.accessible)
           .map((region) => region.regionId),
