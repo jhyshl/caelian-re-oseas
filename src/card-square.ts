@@ -149,8 +149,16 @@ const receiptStatusSchema = z.object({
   kind: z.enum(['deck_build', 'custom_class', 'mechanism']),
   status: z.enum(['published', 'pending', 'rejected', 'unpublished']),
   review_note: z.string().nullable(),
-  reviewed_at: z.string().nullable(),
-  published_at: z.string().nullable(),
+  reviewed_at: z
+    .string()
+    .datetime({ offset: true })
+    .transform((value) => new Date(value).toISOString())
+    .nullable(),
+  published_at: z
+    .string()
+    .datetime({ offset: true })
+    .transform((value) => new Date(value).toISOString())
+    .nullable(),
 });
 
 function normalizedTags(tags: string[]): string[] {
@@ -423,7 +431,11 @@ export async function refreshCardSquareReceipt(
   });
   if (!response.ok) throw new Error(await responseMessage(response));
   const envelope = (await response.json()) as { result?: unknown };
-  const current = receiptStatusSchema.parse(envelope.result);
+  const parsed = receiptStatusSchema.safeParse(envelope.result);
+  if (!parsed.success) {
+    throw new Error('服务器返回的投稿状态格式无法识别，请稍后重试。');
+  }
+  const current = parsed.data;
   if (current.id !== receipt.id || current.kind !== receipt.kind) {
     throw new Error('投稿回执与服务器记录不匹配。');
   }
