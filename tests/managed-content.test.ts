@@ -100,6 +100,19 @@ describe('ManagedContentUpdater', () => {
     },
   );
 
+  it.each([
+    '孔雀开屏你说你看不见alpha',
+    '孔雀开屏你说你看不见beta',
+  ])('绑定通道世界书“%s”时允许同步官方受管内容', async (worldbookName) => {
+    const harness = createHarness({ worldbookName });
+    const result = await new ManagedContentUpdater(harness.host).sync({
+      force: true,
+    });
+
+    expect(result.status).toBe('current');
+    expect(harness.host.fetch).toHaveBeenCalled();
+  });
+
   it('发布角色卡不含旧剧情条目，并保留地区自动切换资料', () => {
     const card = JSON.parse(
       readFileSync(
@@ -187,12 +200,19 @@ describe('ManagedContentUpdater', () => {
       ),
     ) as {
       revision: string;
+      target: { worldbookNames: string[] };
       operations: Array<{
         target: { kind: string };
         mutation?: { action: string };
       }>;
     };
-    expect(manifest.revision).toBe('2026-08-07.2');
+    expect(manifest.revision).toBe('2026-08-07.3');
+    expect(manifest.target.worldbookNames).toEqual(
+      expect.arrayContaining([
+        '孔雀开屏你说你看不见alpha',
+        '孔雀开屏你说你看不见beta',
+      ]),
+    );
     expect(manifest.operations).toHaveLength(6);
     expect(
       manifest.operations.filter(

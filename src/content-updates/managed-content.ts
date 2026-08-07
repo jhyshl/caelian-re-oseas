@@ -1,10 +1,10 @@
-import { isCaelianCharacterName } from '@/content/character-identity';
+import {
+  caelianWorldbookFamily,
+  isCaelianCharacterName,
+  isCaelianWorldbookName,
+} from '@/content/character-identity';
 
 const CHARACTER_NAME = '凯利安';
-const ALLOWED_WORLDBOOK_NAMES = new Set([
-  '孔雀开屏你说看不见',
-  '孔雀开屏你说你看不见',
-]);
 const APPLIED_STORAGE_KEY = 'caelian:managed-content:applied:v1';
 const CONFLICT_STORAGE_KEY = 'caelian:managed-content:conflicts:v1';
 const AUTO_UPDATE_STORAGE_KEY = 'caelian:managed-content:auto:v1';
@@ -242,7 +242,7 @@ export class ManagedContentUpdater {
 
     const bindings = api.getCharWorldbookNames.call(api, 'current');
     const worldbookName = bindings.primary?.trim() ?? '';
-    if (!ALLOWED_WORLDBOOK_NAMES.has(worldbookName)) {
+    if (!isCaelianWorldbookName(worldbookName)) {
       return emptyResult('wrong-worldbook');
     }
 
@@ -344,9 +344,13 @@ export class ManagedContentUpdater {
     if (
       manifest.target.characterName !== CHARACTER_NAME ||
       manifest.target.requirePrimaryBinding !== true ||
-      !manifest.target.worldbookNames.includes(boundWorldbook) ||
+      !manifest.target.worldbookNames.some(
+        (name) =>
+          caelianWorldbookFamily(name) ===
+          caelianWorldbookFamily(boundWorldbook),
+      ) ||
       manifest.target.worldbookNames.some(
-        (name) => !ALLOWED_WORLDBOOK_NAMES.has(name),
+        (name) => !isCaelianWorldbookName(name),
       )
     ) {
       throw new Error('远程内容清单的角色卡或世界书目标不在安全白名单中');

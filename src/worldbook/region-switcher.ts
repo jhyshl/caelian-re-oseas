@@ -1,9 +1,7 @@
-import { isCaelianCharacterName } from '@/content/character-identity';
-
-const ALLOWED_WORLDBOOK_NAMES = new Set([
-  '孔雀开屏你说看不见',
-  '孔雀开屏你说你看不见',
-]);
+import {
+  isCaelianCharacterName,
+  isCaelianWorldbookName,
+} from '@/content/character-identity';
 
 export const REGION_ALIASES = {
   圣德里安学院: [
@@ -502,7 +500,7 @@ export class RegionWorldbookSwitcher {
     }
     const bindings = api.getCharWorldbookNames.call(api, 'current');
     const worldbookName = bindings.primary?.trim() ?? '';
-    if (!ALLOWED_WORLDBOOK_NAMES.has(worldbookName)) {
+    if (!isCaelianWorldbookName(worldbookName)) {
       return { status: 'wrong-worldbook' };
     }
     return { api, worldbookName };
@@ -522,7 +520,7 @@ export class RegionWorldbookSwitcher {
 
     const bindings = api.getCharWorldbookNames.call(api, 'current');
     const worldbookName = bindings.primary?.trim() ?? '';
-    if (!ALLOWED_WORLDBOOK_NAMES.has(worldbookName)) {
+    if (!isCaelianWorldbookName(worldbookName)) {
       return cleanupResult('wrong-worldbook');
     }
 

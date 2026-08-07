@@ -24,6 +24,12 @@ const deliveryWorldbookRoot = path.join(deliveryRoot, '世界书与变量文件'
 const characterName = '凯利安';
 const primaryWorldbookName = '孔雀开屏你说看不见';
 const legacyWorldbookName = '孔雀开屏你说你看不见';
+const channelWorldbookNames = [
+  `${primaryWorldbookName}alpha`,
+  `${primaryWorldbookName}beta`,
+  `${legacyWorldbookName}alpha`,
+  `${legacyWorldbookName}beta`,
+];
 const legacyQuestWorldbookIds = new Set([
   42,
   ...integerRange(85, 145),
@@ -161,10 +167,14 @@ const cardSha256 = createHash('sha256').update(cardJson).digest('hex');
 const manifest = {
   schemaVersion: 1,
   channel: 'alpha',
-  revision: '2026-08-07.2',
+  revision: '2026-08-07.3',
   target: {
     characterName,
-    worldbookNames: [primaryWorldbookName, legacyWorldbookName],
+    worldbookNames: [
+      primaryWorldbookName,
+      legacyWorldbookName,
+      ...channelWorldbookNames,
+    ],
     requirePrimaryBinding: true,
   },
   sourceCard: {

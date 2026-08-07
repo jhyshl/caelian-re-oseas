@@ -69,6 +69,26 @@ describe('地区世界书', () => {
     },
   );
 
+  it.each([
+    '孔雀开屏你说你看不见alpha',
+    '孔雀开屏你说你看不见beta',
+  ])('绑定通道世界书“%s”时允许手动切换地区条目', async (worldbookName) => {
+    const harness = createSwitcher({
+      worldbookName,
+      entries: [
+        {
+          name: '学院资料 [AUTO_REGION:圣德里安学院]',
+          enabled: false,
+          disable: true,
+        },
+      ],
+    });
+
+    expect(
+      await harness.switcher.setRegionEnabled('圣德里安学院', true),
+    ).toMatchObject({ status: 'applied', changed: 1 });
+  });
+
   it('只按玩家操作开关指定地区条目，不触碰全局、手动和玩家自建条目', async () => {
     const harness = createSwitcher({
       entries: [

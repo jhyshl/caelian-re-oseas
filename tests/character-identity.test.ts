@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { isCaelianCharacterName } from '@/content/character-identity';
+import {
+  caelianWorldbookFamily,
+  isCaelianCharacterName,
+  isCaelianWorldbookName,
+} from '@/content/character-identity';
 
 describe('凯利安角色名识别', () => {
   it.each([
@@ -18,4 +22,19 @@ describe('凯利安角色名识别', () => {
       expect(isCaelianCharacterName(name)).toBe(false);
     },
   );
+
+  it.each([
+    '孔雀开屏你说看不见',
+    '孔雀开屏你说你看不见',
+    '孔雀开屏你说你看不见alpha',
+    '孔雀开屏你说你看不见 Beta',
+  ])('接受官方通道世界书名“%s”', (name) => {
+    expect(isCaelianWorldbookName(name)).toBe(true);
+    expect(caelianWorldbookFamily(name)).toMatch(/^孔雀开屏/);
+  });
+
+  it('拒绝名称相似但不在白名单中的世界书', () => {
+    expect(isCaelianWorldbookName('孔雀开屏你说你看不见测试版')).toBe(false);
+    expect(isCaelianWorldbookName('玩家自己的世界书')).toBe(false);
+  });
 });

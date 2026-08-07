@@ -1,12 +1,16 @@
 {
   "schemaVersion": 1,
   "channel": "alpha",
-  "revision": "2026-08-07.2",
+  "revision": "2026-08-07.3",
   "target": {
     "characterName": "凯利安",
     "worldbookNames": [
       "孔雀开屏你说看不见",
-      "孔雀开屏你说你看不见"
+      "孔雀开屏你说你看不见",
+      "孔雀开屏你说看不见alpha",
+      "孔雀开屏你说看不见beta",
+      "孔雀开屏你说你看不见alpha",
+      "孔雀开屏你说你看不见beta"
     ],
     "requirePrimaryBinding": true
   },
