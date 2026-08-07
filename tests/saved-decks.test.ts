@@ -33,4 +33,33 @@ describe('本地命名构筑预设', () => {
     expect(deleteSavedDeckBuild(first.id)).toBe(true);
     expect(readSavedDeckBuilds()).toEqual([]);
   });
+
+  it('可以显式绑定牌组面板所在窗口的存储', () => {
+    const hostStorage = new Map<string, string>();
+    const hostWindow = {
+      localStorage: {
+        getItem: (key: string) => hostStorage.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          hostStorage.set(key, value);
+        },
+      } as unknown as Storage,
+    } as Pick<Window, 'localStorage'>;
+
+    const saved = saveNamedDeckBuild(
+      {
+        id: 'saved_build_host',
+        name: '宿主窗口构筑',
+        professionId: 'holy_knight',
+        professionName: '圣骑士',
+        mainClass: 'knight',
+        cardIds: ['card_a'],
+      },
+      hostWindow,
+    );
+
+    expect(readSavedDeckBuilds()).toEqual([]);
+    expect(readSavedDeckBuilds(hostWindow)).toEqual([saved]);
+    expect(deleteSavedDeckBuild(saved.id, hostWindow)).toBe(true);
+    expect(readSavedDeckBuilds(hostWindow)).toEqual([]);
+  });
 });

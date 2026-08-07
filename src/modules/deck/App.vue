@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/* global window */
+/* global Window, window */
 import { computed, onMounted, ref } from 'vue';
 import { loadCardCatalog } from '@/content/catalogs/cards';
 import {
@@ -20,6 +20,10 @@ import {
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
+function sourceWindow(): Window {
+  return props.context.document.defaultView ?? window;
+}
+
 const snapshot = ref<GameSnapshot>();
 const catalog = ref<Record<string, CardDefinition>>({});
 const editing = ref(false);
@@ -29,7 +33,7 @@ const search = ref('');
 const notice = ref('');
 const workshopOpen = ref(false);
 const presetName = ref('');
-const savedDecks = ref(readSavedDeckBuilds());
+const savedDecks = ref(readSavedDeckBuilds(sourceWindow()));
 
 const typeNames: Record<string, string> = {
   all: '全部',
@@ -150,16 +154,19 @@ function savePreset(): void {
   const existing = savedDecks.value.find(
     (entry) => entry.name === name && entry.professionId === player.subclass,
   );
-  const saved = saveNamedDeckBuild({
-    id: existing?.id ?? commandId('saved-deck'),
-    name,
-    professionId: player.subclass,
-    professionName: subclassNames[player.subclass] ?? player.subclass,
-    mainClass: mainClassForSubclass(player.subclass),
-    cardIds: [...deck.cardIds],
-    createdAt: existing?.createdAt,
-  });
-  savedDecks.value = readSavedDeckBuilds();
+  const saved = saveNamedDeckBuild(
+    {
+      id: existing?.id ?? commandId('saved-deck'),
+      name,
+      professionId: player.subclass,
+      professionName: subclassNames[player.subclass] ?? player.subclass,
+      mainClass: mainClassForSubclass(player.subclass),
+      cardIds: [...deck.cardIds],
+      createdAt: existing?.createdAt,
+    },
+    sourceWindow(),
+  );
+  savedDecks.value = readSavedDeckBuilds(sourceWindow());
   presetName.value = '';
   notice.value = existing
     ? `已覆盖更新构筑「${saved.name}」。`
@@ -205,8 +212,8 @@ async function applyPreset(build: SavedDeckBuild): Promise<void> {
 
 function removePreset(build: SavedDeckBuild): void {
   if (!window.confirm(`确认删除构筑预设「${build.name}」？`)) return;
-  deleteSavedDeckBuild(build.id);
-  savedDecks.value = readSavedDeckBuilds();
+  deleteSavedDeckBuild(build.id, sourceWindow());
+  savedDecks.value = readSavedDeckBuilds(sourceWindow());
   notice.value = `已删除构筑预设「${build.name}」。`;
 }
 
@@ -290,6 +297,9 @@ onMounted(async () => {
             </button>
           </div>
         </header>
+        <p v-if="notice" class="deck-notice preset-notice" role="status">
+          {{ notice }}
+        </p>
         <div v-if="savedDecks.length === 0" class="preset-empty">
           还没有预设。完成一套构筑后，为它命名并保存。
         </div>
@@ -390,8 +400,6 @@ onMounted(async () => {
           </article>
         </div>
       </section>
-
-      <p v-if="notice" class="deck-notice">{{ notice }}</p>
     </template>
     <WorkshopDialog
       v-if="workshopOpen"
@@ -598,6 +606,10 @@ onMounted(async () => {
   color: #9bdfb9;
   font-size: 11px;
   text-align: center;
+}
+
+.preset-notice {
+  margin: 10px 0 0;
 }
 
 .saved-builds > header {

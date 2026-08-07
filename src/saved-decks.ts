@@ -30,9 +30,11 @@ const savedDeckSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
-function storage(): Storage | undefined {
+type StorageWindow = Pick<Window, 'localStorage'>;
+
+function storage(sourceWindow?: StorageWindow): Storage | undefined {
   try {
-    return globalThis.localStorage;
+    return sourceWindow?.localStorage ?? globalThis.localStorage;
   } catch {
     return undefined;
   }
@@ -42,10 +44,10 @@ export function normalizeSavedDeckBuild(value: unknown): SavedDeckBuild {
   return savedDeckSchema.parse(value);
 }
 
-export function readSavedDeckBuilds(): SavedDeckBuild[] {
+export function readSavedDeckBuilds(sourceWindow?: StorageWindow): SavedDeckBuild[] {
   try {
     const values = JSON.parse(
-      storage()?.getItem(SAVED_DECKS_STORAGE_KEY) ?? '[]',
+      storage(sourceWindow)?.getItem(SAVED_DECKS_STORAGE_KEY) ?? '[]',
     ) as unknown;
     if (!Array.isArray(values)) return [];
     return values
@@ -64,6 +66,7 @@ export function saveNamedDeckBuild(
   value: Omit<SavedDeckBuild, 'format' | 'version' | 'createdAt' | 'updatedAt'> & {
     createdAt?: string;
   },
+  sourceWindow?: StorageWindow,
 ): SavedDeckBuild {
   const now = new Date().toISOString();
   const normalized = normalizeSavedDeckBuild({
@@ -73,18 +76,23 @@ export function saveNamedDeckBuild(
     createdAt: value.createdAt ?? now,
     updatedAt: now,
   });
-  const kept = readSavedDeckBuilds().filter((entry) => entry.id !== normalized.id);
-  storage()?.setItem(
+  const kept = readSavedDeckBuilds(sourceWindow).filter(
+    (entry) => entry.id !== normalized.id,
+  );
+  storage(sourceWindow)?.setItem(
     SAVED_DECKS_STORAGE_KEY,
     JSON.stringify([normalized, ...kept].slice(0, 100)),
   );
   return normalized;
 }
 
-export function deleteSavedDeckBuild(id: string): boolean {
-  const current = readSavedDeckBuilds();
+export function deleteSavedDeckBuild(
+  id: string,
+  sourceWindow?: StorageWindow,
+): boolean {
+  const current = readSavedDeckBuilds(sourceWindow);
   const next = current.filter((entry) => entry.id !== id);
   if (next.length === current.length) return false;
-  storage()?.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(next));
+  storage(sourceWindow)?.setItem(SAVED_DECKS_STORAGE_KEY, JSON.stringify(next));
   return true;
 }

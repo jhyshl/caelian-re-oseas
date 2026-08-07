@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /* global Blob, Event, HTMLInputElement, URL, Window, document, structuredClone, window */
-import { computed, onMounted, ref, toRaw } from 'vue';
+import { computed, onMounted, ref, toRaw, watch } from 'vue';
 import {
   CARD_SQUARE_TAGS,
   DECK_BUILD_FORMAT,
@@ -46,6 +46,7 @@ const snapshot = ref<GameSnapshot>();
 const favorites = ref(new Set(readCardSquareFavorites()));
 const loading = ref(false);
 const busy = ref(false);
+const refreshingReceiptId = ref('');
 const error = ref('');
 const notice = ref('');
 const search = ref('');
@@ -68,7 +69,7 @@ const localClasses = computed(() =>
 );
 const localMechanisms = computed(() => readWorkshopMechanisms());
 const savedOfficialDecks = computed(() =>
-  readSavedDeckBuilds().filter(
+  readSavedDeckBuilds(sourceWindow()).filter(
     (build) => !build.professionId.startsWith('custom_class_'),
   ),
 );
@@ -152,21 +153,42 @@ async function refreshReceipts(): Promise<void> {
   busy.value = true;
   error.value = '';
   notice.value = '';
-  const local = readCardSquareReceipts(sourceWindow());
-  if (!local.length) {
-    receipts.value = [];
+  try {
+    const local = readCardSquareReceipts(sourceWindow());
+    if (!local.length) {
+      receipts.value = [];
+      return;
+    }
+    const results = await Promise.allSettled(
+      local.map((receipt) => refreshCardSquareReceipt(receipt, sourceWindow())),
+    );
+    receipts.value = readCardSquareReceipts(sourceWindow());
+    const failed = results.filter((result) => result.status === 'rejected').length;
+    notice.value = failed
+      ? `已更新 ${results.length - failed} 份投稿，${failed} 份暂时无法查询。你也可以在对应投稿上单独重试。`
+      : `已更新 ${results.length} 份投稿状态。`;
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
     busy.value = false;
-    return;
   }
-  const results = await Promise.allSettled(
-    local.map((receipt) => refreshCardSquareReceipt(receipt, sourceWindow())),
-  );
-  receipts.value = readCardSquareReceipts(sourceWindow());
-  const failed = results.filter((result) => result.status === 'rejected').length;
-  notice.value = failed
-    ? `已更新 ${results.length - failed} 份投稿，${failed} 份暂时无法查询。`
-    : `已更新 ${results.length} 份投稿状态。`;
-  busy.value = false;
+}
+
+async function refreshOneReceipt(
+  receipt: CardSquareSubmissionReceipt,
+): Promise<void> {
+  refreshingReceiptId.value = receipt.id;
+  error.value = '';
+  notice.value = '';
+  try {
+    const updated = await refreshCardSquareReceipt(receipt, sourceWindow());
+    receipts.value = readCardSquareReceipts(sourceWindow());
+    notice.value = `《${updated.title}》的审核状态已更新为“${statusNames[updated.status]}”。`;
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    refreshingReceiptId.value = '';
+  }
 }
 
 async function importReceiptFile(event: Event): Promise<void> {
@@ -227,19 +249,22 @@ async function applyDeck(build: SquareDeckBuild): Promise<void> {
       `${result.message ?? '构筑应用失败'}。构筑不会赠送未拥有的卡牌，请先收集缺少的卡牌。`,
     );
   }
-  const existing = readSavedDeckBuilds().find(
+  const existing = readSavedDeckBuilds(sourceWindow()).find(
     (entry) =>
       entry.name === build.name && entry.professionId === build.professionId,
   );
-  saveNamedDeckBuild({
-    id: existing?.id ?? commandId('square-saved-deck'),
-    name: build.name,
-    professionId: build.professionId,
-    professionName: build.professionName,
-    mainClass: build.mainClass,
-    cardIds: [...build.cardIds],
-    createdAt: existing?.createdAt,
-  });
+  saveNamedDeckBuild(
+    {
+      id: existing?.id ?? commandId('square-saved-deck'),
+      name: build.name,
+      professionId: build.professionId,
+      professionName: build.professionName,
+      mainClass: build.mainClass,
+      cardIds: [...build.cardIds],
+      createdAt: existing?.createdAt,
+    },
+    sourceWindow(),
+  );
   snapshot.value = await props.context.api.query('state');
   notice.value = `已应用并保存构筑「${build.name}」。`;
   emit('changed');
@@ -328,6 +353,18 @@ function mechanismPayload(): WorkshopMechanismManifest {
   return structuredClone(toRaw(mechanism));
 }
 
+function toggleSubmitTag(tag: string): void {
+  if (submitTags.value.includes(tag)) {
+    submitTags.value = submitTags.value.filter((entry) => entry !== tag);
+    return;
+  }
+  if (submitTags.value.length >= 8) {
+    notice.value = '搜索标签最多选择 8 个。';
+    return;
+  }
+  submitTags.value = [...submitTags.value, tag];
+}
+
 async function submit(): Promise<void> {
   busy.value = true;
   error.value = '';
@@ -376,6 +413,12 @@ async function submit(): Promise<void> {
 onMounted(() => {
   receipts.value = readCardSquareReceipts(sourceWindow());
   void refresh();
+});
+
+watch(tab, (next) => {
+  if (next !== 'receipts') return;
+  receipts.value = readCardSquareReceipts(sourceWindow());
+  if (receipts.value.length) void refreshReceipts();
 });
 </script>
 
@@ -521,6 +564,14 @@ onMounted(() => {
                 <div><dt>最后查询</dt><dd>{{ new Date(receipt.lastCheckedAt).toLocaleString('zh-CN') }}</dd></div>
               </dl>
               <footer>
+                <button
+                  type="button"
+                  class="ca-button primary"
+                  :disabled="busy || Boolean(refreshingReceiptId)"
+                  @click="refreshOneReceipt(receipt)"
+                >
+                  {{ refreshingReceiptId === receipt.id ? '正在查询……' : '查询此投稿' }}
+                </button>
                 <button type="button" class="ca-button" @click="downloadJson(exportCardSquareReceipt(receipt), `${receipt.title}-投稿回执`)">下载回执</button>
               </footer>
             </article>
@@ -550,15 +601,16 @@ onMounted(() => {
             <label class="wide"><span>作品简介</span><textarea v-model="submitSummary" maxlength="240" placeholder="玩法思路、核心循环、适合的战斗场景"></textarea></label>
             <fieldset class="wide submit-tags">
               <legend>搜索标签（最多 8 个）</legend>
-              <label v-for="tag in CARD_SQUARE_TAGS" :key="tag">
-                <input
-                  v-model="submitTags"
-                  type="checkbox"
-                  :value="tag"
-                  :disabled="submitTags.length >= 8 && !submitTags.includes(tag)"
-                />
-                <span>{{ tag }}</span>
-              </label>
+              <button
+                v-for="tag in CARD_SQUARE_TAGS"
+                :key="tag"
+                type="button"
+                :class="{ selected: submitTags.includes(tag) }"
+                :aria-pressed="submitTags.includes(tag)"
+                @click="toggleSubmitTag(tag)"
+              >
+                {{ tag }}
+              </button>
             </fieldset>
             <label class="anonymous-toggle"><input v-model="anonymous" type="checkbox" /><span>匿名发布，不上传作者署名</span></label>
             <label v-if="!anonymous"><span>公开署名</span><input v-model="authorName" maxlength="30" placeholder="卡牌广场显示的作者名" /></label>
@@ -620,8 +672,8 @@ onMounted(() => {
 .submit-grid label > small { color: var(--ca-muted); font-size: 9px; line-height: 1.5; }
 .submit-tags { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 11px; border: 1px solid #343a45; border-radius: 9px; }
 .submit-tags legend { padding: 0 5px; color: var(--ca-gold); font-size: 10px; font-weight: 700; }
-.submit-grid .submit-tags label { display: flex; align-items: center; grid-template: none; gap: 5px; padding: 5px 8px; border: 1px solid #303640; border-radius: 999px; color: #cfc7bb; font-size: 9px; }
-.submit-grid .submit-tags input { width: auto; padding: 0; }
+.submit-tags button { padding: 6px 10px; border: 1px solid #303640; border-radius: 999px; color: #cfc7bb; background: rgba(255,255,255,.02); font: 700 9px var(--ca-ui); cursor: pointer; touch-action: manipulation; }
+.submit-tags button:hover, .submit-tags button.selected { border-color: var(--ca-gold); color: var(--ca-gold-light); background: rgba(212,168,67,.13); }
 .receipt-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 17px 20px; border-bottom: 1px solid #282d36; background: rgba(212,168,67,.045); }
 .receipt-toolbar strong { color: var(--ca-gold-light); font-size: 12px; }.receipt-toolbar p { max-width: 620px; margin: 5px 0 0; color: var(--ca-muted); font-size: 10px; line-height: 1.55; }.receipt-toolbar > div:last-child { display: flex; flex: 0 0 auto; gap: 7px; }
 .receipt-import { position: relative; overflow: hidden; cursor: pointer; }.receipt-import input { position: absolute; width: 1px; height: 1px; opacity: 0; }

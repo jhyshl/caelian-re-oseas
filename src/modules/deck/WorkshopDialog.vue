@@ -178,6 +178,11 @@ function supportsCardType(
   return option.cardTypes.includes(cardType);
 }
 
+function cloneData<T>(value: T): T {
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 watch(
   editor,
   () => {
@@ -186,7 +191,7 @@ watch(
       saveWorkshopDraft({
         id: editor.value.id,
         updatedAt: Date.now(),
-        value: structuredClone(toRaw(editor.value)) as unknown as Partial<WorkshopClass>,
+        value: cloneData(toRaw(editor.value)) as unknown as Partial<WorkshopClass>,
       });
       drafts.value = readWorkshopDrafts();
     }, 400);
@@ -220,8 +225,47 @@ function createEditor(): EditableClass {
   };
 }
 
+function editableFromValue(value: Partial<WorkshopClass>): EditableClass {
+  const fallback = createEditor();
+  const source = cloneData(toRaw(value)) as Partial<EditableClass>;
+  const talent = source.talent ?? fallback.talent;
+  const cards = Array.isArray(source.cards)
+    ? source.cards.map((card, index) => ({
+        id: String(card?.id || makeId(`custom_card_${source.id || fallback.id}_${index}`)),
+        name: String(card?.name || `自定义卡牌${index + 1}`),
+        type: String(card?.type || 'skill'),
+        cost: Number.isFinite(Number(card?.cost)) ? Number(card?.cost) : 1,
+        description: String(card?.description || ''),
+        effects: Array.isArray(card?.effects) ? card.effects : [],
+      }))
+    : [];
+  return {
+    id: String(source.id || fallback.id),
+    main: WORKSHOP_MAIN_CLASSES.includes(source.main as WorkshopMainClass)
+      ? (source.main as WorkshopMainClass)
+      : fallback.main,
+    name: String(source.name || ''),
+    description: String(source.description || ''),
+    talent: {
+      name: String(talent.name || fallback.talent.name),
+      description: String(talent.description || ''),
+      effects: Array.isArray(talent.effects) ? talent.effects : [],
+    },
+    cards,
+    cardPool: Array.isArray(source.cardPool)
+      ? source.cardPool.map(String)
+      : cards.map((card) => card.id),
+    starterDeck: Array.isArray(source.starterDeck)
+      ? source.starterDeck.map(String)
+      : [],
+    mechanismIds: Array.isArray(source.mechanismIds)
+      ? source.mechanismIds.map(String)
+      : [],
+  };
+}
+
 function editableFromClass(profession: WorkshopClass): EditableClass {
-  return structuredClone(toRaw(profession)) as unknown as EditableClass;
+  return editableFromValue(profession);
 }
 
 function newProfession(): void {
@@ -241,13 +285,16 @@ function editProfession(profession: WorkshopClass): void {
 }
 
 function loadDraft(draft: WorkshopDraft): void {
-  editor.value = structuredClone(toRaw(draft.value)) as unknown as EditableClass;
-  editor.value.cards ??= [];
-  editor.value.starterDeck ??= [];
-  editor.value.cardPool ??= [];
-  editor.value.mechanismIds ??= [];
-  activeCardId.value = editor.value.cards?.[0]?.id ?? '';
-  tab.value = 'editor';
+  error.value = '';
+  notice.value = '';
+  try {
+    editor.value = editableFromValue(draft.value);
+    activeCardId.value = editor.value.cards[0]?.id ?? '';
+    tab.value = 'editor';
+    notice.value = '草稿已恢复，可以继续编辑。';
+  } catch (caught) {
+    error.value = `草稿读取失败：${caught instanceof Error ? caught.message : String(caught)}`;
+  }
 }
 
 function addTalent(type: string): void {
@@ -305,7 +352,7 @@ function addEffect(optionId: string): void {
     return;
   }
   const effects = option.effects.map((entry) => {
-    const effect = structuredClone(entry) as EditableEffect;
+    const effect = cloneData(entry) as EditableEffect;
     delete effect.label;
     return effect;
   });

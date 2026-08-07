@@ -7,6 +7,17 @@ export interface ReleaseNote {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.29',
+    label: 'Alpha 29',
+    releasedAt: '2026-08-07',
+    changes: [
+      '修复电脑端上传作品时标签无法勾选的问题：标签改为独立按钮式选择，不再受酒馆主题对原生复选框与标签元素的样式干扰。',
+      '修复投稿审核结果不可见的问题：进入“我的投稿”会自动刷新，也可逐条查询；作者后台会明确确认目标状态、要求驳回意见，并校验服务器实际保存的状态与意见。',
+      '修复构筑预设点击保存无反应的问题：预设统一保存到牌组面板所在的酒馆窗口，并在“我的构筑预设”中立即显示一键切换与删除入口。',
+      '修复移动端点击创意工坊草稿后工坊异常关闭且无法重开的问题：旧草稿会先补齐编辑器结构，并兼容缺少原生 structuredClone 的旧 WebView。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.28',
     label: 'Alpha 28',
     releasedAt: '2026-08-07',

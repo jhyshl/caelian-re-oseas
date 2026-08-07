@@ -127,6 +127,9 @@ async function moderateEntry(body: Record<string, unknown>): Promise<unknown> {
     throw new Error('Invalid moderation status');
   }
   const note = String(body.note ?? '').trim().slice(0, 1000) || null;
+  if (status === 'rejected' && !note) {
+    throw new Error('Rejected submissions require a review note');
+  }
   return dataResponse(
     await database(`caelian_card_square_entries?id=eq.${encodeURIComponent(id)}`, {
       method: 'PATCH',
@@ -134,7 +137,7 @@ async function moderateEntry(body: Record<string, unknown>): Promise<unknown> {
       body: JSON.stringify({
         status,
         review_note: note,
-        reviewed_at: new Date().toISOString(),
+        reviewed_at: status === 'pending' ? null : new Date().toISOString(),
         published_at: status === 'published' ? new Date().toISOString() : null,
       }),
     }),
