@@ -182,8 +182,12 @@ export const variableRulesContent = `---
       type: |-
         { region: string; place: string; location: string; gameDate: string; gameTime: string; weather: string }
       check:
-        - 只在正文已经确认世界事实发生变化后更新；计划、尝试或点击地图不等于已经抵达。
-        - region 是大地区，place 是地区内地点，location 是面板显示的完整位置。
+        - 只在正文已经确认实际移动后更新；地图快捷前往会由浏览器先写入统一地点，AI 应沿用该值继续描写，不能改回出发地。
+        - region 必须且只能填写以下标准大地区名之一：圣德里安学院、伊拉亚城、索拉维亚、奈亚索斯城、阿必塞海、艾瑟拉森林、炉心城、远古圣山、银月之城、极北之地。
+        - 索拉姆、索拉姆城、皇都、皇城统一写为“索拉维亚”；学院、宿舍、教学楼等地点所属大地区统一写为“圣德里安学院”。禁止把别名或具体建筑写进 region。
+        - place 只填写 region 内的具体建筑、街区或场景；没有明确小地点时写空字符串，禁止把另一个大地区写进 place。
+        - location 不得自由发挥，必须严格等于“region · place”；place 为空时 location 必须严格等于 region。
+        - 玩家实际移动时，region、place、location 必须在同一个 JSONPatch 中一起 replace，三者不得互相矛盾。
         - gameDate、gameTime 按剧情中实际经过的时间更新；weather 只在天气确实变化时更新。
 
     storyFlags:
@@ -206,6 +210,7 @@ export const variableOutputContent = `---
     - JSON Patch 以 stat_data 为根；所有 path 必须以 /caelian/narrative/ 开头，禁止添加 /stat_data 前缀。
     - 禁止修改 /caelian/_meta、/caelian/state 或任何旧版顶层变量。
     - innerThought 每轮使用 replace 更新；其他字段没有实际变化时不要输出。
+    - 世界地点发生变化时，必须同时 replace /caelian/narrative/world/region、/place、/location；location 只能由 region 与 place 按“地区 · 地点”拼成。
     - affinity 优先使用 delta；新剧情标记使用 insert，已有标记使用 replace，删除无效标记可使用 remove。
     - move 只允许在 /caelian/narrative/storyFlags/ 内重命名错误标记，通常不应使用。
   format: |-

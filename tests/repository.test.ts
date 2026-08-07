@@ -15,6 +15,34 @@ afterEach(async () => {
 });
 
 describe('GameRepository', () => {
+  it('地图移动命令会统一地区别名并同步地区、地点与展示位置', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-world-move-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:world-move');
+
+    await expect(
+      repository.execute(profile.id, {
+        id: 'move-to-solavia-palace',
+        type: 'world.move',
+        payload: {
+          region: '索拉姆',
+          place: '皇宫',
+          location: '错误的旧位置',
+        },
+      }),
+    ).resolves.toMatchObject({ status: 'applied' });
+
+    expect((await repository.snapshot(profile.id)).world).toMatchObject({
+      region: '索拉维亚',
+      place: '皇宫',
+      location: '索拉维亚 · 皇宫',
+    });
+  });
+
   it('使用命令 ID 防止同一背包调整被重复执行', async () => {
     const database = new CaelianDatabase(
       'alpha',

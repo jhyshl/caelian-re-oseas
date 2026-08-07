@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import {
   loadRegionLinks,
   loadRegionPlaces,
@@ -10,8 +10,10 @@ import type {
   RegionPlaceDefinition,
 } from '@/content/types';
 import type { GameSnapshot } from '@/domain/types';
+import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
+import { normalizeRegion } from '@/worldbook/region-switcher';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -20,6 +22,8 @@ const links = ref<Array<[string, string]>>([]);
 const places = ref<Record<string, RegionPlaceDefinition[]>>({});
 const selectedId = ref('');
 const notice = ref('');
+const traveling = ref(false);
+let disposeStateListener: (() => void) | undefined;
 
 const selectedRegion = computed(() =>
   regions.value.find((region) => region.id === selectedId.value),
@@ -52,11 +56,66 @@ async function travel(region: RegionDefinition, place?: RegionPlaceDefinition) {
     notice.value = access.reason || '该地区当前无法前往';
     return;
   }
-  const prompt = place ? `前往${place.name}` : `前往${region.name}`;
-  const filled = props.context.api.setUserInput(prompt);
-  notice.value = filled
-    ? `已填入“${prompt}”。发送后由 AI 根据剧情更新世界状态。`
-    : `未找到酒馆输入框；世界状态不会由脚本自行修改。`;
+  if (!snapshot.value || traveling.value) return;
+  traveling.value = true;
+  notice.value = '';
+  const previousRegion = normalizeRegion(snapshot.value.world.region);
+  const nextRegion = normalizeRegion(region.name);
+  const destinationPlace = place?.name ?? '';
+  const location = destinationPlace
+    ? `${nextRegion} · ${destinationPlace}`
+    : nextRegion;
+  let worldbookSwitched = false;
+  try {
+    const worldbookResult = await props.context.api.switchRegionWorldbook(
+      previousRegion,
+      nextRegion,
+    );
+    if (!['applied', 'current'].includes(worldbookResult.status)) {
+      throw new Error(
+        worldbookResult.message ||
+          `无法切换${nextRegion}世界书条目：${worldbookResult.status}`,
+      );
+    }
+    worldbookSwitched = true;
+    const moveResult = await props.context.api.execute({
+      id: commandId('world.move'),
+      type: 'world.move',
+      payload: {
+        region: nextRegion,
+        place: destinationPlace,
+        location,
+      },
+    });
+    if (moveResult.status === 'rejected') throw new Error(moveResult.message);
+
+    const prompt = destinationPlace
+      ? `我已从${previousRegion}出发，前往${nextRegion}的${destinationPlace}。请从抵达后的场景继续剧情。`
+      : `我已从${previousRegion}出发，前往${nextRegion}。请从抵达后的场景继续剧情。`;
+    const filled = props.context.api.setUserInput(prompt);
+    if (!filled) {
+      props.context.api.notify({
+        kind: 'warning',
+        title: '地点与世界书已切换',
+        description: '未找到酒馆输入框，请手动发送前往该地点的行动。',
+        duration: 6_000,
+      });
+    }
+    await props.context.api.closePanel('map');
+  } catch (caught) {
+    if (worldbookSwitched && previousRegion && previousRegion !== nextRegion) {
+      await props.context.api
+        .switchRegionWorldbook(nextRegion, previousRegion)
+        .catch(() => undefined);
+    }
+    notice.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    traveling.value = false;
+  }
+}
+
+async function refreshState() {
+  snapshot.value = await props.context.api.query('state');
 }
 
 onMounted(async () => {
@@ -73,7 +132,10 @@ onMounted(async () => {
       ?.id ??
     regions.value[0]?.id ??
     '';
+  disposeStateListener = props.context.api.on('state.changed', refreshState);
 });
+
+onUnmounted(() => disposeStateListener?.());
 </script>
 
 <template>
@@ -138,7 +200,7 @@ onMounted(async () => {
           </button>
         </div>
         <p class="map-hint">
-          点击地区查看可前往的建筑与地点；“前往”只填入行动文本，世界状态由 AI 在下一轮通过 MVU 更新。
+          点击“前往”会同步更新统一地点状态、关闭原地区资料并开启目的地区资料，然后返回酒馆主界面。
         </p>
       </section>
 
@@ -168,6 +230,7 @@ onMounted(async () => {
             v-if="selectedPlaces.length === 0"
             type="button"
             class="place-row"
+            :disabled="traveling"
             @click="travel(selectedRegion)"
           >
             <div>
@@ -182,6 +245,7 @@ onMounted(async () => {
             :key="place.name"
             type="button"
             class="place-row"
+            :disabled="traveling"
             @click="travel(selectedRegion, place)"
           >
             <div>
@@ -337,6 +401,11 @@ onMounted(async () => {
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.place-row:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .place-row > div {

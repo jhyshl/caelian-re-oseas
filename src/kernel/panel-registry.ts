@@ -15,6 +15,7 @@ const definitions: Record<PanelName, () => Promise<PanelModule>> = {
   market: () => import('@/modules/market/mount'),
   guild: () => import('@/modules/guild/mount'),
   map: () => import('@/modules/map/mount'),
+  worldbook: () => import('@/modules/worldbook/mount'),
   battle: () => import('@/modules/battle/mount'),
   achievements: () => import('@/modules/achievements/mount'),
   mailbox: () => import('@/modules/mailbox/mount'),

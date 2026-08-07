@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  entryRegionState,
-  inferRegionFromTravelText,
+  entryRegions,
   isLegacyQuestWorldbookEntry,
   normalizeRegion,
   RegionWorldbookSwitcher,
@@ -41,19 +40,13 @@ function createSwitcher(options: {
 }
 
 describe('地区世界书', () => {
-  it('统一地区别名，并且只把明确的移动表达识别为目的地区', () => {
+  it('统一地区别名', () => {
     expect(normalizeRegion('索拉姆·圣心大教堂')).toBe('索拉维亚');
     expect(normalizeRegion('学院宿舍楼')).toBe('圣德里安学院');
-    expect(inferRegionFromTravelText('我想去银月城')).toBe('银月之城');
-    expect(inferRegionFromTravelText('从伊拉亚城前往学院')).toBe(
-      '圣德里安学院',
-    );
-    expect(inferRegionFromTravelText('返回潮汐广场')).toBe('奈亚索斯城');
-    expect(inferRegionFromTravelText('我失去了学院徽章')).toBe('');
-    expect(inferRegionFromTravelText('聊聊银月之城的传闻')).toBe('');
+    expect(normalizeRegion('银月城')).toBe('银月之城');
   });
 
-  it('只切换带自动标记的官方条目', async () => {
+  it('只按玩家操作开关指定地区条目，不触碰全局、手动和玩家自建条目', async () => {
     const harness = createSwitcher({
       entries: [
         {
@@ -84,40 +77,47 @@ describe('地区世界书', () => {
       ],
     });
 
-    const result = await harness.switcher.sync('伊拉亚城');
+    expect(await harness.switcher.inspect()).toMatchObject({
+      status: 'current',
+      regions: expect.arrayContaining([
+        { region: '伊拉亚城', total: 1, enabled: 0, state: 'off' },
+        { region: '圣德里安学院', total: 1, enabled: 1, state: 'on' },
+      ]),
+    });
+    const result = await harness.switcher.setRegionEnabled('伊拉亚城', true);
 
     expect(result).toMatchObject({
       status: 'applied',
       region: '伊拉亚城',
-      touched: 4,
-      changed: 4,
+      touched: 1,
+      changed: 1,
     });
     expect(harness.entries()).toEqual([
-      expect.objectContaining({ uid: 1, enabled: true, disable: false }),
+      expect.objectContaining({ uid: 1, enabled: false, disable: true }),
       expect.objectContaining({ uid: 2, enabled: true, disable: false }),
-      expect.objectContaining({ uid: 3, enabled: false, disable: true }),
-      expect.objectContaining({ uid: 4, enabled: false, disable: true }),
+      expect.objectContaining({ uid: 3, enabled: true, disable: false }),
+      expect.objectContaining({ uid: 4, enabled: true, disable: false }),
       { uid: 5, name: '玩家自建资料', enabled: true },
     ]);
-    expect(await harness.switcher.sync('伊拉亚城')).toMatchObject({
-      status: 'skipped',
+    expect(
+      await harness.switcher.switchRegion('伊拉亚城', '圣德里安学院'),
+    ).toMatchObject({
+      status: 'applied',
+      region: '圣德里安学院',
+      touched: 2,
+      changed: 1,
     });
-    expect(harness.api.updateWorldbookWith).toHaveBeenCalledTimes(1);
+    expect(harness.entries()[1]).toMatchObject({ enabled: false, disable: true });
+    expect(harness.entries()[2]).toMatchObject({ enabled: true, disable: false });
   });
 
   it('支持 comment、name 和 extra.comment 上的地区标记', () => {
     expect(
-      entryRegionState(
-        { comment: '地点 [AUTO_REGION:奈亚索斯城,阿必塞海]' },
-        '潮汐广场',
-      ),
-    ).toBe(true);
+      entryRegions({ comment: '地点 [AUTO_REGION:奈亚索斯城,阿必塞海]' }),
+    ).toEqual(['奈亚索斯城', '阿必塞海']);
     expect(
-      entryRegionState(
-        { extra: { comment: '地点 [AUTO_REGION:炉心城]' } },
-        '学院',
-      ),
-    ).toBe(false);
+      entryRegions({ extra: { comment: '地点 [AUTO_REGION:炉心城]' } }),
+    ).toEqual(['炉心城']);
   });
 
   it('幂等删除旧任务剧情，但保留地区资料和玩家同 UID 自建条目', async () => {
@@ -172,7 +172,9 @@ describe('地区世界书', () => {
       worldbookName: '玩家自己的世界书',
       entries: [{ name: '地点 [AUTO_REGION:伊拉亚城]' }],
     });
-    expect(await wrongWorldbook.switcher.sync('伊拉亚城')).toMatchObject({
+    expect(
+      await wrongWorldbook.switcher.setRegionEnabled('伊拉亚城', true),
+    ).toMatchObject({
       status: 'wrong-worldbook',
     });
     expect(wrongWorldbook.api.updateWorldbookWith).not.toHaveBeenCalled();

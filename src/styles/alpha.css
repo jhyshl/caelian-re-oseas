@@ -41,6 +41,13 @@
   pointer-events: none;
 }
 
+.caelian-worldbook-host {
+  /* Quick controls float above Tavern and regular panels, but below the launcher and modals. */
+  z-index: 2147483645;
+  display: block;
+  padding: 0;
+}
+
 .caelian-modal-host {
   /* Modal panels must cover the draggable shell and all game panels. */
   z-index: 2147483647;

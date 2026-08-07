@@ -77,6 +77,7 @@ const primary: Array<{ panel: PanelName; icon: string; label: string }> = [
   { panel: 'mailbox', icon: '✉', label: '邮箱' },
   { panel: 'market', icon: '¤', label: '集市' },
   { panel: 'map', icon: '⌖', label: '地图' },
+  { panel: 'worldbook', icon: '▤', label: '世界书' },
   { panel: 'battle', icon: '✹', label: '战斗' },
   { panel: 'achievements', icon: '♛', label: '成就' },
   { panel: 'settings', icon: '⚙', label: '设置' },

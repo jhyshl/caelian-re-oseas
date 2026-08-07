@@ -27,7 +27,7 @@ afterEach(async () => {
 });
 
 describe('CaelianKernel integration', () => {
-  it('清理旧剧情，并在玩家前往可访问地区时预载对应世界书', async () => {
+  it('清理旧剧情，但只在玩家手动操作时切换地区世界书', async () => {
     const databaseName = `caelian-alpha-region-book-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
     const handlers = new Map<unknown, (...args: unknown[]) => void>();
@@ -103,22 +103,44 @@ describe('CaelianKernel integration', () => {
 
     expect(worldbook.map((entry) => entry.uid)).toEqual([43, 79, 78, 500]);
     expect(worldbook.find((entry) => entry.uid === 79)).toMatchObject({
-      enabled: true,
-      disable: false,
-    });
-    expect(worldbook.find((entry) => entry.uid === 78)).toMatchObject({
       enabled: false,
       disable: true,
+    });
+    expect(worldbook.find((entry) => entry.uid === 78)).toMatchObject({
+      enabled: true,
+      disable: false,
     });
 
     chat.push({ mes: '从伊拉亚城前往圣德里安学院', is_user: true });
     handlers.get('user-message-rendered')?.(0);
-    await expect
-      .poll(() => worldbook.find((entry) => entry.uid === 78)?.enabled)
-      .toBe(true);
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    expect(worldbook.find((entry) => entry.uid === 78)?.enabled).toBe(true);
+    expect(worldbook.find((entry) => entry.uid === 79)?.enabled).toBe(false);
+
+    expect(
+      await kernel.api.setRegionWorldbook('伊拉亚城', true),
+    ).toMatchObject({ status: 'applied', touched: 1 });
+    expect(worldbook.find((entry) => entry.uid === 79)).toMatchObject({
+      enabled: true,
+      disable: false,
+    });
+    expect(
+      await kernel.api.switchRegionWorldbook(
+        '伊拉亚城',
+        '圣德里安学院',
+      ),
+    ).toMatchObject({ status: 'applied', touched: 2 });
     expect(worldbook.find((entry) => entry.uid === 79)).toMatchObject({
       enabled: false,
       disable: true,
+    });
+    expect(worldbook.find((entry) => entry.uid === 78)?.enabled).toBe(true);
+    expect(await kernel.api.getRegionWorldbookStatus()).toMatchObject({
+      status: 'current',
+      regions: expect.arrayContaining([
+        expect.objectContaining({ region: '伊拉亚城', state: 'off' }),
+        expect.objectContaining({ region: '圣德里安学院', state: 'on' }),
+      ]),
     });
     expect(worldbook.find((entry) => entry.uid === 500)).toEqual({
       uid: 500,
@@ -320,6 +342,7 @@ describe('CaelianKernel integration', () => {
       'mailbox',
       'market',
       'map',
+      'worldbook',
       'battle',
       'achievements',
       'settings',
@@ -871,7 +894,7 @@ describe('CaelianKernel integration', () => {
     });
     expect(directlyEditedState.world).toMatchObject({
       place: '学院钟楼',
-      location: '圣德里安学院-学院钟楼',
+      location: '圣德里安学院 · 学院钟楼',
       gameDate: '新圣约历1385-09-03',
       gameTime: '16:20',
       weather: '晚霞',
@@ -1358,13 +1381,21 @@ describe('CaelianKernel integration', () => {
     handlers.get('message-received')?.(1);
 
     await expect
-      .poll(async () => (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId)
+      .poll(
+        async () =>
+          (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId,
+        { timeout: 3000 },
+      )
       .toBe('flora-selling-flowers');
 
     chat.splice(1, 1);
     handlers.get('message-deleted')?.(1);
     await expect
-      .poll(async () => (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId)
+      .poll(
+        async () =>
+          (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId,
+        { timeout: 3000 },
+      )
       .toBe('flora-encounter');
 
     chat.push({
@@ -1373,7 +1404,11 @@ describe('CaelianKernel integration', () => {
     });
     handlers.get('message-received')?.(1);
     await expect
-      .poll(async () => (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId)
+      .poll(
+        async () =>
+          (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId,
+        { timeout: 3000 },
+      )
       .toBe('flora-selling-flowers');
 
     await kernel.api.shutdown();

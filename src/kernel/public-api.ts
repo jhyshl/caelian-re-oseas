@@ -31,6 +31,10 @@ import type {
   QuestJudgeModel,
   QuestJudgeModelListConfig,
 } from '@/quests/judge-client';
+import type {
+  RegionWorldbookOverview,
+  RegionWorldbookSyncResult,
+} from '@/worldbook/region-switcher';
 
 export interface QuestJudgeStatus {
   configured: boolean;
@@ -78,6 +82,7 @@ export type PanelName =
   | 'market'
   | 'guild'
   | 'map'
+  | 'worldbook'
   | 'battle'
   | 'achievements'
   | 'mailbox'
@@ -135,6 +140,15 @@ export interface CaelianPublicApi {
   notify(input: NotificationInput): number;
   confirm(input: ConfirmationInput): Promise<boolean>;
   syncProjection(): Promise<boolean>;
+  getRegionWorldbookStatus(): Promise<RegionWorldbookOverview>;
+  setRegionWorldbook(
+    region: string,
+    enabled: boolean,
+  ): Promise<RegionWorldbookSyncResult>;
+  switchRegionWorldbook(
+    previousRegion: string,
+    nextRegion: string,
+  ): Promise<RegionWorldbookSyncResult>;
   syncManagedContent(options?: {
     force?: boolean;
   }): Promise<ManagedContentSyncResult>;
@@ -182,6 +196,9 @@ export type PanelApi = Pick<
   | 'getAvatarUrls'
   | 'refreshNarrativeFromMvu'
   | 'syncProjection'
+  | 'getRegionWorldbookStatus'
+  | 'setRegionWorldbook'
+  | 'switchRegionWorldbook'
   | 'syncManagedContent'
   | 'listSurveys'
   | 'submitSurvey'

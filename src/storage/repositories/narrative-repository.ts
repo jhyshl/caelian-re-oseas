@@ -2,6 +2,7 @@ import type { MvuNarrativePatch } from '@/mvu/contracts';
 import { relationshipStage } from '@/mvu/contracts';
 import type { CaelianDatabase } from '@/storage/database';
 import { defaultSocialProgress } from '@/storage/defaults';
+import { canonicalWorldLocation } from '@/worldbook/location-state';
 
 export class NarrativeRepository {
   constructor(private readonly db: CaelianDatabase) {}
@@ -29,9 +30,11 @@ export class NarrativeRepository {
     if (patch.world) {
       const current = await this.db.worldStates.get(profileId);
       if (!current) throw new Error('世界状态不存在');
+      const location = canonicalWorldLocation(current, patch.world);
       await this.db.worldStates.put({
         ...current,
         ...patch.world,
+        ...location,
         profileId,
         updatedAt: now,
       });

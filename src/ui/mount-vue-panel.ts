@@ -17,6 +17,8 @@ export function mountVuePanel(
   host.className =
     panel === 'shell'
       ? 'caelian-panel-host caelian-shell-host'
+      : panel === 'worldbook'
+        ? 'caelian-panel-host caelian-worldbook-host'
       : panel === 'feedback' ||
           panel === 'surveys' ||
           panel === 'release-notes' ||
