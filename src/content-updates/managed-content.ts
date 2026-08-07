@@ -1,3 +1,5 @@
+import { isCaelianCharacterName } from '@/content/character-identity';
+
 const CHARACTER_NAME = '凯利安';
 const ALLOWED_WORLDBOOK_NAMES = new Set([
   '孔雀开屏你说看不见',
@@ -234,7 +236,7 @@ export class ManagedContentUpdater {
     }
 
     const characterName = await this.currentCharacterName(api);
-    if (characterName !== CHARACTER_NAME) {
+    if (!isCaelianCharacterName(characterName)) {
       return emptyResult('wrong-character');
     }
 

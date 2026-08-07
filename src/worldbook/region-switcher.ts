@@ -1,4 +1,5 @@
-const CHARACTER_NAME = '凯利安';
+import { isCaelianCharacterName } from '@/content/character-identity';
+
 const ALLOWED_WORLDBOOK_NAMES = new Set([
   '孔雀开屏你说看不见',
   '孔雀开屏你说你看不见',
@@ -496,7 +497,7 @@ export class RegionWorldbookSwitcher {
     }
     const directName = api.getCurrentCharacterName?.call(api)?.trim();
     const characterName = directName || (await this.currentCharacterName());
-    if (characterName?.trim() !== CHARACTER_NAME) {
+    if (!isCaelianCharacterName(characterName)) {
       return { status: 'wrong-character' };
     }
     const bindings = api.getCharWorldbookNames.call(api, 'current');
@@ -515,7 +516,7 @@ export class RegionWorldbookSwitcher {
 
     const directName = api.getCurrentCharacterName?.call(api)?.trim();
     const characterName = directName || (await this.currentCharacterName());
-    if (characterName?.trim() !== CHARACTER_NAME) {
+    if (!isCaelianCharacterName(characterName)) {
       return cleanupResult('wrong-character');
     }
 

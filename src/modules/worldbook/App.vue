@@ -38,7 +38,7 @@ async function refresh() {
       overview.value.status === 'wrong-worldbook'
         ? '当前角色没有绑定凯利安官方世界书。'
         : overview.value.status === 'wrong-character'
-          ? '当前角色不是凯利安，未修改任何世界书。'
+          ? '当前角色不是凯利安、凯利安alpha或凯利安beta，未修改任何世界书。'
           : overview.value.message || '酒馆世界书接口暂不可用，请稍后重试。';
   }
 }

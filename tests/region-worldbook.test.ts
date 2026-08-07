@@ -46,6 +46,29 @@ describe('地区世界书', () => {
     expect(normalizeRegion('银月城')).toBe('银月之城');
   });
 
+  it.each(['凯利安', '凯利安alpha', '凯利安beta', '凯利安 Beta'])(
+    '角色名为“%s”时允许读取和切换官方世界书',
+    async (characterName) => {
+      const harness = createSwitcher({
+        characterName,
+        entries: [
+          {
+            name: '银月资料 [AUTO_REGION:银月之城]',
+            enabled: false,
+            disable: true,
+          },
+        ],
+      });
+
+      expect(await harness.switcher.inspect()).toMatchObject({
+        status: 'current',
+      });
+      expect(
+        await harness.switcher.setRegionEnabled('银月之城', true),
+      ).toMatchObject({ status: 'applied', changed: 1 });
+    },
+  );
+
   it('只按玩家操作开关指定地区条目，不触碰全局、手动和玩家自建条目', async () => {
     const harness = createSwitcher({
       entries: [

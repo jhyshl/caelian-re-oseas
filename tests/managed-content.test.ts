@@ -87,6 +87,19 @@ function createHarness(options: {
 }
 
 describe('ManagedContentUpdater', () => {
+  it.each(['凯利安alpha', '凯利安beta', '凯利安 Beta'])(
+    '角色名为“%s”时允许同步官方受管内容',
+    async (characterName) => {
+      const harness = createHarness({ characterName });
+      const result = await new ManagedContentUpdater(harness.host).sync({
+        force: true,
+      });
+
+      expect(result.status).toBe('current');
+      expect(harness.host.fetch).toHaveBeenCalled();
+    },
+  );
+
   it('发布角色卡不含旧剧情条目，并保留地区自动切换资料', () => {
     const card = JSON.parse(
       readFileSync(

@@ -62,7 +62,8 @@ async function syncManagedContent() {
   const result = await props.context.api.syncManagedContent({ force: true });
   contentSyncing.value = false;
   if (result.status === 'wrong-character') {
-    notice.value = '当前角色不是“凯利安”，未读取或修改任何角色卡内容。';
+    notice.value =
+      '当前角色不是“凯利安”“凯利安alpha”或“凯利安beta”，未读取或修改任何角色卡内容。';
     return;
   }
   if (result.status === 'wrong-worldbook') {
@@ -313,7 +314,7 @@ onMounted(async () => {
           <div>
             <strong>角色卡 / 世界书安全增量更新</strong>
             <span>
-              仅允许修改“凯利安”及其指定绑定世界书。更新只处理管理端标记的精确片段；
+              仅允许修改“凯利安”“凯利安alpha”“凯利安beta”及其指定绑定世界书。更新只处理管理端标记的精确片段；
               与玩家修改冲突时保留玩家版本，不会整卡覆盖。
             </span>
           </div>
