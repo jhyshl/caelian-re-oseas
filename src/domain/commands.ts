@@ -276,10 +276,35 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     ...commandBase,
     type: z.literal('battle.start'),
     payload: z.object({
-      monsterId: z.string().trim().min(1).max(160),
+      monsterId: z.string().trim().min(1).max(160).optional(),
       count: z.number().int().min(1).max(12).optional(),
       source: z.string().trim().min(1).max(180).optional(),
       relatedQuestId: z.string().trim().max(220).optional(),
+      workshopTest: z
+        .object({
+          professionId: z.string().trim().min(1).max(100),
+          mechanismIds: z
+            .array(z.string().trim().min(1).max(100))
+            .max(20)
+            .default([]),
+          dummyCount: z.number().int().min(1).max(8),
+          dummyHp: z.number().int().min(1).max(1_000_000),
+          dummyAttack: z.number().int().min(0).max(100_000),
+          dummyDefense: z.number().int().min(0).max(100_000),
+          dummyInvincible: z.boolean(),
+          dummyAttackEnabled: z.boolean(),
+          autoRespawn: z.boolean(),
+          playerInvincible: z.boolean(),
+          attributes: z.object({
+            hpMax: z.number().int().min(0).max(792),
+            mpMax: z.number().int().min(0).max(792),
+            attack: z.number().int().min(0).max(792),
+            defense: z.number().int().min(0).max(792),
+            speed: z.number().int().min(0).max(792),
+            actionPointsPerTurn: z.number().int().min(0).max(100),
+          }),
+        })
+        .optional(),
     }),
   }),
   z.object({

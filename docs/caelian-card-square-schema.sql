@@ -38,6 +38,27 @@ create table if not exists public.caelian_card_square_entries (
   )
 );
 
+update public.caelian_card_square_entries as entries
+set tags = array(
+  select distinct tag
+  from unnest(entries.tags) as tag
+  where tag = any(array[
+    '新手友好', '高难挑战', '爆发', '持续输出',
+    '防御', '回复', '控制', '召唤',
+    '资源管理', '抽牌', '弃牌', '状态流',
+    '单体', '群攻', '低费循环', '机制向'
+  ]::text[])
+);
+alter table public.caelian_card_square_entries
+  drop constraint if exists caelian_card_square_fixed_tags;
+alter table public.caelian_card_square_entries
+  add constraint caelian_card_square_fixed_tags check (tags <@ array[
+    '新手友好', '高难挑战', '爆发', '持续输出',
+    '防御', '回复', '控制', '召唤',
+    '资源管理', '抽牌', '弃牌', '状态流',
+    '单体', '群攻', '低费循环', '机制向'
+  ]::text[]);
+
 alter table public.caelian_card_square_entries
   add column if not exists submission_token uuid;
 update public.caelian_card_square_entries

@@ -167,6 +167,7 @@ const selectedCardDefinition = computed(() =>
   selectedCard.value ? cards.value[selectedCard.value.cardId] : undefined,
 );
 const resultTitle = computed(() => {
+  if (state.value?.workshopTest) return '测试结束';
   if (state.value?.status === 'victory') return '战斗胜利';
   if (state.value?.status === 'defeat') return '战斗失败';
   if (state.value?.status === 'surrendered') return '已从战斗撤退';
@@ -781,10 +782,13 @@ async function useBattleItem(item: BattleInventoryRow) {
 
 async function surrender() {
   if (!battle.value) return;
+  const testing = Boolean(state.value?.workshopTest);
   const confirmed = await props.context.api.confirm({
-    title: '确认从战斗中撤退？',
-    description: '撤退会损失当前生命与一部分金币，本轮战斗也会立即结束。',
-    confirmText: '确认撤退',
+    title: testing ? '确认结束创意工坊测试？' : '确认从战斗中撤退？',
+    description: testing
+      ? '测试将立即结束，正式角色、背包、任务和奖励都不会改变。'
+      : '撤退会损失当前生命与一部分金币，本轮战斗也会立即结束。',
+    confirmText: testing ? '结束测试' : '确认撤退',
     cancelText: '继续战斗',
     tone: 'danger',
   });
@@ -860,7 +864,8 @@ onUnmounted(() => {
       <section v-if="state.status !== 'ongoing'" class="battle-result">
         <span>LOCAL BATTLE RESULT</span>
         <h1>{{ resultTitle }}</h1>
-        <p>本次战斗已经在浏览器本地完成结算。</p>
+        <p v-if="state.workshopTest">隔离测试已完成，没有修改正式角色、背包、任务与奖励。</p>
+        <p v-else>本次战斗已经在浏览器本地完成结算。</p>
         <div v-if="state.rewards" class="reward-grid">
           <article>
             <small>经验</small>
@@ -942,6 +947,9 @@ onUnmounted(() => {
         <header class="battle-topbar">
           <div>
             <strong>
+              <template v-if="state.workshopTest">
+                创意工坊测试 · 木桩复活 {{ state.workshopTest.respawns }} 次 ·
+              </template>
               第 {{ state.turn }} 回合 ·
               {{ state.phase === 'player' ? '玩家行动' : '敌方行动' }}
               <em v-if="animationPlaying"> · 动画结算中</em>
@@ -953,7 +961,7 @@ onUnmounted(() => {
               战况
             </button>
             <button type="button" class="escape" :disabled="busy" @click="surrender">
-              逃跑
+              {{ state.workshopTest ? '结束测试' : '逃跑' }}
             </button>
           </div>
         </header>

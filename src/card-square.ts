@@ -14,6 +14,24 @@ export const CARD_SQUARE_FAVORITES_KEY = 'caelian_card_square_favorites_v1';
 export const CARD_SQUARE_RECEIPTS_KEY = 'caelian_card_square_receipts_v1';
 export const CARD_SQUARE_RECEIPT_FORMAT = 'caelian_card_square_receipt';
 export const DECK_BUILD_FORMAT = 'caelian_deck_build';
+export const CARD_SQUARE_TAGS = [
+  '新手友好',
+  '高难挑战',
+  '爆发',
+  '持续输出',
+  '防御',
+  '回复',
+  '控制',
+  '召唤',
+  '资源管理',
+  '抽牌',
+  '弃牌',
+  '状态流',
+  '单体',
+  '群攻',
+  '低费循环',
+  '机制向',
+] as const;
 
 export type CardSquareKind = 'deck_build' | 'custom_class' | 'mechanism';
 export type CardSquareStatus =
@@ -136,15 +154,21 @@ const receiptStatusSchema = z.object({
 });
 
 function normalizedTags(tags: string[]): string[] {
-  return [
+  const allowed = new Set<string>(CARD_SQUARE_TAGS);
+  const normalized = [
     ...new Set(
       tags
         .flatMap((tag) => tag.split(/[，,]/))
         .map((tag) => tag.trim())
-        .filter(Boolean)
-        .map((tag) => tag.slice(0, 18)),
+        .filter(Boolean),
     ),
-  ].slice(0, 8);
+  ];
+  const invalid = normalized.filter((tag) => !allowed.has(tag));
+  if (invalid.length) {
+    throw new Error(`只能选择卡牌广场提供的固定标签：${invalid.join('、')}。`);
+  }
+  if (normalized.length > 8) throw new Error('每份作品最多选择 8 个标签。');
+  return normalized;
 }
 
 export function normalizeDeckBuild(value: unknown): SquareDeckBuild {

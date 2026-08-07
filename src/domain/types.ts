@@ -459,6 +459,17 @@ export interface LocalBattleState {
     resources: Record<string, number>;
     fired: string[];
   };
+  /** Isolated Creative Workshop battle. It never writes rewards or player loss. */
+  workshopTest?: {
+    professionId: string;
+    dummyInvincible: boolean;
+    dummyAttackEnabled: boolean;
+    autoRespawn: boolean;
+    playerInvincible: boolean;
+    respawns: number;
+    attributeBudget: number;
+    attributeSpent: number;
+  };
   rewardChoices?: {
     cardIds: string[];
     equipmentIds: string[];

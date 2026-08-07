@@ -1,4 +1,10 @@
 import type { CardDefinition, CardEffect } from '@/content/types';
+import {
+  normalizeWorkshopMechanism,
+  readWorkshopMechanisms,
+  saveWorkshopMechanism,
+  type WorkshopMechanismManifest,
+} from '@/workshop-mechanisms';
 
 export const WORKSHOP_STORAGE_KEY = 'caelian_custom_workshop_packs_v1';
 export const WORKSHOP_DRAFT_STORAGE_KEY = 'caelian_custom_workshop_drafts_v1';
@@ -34,6 +40,9 @@ export interface WorkshopClass {
   description: string;
   talent: WorkshopTalent;
   cards: WorkshopCard[];
+  /** All card copies granted to the player when this profession is installed. */
+  cardPool: string[];
+  /** Exactly 15 card copies equipped as the default deck. */
   starterDeck: string[];
   mechanismIds?: string[];
   custom: true;
@@ -46,6 +55,8 @@ export interface WorkshopPack {
   author: string;
   exported_at: string;
   classes: WorkshopClass[];
+  /** Declarative mechanisms bundled with the profession for portable imports. */
+  mechanisms?: WorkshopMechanismManifest[];
 }
 
 export interface WorkshopDraft {
@@ -944,19 +955,63 @@ export function normalizeWorkshopClass(
       `职业「${name}」的天赋强度过高（${Math.round(talentPower)}/24），请减少数值或删除部分词条。`,
     );
   }
-  const cards = (Array.isArray(source.cards) ? source.cards : []).map(
+  const rawCards = Array.isArray(source.cards) ? source.cards : [];
+  if (rawCards.length < 8 || rawCards.length > 16) {
+    throw new Error(`职业「${name}」需要 8–16 种不同卡牌。`);
+  }
+  const cards = rawCards.map(
     (entry, cardIndex) => normalizeWorkshopCard(entry, id, cardIndex),
   );
+  if (new Set(cards.map((card) => card.id)).size !== cards.length) {
+    throw new Error(`职业「${name}」存在重复的卡牌 ID。`);
+  }
+  if (
+    new Set(cards.map((card) => card.name.trim().toLocaleLowerCase('zh-CN')))
+      .size !== cards.length
+  ) {
+    throw new Error(`职业「${name}」的 8–16 种卡牌必须使用不同名称。`);
+  }
   const cardIds = new Set(cards.map((card) => card.id));
-  let starterDeck = (
+  const starterDeck = (
     Array.isArray(source.starterDeck) ? source.starterDeck : []
   )
     .map(String)
     .filter((cardId) => cardIds.has(cardId));
-  if (!starterDeck.length) starterDeck = cards.map((card) => card.id).slice(0, 15);
-  starterDeck = starterDeck.slice(0, 20);
-  if (starterDeck.length < 10) {
-    throw new Error(`职业「${name}」的预设卡组至少需要10张牌。`);
+  if (starterDeck.length !== 15) {
+    throw new Error(`职业「${name}」的基础卡组构筑必须正好 15 张。`);
+  }
+
+  const cardPool = (
+    Array.isArray(source.cardPool) ? source.cardPool : []
+  )
+    .map(String)
+    .filter((cardId) => cardIds.has(cardId));
+  if (cardPool.length < 16 || cardPool.length > 32) {
+    throw new Error(`职业「${name}」的可配置职业卡池必须为 16–32 张。`);
+  }
+  if (new Set(cardPool).size !== cards.length) {
+    throw new Error(`职业「${name}」的每一种卡牌都必须出现在职业卡池中。`);
+  }
+  const starterCounts = starterDeck.reduce<Record<string, number>>(
+    (result, cardId) => {
+      result[cardId] = (result[cardId] ?? 0) + 1;
+      return result;
+    },
+    {},
+  );
+  const poolCounts = cardPool.reduce<Record<string, number>>(
+    (result, cardId) => {
+      result[cardId] = (result[cardId] ?? 0) + 1;
+      return result;
+    },
+    {},
+  );
+  if (
+    Object.entries(starterCounts).some(
+      ([cardId, count]) => count > (poolCounts[cardId] ?? 0),
+    )
+  ) {
+    throw new Error(`职业「${name}」的基础构筑数量不能超过职业卡池持有数。`);
   }
   return {
     id,
@@ -976,6 +1031,7 @@ export function normalizeWorkshopClass(
       effects: talentEffects,
     },
     cards,
+    cardPool,
     starterDeck,
     mechanismIds: (Array.isArray(source.mechanismIds)
       ? source.mechanismIds
@@ -999,6 +1055,12 @@ export function normalizeWorkshopPack(value: unknown): WorkshopPack {
     normalizeWorkshopClass(entry, index),
   );
   if (!classes.length) throw new Error('职业包中没有有效职业。');
+  const mechanisms = (Array.isArray(source.mechanisms) ? source.mechanisms : [])
+    .slice(0, 20)
+    .map((entry) => normalizeWorkshopMechanism(entry));
+  const uniqueMechanisms = [
+    ...new Map(mechanisms.map((entry) => [entry.id, entry])).values(),
+  ];
   return {
     format: WORKSHOP_FORMAT,
     version: 1,
@@ -1009,6 +1071,7 @@ export function normalizeWorkshopPack(value: unknown): WorkshopPack {
     author: String(source.author ?? '玩家自定义').slice(0, 30),
     exported_at: String(source.exported_at ?? new Date().toISOString()),
     classes,
+    ...(uniqueMechanisms.length ? { mechanisms: uniqueMechanisms } : {}),
   };
 }
 
@@ -1052,6 +1115,9 @@ function writeWorkshopPacks(packs: WorkshopPack[]): void {
 
 export function saveWorkshopPack(value: unknown): WorkshopPack {
   const normalized = normalizeWorkshopPack(value);
+  for (const mechanism of normalized.mechanisms ?? []) {
+    saveWorkshopMechanism(mechanism);
+  }
   const classIds = new Set(normalized.classes.map((entry) => entry.id));
   const kept = readWorkshopPacks().filter(
     (pack) => !pack.classes.some((entry) => classIds.has(entry.id)),
@@ -1076,19 +1142,39 @@ export function deleteWorkshopClass(classId: string): boolean {
 
 export function exportWorkshopPack(value?: unknown): WorkshopPack {
   if (value) {
-    return {
-      ...normalizeWorkshopPack(value),
+    const normalized = normalizeWorkshopPack(value);
+    return attachReferencedMechanisms({
+      ...normalized,
       exported_at: new Date().toISOString(),
-    };
+    });
   }
-  return {
+  return attachReferencedMechanisms({
     format: WORKSHOP_FORMAT,
     version: 1,
     packName: '凯利安创意工坊职业包合集',
     author: '玩家自定义',
     exported_at: new Date().toISOString(),
     classes: readWorkshopPacks().flatMap((pack) => pack.classes),
-  };
+  });
+}
+
+function attachReferencedMechanisms(pack: WorkshopPack): WorkshopPack {
+  const required = new Set(
+    pack.classes.flatMap((profession) => profession.mechanismIds ?? []),
+  );
+  if (!required.size) return pack;
+  const candidates = [
+    ...(pack.mechanisms ?? []),
+    ...readWorkshopMechanisms(),
+  ];
+  const mechanisms = [
+    ...new Map(
+      candidates
+        .filter((mechanism) => required.has(mechanism.id))
+        .map((mechanism) => [mechanism.id, mechanism]),
+    ).values(),
+  ];
+  return mechanisms.length ? { ...pack, mechanisms } : pack;
 }
 
 export function readWorkshopDrafts(): WorkshopDraft[] {

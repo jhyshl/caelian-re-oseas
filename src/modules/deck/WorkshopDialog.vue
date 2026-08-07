@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /* global Blob, Event, HTMLInputElement, URL, clearTimeout, document, setTimeout, structuredClone, window */
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, toRaw, watch } from 'vue';
 import { refreshWorkshopPassiveCatalog } from '@/content/catalogs/battle';
 import {
   loadCardCatalog,
@@ -9,6 +9,7 @@ import {
 import { refreshWorkshopProfessionCatalogs } from '@/content/catalogs/professions';
 import type { CardEffect } from '@/content/types';
 import type { PanelContext } from '@/kernel/public-api';
+import { commandId } from '@/kernel/ids';
 import WorkshopEffectEditor from '@/modules/deck/WorkshopEffectEditor.vue';
 import {
   WORKSHOP_MECHANISM_FORMAT,
@@ -60,6 +61,7 @@ interface EditableClass {
     effects: EditableEffect[];
   };
   cards: EditableCard[];
+  cardPool: string[];
   starterDeck: string[];
   mechanismIds: string[];
 }
@@ -67,7 +69,7 @@ interface EditableClass {
 const props = defineProps<{ context: PanelContext }>();
 const emit = defineEmits<{ close: []; saved: [] }>();
 
-const tab = ref<'library' | 'editor' | 'drafts' | 'extensions'>('library');
+const tab = ref<'library' | 'editor' | 'drafts' | 'extensions' | 'test'>('library');
 const published = ref(readWorkshopPacks());
 const drafts = ref(readWorkshopDrafts());
 const extensions = ref(readWorkshopExtensions());
@@ -77,6 +79,26 @@ const activeCardId = ref('');
 const notice = ref('');
 const error = ref('');
 const importInput = ref<HTMLInputElement>();
+const testProfessionId = ref('');
+const testMechanismIds = ref<string[]>([]);
+const testConfig = ref({
+  dummyCount: 1,
+  dummyHp: 500,
+  dummyAttack: 0,
+  dummyDefense: 0,
+  dummyInvincible: false,
+  dummyAttackEnabled: false,
+  autoRespawn: true,
+  playerInvincible: true,
+  attributes: {
+    hpMax: 40,
+    mpMax: 30,
+    attack: 220,
+    defense: 180,
+    speed: 100,
+    actionPointsPerTurn: 6,
+  },
+});
 let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 const mainClassNames: Record<string, string> = {
@@ -97,6 +119,12 @@ const activeCard = computed(() =>
 );
 const deckCounts = computed(() =>
   editor.value.starterDeck.reduce<Record<string, number>>((result, id) => {
+    result[id] = (result[id] ?? 0) + 1;
+    return result;
+  }, {}),
+);
+const poolCounts = computed(() =>
+  editor.value.cardPool.reduce<Record<string, number>>((result, id) => {
     result[id] = (result[id] ?? 0) + 1;
     return result;
   }, {}),
@@ -128,6 +156,20 @@ const effectOptions = computed(() => [
     })),
   ),
 ]);
+const maxLevelAttributeBudget = 99 * 8;
+const testAttributeSpent = computed(() => {
+  const attributes = testConfig.value.attributes;
+  const apCount = Math.max(0, Math.floor(attributes.actionPointsPerTurn));
+  const apCost = Math.min(apCount, 6) * 2 + Math.max(0, apCount - 6) * 3;
+  return (
+    Math.max(0, attributes.hpMax) +
+    Math.max(0, attributes.mpMax) +
+    Math.max(0, attributes.attack) +
+    Math.max(0, attributes.defense) +
+    Math.max(0, attributes.speed) +
+    apCost
+  );
+});
 
 function supportsCardType(
   option: { cardTypes: readonly string[] },
@@ -144,7 +186,7 @@ watch(
       saveWorkshopDraft({
         id: editor.value.id,
         updatedAt: Date.now(),
-        value: structuredClone(editor.value) as unknown as Partial<WorkshopClass>,
+        value: structuredClone(toRaw(editor.value)) as unknown as Partial<WorkshopClass>,
       });
       drafts.value = readWorkshopDrafts();
     }, 400);
@@ -172,13 +214,14 @@ function createEditor(): EditableClass {
       effects: [],
     },
     cards: [],
+    cardPool: [],
     starterDeck: [],
     mechanismIds: [],
   };
 }
 
 function editableFromClass(profession: WorkshopClass): EditableClass {
-  return structuredClone(profession) as unknown as EditableClass;
+  return structuredClone(toRaw(profession)) as unknown as EditableClass;
 }
 
 function newProfession(): void {
@@ -198,7 +241,11 @@ function editProfession(profession: WorkshopClass): void {
 }
 
 function loadDraft(draft: WorkshopDraft): void {
-  editor.value = structuredClone(draft.value) as unknown as EditableClass;
+  editor.value = structuredClone(toRaw(draft.value)) as unknown as EditableClass;
+  editor.value.cards ??= [];
+  editor.value.starterDeck ??= [];
+  editor.value.cardPool ??= [];
+  editor.value.mechanismIds ??= [];
   activeCardId.value = editor.value.cards?.[0]?.id ?? '';
   tab.value = 'editor';
 }
@@ -226,6 +273,7 @@ function addTalent(type: string): void {
 }
 
 function addCard(): void {
+  if (editor.value.cards.length >= 16) return;
   const id = makeId(`custom_card_${editor.value.id}`);
   editor.value.cards.push({
     id,
@@ -235,6 +283,7 @@ function addCard(): void {
     description: '',
     effects: [],
   });
+  editor.value.cardPool.push(id);
   activeCardId.value = id;
 }
 
@@ -243,6 +292,7 @@ function deleteCard(cardId: string): void {
   editor.value.starterDeck = editor.value.starterDeck.filter(
     (id) => id !== cardId,
   );
+  editor.value.cardPool = editor.value.cardPool.filter((id) => id !== cardId);
   activeCardId.value = editor.value.cards[0]?.id ?? '';
 }
 
@@ -299,8 +349,8 @@ async function validateCard(): Promise<void> {
 }
 
 function addDeckCopy(cardId: string): void {
-  if (editor.value.starterDeck.length >= 20) return;
-  if ((deckCounts.value[cardId] ?? 0) >= 3) return;
+  if (editor.value.starterDeck.length >= 15) return;
+  if ((deckCounts.value[cardId] ?? 0) >= (poolCounts.value[cardId] ?? 0)) return;
   editor.value.starterDeck.push(cardId);
 }
 
@@ -309,18 +359,36 @@ function removeDeckCopy(cardId: string): void {
   if (index >= 0) editor.value.starterDeck.splice(index, 1);
 }
 
+function addPoolCopy(cardId: string): void {
+  if (editor.value.cardPool.length >= 32) return;
+  editor.value.cardPool.push(cardId);
+}
+
+function removePoolCopy(cardId: string): void {
+  if ((poolCounts.value[cardId] ?? 0) <= (deckCounts.value[cardId] ?? 0)) return;
+  const index = editor.value.cardPool.lastIndexOf(cardId);
+  if (index >= 0) editor.value.cardPool.splice(index, 1);
+}
+
 async function publishProfession(): Promise<void> {
   error.value = '';
   notice.value = '';
   try {
-    if (editor.value.starterDeck.length < 10) {
-      throw new Error('预设牌组至少需要 10 张卡牌。');
+    if (editor.value.cards.length < 8 || editor.value.cards.length > 16) {
+      throw new Error('职业包需要 8–16 种不同名称的可配置卡牌。');
     }
-    if (editor.value.starterDeck.length > 20) {
-      throw new Error('预设牌组最多只能有 20 张卡牌。');
+    if (editor.value.cardPool.length < 16 || editor.value.cardPool.length > 32) {
+      throw new Error('职业卡池总数需要保持在 16–32 张。');
     }
-    if (Object.values(deckCounts.value).some((count) => count > 3)) {
-      throw new Error('同一张自定义卡牌最多放入预设牌组 3 张。');
+    if (editor.value.starterDeck.length !== 15) {
+      throw new Error('基础卡组构筑必须正好为 15 张。');
+    }
+    if (
+      Object.entries(deckCounts.value).some(
+        ([cardId, count]) => count > (poolCounts.value[cardId] ?? 0),
+      )
+    ) {
+      throw new Error('基础构筑使用的卡牌数量不能超过职业卡池中的持有数量。');
     }
     const pack = saveWorkshopPack({
       format: 'caelian_workshop_class_pack',
@@ -440,13 +508,65 @@ async function importFile(event: Event): Promise<void> {
       refreshWorkshopCardCatalog();
       refreshWorkshopPassiveCatalog();
       published.value = readWorkshopPacks();
-      notice.value = `职业包「${result.pack.packName}」已通过安全校验并导入。`;
+      notice.value = `职业包「${result.pack.packName}」已通过安全校验并导入${
+        result.pack.mechanisms?.length
+          ? `，同时安装 ${result.pack.mechanisms.length} 个底层机制`
+          : ''
+      }。`;
+      mechanisms.value = readWorkshopMechanisms();
       emit('saved');
     }
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught);
   } finally {
     (event.target as HTMLInputElement).value = '';
+  }
+}
+
+async function startWorkshopTest(): Promise<void> {
+  error.value = '';
+  notice.value = '';
+  const profession = published.value
+    .flatMap((pack) => pack.classes)
+    .find((entry) => entry.id === testProfessionId.value);
+  if (!profession) {
+    error.value = '请先选择一个已经校验并保存的自制职业。';
+    return;
+  }
+  if (testAttributeSpent.value > maxLevelAttributeBudget) {
+    error.value = `满级角色只能分配 ${maxLevelAttributeBudget} 点属性。`;
+    return;
+  }
+  try {
+    refreshWorkshopProfessionCatalogs();
+    await loadCardCatalog();
+    refreshWorkshopCardCatalog();
+    refreshWorkshopPassiveCatalog();
+    const result = await props.context.api.execute({
+      id: commandId('battle.start-workshop-test'),
+      type: 'battle.start',
+      payload: {
+        source: `创意工坊测试场 · ${profession.name}`,
+        workshopTest: {
+          professionId: profession.id,
+          mechanismIds: [...testMechanismIds.value],
+          dummyCount: testConfig.value.dummyCount,
+          dummyHp: testConfig.value.dummyHp,
+          dummyAttack: testConfig.value.dummyAttack,
+          dummyDefense: testConfig.value.dummyDefense,
+          dummyInvincible: testConfig.value.dummyInvincible,
+          dummyAttackEnabled: testConfig.value.dummyAttackEnabled,
+          autoRespawn: testConfig.value.autoRespawn,
+          playerInvincible: testConfig.value.playerInvincible,
+          attributes: { ...testConfig.value.attributes },
+        },
+      },
+    });
+    if (result.status === 'rejected') throw new Error(result.message);
+    emit('close');
+    await props.context.api.openPanel('battle');
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : String(caught);
   }
 }
 </script>
@@ -484,6 +604,9 @@ async function importFile(event: Event): Promise<void> {
             @click="tab = 'extensions'"
           >
             扩展 {{ extensions.length + mechanisms.length }}
+          </button>
+          <button :class="{ active: tab === 'test' }" @click="tab = 'test'">
+            测试场
           </button>
         </nav>
 
@@ -531,7 +654,8 @@ async function importFile(event: Event): Promise<void> {
               <p>{{ profession.description }}</p>
               <small>
                 {{ profession.cards.length }} 种卡牌 ·
-                {{ profession.starterDeck.length }} 张预设牌组 ·
+                {{ profession.cardPool.length }} 张职业卡池 ·
+                {{ profession.starterDeck.length }} 张基础构筑 ·
                 {{ profession.talent.name }}
               </small>
             </div>
@@ -613,6 +737,79 @@ async function importFile(event: Event): Promise<void> {
               </button>
             </div>
           </article>
+        </main>
+
+        <main v-else-if="tab === 'test'" class="workshop-test">
+          <section class="test-intro">
+            <div>
+              <strong>隔离式木桩测试</strong>
+              <p>使用临时 Lv.100 角色运行本地战斗；不会消耗正式背包、发放奖励、推进任务或改写角色属性。</p>
+            </div>
+            <output :class="{ over: testAttributeSpent > maxLevelAttributeBudget }">
+              属性 {{ testAttributeSpent }} / {{ maxLevelAttributeBudget }}
+            </output>
+          </section>
+
+          <section class="test-grid">
+            <label class="wide">
+              <span>测试职业</span>
+              <select v-model="testProfessionId">
+                <option value="">请选择已经保存的自制职业</option>
+                <option
+                  v-for="profession in published.flatMap((pack) => pack.classes)"
+                  :key="profession.id"
+                  :value="profession.id"
+                >
+                  {{ profession.name }} · {{ profession.cardPool.length }} 张职业卡池
+                </option>
+              </select>
+            </label>
+            <label><span>木桩数量</span><input v-model.number="testConfig.dummyCount" type="number" min="1" max="8" /></label>
+            <label><span>每个木桩生命</span><input v-model.number="testConfig.dummyHp" type="number" min="1" max="1000000" /></label>
+            <label><span>木桩攻击</span><input v-model.number="testConfig.dummyAttack" type="number" min="0" max="100000" /></label>
+            <label><span>木桩防御</span><input v-model.number="testConfig.dummyDefense" type="number" min="0" max="100000" /></label>
+          </section>
+
+          <fieldset class="test-toggles">
+            <legend>战斗行为</legend>
+            <label><input v-model="testConfig.dummyInvincible" type="checkbox" /><span>木桩无敌（最低保留 1 HP）</span></label>
+            <label><input v-model="testConfig.dummyAttackEnabled" type="checkbox" /><span>木桩会主动攻击</span></label>
+            <label><input v-model="testConfig.autoRespawn" type="checkbox" :disabled="testConfig.dummyInvincible" /><span>木桩死亡后自动满血复活</span></label>
+            <label><input v-model="testConfig.playerInvincible" type="checkbox" /><span>测试玩家无敌（最低保留 1 HP）</span></label>
+          </fieldset>
+
+          <fieldset v-if="mechanisms.length" class="test-toggles">
+            <legend>额外加载机制</legend>
+            <label v-for="mechanism in mechanisms" :key="mechanism.id">
+              <input v-model="testMechanismIds" type="checkbox" :value="mechanism.id" />
+              <span>{{ mechanism.name }}</span>
+            </label>
+          </fieldset>
+
+          <section class="test-attributes">
+            <header>
+              <strong>Lv.100 属性点配置</strong>
+              <small>生命/魔力每点 +5；攻击、防御、速度每点 +1；行动点前 6 次各耗 2 点，之后各耗 3 点。</small>
+            </header>
+            <label><span>生命投入</span><input v-model.number="testConfig.attributes.hpMax" type="number" min="0" max="792" /></label>
+            <label><span>魔力投入</span><input v-model.number="testConfig.attributes.mpMax" type="number" min="0" max="792" /></label>
+            <label><span>攻击投入</span><input v-model.number="testConfig.attributes.attack" type="number" min="0" max="792" /></label>
+            <label><span>防御投入</span><input v-model.number="testConfig.attributes.defense" type="number" min="0" max="792" /></label>
+            <label><span>速度投入</span><input v-model.number="testConfig.attributes.speed" type="number" min="0" max="792" /></label>
+            <label><span>行动点提升次数</span><input v-model.number="testConfig.attributes.actionPointsPerTurn" type="number" min="0" max="100" /></label>
+          </section>
+
+          <footer class="test-actions">
+            <span>若已有进行中的正式战斗，请先在战斗面板中结束。</span>
+            <button
+              type="button"
+              class="ca-button primary"
+              :disabled="!testProfessionId || testAttributeSpent > maxLevelAttributeBudget"
+              @click="startWorkshopTest"
+            >
+              进入测试战斗
+            </button>
+          </footer>
         </main>
 
         <main v-else-if="tab === 'drafts'" class="draft-list">
@@ -745,7 +942,12 @@ async function importFile(event: Event): Promise<void> {
                 <h3>自定义卡牌</h3>
                 <p>稀有度按旧版强度公式自动计算，同类效果每张牌只能添加一次。</p>
               </div>
-              <button type="button" class="ca-button primary" @click="addCard">
+              <button
+                type="button"
+                class="ca-button primary"
+                :disabled="editor.cards.length >= 16"
+                @click="addCard"
+              >
                 + 新卡牌
               </button>
             </header>
@@ -854,18 +1056,20 @@ async function importFile(event: Event): Promise<void> {
             <header>
               <span>03</span>
               <div>
-                <h3>预设牌组</h3>
-                <p>总计 10–20 张，同一张自定义卡牌最多放入 3 张。</p>
+                <h3>职业卡池与基础构筑</h3>
+                <p>8–16 种不同名卡牌组成 16–32 张职业卡池，再从中配置正好 15 张基础构筑。</p>
               </div>
-              <output
-                :class="{
-                  over:
-                    editor.starterDeck.length < 10 ||
-                    editor.starterDeck.length > 20,
-                }"
-              >
-                {{ editor.starterDeck.length }} / 10–20
-              </output>
+              <div class="pool-summary">
+                <output :class="{ over: editor.cards.length < 8 || editor.cards.length > 16 }">
+                  卡种 {{ editor.cards.length }} / 8–16
+                </output>
+                <output :class="{ over: editor.cardPool.length < 16 || editor.cardPool.length > 32 }">
+                  卡池 {{ editor.cardPool.length }} / 16–32
+                </output>
+                <output :class="{ over: editor.starterDeck.length !== 15 }">
+                  基础构筑 {{ editor.starterDeck.length }} / 15
+                </output>
+              </div>
             </header>
             <div class="deck-builder">
               <article v-for="card in editor.cards" :key="card.id">
@@ -873,24 +1077,45 @@ async function importFile(event: Event): Promise<void> {
                   <strong>{{ card.name }}</strong>
                   <span>{{ typeNames[card.type] }} · AP {{ card.cost }}</span>
                 </div>
-                <button
-                  type="button"
-                  :disabled="(deckCounts[card.id] ?? 0) === 0"
-                  @click="removeDeckCopy(card.id)"
-                >
-                  −
-                </button>
-                <b>{{ deckCounts[card.id] ?? 0 }}</b>
-                <button
-                  type="button"
-                  :disabled="
-                    (deckCounts[card.id] ?? 0) >= 3 ||
-                      editor.starterDeck.length >= 20
-                  "
-                  @click="addDeckCopy(card.id)"
-                >
-                  +
-                </button>
+                <div class="pool-controls">
+                  <small>职业卡池</small>
+                  <button
+                    type="button"
+                    :disabled="(poolCounts[card.id] ?? 0) <= (deckCounts[card.id] ?? 0)"
+                    @click="removePoolCopy(card.id)"
+                  >
+                    −
+                  </button>
+                  <b>{{ poolCounts[card.id] ?? 0 }}</b>
+                  <button
+                    type="button"
+                    :disabled="editor.cardPool.length >= 32"
+                    @click="addPoolCopy(card.id)"
+                  >
+                    +
+                  </button>
+                </div>
+                <div class="pool-controls">
+                  <small>基础构筑</small>
+                  <button
+                    type="button"
+                    :disabled="(deckCounts[card.id] ?? 0) === 0"
+                    @click="removeDeckCopy(card.id)"
+                  >
+                    −
+                  </button>
+                  <b>{{ deckCounts[card.id] ?? 0 }}</b>
+                  <button
+                    type="button"
+                    :disabled="
+                      (deckCounts[card.id] ?? 0) >= (poolCounts[card.id] ?? 0) ||
+                        editor.starterDeck.length >= 15
+                    "
+                    @click="addDeckCopy(card.id)"
+                  >
+                    +
+                  </button>
+                </div>
               </article>
             </div>
           </section>
@@ -1330,10 +1555,34 @@ output.over {
   border-radius: 8px;
 }
 
-.deck-builder article > div {
+.deck-builder article > div:first-child {
   display: grid;
   min-width: 0;
   flex: 1;
+}
+
+.pool-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.pool-summary output {
+  padding: 5px 7px;
+  font-size: 9px;
+}
+
+.pool-controls {
+  display: grid;
+  grid-template-columns: auto 25px 18px 25px;
+  align-items: center;
+  gap: 4px;
+}
+
+.pool-controls small {
+  color: var(--ca-muted);
+  font-size: 8px;
 }
 
 .deck-builder strong {
@@ -1364,6 +1613,106 @@ output.over {
 
 .publish-actions > span {
   flex: 1;
+  color: var(--ca-muted);
+  font-size: 9px;
+}
+
+.workshop-test {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.test-intro,
+.test-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px;
+  border: 1px solid rgba(212, 168, 67, 0.28);
+  border-radius: 11px;
+  background: rgba(212, 168, 67, 0.055);
+}
+
+.test-intro strong,
+.test-attributes strong {
+  color: var(--ca-gold-light);
+  font-size: 12px;
+}
+
+.test-intro p,
+.test-actions span {
+  margin: 4px 0 0;
+  color: var(--ca-muted);
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.test-grid,
+.test-attributes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid var(--ca-border);
+  border-radius: 11px;
+}
+
+.test-grid label,
+.test-attributes label {
+  display: grid;
+  gap: 5px;
+  color: var(--ca-muted);
+  font-size: 9px;
+}
+
+.test-grid .wide,
+.test-attributes header {
+  grid-column: 1 / -1;
+}
+
+.test-attributes header {
+  display: grid;
+  gap: 3px;
+}
+
+.test-attributes header small {
+  color: var(--ca-muted);
+  font-size: 8px;
+}
+
+.test-grid input,
+.test-grid select,
+.test-attributes input {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--ca-border);
+  border-radius: 8px;
+  color: var(--ca-text);
+  background: #1b1712;
+  font: inherit;
+}
+
+.test-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 11px 13px;
+  border: 1px solid var(--ca-border);
+  border-radius: 11px;
+}
+
+.test-toggles legend {
+  padding: 0 6px;
+  color: var(--ca-gold);
+  font-size: 9px;
+}
+
+.test-toggles label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--ca-muted);
   font-size: 9px;
 }
@@ -1416,6 +1765,7 @@ output.over {
   .workshop-header,
   .workshop-library,
   .workshop-editor,
+  .workshop-test,
   .draft-list {
     padding-right: 12px;
     padding-left: 12px;
@@ -1432,13 +1782,25 @@ output.over {
   }
 
   .talent-effects,
-  .deck-builder {
+  .deck-builder,
+  .test-grid,
+  .test-attributes {
     grid-template-columns: 1fr;
   }
 
-  .publish-actions {
+  .publish-actions,
+  .test-intro,
+  .test-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .deck-builder article {
+    flex-wrap: wrap;
+  }
+
+  .deck-builder article > div:first-child {
+    flex-basis: 100%;
   }
 }
 </style>

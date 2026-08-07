@@ -215,7 +215,11 @@ export class PlayerRepository {
     if (starterDeck.length === 0) {
       throw new Error('该职业没有可用的预设牌组');
     }
-    const counts = starterDeck.reduce<Record<string, number>>((result, cardId) => {
+    const customProfession = readWorkshopPacks()
+      .flatMap((pack) => pack.classes)
+      .find((entry) => entry.id === subclass);
+    const grantedCards = customProfession?.cardPool ?? starterDeck;
+    const counts = grantedCards.reduce<Record<string, number>>((result, cardId) => {
       result[cardId] = (result[cardId] ?? 0) + 1;
       return result;
     }, {});
@@ -249,9 +253,6 @@ export class PlayerRepository {
       active: true,
       updatedAt: now,
     });
-    const customProfession = readWorkshopPacks()
-      .flatMap((pack) => pack.classes)
-      .find((entry) => entry.id === subclass);
     if (customProfession) {
       const passiveId = workshopPassiveId(customProfession.id);
       await this.db.passiveTalents.put({

@@ -4,10 +4,12 @@ import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { BattleRepository } from '@/storage/repositories/battle-repository';
 import { GameRepository } from '@/storage/repository';
+import { saveWorkshopPack } from '@/workshop';
 
 const databases: CaelianDatabase[] = [];
 
 afterEach(async () => {
+  localStorage.clear();
   await Promise.all(
     databases.splice(0).map(async (database) => {
       database.close();
@@ -17,6 +19,113 @@ afterEach(async () => {
 });
 
 describe('本地战斗仓库', () => {
+  it('在隔离测试场使用满级临时角色并让死亡木桩自动复活', async () => {
+    const cards = Array.from({ length: 8 }, (_, index) => ({
+      id: `custom_test_card_${index}`,
+      name: `测试攻击${index + 1}`,
+      type: 'attack',
+      cost: 0,
+      effects: [{ type: 'damage', value: 1, target: 'enemy' }],
+    }));
+    saveWorkshopPack({
+      format: 'caelian_workshop_class_pack',
+      version: 1,
+      packName: '测试职业包',
+      classes: [
+        {
+          id: 'custom_class_battle_test',
+          main: 'mage',
+          name: '木桩测试师',
+          talent: { name: '测试天赋', description: '无额外效果', effects: [] },
+          cards,
+          cardPool: [...cards, ...cards].map((card) => card.id),
+          starterDeck: Array.from(
+            { length: 15 },
+            (_, index) => cards[index % cards.length]!.id,
+          ),
+        },
+      ],
+    });
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-workshop-battle-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:workshop-battle');
+    await repository.execute(profile.id, {
+      id: 'workshop-test-player-create',
+      type: 'player.create',
+      payload: {
+        name: '测试玩家',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const playerBefore = await database.playerStates.get(profile.id);
+
+    const started = await repository.execute(profile.id, {
+      id: 'workshop-test-start',
+      type: 'battle.start',
+      payload: {
+        workshopTest: {
+          professionId: 'custom_class_battle_test',
+          mechanismIds: [],
+          dummyCount: 2,
+          dummyHp: 1,
+          dummyAttack: 100,
+          dummyDefense: 0,
+          dummyInvincible: false,
+          dummyAttackEnabled: false,
+          autoRespawn: true,
+          playerInvincible: true,
+          attributes: {
+            hpMax: 40,
+            mpMax: 30,
+            attack: 220,
+            defense: 180,
+            speed: 100,
+            actionPointsPerTurn: 6,
+          },
+        },
+      },
+    });
+    expect(started.status).toBe('applied');
+    let snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.battle?.state.workshopTest).toMatchObject({
+      professionId: 'custom_class_battle_test',
+      respawns: 0,
+      autoRespawn: true,
+    });
+    expect(snapshot.battle?.state.player.subclass).toBe(
+      'custom_class_battle_test',
+    );
+
+    const battleId = snapshot.battle!.id;
+    await repository.execute(profile.id, {
+      id: 'workshop-test-hit',
+      type: 'battle.play-card',
+      payload: { battleId, handIndex: 0, targetIndex: 0 },
+    });
+    snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.battle?.state.status).toBe('ongoing');
+    expect(snapshot.battle?.state.enemies[0]?.hp).toBe(1);
+    expect(snapshot.battle?.state.workshopTest?.respawns).toBe(1);
+
+    await repository.execute(profile.id, {
+      id: 'workshop-test-stop',
+      type: 'battle.surrender',
+      payload: { battleId },
+    });
+    const playerAfter = await database.playerStates.get(profile.id);
+    expect(playerAfter).toMatchObject({
+      hp: playerBefore?.hp,
+      mp: playerBefore?.mp,
+      gold: playerBefore?.gold,
+      subclass: playerBefore?.subclass,
+    });
+  });
+
   it('从出战牌组创建战斗，并按旧版规则保留手牌后每回合抽三张', async () => {
     const database = new CaelianDatabase(
       'alpha',

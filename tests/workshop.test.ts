@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   WORKSHOP_STORAGE_KEY,
   cardLimit,
+  exportWorkshopPack,
   normalizeWorkshopCard,
   normalizeWorkshopPack,
   readWorkshopPacks,
   saveWorkshopPack,
 } from '@/workshop';
+import { readWorkshopMechanisms } from '@/workshop-mechanisms';
 
 afterEach(() => {
   localStorage.clear();
@@ -106,8 +108,8 @@ describe('旧版创意工坊规则', () => {
     ).toThrow('必须创建一个召唤物');
   });
 
-  it('保留旧版职业包格式、存储键和 10–20 张预设牌组约束', () => {
-    const cards = Array.from({ length: 10 }, (_, index) => ({
+  it('校验 16–32 张职业卡池和固定 15 张基础构筑', () => {
+    const cards = Array.from({ length: 8 }, (_, index) => ({
       id: `card_${index}`,
       name: `卡牌${index}`,
       type: 'skill',
@@ -129,18 +131,109 @@ describe('旧版创意工坊规则', () => {
             effects: [{ type: 'extra_draw', value: 1 }],
           },
           cards,
-          starterDeck: cards.map((card) => card.id),
+          cardPool: [...cards, ...cards].map((card) => card.id),
+          starterDeck: Array.from(
+            { length: 15 },
+            (_, index) => cards[index % cards.length]!.id,
+          ),
+          mechanismIds: ['author.test-mechanism'],
+        },
+      ],
+      mechanisms: [
+        {
+          format: 'caelian_workshop_mechanism',
+          version: 1,
+          id: 'author.test-mechanism',
+          name: '测试机制',
+          resources: [],
+          rules: [
+            {
+              id: 'author.test-mechanism.log',
+              trigger: 'battle_start',
+              once: 'battle',
+              actions: [{ type: 'log', message: '测试机制已加载' }],
+            },
+          ],
         },
       ],
     };
     const normalized = normalizeWorkshopPack(value);
     expect(normalized.format).toBe('caelian_workshop_class_pack');
-    expect(normalized.classes[0]?.starterDeck).toHaveLength(10);
+    expect(normalized.classes[0]?.cards).toHaveLength(8);
+    expect(normalized.classes[0]?.cardPool).toHaveLength(16);
+    expect(normalized.classes[0]?.starterDeck).toHaveLength(15);
 
     saveWorkshopPack(value);
     expect(localStorage.getItem(WORKSHOP_STORAGE_KEY)).toContain(
       'custom_class_test',
     );
     expect(readWorkshopPacks()[0]?.classes[0]?.name).toBe('测试职业');
+    expect(readWorkshopMechanisms()[0]?.id).toBe('author.test-mechanism');
+    expect(exportWorkshopPack(value).mechanisms?.[0]?.id).toBe(
+      'author.test-mechanism',
+    );
+  });
+
+  it('拒绝少于 8 种不同名称的职业卡牌', () => {
+    const cards = Array.from({ length: 7 }, (_, index) => ({
+      id: `short_card_${index}`,
+      name: `不足卡牌${index}`,
+      type: 'skill',
+      cost: 1,
+      effects: [{ type: 'draw', value: 1 }],
+    }));
+    expect(() =>
+      normalizeWorkshopPack({
+        classes: [
+          {
+            id: 'custom_class_short',
+            main: 'mage',
+            name: '不足职业',
+            talent: { name: '天赋', effects: [] },
+            cards,
+            cardPool: [...cards, ...cards].map((card) => card.id),
+            starterDeck: Array.from(
+              { length: 15 },
+              (_, index) => cards[index % cards.length]!.id,
+            ),
+          },
+        ],
+      }),
+    ).toThrow('8–16 种');
+  });
+
+  it('不兼容缺少职业卡池或非 15 张基础构筑的旧职业包', () => {
+    const cards = Array.from({ length: 8 }, (_, index) => ({
+      id: `strict_card_${index}`,
+      name: `严格卡牌${index}`,
+      type: 'skill',
+      cost: 1,
+      effects: [{ type: 'draw', value: 1 }],
+    }));
+    const profession = {
+      id: 'custom_class_strict',
+      main: 'mage',
+      name: '严格职业',
+      talent: { name: '天赋', effects: [] },
+      cards,
+      starterDeck: Array.from(
+        { length: 15 },
+        (_, index) => cards[index % cards.length]!.id,
+      ),
+    };
+    expect(() => normalizeWorkshopPack({ classes: [profession] })).toThrow(
+      '必须为 16–32 张',
+    );
+    expect(() =>
+      normalizeWorkshopPack({
+        classes: [
+          {
+            ...profession,
+            cardPool: [...cards, ...cards].map((card) => card.id),
+            starterDeck: profession.starterDeck.slice(0, 14),
+          },
+        ],
+      }),
+    ).toThrow('必须正好 15 张');
   });
 });

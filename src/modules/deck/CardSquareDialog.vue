@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /* global Blob, Event, HTMLInputElement, URL, Window, document, structuredClone, window */
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, toRaw } from 'vue';
 import {
+  CARD_SQUARE_TAGS,
   DECK_BUILD_FORMAT,
   exportCardSquareReceipt,
   importCardSquareReceipt,
@@ -19,14 +20,11 @@ import {
 } from '@/card-square';
 import { refreshWorkshopPassiveCatalog } from '@/content/catalogs/battle';
 import { loadCardCatalog, refreshWorkshopCardCatalog } from '@/content/catalogs/cards';
-import {
-  mainClassForSubclass,
-  refreshWorkshopProfessionCatalogs,
-  subclassNames,
-} from '@/content/catalogs/professions';
+import { refreshWorkshopProfessionCatalogs } from '@/content/catalogs/professions';
 import type { GameSnapshot } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
+import { readSavedDeckBuilds, saveNamedDeckBuild } from '@/saved-decks';
 import {
   exportWorkshopPack,
   readWorkshopPacks,
@@ -52,23 +50,27 @@ const error = ref('');
 const notice = ref('');
 const search = ref('');
 const kindFilter = ref<'all' | CardSquareKind>('all');
+const tagFilter = ref('');
 const selectedId = ref('');
 
 const submitKind = ref<CardSquareKind>('deck_build');
 const submitTitle = ref('');
 const submitSummary = ref('');
-const submitTags = ref('');
+const submitTags = ref<string[]>([]);
 const anonymous = ref(true);
 const authorName = ref('');
 const selectedClassId = ref('');
 const selectedMechanismId = ref('');
+const selectedSavedDeckId = ref('');
 
 const localClasses = computed(() =>
   readWorkshopPacks().flatMap((pack) => pack.classes),
 );
 const localMechanisms = computed(() => readWorkshopMechanisms());
-const currentDeck = computed(() =>
-  snapshot.value?.decks.find((deck) => deck.active),
+const savedOfficialDecks = computed(() =>
+  readSavedDeckBuilds().filter(
+    (build) => !build.professionId.startsWith('custom_class_'),
+  ),
 );
 const selected = computed(() =>
   entries.value.find((entry) => entry.id === selectedId.value),
@@ -78,6 +80,7 @@ const filteredEntries = computed(() => {
   return entries.value.filter((entry) => {
     if (tab.value === 'favorites' && !favorites.value.has(entry.id)) return false;
     if (kindFilter.value !== 'all' && entry.kind !== kindFilter.value) return false;
+    if (tagFilter.value && !entry.tags.includes(tagFilter.value)) return false;
     if (!term) return true;
     return [
       entry.title,
@@ -224,8 +227,21 @@ async function applyDeck(build: SquareDeckBuild): Promise<void> {
       `${result.message ?? '构筑应用失败'}。构筑不会赠送未拥有的卡牌，请先收集缺少的卡牌。`,
     );
   }
+  const existing = readSavedDeckBuilds().find(
+    (entry) =>
+      entry.name === build.name && entry.professionId === build.professionId,
+  );
+  saveNamedDeckBuild({
+    id: existing?.id ?? commandId('square-saved-deck'),
+    name: build.name,
+    professionId: build.professionId,
+    professionName: build.professionName,
+    mainClass: build.mainClass,
+    cardIds: [...build.cardIds],
+    createdAt: existing?.createdAt,
+  });
   snapshot.value = await props.context.api.query('state');
-  notice.value = `已应用构筑「${build.name}」。`;
+  notice.value = `已应用并保存构筑「${build.name}」。`;
   emit('changed');
 }
 
@@ -237,8 +253,11 @@ async function installProfession(
   await refreshWorkshopCatalogs();
   const profession = pack.classes[0];
   if (!profession) throw new Error('职业包中没有可用职业。');
+  const mechanismNotice = pack.mechanisms?.length
+    ? `，并同步安装 ${pack.mechanisms.length} 个底层机制`
+    : '';
   if (!reclass) {
-    notice.value = `职业「${profession.name}」已安装，可在转职列表中选择。`;
+    notice.value = `职业「${profession.name}」已安装${mechanismNotice}，可在转职列表中选择。`;
     return;
   }
   const result = await props.context.api.execute({
@@ -248,7 +267,7 @@ async function installProfession(
   });
   if (result.status === 'rejected') throw new Error(result.message);
   snapshot.value = await props.context.api.query('state');
-  notice.value = `已安装并转职为「${profession.name}」。`;
+  notice.value = `已安装并转职为「${profession.name}」${mechanismNotice}。`;
   emit('changed');
 }
 
@@ -273,19 +292,17 @@ async function useEntry(entry: CardSquareEntry, reclass = false): Promise<void> 
 }
 
 function deckPayload(): SquareDeckBuild {
-  const player = snapshot.value?.player;
-  const deck = currentDeck.value;
-  if (!player || !deck) throw new Error('当前没有可上传的牌组。');
-  if (player.subclass.startsWith('custom_class_')) {
-    throw new Error('自制职业请使用“自制职业”投稿，不能作为官方职业构筑直发。');
-  }
+  const deck = savedOfficialDecks.value.find(
+    (entry) => entry.id === selectedSavedDeckId.value,
+  );
+  if (!deck) throw new Error('请先选择一份已保存的官方职业构筑。');
   return {
     format: DECK_BUILD_FORMAT,
     version: 1,
-    name: submitTitle.value.trim(),
-    professionId: player.subclass,
-    professionName: subclassNames[player.subclass] ?? player.subclass,
-    mainClass: mainClassForSubclass(player.subclass),
+    name: deck.name,
+    professionId: deck.professionId,
+    professionName: deck.professionName,
+    mainClass: deck.mainClass,
     cardIds: [...deck.cardIds],
     exportedAt: new Date().toISOString(),
   };
@@ -299,7 +316,7 @@ function classPayload(): unknown {
   return exportWorkshopPack({
     packName: `${profession.name}职业包`,
     author: anonymous.value ? '匿名冒险者' : authorName.value.trim(),
-    classes: [structuredClone(profession)],
+    classes: [structuredClone(toRaw(profession))],
   });
 }
 
@@ -308,7 +325,7 @@ function mechanismPayload(): WorkshopMechanismManifest {
     (entry) => entry.id === selectedMechanismId.value,
   );
   if (!mechanism) throw new Error('请选择一个本地底层机制。');
-  return structuredClone(mechanism);
+  return structuredClone(toRaw(mechanism));
 }
 
 async function submit(): Promise<void> {
@@ -329,7 +346,7 @@ async function submit(): Promise<void> {
         anonymous: anonymous.value,
         authorName: authorName.value,
         summary: submitSummary.value,
-        tags: [submitTags.value],
+        tags: [...submitTags.value],
         payload,
       },
       props.context.api.getRuntimeInfo(),
@@ -342,7 +359,7 @@ async function submit(): Promise<void> {
     receipts.value = readCardSquareReceipts(sourceWindow());
     submitTitle.value = '';
     submitSummary.value = '';
-    submitTags.value = '';
+    submitTags.value = [];
     if (result.status === 'published') {
       await refresh();
       tab.value = 'browse';
@@ -393,6 +410,24 @@ onMounted(() => {
             </select>
             <button type="button" class="ca-button" :disabled="loading" @click="refresh">刷新</button>
           </div>
+          <div class="filter-tags" aria-label="按标签筛选">
+            <button
+              type="button"
+              :class="{ active: tagFilter === '' }"
+              @click="tagFilter = ''"
+            >
+              全部标签
+            </button>
+            <button
+              v-for="tag in CARD_SQUARE_TAGS"
+              :key="tag"
+              type="button"
+              :class="{ active: tagFilter === tag }"
+              @click="tagFilter = tagFilter === tag ? '' : tag"
+            >
+              {{ tag }}
+            </button>
+          </div>
           <div v-if="loading" class="square-empty">正在读取卡牌广场……</div>
           <div v-else-if="filteredEntries.length === 0" class="square-empty">没有符合条件的作品。</div>
           <div v-else class="square-layout">
@@ -418,7 +453,14 @@ onMounted(() => {
               <p class="author">作者：{{ selected.authorName || '匿名冒险者' }}</p>
               <p>{{ selected.summary }}</p>
               <div class="tag-row">
-                <span v-for="tag in selected.tags" :key="tag"># {{ tag }}</span>
+                <button
+                  v-for="tag in selected.tags"
+                  :key="tag"
+                  type="button"
+                  @click="tagFilter = tag; tab = 'browse'"
+                >
+                  # {{ tag }}
+                </button>
               </div>
               <dl>
                 <div><dt>适用职业</dt><dd>{{ selected.professionName || '通用机制' }}</dd></div>
@@ -491,12 +533,33 @@ onMounted(() => {
             <p>官方职业卡组构筑通过格式校验后直接公开；自制职业和底层机制必须先由作者审核。作品名称为必填项，可选择匿名发布。</p>
           </section>
           <div class="submit-grid">
-            <label><span>投稿类型</span><select v-model="submitKind"><option value="deck_build">当前官方职业构筑</option><option value="custom_class">本地自制职业</option><option value="mechanism">本地底层机制</option></select></label>
+            <label><span>投稿类型</span><select v-model="submitKind"><option value="deck_build">已保存的官方职业构筑</option><option value="custom_class">本地自制职业</option><option value="mechanism">本地底层机制</option></select></label>
             <label><span>作品名称</span><input v-model="submitTitle" maxlength="50" placeholder="用于卡牌广场搜索" /></label>
+            <label v-if="submitKind === 'deck_build'" class="wide">
+              <span>选择已保存构筑</span>
+              <select v-model="selectedSavedDeckId">
+                <option value="">请选择</option>
+                <option v-for="build in savedOfficialDecks" :key="build.id" :value="build.id">
+                  {{ build.name }} · {{ build.professionName }} · {{ build.cardIds.length }} 张
+                </option>
+              </select>
+              <small v-if="savedOfficialDecks.length === 0">请先在牌组面板的“我的构筑预设”中保存一份官方职业构筑。</small>
+            </label>
             <label v-if="submitKind === 'custom_class'"><span>选择职业</span><select v-model="selectedClassId"><option value="">请选择</option><option v-for="profession in localClasses" :key="profession.id" :value="profession.id">{{ profession.name }}</option></select></label>
             <label v-if="submitKind === 'mechanism'"><span>选择机制</span><select v-model="selectedMechanismId"><option value="">请选择</option><option v-for="mechanism in localMechanisms" :key="mechanism.id" :value="mechanism.id">{{ mechanism.name }}</option></select></label>
             <label class="wide"><span>作品简介</span><textarea v-model="submitSummary" maxlength="240" placeholder="玩法思路、核心循环、适合的战斗场景"></textarea></label>
-            <label class="wide"><span>搜索标签</span><input v-model="submitTags" maxlength="150" placeholder="例如：召唤, 防御, 新手友好（逗号分隔）" /></label>
+            <fieldset class="wide submit-tags">
+              <legend>搜索标签（最多 8 个）</legend>
+              <label v-for="tag in CARD_SQUARE_TAGS" :key="tag">
+                <input
+                  v-model="submitTags"
+                  type="checkbox"
+                  :value="tag"
+                  :disabled="submitTags.length >= 8 && !submitTags.includes(tag)"
+                />
+                <span>{{ tag }}</span>
+              </label>
+            </fieldset>
             <label class="anonymous-toggle"><input v-model="anonymous" type="checkbox" /><span>匿名发布，不上传作者署名</span></label>
             <label v-if="!anonymous"><span>公开署名</span><input v-model="authorName" maxlength="30" placeholder="卡牌广场显示的作者名" /></label>
           </div>
@@ -528,6 +591,9 @@ onMounted(() => {
 .square-toolbar { display: flex; gap: 8px; padding: 13px 16px; border-bottom: 1px solid #252a32; }
 .square-toolbar input { min-width: 0; flex: 1; }
 .square-toolbar input, .square-toolbar select, .submit-grid input, .submit-grid select, .submit-grid textarea { padding: 9px 11px; border: 1px solid #343a45; border-radius: 8px; color: #ebe4d9; background: #0d1015; font: inherit; }
+.filter-tags { display: flex; flex-wrap: wrap; gap: 5px; padding: 0 16px 12px; border-bottom: 1px solid #252a32; }
+.filter-tags button, .tag-row button { padding: 5px 8px; border: 1px solid #343a45; border-radius: 999px; color: #bdb6aa; background: transparent; font: 9px var(--ca-ui); cursor: pointer; }
+.filter-tags button.active, .tag-row button:hover { border-color: var(--ca-gold); color: var(--ca-gold-light); background: rgba(212,168,67,.1); }
 .square-layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 100%; }
 .square-list { overflow-y: auto; padding: 10px; border-right: 1px solid #282d36; }
 .square-list button { display: grid; width: 100%; gap: 4px; margin-bottom: 7px; padding: 11px; border: 1px solid #2d333d; border-radius: 10px; color: inherit; background: rgba(255,255,255,.02); text-align: left; cursor: pointer; }
@@ -541,7 +607,6 @@ onMounted(() => {
 .square-detail p { color: var(--ca-muted); font-size: 12px; line-height: 1.7; }
 .square-detail .author { color: var(--ca-gold-light); }
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 17px 0; }
-.tag-row span { padding: 5px 8px; border: 1px solid #343a45; border-radius: 999px; color: #bdb6aa; font-size: 9px; }
 .square-detail dl { display: grid; gap: 7px; padding: 13px; border: 1px solid #2d333d; border-radius: 10px; background: rgba(255,255,255,.02); }
 .square-detail dl div { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; }
 .square-detail dt { color: var(--ca-muted); }.square-detail dd { margin: 0; color: var(--ca-text-bright); }
@@ -552,6 +617,11 @@ onMounted(() => {
 .submit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; margin-top: 18px; }
 .submit-grid label { display: grid; gap: 6px; }.submit-grid label > span { color: var(--ca-gold); font-size: 10px; font-weight: 700; }.submit-grid .wide { grid-column: 1 / -1; }.submit-grid textarea { min-height: 85px; resize: vertical; }
 .submit-grid .anonymous-toggle { display: flex; align-items: center; align-self: end; grid-template: none; min-height: 40px; }.anonymous-toggle input { width: auto; }
+.submit-grid label > small { color: var(--ca-muted); font-size: 9px; line-height: 1.5; }
+.submit-tags { display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 11px; border: 1px solid #343a45; border-radius: 9px; }
+.submit-tags legend { padding: 0 5px; color: var(--ca-gold); font-size: 10px; font-weight: 700; }
+.submit-grid .submit-tags label { display: flex; align-items: center; grid-template: none; gap: 5px; padding: 5px 8px; border: 1px solid #303640; border-radius: 999px; color: #cfc7bb; font-size: 9px; }
+.submit-grid .submit-tags input { width: auto; padding: 0; }
 .receipt-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 17px 20px; border-bottom: 1px solid #282d36; background: rgba(212,168,67,.045); }
 .receipt-toolbar strong { color: var(--ca-gold-light); font-size: 12px; }.receipt-toolbar p { max-width: 620px; margin: 5px 0 0; color: var(--ca-muted); font-size: 10px; line-height: 1.55; }.receipt-toolbar > div:last-child { display: flex; flex: 0 0 auto; gap: 7px; }
 .receipt-import { position: relative; overflow: hidden; cursor: pointer; }.receipt-import input { position: absolute; width: 1px; height: 1px; opacity: 0; }

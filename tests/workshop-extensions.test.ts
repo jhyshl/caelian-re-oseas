@@ -4,8 +4,10 @@ import {
   importCardSquareReceipt,
   readCardSquareReceipts,
   saveCardSquareReceipt,
+  submitCardSquareEntry,
   type CardSquareSubmissionReceipt,
 } from '@/card-square';
+import type { RuntimeInfo } from '@/domain/types';
 import {
   evaluateWorkshopFormula,
   normalizeWorkshopMechanism,
@@ -97,5 +99,45 @@ describe('创意工坊声明式扩展', () => {
     expect(readCardSquareReceipts(window)[0]?.receiptToken).toBe(
       receipt.receiptToken,
     );
+  });
+
+  it('只接受卡牌广场预置的固定标签', async () => {
+    await expect(
+      submitCardSquareEntry(
+        {
+          kind: 'mechanism',
+          title: '标签测试机制',
+          anonymous: true,
+          authorName: '',
+          summary: '用于验证固定标签白名单。',
+          tags: ['玩家随意填写的标签'],
+          payload: {
+            format: 'caelian_workshop_mechanism',
+            version: 1,
+            id: 'author.tag-test',
+            name: '标签测试',
+            resources: [],
+            rules: [
+              {
+                id: 'author.tag-test.log',
+                trigger: 'battle_start',
+                once: 'battle',
+                actions: [{ type: 'log', message: '标签测试' }],
+              },
+            ],
+          },
+        },
+        {
+          channel: 'alpha',
+          version: '0.2.0-alpha.28',
+          buildId: 'test-build',
+          databaseName: 'test-db',
+          databaseVersion: 1,
+          status: 'ready',
+          mvuAvailable: false,
+        } satisfies RuntimeInfo,
+        window,
+      ),
+    ).rejects.toThrow('固定标签');
   });
 });

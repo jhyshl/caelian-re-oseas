@@ -40,7 +40,7 @@ import type {
 import type { CaelianDatabase } from '@/storage/database';
 import { grantPlayerExperience } from '@/player/progression';
 import { updateGuildRank } from '@/guild-progression';
-import { readWorkshopPacks } from '@/workshop';
+import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
 import {
   evaluateWorkshopCondition,
   evaluateWorkshopFormula,
@@ -101,6 +101,27 @@ type Combatant = {
   debuffs: Record<string, BattleTimedEffect>;
 };
 
+interface WorkshopTestInput {
+  professionId: string;
+  mechanismIds: string[];
+  dummyCount: number;
+  dummyHp: number;
+  dummyAttack: number;
+  dummyDefense: number;
+  dummyInvincible: boolean;
+  dummyAttackEnabled: boolean;
+  autoRespawn: boolean;
+  playerInvincible: boolean;
+  attributes: {
+    hpMax: number;
+    mpMax: number;
+    attack: number;
+    defense: number;
+    speed: number;
+    actionPointsPerTurn: number;
+  };
+}
+
 export class BattleRepository {
   private cards?: Record<string, CardDefinition>;
   private monsters?: Record<string, MonsterDefinition>;
@@ -156,6 +177,7 @@ export class BattleRepository {
       count?: number;
       source?: string;
       relatedQuestId?: string;
+      workshopTest?: WorkshopTestInput;
     },
   ): Promise<void> {
     this.assertPrepared();
@@ -195,6 +217,10 @@ export class BattleRepository {
         this.db.ownedRelics.where('profileId').equals(profileId).toArray(),
       ]);
     if (!player) throw new Error('玩家档案不存在');
+    if (input.workshopTest) {
+      await this.startWorkshopTest(profileId, player, input.workshopTest);
+      return;
+    }
     if (!deck || deck.cardIds.length === 0) {
       throw new Error('请先准备至少一张卡牌的出战牌组');
     }
@@ -376,9 +402,10 @@ export class BattleRepository {
       cardCost: cost,
       mpCost,
     });
+    this.stabilizeWorkshopTest(state);
 
     if (state.status === 'surrendered') {
-      await this.persistBattlePlayer(profileId, state);
+      if (!state.workshopTest) await this.persistBattlePlayer(profileId, state);
       await this.save(session);
       return;
     }
@@ -437,16 +464,19 @@ export class BattleRepository {
       effect,
       input.targetIndex ?? state.selectedTarget,
     );
-    if (stack.quantity === 1) {
-      await this.db.inventoryStacks.delete(stackId);
-    } else {
-      await this.db.inventoryStacks.put({
-        ...stack,
-        quantity: stack.quantity - 1,
-        updatedAt: Date.now(),
-      });
+    if (!state.workshopTest) {
+      if (stack.quantity === 1) {
+        await this.db.inventoryStacks.delete(stackId);
+      } else {
+        await this.db.inventoryStacks.put({
+          ...stack,
+          quantity: stack.quantity - 1,
+          updatedAt: Date.now(),
+        });
+      }
     }
 
+    this.stabilizeWorkshopTest(state);
     if (this.aliveEnemies(state).length === 0) {
       await this.finishBattle(session, 'victory');
       return;
@@ -534,17 +564,23 @@ export class BattleRepository {
       return;
     }
 
-    for (const enemy of this.aliveEnemies(state)) {
-      const monster = this.monsters?.[enemy.definitionId];
-      this.resolveEnemyAction(state, enemy, monster);
-      if (state.player.hp <= 0) {
-        await this.finishBattle(session, 'defeat');
-        return;
+    if (state.workshopTest && !state.workshopTest.dummyAttackEnabled) {
+      this.log(state, 'system', '测试木桩已设置为不主动攻击。');
+    } else {
+      for (const enemy of this.aliveEnemies(state)) {
+        const monster = this.monsters?.[enemy.definitionId];
+        this.resolveEnemyAction(state, enemy, monster);
+        this.stabilizeWorkshopTest(state);
+        if (state.player.hp <= 0) {
+          await this.finishBattle(session, 'defeat');
+          return;
+        }
       }
     }
     this.runWorkshopMechanisms(state, 'after_enemy_turn');
 
     this.applyDamageOverTime(state);
+    this.stabilizeWorkshopTest(state);
     this.tickEffects(state.player);
     for (const enemy of this.aliveEnemies(state)) this.tickEffects(enemy);
     if (state.player.hp <= 0) {
@@ -590,6 +626,13 @@ export class BattleRepository {
 
   async surrender(profileId: string, battleId: string): Promise<void> {
     const session = await this.getOngoing(profileId, battleId);
+    if (session.state.workshopTest) {
+      session.state.status = 'surrendered';
+      session.state.phase = 'ended';
+      this.log(session.state, 'system', '已结束创意工坊测试；正式角色数据未发生变化。');
+      await this.save(session);
+      return;
+    }
     const player = await this.db.playerStates.get(profileId);
     if (!player) throw new Error('玩家档案不存在');
     const hpLossRate = 0.15 + this.random() * 0.3;
@@ -713,6 +756,156 @@ export class BattleRepository {
       choices.relicClaimed = true;
     }
     await this.save(session);
+  }
+
+  private async startWorkshopTest(
+    profileId: string,
+    player: PlayerRecord,
+    input: WorkshopTestInput,
+  ): Promise<void> {
+    if (!player.created) throw new Error('请先创建角色，再进入创意工坊测试场');
+    const profession = readWorkshopPacks()
+      .flatMap((pack) => pack.classes)
+      .find((entry) => entry.id === input.professionId);
+    if (!profession) throw new Error('请选择一个已经保存到本地的自制职业');
+    const deckIds = [...profession.starterDeck];
+    if (!deckIds.length || deckIds.some((cardId) => !this.cards?.[cardId])) {
+      throw new Error('该职业的测试牌组不完整，请重新校验并保存职业');
+    }
+
+    const attributeBudget = 99 * 8;
+    const apCount = Math.max(0, Math.floor(input.attributes.actionPointsPerTurn));
+    const apCost = Math.min(apCount, 6) * 2 + Math.max(0, apCount - 6) * 3;
+    const attributeSpent =
+      Math.max(0, Math.floor(input.attributes.hpMax)) +
+      Math.max(0, Math.floor(input.attributes.mpMax)) +
+      Math.max(0, Math.floor(input.attributes.attack)) +
+      Math.max(0, Math.floor(input.attributes.defense)) +
+      Math.max(0, Math.floor(input.attributes.speed)) +
+      apCost;
+    if (attributeSpent > attributeBudget) {
+      throw new Error(`满级测试角色最多可分配 ${attributeBudget} 点属性`);
+    }
+
+    const requestedMechanisms = [
+      ...new Set([...(profession.mechanismIds ?? []), ...input.mechanismIds]),
+    ];
+    const availableMechanisms = new Set(
+      readWorkshopMechanisms().map((entry) => entry.id),
+    );
+    const missingMechanisms = requestedMechanisms.filter(
+      (id) => !availableMechanisms.has(id),
+    );
+    if (missingMechanisms.length) {
+      throw new Error(`缺少职业依赖的底层机制：${missingMechanisms.join('、')}`);
+    }
+
+    const testPlayerRecord: PlayerRecord = {
+      ...player,
+      name: `${player.name} · 测试`,
+      classMain: profession.main,
+      subclass: profession.id,
+      level: 100,
+      experience: 0,
+      experienceToNext: 5050,
+      hp: 80 + input.attributes.hpMax * 5,
+      hpMax: 80 + input.attributes.hpMax * 5,
+      mp: 30 + input.attributes.mpMax * 5,
+      mpMax: 30 + input.attributes.mpMax * 5,
+      attack: 8 + input.attributes.attack,
+      defense: 5 + input.attributes.defense,
+      speed: 5 + input.attributes.speed,
+      actionPointsPerTurn: 5 + apCount,
+      drawPerTurn: 5,
+      statPoints: attributeBudget - attributeSpent,
+      gold: 0,
+      pendingBattleEffects: [],
+    };
+    const battlePlayer = this.makePlayer(testPlayerRecord, deckIds, []);
+    const dummyCount = this.clamp(Math.floor(input.dummyCount), 1, 8);
+    const dummyHp = this.clamp(Math.floor(input.dummyHp), 1, 1_000_000);
+    const dummyAttack = this.clamp(Math.floor(input.dummyAttack), 0, 100_000);
+    const dummyDefense = this.clamp(Math.floor(input.dummyDefense), 0, 100_000);
+    const enemies: BattleEnemyState[] = Array.from(
+      { length: dummyCount },
+      (_, index) => ({
+        id: `workshop_dummy:${index}:${Math.floor(this.random() * 1_000_000)}`,
+        definitionId: 'workshop_dummy',
+        name: dummyCount > 1 ? `测试木桩 ${index + 1}` : '测试木桩',
+        hp: dummyHp,
+        hpMax: dummyHp,
+        shield: 0,
+        attack: dummyAttack,
+        defense: dummyDefense,
+        speed: 0,
+        difficulty: 'test',
+        tags: ['workshop-test', 'dummy'],
+        xp: 0,
+        gold: [0, 0],
+        loot: [],
+        buffs: {},
+        debuffs: {},
+        intent: input.dummyAttackEnabled
+          ? {
+              skillId: 'workshop-test-hit',
+              name: '测试攻击',
+              kind: 'attack',
+              description: '由创意工坊测试场生成的攻击。',
+              amount: dummyAttack,
+              hits: 1,
+            }
+          : null,
+      }),
+    );
+    const state: LocalBattleState = {
+      schemaVersion: 1,
+      difficulty: 'normal',
+      status: 'ongoing',
+      phase: 'player',
+      turn: 1,
+      selectedTarget: 0,
+      player: battlePlayer,
+      enemies,
+      rewards: null,
+      workshopTest: {
+        professionId: profession.id,
+        dummyInvincible: input.dummyInvincible,
+        dummyAttackEnabled: input.dummyAttackEnabled,
+        autoRespawn: input.autoRespawn,
+        playerInvincible: input.playerInvincible,
+        respawns: 0,
+        attributeBudget,
+        attributeSpent,
+      },
+      log: [],
+      animations: [],
+    };
+    this.initializeWorkshopMechanisms(
+      state,
+      profession.id,
+      requestedMechanisms,
+    );
+    this.drawCards(state, battlePlayer.initialDraw);
+    this.applyBattleStartPassives(state, [workshopPassiveId(profession.id)]);
+    this.runWorkshopMechanisms(state, 'battle_start');
+    this.log(
+      state,
+      'system',
+      `创意工坊测试开始：Lv.100 ${profession.name}，${dummyCount} 个测试木桩。`,
+    );
+    const now = Date.now();
+    const session: BattleSessionRecord = {
+      id: `battle:${profileId}:workshop:${now}:${Math.floor(this.random() * 1_000_000)}`,
+      profileId,
+      active: true,
+      source: `创意工坊测试场 · ${profession.name}`,
+      relatedQuestId: '',
+      turn: 1,
+      phase: 'player',
+      state,
+      updatedAt: now,
+    };
+    await this.db.battleSessions.add(session);
   }
 
   private makePlayer(
@@ -1969,6 +2162,46 @@ export class BattleRepository {
     }
   }
 
+  private stabilizeWorkshopTest(state: LocalBattleState): void {
+    const test = state.workshopTest;
+    if (!test) return;
+    if (test.playerInvincible && state.player.hp <= 0) state.player.hp = 1;
+    for (const enemy of state.enemies) {
+      if (enemy.hp > 0) continue;
+      if (test.dummyInvincible) {
+        enemy.hp = 1;
+        continue;
+      }
+      if (!test.autoRespawn) continue;
+      enemy.hp = enemy.hpMax;
+      enemy.shield = 0;
+      enemy.buffs = {};
+      enemy.debuffs = {};
+      enemy.intent = test.dummyAttackEnabled
+        ? {
+            skillId: 'workshop-test-hit',
+            name: '测试攻击',
+            kind: 'attack',
+            description: '由创意工坊测试场生成的攻击。',
+            amount: enemy.attack,
+            hits: 1,
+          }
+        : null;
+      test.respawns += 1;
+      this.animation(state, {
+        kind: 'heal',
+        sourceSide: 'system',
+        sourceId: 'workshop-test',
+        targetSide: 'enemy',
+        targetId: enemy.id,
+        amount: enemy.hpMax,
+        hpAfter: enemy.hpMax,
+        label: '木桩自动复活',
+      });
+      this.log(state, 'system', `${enemy.name} 已自动复活（第 ${test.respawns} 次）。`);
+    }
+  }
+
   private damage(
     state: LocalBattleState,
     source: Combatant,
@@ -2005,8 +2238,18 @@ export class BattleRepository {
     amount = Math.max(rawAmount > 0 ? 1 : 0, Math.round(amount));
     const absorbed = Math.min(target.shield, amount);
     target.shield -= absorbed;
-    const hpDamage = amount - absorbed;
-    target.hp = Math.max(0, target.hp - hpDamage);
+    const calculatedHpDamage = amount - absorbed;
+    const beforeHp = target.hp;
+    const hpFloor =
+      target === state.player
+        ? state.workshopTest?.playerInvincible
+          ? 1
+          : 0
+        : state.workshopTest?.dummyInvincible
+          ? 1
+          : 0;
+    target.hp = Math.max(hpFloor, target.hp - calculatedHpDamage);
+    const hpDamage = beforeHp - target.hp;
     if (target === state.player && hpDamage > 0) {
       state.player.abyssEcho = (state.player.abyssEcho ?? 0) + 1;
       state.player.classResources ??= {};
@@ -2070,6 +2313,7 @@ export class BattleRepository {
         },
       );
     }
+    this.stabilizeWorkshopTest(state);
     return hpDamage;
   }
 
@@ -2700,6 +2944,18 @@ export class BattleRepository {
       state,
       status === 'victory' ? 'battle_victory' : 'battle_defeat',
     );
+    if (state.workshopTest) {
+      state.rewards = null;
+      this.log(
+        state,
+        'system',
+        status === 'victory'
+          ? '测试木桩已全部击倒；本次测试不会发放奖励或修改正式角色。'
+          : '测试角色已倒下；本次测试不会造成正式角色损失。',
+      );
+      await this.save(session);
+      return;
+    }
     const fullRewards = this.calculateRewards(state);
     const rewards =
       status === 'victory'
@@ -2971,19 +3227,23 @@ export class BattleRepository {
     state: LocalBattleState,
     levelsGained: number,
   ): NonNullable<LocalBattleState['rewardChoices']> {
-    const cardIds = ['merchant', 'astrologer'].includes(
-      state.player.subclass ?? '',
-    )
-      ? []
-      : this.shuffle(
-          Object.entries(this.cards ?? {})
-            .filter(
-              ([, card]) =>
-                card.rarity !== 'legendary' &&
-                (card.cls === state.player.subclass || card.cat === 'common'),
-            )
-            .map(([id]) => id),
-        ).slice(0, 3);
+    const subclass = state.player.subclass ?? '';
+    const customProfession = readWorkshopPacks()
+      .flatMap((pack) => pack.classes)
+      .find((profession) => profession.id === subclass);
+    const cardIds = customProfession
+      ? this.shuffle([...new Set(customProfession.cardPool)]).slice(0, 3)
+      : ['merchant', 'astrologer'].includes(subclass)
+        ? []
+        : this.shuffle(
+            Object.entries(this.cards ?? {})
+              .filter(
+                ([, card]) =>
+                  card.rarity !== 'legendary' &&
+                  (card.cls === subclass || card.cat === 'common'),
+              )
+              .map(([id]) => id),
+          ).slice(0, 3);
     const offerEquipment =
       levelsGained > 0 || state.difficulty === 'hard' || state.difficulty === 'hell';
     const equipmentIds = offerEquipment
@@ -3061,11 +3321,14 @@ export class BattleRepository {
   private initializeWorkshopMechanisms(
     state: LocalBattleState,
     subclass: string,
+    additionalIds: string[] = [],
   ): void {
     const profession = readWorkshopPacks()
       .flatMap((pack) => pack.classes)
       .find((entry) => entry.id === subclass);
-    const ids = [...new Set(profession?.mechanismIds ?? [])];
+    const ids = [
+      ...new Set([...(profession?.mechanismIds ?? []), ...additionalIds]),
+    ];
     if (!ids.length) return;
     const manifests = readWorkshopMechanisms().filter((entry) =>
       ids.includes(entry.id),

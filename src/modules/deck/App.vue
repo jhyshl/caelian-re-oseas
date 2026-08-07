@@ -1,12 +1,23 @@
 <script setup lang="ts">
+/* global window */
 import { computed, onMounted, ref } from 'vue';
 import { loadCardCatalog } from '@/content/catalogs/cards';
+import {
+  mainClassForSubclass,
+  subclassNames,
+} from '@/content/catalogs/professions';
 import type { CardDefinition } from '@/content/types';
 import type { GameSnapshot } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import WorkshopDialog from '@/modules/deck/WorkshopDialog.vue';
 import CardSquareDialog from '@/modules/deck/CardSquareDialog.vue';
+import {
+  deleteSavedDeckBuild,
+  readSavedDeckBuilds,
+  saveNamedDeckBuild,
+  type SavedDeckBuild,
+} from '@/saved-decks';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
@@ -19,6 +30,8 @@ const search = ref('');
 const notice = ref('');
 const workshopOpen = ref(false);
 const squareOpen = ref(false);
+const presetName = ref('');
+const savedDecks = ref(readSavedDeckBuilds());
 
 const typeNames: Record<string, string> = {
   all: '全部',
@@ -123,6 +136,82 @@ async function saveDeck() {
   notice.value = '牌组已保存到浏览器本地档案。';
 }
 
+function savePreset(): void {
+  notice.value = '';
+  const name = presetName.value.trim();
+  const player = snapshot.value?.player;
+  const deck = snapshot.value?.decks.find((entry) => entry.active);
+  if (name.length < 2) {
+    notice.value = '请先填写至少 2 个字的构筑名称。';
+    return;
+  }
+  if (!player || !deck?.cardIds.length) {
+    notice.value = '当前没有可以保存的构筑。';
+    return;
+  }
+  const existing = savedDecks.value.find(
+    (entry) => entry.name === name && entry.professionId === player.subclass,
+  );
+  const saved = saveNamedDeckBuild({
+    id: existing?.id ?? commandId('saved-deck'),
+    name,
+    professionId: player.subclass,
+    professionName: subclassNames[player.subclass] ?? player.subclass,
+    mainClass: mainClassForSubclass(player.subclass),
+    cardIds: [...deck.cardIds],
+    createdAt: existing?.createdAt,
+  });
+  savedDecks.value = readSavedDeckBuilds();
+  presetName.value = '';
+  notice.value = existing
+    ? `已覆盖更新构筑「${saved.name}」。`
+    : `已保存构筑「${saved.name}」。`;
+}
+
+async function applyPreset(build: SavedDeckBuild): Promise<void> {
+  notice.value = '';
+  const player = snapshot.value?.player;
+  if (!player) return;
+  if (player.subclass !== build.professionId) {
+    const confirmed = window.confirm(
+      `「${build.name}」属于${build.professionName}。是否先快捷转职，再切换构筑？`,
+    );
+    if (!confirmed) return;
+    const reclass = await props.context.api.execute({
+      id: commandId('player.reclass'),
+      type: 'player.reclass',
+      payload: {
+        classMain: build.mainClass,
+        subclass: build.professionId,
+      },
+    });
+    if (reclass.status === 'rejected') {
+      notice.value = reclass.message ?? '快捷转职失败。';
+      return;
+    }
+  }
+  const result = await props.context.api.execute({
+    id: commandId('deck.update'),
+    type: 'deck.update',
+    payload: { cardIds: [...build.cardIds] },
+  });
+  if (result.status === 'rejected') {
+    notice.value = `${result.message ?? '构筑切换失败'}。预设不会自动赠送尚未拥有的卡牌。`;
+    snapshot.value = await props.context.api.query('state');
+    return;
+  }
+  snapshot.value = await props.context.api.query('state');
+  draft.value = [...build.cardIds];
+  notice.value = `已一键切换到构筑「${build.name}」。`;
+}
+
+function removePreset(build: SavedDeckBuild): void {
+  if (!window.confirm(`确认删除构筑预设「${build.name}」？`)) return;
+  deleteSavedDeckBuild(build.id);
+  savedDecks.value = readSavedDeckBuilds();
+  notice.value = `已删除构筑预设「${build.name}」。`;
+}
+
 async function workshopSaved() {
   catalog.value = { ...(await loadCardCatalog()) };
 }
@@ -184,6 +273,46 @@ onMounted(async () => {
               编辑牌组
             </button>
           </template>
+        </div>
+      </section>
+
+      <section class="ca-section saved-builds">
+        <header>
+          <div>
+            <span>SAVED BUILDS</span>
+            <h2>我的构筑预设</h2>
+            <p>保存在当前浏览器；选择预设即可切换，职业不符时可快捷转职。</p>
+          </div>
+          <div class="preset-save">
+            <input
+              v-model="presetName"
+              maxlength="50"
+              placeholder="为当前构筑命名"
+              @keyup.enter="savePreset"
+            />
+            <button type="button" class="ca-button primary" @click="savePreset">
+              保存当前构筑
+            </button>
+          </div>
+        </header>
+        <div v-if="savedDecks.length === 0" class="preset-empty">
+          还没有预设。完成一套构筑后，为它命名并保存。
+        </div>
+        <div v-else class="preset-list">
+          <article v-for="build in savedDecks" :key="build.id">
+            <div>
+              <strong>{{ build.name }}</strong>
+              <span>{{ build.professionName }} · {{ build.cardIds.length }} 张</span>
+            </div>
+            <div>
+              <button type="button" class="ca-button primary" @click="applyPreset(build)">
+                一键切换
+              </button>
+              <button type="button" class="ca-button" @click="removePreset(build)">
+                删除
+              </button>
+            </div>
+          </article>
         </div>
       </section>
 
@@ -482,10 +611,102 @@ onMounted(async () => {
   text-align: center;
 }
 
+.saved-builds > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.saved-builds header > div:first-child > span {
+  color: var(--ca-gold);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+}
+
+.saved-builds h2 {
+  margin: 3px 0;
+  color: var(--ca-text-bright);
+  font: 700 17px var(--ca-serif);
+}
+
+.saved-builds p,
+.preset-empty {
+  margin: 0;
+  color: var(--ca-muted);
+  font-size: 10px;
+}
+
+.preset-save {
+  display: flex;
+  gap: 7px;
+}
+
+.preset-save input {
+  min-width: 180px;
+  padding: 7px 10px;
+  border: 1px solid var(--ca-border);
+  border-radius: 8px;
+  color: var(--ca-text);
+  background: var(--ca-surface);
+  font: inherit;
+}
+
+.preset-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.preset-list article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--ca-border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.preset-list article > div {
+  display: flex;
+  gap: 6px;
+}
+
+.preset-list article > div:first-child {
+  min-width: 0;
+  flex-direction: column;
+}
+
+.preset-list strong {
+  overflow: hidden;
+  color: var(--ca-text-bright);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-list span {
+  color: var(--ca-muted);
+  font-size: 9px;
+}
+
 @media (max-width: 560px) {
   .deck-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .saved-builds > header,
+  .preset-save {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .preset-save input {
+    min-width: 0;
   }
 
   .card-grid {
