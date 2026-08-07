@@ -1,6 +1,100 @@
-# 《凯利安：奥西斯再临》创意工坊 AI 制作手册
+# 凯利安创意工坊 AI 制作手册
 
 适用格式版本：`1`。把本文件完整交给 AI，并说明你想制作的职业、卡组或底层机制。AI 最终必须只输出一个可保存为 `.json` 的 JSON 对象，不要输出 JavaScript、Markdown 代码围栏或解释文字。保存后在“创意工坊 → 导入”中校验；职业与底层机制公开到卡牌广场前需要作者审核。
+
+## 最先复制给 AI 的制作指令
+
+直接复制下面整段，并把方括号里的内容换成你的需求：
+
+```text
+请完整阅读我随后提供的《凯利安创意工坊 AI 制作手册》，严格按照格式版本 1 制作【职业包 / 效果预设扩展 / 底层机制包】。
+
+主题：【填写主题】
+核心循环：【填写玩法循环】
+强度目标：【填写偏保守 / 标准 / 较强但必须合法】
+其他需求：【填写职业定位、卡牌风格或机制细节】
+
+制作职业包时必须满足：
+1. 使用 8–16 种不同名称、不同 ID 的卡牌，完整 cardPool 为 16–32 张，starterDeck 正好 15 张。
+2. starterDeck 与 cardPool 只能引用本职业 cards 中的 ID，且每个 ID 的使用次数不能超过 cardPool 持有数。
+3. 职业依赖新机制时，把完整机制放在职业包根级 mechanisms 中，并由 mechanismIds 引用。
+4. 只使用手册列出的字段、效果、条件、触发器、公式和动作，不得输出任意代码或未定义效果。
+5. 生成后必须在内部执行手册中的“AI 强度校验器”：逐张计算卡牌强度和费用上限，计算天赋总强度，并完成结构、引用、唯一性与循环风险检查。任何一项失败都要先自行修改并重新校验，直到全部通过。
+6. 最终只输出一个有效 JSON 对象，不要输出校验过程、解释文字或 Markdown 代码围栏。
+```
+
+## AI 强度校验器（生成后必须执行）
+
+这部分逐项抄录自创意工坊当前实际使用的 `cardScore`、`cardLimit`、`rarityFromScore` 和 `talentScore`，不是另一套近似规则。AI 必须在输出最终 JSON 前在内部完成计算；`powerScore` 和 `rarity` 即使填写，导入时也会按同一组函数重新计算。
+
+### 1. 卡牌费用上限
+
+先把一张卡所有效果的分数相加，只有 `总分 ≤ 对应 cost 上限` 才通过：
+
+| cost | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 上限 | 10 | 22 | 36 | 52 | 68 | 86 | 106 | 128 | 152 | 178 | 206 |
+
+目标倍率 `M`：单体或自身为 `1`；`all_enemies=1.6`；`all_allies=1.5`；`all_summons=1.4`；`random_enemy`/`random_allies` 为 `0.85 × target_count`；`selected_allies` 为 `1 + 0.55 × (target_count - 1)`；`random_summons` 为 `0.75 × target_count`；`selected_summons` 为 `0.9 × target_count`。
+
+持续回合折扣 `D`：1 回合为 `1`，2 回合为 `0.85`，3 回合为 `0.75`，4 回合为 `0.65`，5 回合及以上为 `0.6`。
+
+常规效果分数：
+
+| 效果 | 分数公式 |
+| --- | --- |
+| `damage` | `(value + lifesteal_ratio × 12) × M` |
+| `shield` | `value × 0.75 × M` |
+| `heal` | `value × 0.85 × M` |
+| `draw` | `value × 6` |
+| `gain_ap` | `value × 9` |
+| `gain_mp` | `value × 0.75` |
+| `mp_to_ap` | `max(0, value × 9 - amount × 0.65)` |
+| `spend_mp_damage` | `max(0, value × max(1, amount) × 0.85 - amount × 0.55) × M` |
+| `spend_mp_shield` | `max(0, value × max(1, amount) × 0.62 - amount × 0.55) × M` |
+| `cleanse` | 单个 `amount × 6`，`all=18`，再乘 `M` |
+| `dispel` | 单个 `amount × 6`，`all=14`，再乘 `M` |
+| `strip_shield` / `strip_buffs` | `8 × M` / `14 × M` |
+| `trap` | `value × 0.8 × M` |
+| `damage_from_shield` | `ratio × 16 × M` |
+| `damage_per_debuff` | `value × 2.2 × M` |
+| `discard` | 单张 `amount × 2`，`all=6` |
+| `recover_discard` | 单张 `amount × 5`，`all=18` |
+| `destroy_summon` | 单个 `-amount × 14`，`all=-30` |
+| `discard_all_damage` | `value × 5 × M` |
+| `reveal_intent` | `5` |
+
+`apply_debuff`：基础分依次为 `freeze=14`、`entangle=10`、`weak=7`、`vulnerable=8`、`burn=4`、`poison=4`；分数为 `基础分 × turns × M`。
+
+`apply_buff`：每回合基础分依次为 `strength=6`、`fortitude=5`、`agility=5`、`regen=4`、`thorns=4`、`ap_regen=9`、`draw_regen=7`、`shield_regen=3`、`heal_regen=3.5`、`damage_bonus=4`、`spell_damage_bonus=4`、`damage_reduce=4`、`mp_regen=1.2`、`blood_burn=3`。分数为 `基础分 × max(1, value) × turns × D × M`；`blood_burn` 最后再乘 `0.72`。
+
+`conditional_group`：分别汇总 `then_effects` 与 `else_effects`。每个条件使用默认折扣：`self_has_shield=0.86`、`self_no_shield=0.9`、`enemy_has_shield=0.86`、`enemy_no_shield=0.9`、`enemy_has_debuff=0.84`、`enemy_no_debuff=0.92`、`enemy_has_specific_debuff=0.8`、`enemy_no_specific_debuff=0.9`、`self_has_buff=0.9`、`self_no_buff=0.92`、`self_full_hp=0.82`、`self_not_full_hp=0.88`、`has_summon=0.82`、`no_summon=0.95`、`spend_mp=0.74`、`discard=0.78`、`destroy_summon=0.62`。`and` 将折扣相乘，`or` 取最大折扣；最终分数为 `max(then 总分 × 条件折扣, else 总分)`。
+
+`summon`：先把技能 `weight` 归一化为总和 1，再算单回合期望分 `E=Σ(技能内效果分 × 归一化 weight)`。可攻击召唤物的预计存活回合按 `hp_ratio` 计算：`≤20→1`、`≤35→2`、`≤50→3`、`≤75→4`、`>75→5`，总分为 `hp_ratio × 0.28 + E × 预计回合`；不可攻击召唤物为 `E × max(1,duration) × 1.15`。
+
+自动稀有度：总分 `<30` 为 `common`，`30–57.999` 为 `uncommon`，`58–89.999` 为 `rare`，`90–129.999` 为 `epic`，`≥130` 为 `legendary`。
+
+### 2. 天赋上限
+
+天赋最多 4 个不同类型词条，总分必须 `≤24`：
+
+- `battle_start_shield`：`value × 0.7`
+- `turn_start_heal`、`attack_bonus`：`value × 4`
+- `shield_bonus`：`value × 35`
+- `extra_draw`、`first_turn_ap`：`value × 9`
+- `damage_reduction`：`value × 6`
+- `always_reveal_intent`：`8`
+- `turn_start_cleanse`：`value × 10`
+- `turn_start_debuff_shield`：`value × 1.2`
+
+### 3. 最终检查清单
+
+- 所有包、职业、卡牌、机制、资源和规则 ID 唯一，引用目标全部存在。
+- 每张卡最多 8 个效果；同一张卡中，同类效果、同名 buff/debuff 和同条件加成不重复。
+- 召唤牌必须含 `summon`，非召唤牌不得含 `summon`；召唤物最多 3 个技能，每个技能最多 3 个效果。
+- 卡牌种类、cardPool、starterDeck 数量与重复次数全部合法。
+- 天赋总分不超过 24，每张卡总分不超过费用上限；若超限，优先提高 cost 或降低数值，不得伪造 `powerScore`。
+- 机制不存在同一触发器下无条件互相触发的循环；资源有明确上下限，规则能够解释并可在测试场验证。
 
 ## 安全边界
 
@@ -204,10 +298,4 @@
 
 可读取状态：`player.hp`、`player.hpMax`、`player.mp`、`player.mpMax`、`player.shield`、`player.attack`、`player.defense`、`player.speed`、`player.ap`、`player.apMax`、`battle.turn`、`enemy.hp`、`enemy.hpMax`、`enemy.shield`、`enemy.attack`、`enemy.defense`、`enemies.alive`、`summons.count`、`hand.count`、`discard.count`。
 
-## 四、给 AI 的推荐指令
-
-复制以下内容并补充你的需求：
-
-> 严格遵守《凯利安创意工坊 AI 制作手册》。请制作【职业包 / 效果预设扩展 / 底层机制包】。主题是……，核心循环是……，强度目标是……。职业包必须有 8–16 种不同名卡牌、16–32 张职业卡池和正好 15 张基础构筑。先在内部检查 ID 唯一、引用完整、基础构筑没有超过卡池持有数、没有未列出的效果或任意代码。最终只输出一个有效 JSON 对象，不要输出解释或 Markdown 代码围栏。
-
-职业若依赖新机制，优先让 AI 把机制对象放在职业包根级 `mechanisms` 中，并让职业的 `mechanismIds` 引用机制 ID，以便一个 JSON 完整上传、下载和安装。导入后可在“创意工坊 → 测试场”配置木桩与 Lv.100 属性点进行隔离测试。
+职业若依赖新机制，优先把机制对象放在职业包根级 `mechanisms` 中，并让职业的 `mechanismIds` 引用机制 ID，以便一个 JSON 完整上传、下载和安装。导入后可在“创意工坊 → 测试场”配置木桩与 Lv.100 属性点进行隔离测试。
