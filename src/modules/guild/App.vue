@@ -13,6 +13,7 @@ import type {
 } from '@/kernel/public-api';
 import type { QuestListEntry } from '@/quests/catalog';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
+import { normalizeRegion } from '@/worldbook/region-switcher';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -49,8 +50,8 @@ const rankSequence = [
   'silver',
   'gold',
   'platinum',
-  'diamond',
-  'legend',
+  'mythril',
+  'adamantite',
 ];
 const nextRank = computed(() => {
   const rank = snapshot.value?.guild.rank ?? 'copper';
@@ -71,7 +72,12 @@ const rankProgress = computed(() => {
 });
 const availableTasks = computed(() =>
   tasks.value.filter(
-    (task) => (snapshot.value?.player.level ?? 1) >= task.lvl,
+    (task) =>
+      (snapshot.value?.player.level ?? 1) >= task.lvl &&
+      normalizeRegion(task.region) ===
+        normalizeRegion(
+          snapshot.value?.world.region || snapshot.value?.world.location,
+        ),
   ),
 );
 
@@ -204,6 +210,8 @@ async function accept(task: GuildTaskDefinition) {
       rewardGold: task.gold,
       rewardGuildExperience: task.gxp,
       minimumLevel: task.lvl,
+      commissionType: task.type,
+      targetName: task.target,
     },
   });
   busyTask.value = '';
@@ -214,6 +222,64 @@ async function accept(task: GuildTaskDefinition) {
   await refresh();
   props.context.api.setUserInput(`接受协会委托：${task.name}`);
   notice.value = `已接受委托“${task.name}”，行动文本已填入酒馆输入框。`;
+}
+
+async function progressCommission(quest: QuestRecord) {
+  busyTask.value = quest.id;
+  notice.value = '';
+  try {
+    if (quest.commissionType === 'combat') {
+      const remaining = Math.max(1, quest.totalStages - quest.currentStage);
+      const result = await props.context.api.execute({
+        id: commandId('battle.start'),
+        type: 'battle.start',
+        payload: {
+          monsterId: quest.commissionTarget,
+          count: Math.min(3, remaining),
+          source: `协会委托：${quest.title}`,
+          relatedQuestId: quest.id,
+        },
+      });
+      if (result.status === 'rejected') throw new Error(result.message);
+      await props.context.api.openPanel('battle');
+      notice.value = '讨伐战斗已载入，胜利后会自动累计进度。';
+    } else {
+      const result = await props.context.api.execute({
+        id: commandId('quest.commission-progress'),
+        type: 'quest.commission-progress',
+        payload: { questId: quest.id },
+      });
+      if (result.status === 'rejected') throw new Error(result.message);
+      notice.value =
+        quest.commissionType === 'gather'
+          ? '材料已提交。'
+          : '现场行动已确认。';
+    }
+    await refresh();
+  } catch (error) {
+    notice.value = errorMessage(error);
+  } finally {
+    busyTask.value = '';
+  }
+}
+
+async function completeCommission(quest: QuestRecord) {
+  busyTask.value = quest.id;
+  notice.value = '';
+  try {
+    const result = await props.context.api.execute({
+      id: commandId('quest.commission-complete'),
+      type: 'quest.commission-complete',
+      payload: { questId: quest.id },
+    });
+    if (result.status === 'rejected') throw new Error(result.message);
+    await refresh();
+    notice.value = `“${quest.title}”已结算，奖励已经发放。`;
+  } catch (error) {
+    notice.value = errorMessage(error);
+  } finally {
+    busyTask.value = '';
+  }
 }
 
 async function abandon(quest: QuestRecord) {
@@ -357,7 +423,12 @@ onUnmounted(() => {
               </div>
               <div class="quest-actions">
                 <button
-                  v-if="quest.definitionId && quest.status === 'ready' && isTracked(quest)"
+                  v-if="
+                    quest.kind !== 'commission' &&
+                      quest.definitionId &&
+                      quest.status === 'ready' &&
+                      isTracked(quest)
+                  "
                   type="button"
                   class="ca-button primary"
                   :disabled="busyManagedTask === quest.id"
@@ -366,7 +437,11 @@ onUnmounted(() => {
                   确认结算
                 </button>
                 <button
-                  v-else-if="quest.definitionId && !isTracked(quest)"
+                  v-else-if="
+                    quest.kind !== 'commission' &&
+                      quest.definitionId &&
+                      !isTracked(quest)
+                  "
                   type="button"
                   class="ca-button primary"
                   :disabled="busyManagedTask === quest.id"
@@ -376,7 +451,8 @@ onUnmounted(() => {
                 </button>
                 <button
                   v-if="
-                    quest.definitionId &&
+                    quest.kind !== 'commission' &&
+                      quest.definitionId &&
                       quest.status === 'active' &&
                       isTracked(quest) &&
                       trackedQuest?.action
@@ -391,7 +467,12 @@ onUnmounted(() => {
                   {{ trackedQuest.action.label }}
                 </button>
                 <button
-                  v-if="quest.definitionId && quest.status === 'active' && isTracked(quest)"
+                  v-if="
+                    quest.kind !== 'commission' &&
+                      quest.definitionId &&
+                      quest.status === 'active' &&
+                      isTracked(quest)
+                  "
                   type="button"
                   class="ca-button"
                   :disabled="busyManagedTask === quest.id"
@@ -404,6 +485,30 @@ onUnmounted(() => {
                       ? '继续追踪'
                       : '暂停追踪'
                   }}
+                </button>
+                <button
+                  v-if="quest.kind === 'commission' && quest.status === 'active'"
+                  type="button"
+                  class="ca-button primary"
+                  :disabled="busyTask === quest.id"
+                  @click="progressCommission(quest)"
+                >
+                  {{
+                    quest.commissionType === 'combat'
+                      ? '开始讨伐'
+                      : quest.commissionType === 'gather'
+                        ? '提交材料'
+                        : '完成现场行动'
+                  }}
+                </button>
+                <button
+                  v-if="quest.kind === 'commission' && quest.status === 'ready'"
+                  type="button"
+                  class="ca-button primary"
+                  :disabled="busyTask === quest.id"
+                  @click="completeCommission(quest)"
+                >
+                  结算委托
                 </button>
                 <button
                   v-if="quest.kind !== 'main' && quest.status === 'active'"
@@ -456,10 +561,10 @@ onUnmounted(() => {
 
         <h2 class="ca-section-title">
           委托告示板
-          <small>{{ availableTasks.length }} 项符合当前等级</small>
+          <small>{{ snapshot.world.region }} · {{ availableTasks.length }} 项可接取</small>
         </h2>
         <div class="task-grid">
-          <article v-for="task in tasks" :key="`${task.name}:${task.region}`">
+          <article v-for="task in availableTasks" :key="`${task.name}:${task.region}`">
             <header>
               <span>
                 {{ typeIcons[task.type] ?? '◇' }}

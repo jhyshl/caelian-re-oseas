@@ -7,12 +7,18 @@ import {
   type MonsterSkillDefinition,
   type PassiveDefinition,
 } from '@/content/catalogs/battle';
-import { loadBattleItems } from '@/content/catalogs/inventory';
+import {
+  loadBattleItems,
+  loadEquipmentDefinitions,
+  loadRelics,
+} from '@/content/catalogs/inventory';
 import { loadCardCatalog } from '@/content/catalogs/cards';
 import type {
   BattleItemDefinition,
   CardDefinition,
   CardEffect,
+  EquipmentDefinition,
+  RelicDefinition,
 } from '@/content/types';
 import {
   canApplyBattleConsumable,
@@ -33,6 +39,7 @@ import type {
 } from '@/domain/types';
 import type { CaelianDatabase } from '@/storage/database';
 import { grantPlayerExperience } from '@/player/progression';
+import { updateGuildRank } from '@/guild-progression';
 
 const DIFFICULTY_SCALE = {
   easy: 0.8,
@@ -91,6 +98,8 @@ export class BattleRepository {
   private rules?: BattleRules;
   private passives?: Record<string, PassiveDefinition>;
   private battleItems?: Record<string, BattleItemDefinition>;
+  private relics?: Record<string, RelicDefinition>;
+  private equipment?: Record<string, EquipmentDefinition>;
   private animationSequence = 0;
 
   constructor(
@@ -104,7 +113,9 @@ export class BattleRepository {
       this.monsters &&
       this.rules &&
       this.passives &&
-      this.battleItems
+      this.battleItems &&
+      this.relics &&
+      this.equipment
     ) {
       return;
     }
@@ -114,12 +125,16 @@ export class BattleRepository {
       this.rules,
       this.passives,
       this.battleItems,
+      this.relics,
+      this.equipment,
     ] = await Promise.all([
       loadCardCatalog(),
       loadMonsterCatalog(),
       loadBattleRules(),
       loadPassiveCatalog(),
       loadBattleItems(),
+      loadRelics(),
+      loadEquipmentDefinitions(),
     ]);
   }
 
@@ -173,8 +188,14 @@ export class BattleRepository {
       throw new Error('请先准备至少一张卡牌的出战牌组');
     }
     const region = world?.region || '伊拉亚城';
-    const encounter = input.monsterId
-      ? [input.monsterId, this.monsters?.[input.monsterId]] as const
+    const resolvedMonsterId = input.monsterId
+      ? this.resolveMonsterId(input.monsterId)
+      : undefined;
+    if (input.monsterId && !resolvedMonsterId) {
+      throw new Error(`找不到剧情指定的怪物：${input.monsterId}`);
+    }
+    const encounter = resolvedMonsterId
+      ? [resolvedMonsterId, this.monsters?.[resolvedMonsterId]] as const
       : this.chooseEncounter(region, player.level);
     const [monsterId, monster] = encounter;
     if (!monster) throw new Error('找不到要挑战的怪物');
@@ -215,6 +236,7 @@ export class BattleRepository {
     );
     const state: LocalBattleState = {
       schemaVersion: 1,
+      difficulty,
       status: 'ongoing',
       phase: 'player',
       turn: 1,
@@ -222,14 +244,27 @@ export class BattleRepository {
       player: battlePlayer,
       enemies,
       rewards: null,
+      bossMechanic: this.createBossMechanic(monster),
       log: [],
       animations: [],
     };
 
+    this.applyPreparedBattleEffects(state, player.pendingBattleEffects ?? []);
+    if (player.pendingBattleEffects?.length) {
+      player.pendingBattleEffects = [];
+      player.updatedAt = Date.now();
+      await this.db.playerStates.put(player);
+    }
     this.drawCards(state, battlePlayer.initialDraw);
     this.applyBattleStartPassives(
       state,
       ownedPassives.map((entry) => entry.passiveId),
+    );
+    this.applyCarriedRelicEffects(
+      state,
+      ownedRelics
+        .filter((entry) => entry.carried)
+        .map((entry) => entry.relicId),
     );
     for (const enemy of enemies) {
       enemy.intent = this.chooseIntent(monster, enemy);
@@ -309,7 +344,15 @@ export class BattleRepository {
       label: card.name,
     });
     this.applyCardEffects(state, card, targetIndex);
+    this.updateClassResourcesAfterCard(state, card, cardInstance.cardId);
+    this.recordBossMechanicCard(state, card.type);
     state.player.discardPile.push(cardInstance);
+
+    if (state.status === 'surrendered') {
+      await this.persistBattlePlayer(profileId, state);
+      await this.save(session);
+      return;
+    }
 
     if (this.aliveEnemies(state).length === 0) {
       await this.finishBattle(session, 'victory');
@@ -382,6 +425,61 @@ export class BattleRepository {
     await this.save(session);
   }
 
+  async prepareItem(profileId: string, itemId: string): Promise<void> {
+    this.assertPrepared();
+    const active = await this.db.battleSessions
+      .where('profileId')
+      .equals(profileId)
+      .filter((session) => session.active)
+      .first();
+    if (active) throw new Error('战斗进行中不能配置战前药剂');
+    const stackId = `${profileId}:${itemId}`;
+    const [stack, player] = await Promise.all([
+      this.db.inventoryStacks.get(stackId),
+      this.db.playerStates.get(profileId),
+    ]);
+    if (!stack || stack.quantity <= 0) throw new Error('背包中没有这个物品');
+    if (!player?.created) throw new Error('玩家档案不存在');
+    const definition =
+      this.battleItems?.[stack.itemId] ?? this.battleItems?.[stack.name];
+    if (!definition?.effect) throw new Error('该物品没有可用效果');
+    const effects =
+      definition.effect.type === 'multi'
+        ? childEffects(definition.effect)
+        : [definition.effect];
+    const prepared = effects.filter((effect) =>
+      ['next_battle_buff', 'next_battle_shield', 'next_battle_draw', 'next_battle_ap'].includes(
+        effect.type,
+      ),
+    );
+    const immediate = effects.filter((effect) =>
+      ['heal', 'gain_mp', 'heal_mp'].includes(effect.type),
+    );
+    if (prepared.length === 0) throw new Error('该物品不是战前准备道具');
+    for (const effect of immediate) {
+      if (effect.type === 'heal') {
+        player.hp = Math.min(player.hpMax, player.hp + this.number(effect.value));
+      } else if (effect.type === 'gain_mp') {
+        player.mp = Math.min(player.mpMax, player.mp + this.number(effect.value));
+      } else {
+        player.hp = Math.min(player.hpMax, player.hp + this.number(effect.heal));
+        player.mp = Math.min(player.mpMax, player.mp + this.number(effect.mp));
+      }
+    }
+    player.pendingBattleEffects = [
+      ...(player.pendingBattleEffects ?? []),
+      ...prepared,
+    ];
+    player.updatedAt = Date.now();
+    await this.db.playerStates.put(player);
+    if (stack.quantity === 1) await this.db.inventoryStacks.delete(stackId);
+    else {
+      stack.quantity -= 1;
+      stack.updatedAt = Date.now();
+      await this.db.inventoryStacks.put(stack);
+    }
+  }
+
   async endTurn(profileId: string, battleId: string): Promise<void> {
     this.assertPrepared();
     const session = await this.getOngoing(profileId, battleId);
@@ -399,6 +497,7 @@ export class BattleRepository {
 
     this.resolveChants(state);
     this.resolveSummons(state);
+    this.resolveBossMechanicTurn(state);
     if (this.aliveEnemies(state).length === 0) {
       await this.finishBattle(session, 'victory');
       return;
@@ -468,6 +567,7 @@ export class BattleRepository {
     player.hp = session.state.player.hp;
     player.mp = session.state.player.mp;
     player.gold -= goldLoss;
+    session.state.player.gold = player.gold;
     player.updatedAt = Date.now();
     await this.db.playerStates.put(player);
     session.state.status = 'surrendered';
@@ -490,6 +590,96 @@ export class BattleRepository {
       active: false,
       updatedAt: Date.now(),
     });
+  }
+
+  async claimReward(
+    profileId: string,
+    input: {
+      battleId: string;
+      kind: 'card' | 'equipment' | 'relic';
+      choiceId?: string;
+    },
+  ): Promise<void> {
+    this.assertPrepared();
+    const session = await this.db.battleSessions.get(input.battleId);
+    if (
+      !session ||
+      session.profileId !== profileId ||
+      !session.active ||
+      session.state.status !== 'victory'
+    ) {
+      throw new Error('可领取奖励的战斗不存在');
+    }
+    const choices = session.state.rewardChoices;
+    if (!choices) throw new Error('本场战斗没有额外奖励');
+    const now = Date.now();
+    if (input.kind === 'card') {
+      if (choices.cardClaimed) throw new Error('卡牌奖励已经处理');
+      if (input.choiceId) {
+        if (!choices.cardIds.includes(input.choiceId)) throw new Error('卡牌不在候选列表中');
+        const id = `${profileId}:${input.choiceId}`;
+        const current = await this.db.ownedCards.get(id);
+        await this.db.ownedCards.put({
+          id,
+          profileId,
+          cardId: input.choiceId,
+          quantity: (current?.quantity ?? 0) + 1,
+          source: current?.source ?? 'battle-reward',
+          updatedAt: now,
+        });
+      }
+      choices.cardClaimed = true;
+    } else if (input.kind === 'equipment') {
+      if (choices.equipmentClaimed) throw new Error('装备奖励已经处理');
+      if (input.choiceId) {
+        if (!choices.equipmentIds.includes(input.choiceId)) throw new Error('装备不在候选列表中');
+        const definition = this.equipment?.[input.choiceId];
+        if (!definition) throw new Error('装备定义不存在');
+        const stars = choices.levelsGained > 0 ? 2 : 1;
+        await this.db.equipmentInstances.add({
+          id: `${profileId}:${definition.id}:battle:${now}:${Math.floor(this.random() * 1_000_000)}`,
+          profileId,
+          baseId: definition.id,
+          name: `${definition.name} ${'★'.repeat(stars)}`,
+          slot: definition.slot,
+          rarity: definition.rarity,
+          stars,
+          stats: Object.fromEntries(
+            Object.entries(definition.stats).map(([key, value]) => [
+              key,
+              Math.round(value * (1 + (stars - 1) * 0.35)),
+            ]),
+          ),
+          description: `${definition.description}（战斗奖励）`,
+          updatedAt: now,
+        });
+      }
+      choices.equipmentClaimed = true;
+    } else {
+      if (choices.relicClaimed) throw new Error('藏品奖励已经处理');
+      if (input.choiceId) {
+        if (!choices.relicIds.includes(input.choiceId)) throw new Error('藏品不在候选列表中');
+        const id = `${profileId}:${input.choiceId}`;
+        if (!(await this.db.ownedRelics.get(id))) {
+          const carried =
+            (await this.db.ownedRelics
+              .where('profileId')
+              .equals(profileId)
+              .filter((entry) => entry.carried)
+              .count()) < 5;
+          await this.db.ownedRelics.add({
+            id,
+            profileId,
+            relicId: input.choiceId,
+            carried,
+            acquiredAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+      choices.relicClaimed = true;
+    }
+    await this.save(session);
   }
 
   private makePlayer(
@@ -515,6 +705,7 @@ export class BattleRepository {
     );
     return {
       name: player.name,
+      subclass: player.subclass,
       hp: Math.min(hpMax, player.hp + stat('hp', '生命')),
       hpMax,
       mp: Math.min(mpMax, player.mp + stat('mp', '魔力')),
@@ -543,6 +734,11 @@ export class BattleRepository {
       summons: [],
       chants: [],
       passiveEffects: [],
+      gold: player.gold,
+      classResources: {},
+      sanity: 100,
+      abyssEcho: 0,
+      summonsLost: 0,
     };
   }
 
@@ -569,6 +765,18 @@ export class BattleRepository {
       return Math.max(1, Math.round((30 * difficulty) / (1 + levelGap * 0.9)));
     });
     return chosen ?? all[0] ?? ['', undefined];
+  }
+
+  private resolveMonsterId(input: string): string | undefined {
+    const value = input.trim();
+    if (this.monsters?.[value]) return value;
+    const normalized = value.replace(/[\s·・_\-—]+/g, '').toLowerCase();
+    return Object.entries(this.monsters ?? {}).find(([id, monster]) =>
+      [id, monster.name].some(
+        (candidate) =>
+          candidate.replace(/[\s·・_\-—]+/g, '').toLowerCase() === normalized,
+      ),
+    )?.[0];
   }
 
   private explorationCount(
@@ -850,6 +1058,48 @@ export class BattleRepository {
           this.damage(state, enemy, state.player, amount, 'enemy', enemy.name);
           if (state.player.hp <= 0) break;
         }
+      } else if (effect.type === 'true_damage') {
+        const hits = Math.max(1, this.number(effect.hits, 1));
+        for (let hit = 0; hit < hits; hit += 1) {
+          this.damage(
+            state,
+            enemy,
+            state.player,
+            this.enemyEffectAmount(enemy, effect),
+            'enemy',
+            skill.name,
+            true,
+          );
+        }
+      } else if (effect.type === 'strip_player_shield') {
+        const removed =
+          effect.amount === 'all'
+            ? state.player.shield
+            : Math.min(
+                state.player.shield,
+                Math.max(0, this.number(effect.value ?? effect.amount)),
+              );
+        state.player.shield -= removed;
+        if (removed > 0) {
+          this.log(state, 'enemy', `${enemy.name}击碎了 ${removed} 点玩家护盾`);
+          this.animation(state, {
+            kind: 'shield',
+            sourceSide: 'enemy',
+            sourceId: enemy.id,
+            targetSide: 'player',
+            targetId: 'player',
+            amount: -removed,
+            shieldAfter: state.player.shield,
+            label: skill.name,
+          });
+        }
+      } else if (effect.type === 'heal') {
+        this.heal(
+          state,
+          enemy,
+          this.enemyEffectAmount(enemy, effect),
+          skill.name,
+        );
       } else if (effect.type === 'shield') {
         const amount = this.enemyEffectAmount(enemy, effect);
         enemy.shield += amount;
@@ -1048,6 +1298,23 @@ export class BattleRepository {
           apAfter: state.player.ap,
           label: card.name,
         });
+        break;
+      }
+      case 'gain_class_resource': {
+        const resource = this.classResourceKey(effect.resource);
+        state.player.classResources ??= {};
+        state.player.classResources[resource] =
+          (state.player.classResources[resource] ?? 0) +
+          this.number(effect.value, 1);
+        break;
+      }
+      case 'discard_last_drawn': {
+        const amount = Math.min(
+          state.player.hand.length,
+          Math.max(1, this.number(effect.amount, 1)),
+        );
+        const discarded = state.player.hand.splice(-amount, amount);
+        state.player.discardPile.push(...discarded);
         break;
       }
       case 'spend_mp_damage': {
@@ -1444,6 +1711,183 @@ export class BattleRepository {
         }
         state.player.chants = [];
         break;
+      case 'damage_per_class_resource': {
+        const resource = this.classResourceKey(effect.resource);
+        const stored = state.player.classResources?.[resource] ?? 0;
+        const damage = stored * this.number(effect.value);
+        for (const enemy of targets) {
+          this.damage(state, state.player, enemy, damage, 'player', card.name);
+        }
+        if (effect.consume === 'all' && state.player.classResources) {
+          state.player.classResources[resource] = 0;
+        }
+        break;
+      }
+      case 'gain_mp_per_class_resource': {
+        const resource = this.classResourceKey(effect.resource);
+        const stored = state.player.classResources?.[resource] ?? 0;
+        this.restoreMp(state, stored * this.number(effect.value), card.name);
+        break;
+      }
+      case 'consume_debuff_damage': {
+        const debuff = String(effect.debuff ?? '');
+        if (debuff && target.debuffs[debuff]) {
+          delete target.debuffs[debuff];
+          this.damage(
+            state,
+            state.player,
+            target,
+            this.number(effect.value),
+            'player',
+            card.name,
+          );
+        }
+        break;
+      }
+      case 'debuff_catalyze': {
+        const ratio = Math.max(0, this.number(effect.value_ratio, 1));
+        const extraTurns = Math.max(0, this.number(effect.turns));
+        let potency = 0;
+        for (const debuff of Object.values(target.debuffs)) {
+          potency += this.effectValue(debuff);
+          debuff.turns += extraTurns;
+        }
+        if (potency > 0) {
+          this.damage(
+            state,
+            state.player,
+            target,
+            Math.round(potency * ratio),
+            'player',
+            card.name,
+            true,
+          );
+        }
+        break;
+      }
+      case 'astrology_discover': {
+        const amount = Math.max(
+          1,
+          this.number(effect.pick, this.number(effect.value, 1)),
+        );
+        this.drawCards(state, amount);
+        this.log(state, 'player', `星图发现并保留了 ${amount} 张牌`);
+        break;
+      }
+      case 'restore_mp_per_abyss_echo':
+        this.restoreMp(
+          state,
+          (state.player.abyssEcho ?? 0) * this.number(effect.value),
+          card.name,
+        );
+        break;
+      case 'clear_abyss_echo':
+        state.player.abyssEcho = 0;
+        if (state.player.classResources) state.player.classResources.abyss_echo = 0;
+        break;
+      case 'gain_mp_per_chant':
+        this.restoreMp(
+          state,
+          state.player.chants.length * this.number(effect.value),
+          card.name,
+        );
+        break;
+      case 'copy_chant': {
+        const chant = state.player.chants[0];
+        if (chant) {
+          this.resolveChant(state, chant, this.number(effect.multiplier, 0.5));
+        }
+        break;
+      }
+      case 'recall_summon_mp': {
+        const amount = Math.min(
+          state.player.summons.length,
+          Math.max(1, this.number(effect.amount, 1)),
+        );
+        const recalled = this.shuffle(state.player.summons).slice(0, amount);
+        const ids = new Set(recalled.map((summon) => summon.id));
+        state.player.summons = state.player.summons.filter(
+          (summon) => !ids.has(summon.id),
+        );
+        this.restoreMp(
+          state,
+          Math.min(this.number(effect.max, 999), recalled.length),
+          card.name,
+        );
+        state.player.summonsLost = (state.player.summonsLost ?? 0) + recalled.length;
+        break;
+      }
+      case 'destroy_summon_damage_per': {
+        const mechanicalOnly = Boolean(effect.mechanicalOnly);
+        const candidates = state.player.summons.filter(
+          (summon) =>
+            !mechanicalOnly || /机|械|炮|傀儡|机械/i.test(`${summon.id}${summon.name}`),
+        );
+        const requested =
+          effect.amount === 'all'
+            ? candidates.length
+            : Math.max(1, this.number(effect.amount, 1));
+        const destroyed = candidates.slice(0, requested);
+        const ids = new Set(destroyed.map((summon) => summon.id));
+        state.player.summons = state.player.summons.filter(
+          (summon) => !ids.has(summon.id),
+        );
+        const damage = destroyed.length * this.number(effect.value);
+        for (const enemy of targets) {
+          this.damage(state, state.player, enemy, damage, 'player', card.name);
+        }
+        state.player.summonsLost = (state.player.summonsLost ?? 0) + destroyed.length;
+        break;
+      }
+      case 'consume_san':
+        state.player.sanity = Math.max(
+          0,
+          (state.player.sanity ?? 100) - this.number(effect.value),
+        );
+        break;
+      case 'restore_san':
+        state.player.sanity = Math.min(
+          100,
+          (state.player.sanity ?? 100) + this.number(effect.value),
+        );
+        break;
+      case 'sacrifice_all_san': {
+        const sanity = state.player.sanity ?? 100;
+        state.player.sanity = 0;
+        this.addTimedEffect(
+          state.player.buffs,
+          'strength',
+          Math.floor(sanity / 10) * this.number(effect.strength_per_10, 1),
+          this.number(effect.turns, 1),
+        );
+        break;
+      }
+      case 'merchant_bribe': {
+        const cost = Math.max(
+          50,
+          Math.round(
+            this.aliveEnemies(state).reduce((sum, enemy) => sum + enemy.hpMax, 0) *
+              0.25,
+          ),
+        );
+        if ((state.player.gold ?? 0) < cost) {
+          this.log(state, 'system', `贿赂需要 ${cost} 金币，当前金币不足`);
+          break;
+        }
+        state.player.gold = (state.player.gold ?? 0) - cost;
+        for (const enemy of this.aliveEnemies(state)) enemy.hp = 0;
+        this.log(state, 'player', `支付 ${cost} 金币化解了战斗`);
+        break;
+      }
+      case 'merchant_flee': {
+        const lostGold = Math.round((state.player.gold ?? 0) * 0.2);
+        state.player.gold = Math.max(0, (state.player.gold ?? 0) - lostGold);
+        state.player.hp = Math.max(1, Math.round(state.player.hp * 0.5));
+        state.status = 'surrendered';
+        state.phase = 'ended';
+        this.log(state, 'system', `商人脱身：保留一半生命并损失 ${lostGold} 金币`);
+        break;
+      }
       case 'conditional_group': {
         const conditions = Array.isArray(effect.conditions)
           ? (effect.conditions as CardEffect[])
@@ -1512,14 +1956,29 @@ export class BattleRepository {
           : this.rules?.enemyDefenseScale ?? 0.26;
       amount -= Math.floor(target.defense * defenseScale);
     }
+    if (target !== state.player && target.buffs.evidence_barrier) {
+      amount *= Math.max(
+        0,
+        1 - this.effectValue(target.buffs.evidence_barrier) / 100,
+      );
+    }
     if (target === state.player) {
-      amount -= this.passiveEffectValue(state, 'damage_reduction');
+      amount -=
+        this.passiveEffectValue(state, 'damage_reduction') +
+        this.effectValue(state.player.buffs.damage_reduce);
+    } else {
+      amount += this.effectValue(state.player.buffs.damage_bonus);
     }
     amount = Math.max(rawAmount > 0 ? 1 : 0, Math.round(amount));
     const absorbed = Math.min(target.shield, amount);
     target.shield -= absorbed;
     const hpDamage = amount - absorbed;
     target.hp = Math.max(0, target.hp - hpDamage);
+    if (target === state.player && hpDamage > 0) {
+      state.player.abyssEcho = (state.player.abyssEcho ?? 0) + 1;
+      state.player.classResources ??= {};
+      state.player.classResources.abyss_echo = state.player.abyssEcho;
+    }
     const sourceIdentity = this.combatantIdentity(state, source);
     const targetIdentity = this.combatantIdentity(state, target);
     this.animation(state, {
@@ -1559,6 +2018,12 @@ export class BattleRepository {
         label: '荆棘反弹',
       });
       this.log(state, 'player', `荆棘反弹 ${thorns} 点伤害`);
+    }
+    if (source === state.player && target !== state.player && hpDamage > 0) {
+      const lifesteal = Math.round(
+        hpDamage * Math.max(0, this.passiveEffectValue(state, 'lifesteal_ratio')),
+      );
+      if (lifesteal > 0) this.heal(state, state.player, lifesteal, '吸血');
     }
     return hpDamage;
   }
@@ -1740,6 +2205,131 @@ export class BattleRepository {
     }
   }
 
+  private createBossMechanic(
+    monster: MonsterDefinition,
+  ): LocalBattleState['bossMechanic'] {
+    const id = String(monster.boss_mechanic ?? '');
+    if (!id) return undefined;
+    return {
+      id,
+      phase: 0,
+      gauge: 0,
+      requiredCardType: id === 'academy_exam' ? 'attack' : undefined,
+      playedCardTypes: [],
+      repeatedCount: 0,
+    };
+  }
+
+  private recordBossMechanicCard(
+    state: LocalBattleState,
+    cardType: string,
+  ): void {
+    const mechanic = state.bossMechanic;
+    if (!mechanic) return;
+    mechanic.playedCardTypes.push(cardType);
+    if (mechanic.repeatedCardType === cardType) mechanic.repeatedCount += 1;
+    else {
+      mechanic.repeatedCardType = cardType;
+      mechanic.repeatedCount = 1;
+    }
+    if (mechanic.id === 'heat_gauge') {
+      mechanic.gauge = this.clamp(
+        mechanic.gauge + (cardType === 'attack' ? 10 : cardType === 'defense' ? -8 : -3),
+        0,
+        100,
+      );
+    }
+    if (mechanic.id === 'three_evidence_judgement') {
+      const unique = new Set(mechanic.playedCardTypes);
+      const boss = this.aliveEnemies(state)[0];
+      if (boss && unique.size >= 3 && boss.buffs.evidence_barrier) {
+        delete boss.buffs.evidence_barrier;
+        this.log(state, 'system', '三类证据已经齐备，空洞圣徒的裁决屏障被破解。');
+      }
+    }
+  }
+
+  private resolveBossMechanicTurn(state: LocalBattleState): void {
+    const mechanic = state.bossMechanic;
+    const boss = this.aliveEnemies(state)[0];
+    if (!mechanic || !boss) return;
+    const played = mechanic.playedCardTypes;
+    if (mechanic.id === 'academy_exam') {
+      const passed = played.includes(mechanic.requiredCardType ?? 'attack');
+      if (passed) {
+        this.addTimedEffect(boss.debuffs, 'vulnerable', 1, 1);
+        this.log(state, 'system', '学院考核通过：魔像的术式暴露。');
+      } else {
+        this.addTimedEffect(boss.buffs, 'strength', 3, 2);
+        this.log(state, 'system', `学院考核失败：本回合需要使用${mechanic.requiredCardType}牌。`);
+      }
+      const rotation = ['attack', 'defense', 'skill', 'spell'];
+      mechanic.phase = (mechanic.phase + 1) % rotation.length;
+      mechanic.requiredCardType = rotation[mechanic.phase];
+    } else if (mechanic.id === 'soul_balance') {
+      const attacks = played.filter((type) => type === 'attack').length;
+      const defenses = played.filter((type) => type === 'defense').length;
+      if (Math.abs(attacks - defenses) <= 1) {
+        state.player.shield += 8;
+        this.log(state, 'system', '灵魂天平保持平衡，玩家获得 8 点护盾。');
+      } else {
+        this.addTimedEffect(state.player.debuffs, 'weak', 1, 1);
+        this.log(state, 'system', '灵魂天平失衡，玩家陷入虚弱。');
+      }
+    } else if (mechanic.id === 'three_evidence_judgement') {
+      boss.buffs.evidence_barrier ??= { value: 60, turns: 99 };
+    } else if (mechanic.id === 'tide_rhythm') {
+      mechanic.phase = (mechanic.phase + 1) % 3;
+      if (mechanic.phase === 0) {
+        boss.shield += 15;
+        this.log(state, 'system', '潮汐进入涨潮相，女王获得 15 点护盾。');
+      } else if (mechanic.phase === 1) {
+        this.damage(state, boss, state.player, 8, 'enemy', '潮汐冲击', true);
+      } else {
+        this.addTimedEffect(boss.debuffs, 'vulnerable', 1, 1);
+        this.log(state, 'system', '潮汐进入退潮相，女王暂时易伤。');
+      }
+    } else if (mechanic.id === 'dream_layers') {
+      mechanic.phase += 1;
+      if (mechanic.phase >= 2 && mechanic.phase <= 4) {
+        this.addTimedEffect(boss.debuffs, 'vulnerable', 1, 1);
+      } else if (mechanic.phase >= 5) {
+        mechanic.phase = 0;
+        this.addTimedEffect(state.player.debuffs, 'weak', 1, 2);
+        this.log(state, 'system', '梦境抵达最深层后崩塌，玩家陷入虚弱。');
+      }
+    } else if (mechanic.id === 'mirror_record') {
+      if (mechanic.repeatedCount >= 2) {
+        this.damage(
+          state,
+          boss,
+          state.player,
+          mechanic.repeatedCount * 4,
+          'enemy',
+          '镜像复写',
+          true,
+        );
+        this.log(state, 'system', '镜像公爵夫人复写了连续使用的牌型。');
+      }
+    } else if (mechanic.id === 'heat_gauge' && mechanic.gauge >= 100) {
+      this.damage(state, boss, state.player, 15, 'enemy', '炉心过载', true);
+      this.addTimedEffect(boss.debuffs, 'vulnerable', 1, 2);
+      mechanic.gauge = 0;
+      this.log(state, 'system', '炉心过载：双方受冲击，核心进入易伤。');
+    } else if (mechanic.id === 'leviathan_parts') {
+      mechanic.phase += 1;
+      if (mechanic.phase % 2 === 1) {
+        boss.shield += 12;
+        this.log(state, 'system', '利维坦触肢护住头部，获得 12 点护盾。');
+      } else {
+        this.damage(state, boss, state.player, 10, 'enemy', '尾部横扫', true);
+      }
+    }
+    mechanic.playedCardTypes = [];
+    mechanic.repeatedCardType = undefined;
+    mechanic.repeatedCount = 0;
+  }
+
   private tickEffects(target: Combatant): void {
     for (const effects of [target.buffs, target.debuffs]) {
       for (const [key, effect] of Object.entries(effects)) {
@@ -1803,6 +2393,10 @@ export class BattleRepository {
         Object.keys(state.player.debuffs).length > 0
       ) {
         state.player.shield += this.number(effect.value);
+      } else if (effect.type === 'turn_start_mp' || effect.type === 'mp_regen') {
+        this.restoreMp(state, this.number(effect.value), '藏品');
+      } else if (effect.type === 'turn_start_shield') {
+        state.player.shield += this.number(effect.value);
       }
     }
   }
@@ -1834,6 +2428,17 @@ export class BattleRepository {
     let bonus = 0;
     if (card.type === 'attack') {
       bonus += this.passiveEffectValue(state, 'attack_bonus');
+    }
+    for (const rawEffect of state.player.passiveEffects ?? []) {
+      if (typeof rawEffect !== 'object' || rawEffect === null) continue;
+      const effect = rawEffect as CardEffect;
+      if (
+        effect.type === 'tag_damage_bonus' &&
+        Array.isArray(effect.tags) &&
+        effect.tags.map(String).some((tag) => target.tags.includes(tag))
+      ) {
+        bonus += this.number(effect.value ?? effect.bonus);
+      }
     }
     for (const effect of card.effects ?? []) {
       if (
@@ -1902,6 +2507,8 @@ export class BattleRepository {
         return Object.keys(target.debuffs).length === 0;
       case 'enemy_has_specific_debuff':
         return Boolean(target.debuffs[String(detail.debuff)]);
+      case 'enemy_has_buff':
+        return Object.keys(target.buffs).length > 0;
       case 'enemy_has_shield':
         return target.shield > 0;
       case 'enemy_no_shield':
@@ -1910,6 +2517,8 @@ export class BattleRepository {
         return !target.debuffs[String(detail.debuff)];
       case 'self_has_buff':
         return Object.keys(state.player.buffs).length > 0;
+      case 'self_has_specific_buff':
+        return Boolean(state.player.buffs[String(detail.buff)]);
       case 'self_no_buff':
         return Object.keys(state.player.buffs).length === 0;
       case 'self_full_hp':
@@ -1934,6 +2543,24 @@ export class BattleRepository {
       case 'low_hp':
       case 'self_low_hp':
         return state.player.hp <= state.player.hpMax * 0.5;
+      case 'self_hp_below_percent':
+        return (
+          state.player.hp <=
+          state.player.hpMax * (this.number(detail.percent ?? detail.value, 50) / 100)
+        );
+      case 'mp_below_percent':
+        return (
+          state.player.mp <=
+          state.player.mpMax * (this.number(detail.percent ?? detail.value, 50) / 100)
+        );
+      case 'last_card_was_spell':
+        return state.player.lastCardType === 'spell';
+      case 'previous_card_same_name':
+        return state.player.lastCardId === String(detail.cardId ?? detail.id ?? '');
+      case 'summon_died_this_battle':
+        return (state.player.summonsLost ?? 0) > 0;
+      case 'has_chant':
+        return state.player.chants.length > 0;
       default:
         return false;
     }
@@ -1946,8 +2573,42 @@ export class BattleRepository {
     return (state.player.passiveEffects ?? []).reduce<number>((sum, rawEffect) => {
       if (typeof rawEffect !== 'object' || rawEffect === null) return sum;
       const effect = rawEffect as CardEffect;
-      return effect.type === type ? sum + this.number(effect.value) : sum;
+      return effect.type === type
+        ? sum + this.number(effect.value ?? effect.ratio)
+        : sum;
     }, 0);
+  }
+
+  private classResourceKey(value: unknown): string {
+    const key = String(value ?? 'class_resource').toLowerCase();
+    if (/圣印|sigil/.test(key)) return 'holy_sigil';
+    if (/零件|part/.test(key)) return 'parts';
+    if (/雷|charge/.test(key)) return 'thunder_charge';
+    if (/共鸣|resonance/.test(key)) return 'element_resonance';
+    if (/深渊|echo/.test(key)) return 'abyss_echo';
+    return key.replace(/\s+/g, '_');
+  }
+
+  private updateClassResourcesAfterCard(
+    state: LocalBattleState,
+    card: CardDefinition,
+    cardId: string,
+  ): void {
+    const resources = (state.player.classResources ??= {});
+    if (card.type === 'defense') {
+      resources.holy_sigil = (resources.holy_sigil ?? 0) + 1;
+    }
+    if (card.type === 'summon') {
+      resources.parts = (resources.parts ?? 0) + 1;
+    }
+    if (this.number(card.mpCost) > 0) {
+      resources.thunder_charge = (resources.thunder_charge ?? 0) + 1;
+    }
+    if (card.type === 'spell' || card.type === 'skill') {
+      resources.element_resonance = (resources.element_resonance ?? 0) + 1;
+    }
+    state.player.lastCardId = cardId;
+    state.player.lastCardType = card.type;
   }
 
   private isPayableCondition(condition: CardEffect): boolean {
@@ -1994,7 +2655,18 @@ export class BattleRepository {
             items: [],
           };
     state.rewards = rewards;
-    await this.applyRewards(session.profileId, state, rewards, status);
+    if (status === 'victory') {
+      await this.advanceCombatCommissions(session.profileId, state);
+    }
+    const levelsGained = await this.applyRewards(
+      session.profileId,
+      state,
+      rewards,
+      status,
+    );
+    if (status === 'victory') {
+      state.rewardChoices = this.createRewardChoices(state, levelsGained);
+    }
     this.log(
       state,
       status === 'victory' ? 'reward' : 'system',
@@ -2010,6 +2682,66 @@ export class BattleRepository {
       updatedAt: now,
     });
     await this.save(session);
+  }
+
+  private applyPreparedBattleEffects(
+    state: LocalBattleState,
+    rawEffects: unknown[],
+  ): void {
+    for (const rawEffect of rawEffects) {
+      if (typeof rawEffect !== 'object' || rawEffect === null) continue;
+      const effect = rawEffect as CardEffect;
+      if (effect.type === 'next_battle_buff') {
+        this.addTimedEffect(
+          state.player.buffs,
+          String(effect.buff ?? 'strength'),
+          this.number(effect.value, 1),
+          this.number(effect.turns, 1),
+        );
+      } else if (effect.type === 'next_battle_shield') {
+        state.player.shield += this.number(effect.value);
+      } else if (effect.type === 'next_battle_draw') {
+        state.player.initialDraw += this.number(effect.value);
+      } else if (effect.type === 'next_battle_ap') {
+        state.player.ap += this.number(effect.value);
+      }
+    }
+    if (rawEffects.length > 0) {
+      this.log(state, 'system', `已应用 ${rawEffects.length} 项战前药剂效果`);
+    }
+  }
+
+  private applyCarriedRelicEffects(
+    state: LocalBattleState,
+    relicIds: string[],
+  ): void {
+    for (const relicId of relicIds) {
+      const relic = this.relics?.[relicId];
+      if (!relic?.effect) continue;
+      const effects =
+        relic.effect.type === 'multi'
+          ? childEffects(relic.effect)
+          : [relic.effect];
+      state.player.passiveEffects ??= [];
+      state.player.passiveEffects.push(...effects);
+      for (const effect of effects) {
+        if (effect.type === 'battle_start_shield') {
+          state.player.shield += this.number(effect.value);
+        } else if (effect.type === 'battle_start_mp') {
+          state.player.mp = Math.min(
+            state.player.mpMax,
+            state.player.mp + this.number(effect.value),
+          );
+        } else if (effect.type === 'battle_start_draw') {
+          this.drawCards(state, this.number(effect.value));
+        } else if (effect.type === 'extra_draw') {
+          state.player.drawPerTurn += this.number(effect.value);
+        } else if (effect.type === 'first_turn_ap') {
+          state.player.ap += this.number(effect.value);
+        }
+      }
+      this.log(state, 'system', `藏品「${relic.name}」生效`);
+    }
   }
 
   private applyBattleStartRelics(
@@ -2110,8 +2842,8 @@ export class BattleRepository {
 
   private calculateRewards(state: LocalBattleState): BattleRewards {
     const enemies = state.enemies;
-    const experience = enemies.reduce((sum, enemy) => sum + enemy.xp, 0);
-    const gold = enemies.reduce((sum, enemy) => {
+    const baseExperience = enemies.reduce((sum, enemy) => sum + enemy.xp, 0);
+    const baseGold = enemies.reduce((sum, enemy) => {
       const [min, max] = enemy.gold;
       return sum + Math.round(min + this.random() * Math.max(0, max - min));
     }, 0);
@@ -2120,10 +2852,20 @@ export class BattleRepository {
         .filter((item) => this.random() <= item.chance)
         .map((item) => ({ id: item.id, name: item.name, quantity: 1 })),
     );
+    const experience = Math.round(
+      baseExperience * (1 + this.passiveEffectValue(state, 'xp_bonus')),
+    );
+    const gold = Math.round(
+      baseGold * (1 + this.passiveEffectValue(state, 'gold_bonus')),
+    );
     return {
       experience,
       gold: gold * 5,
-      guildExperience: Math.round(experience * 0.35),
+      guildExperience: Math.round(
+        experience *
+          0.35 *
+          (1 + this.passiveEffectValue(state, 'guild_xp_bonus')),
+      ),
       items,
     };
   }
@@ -2133,7 +2875,7 @@ export class BattleRepository {
     state: LocalBattleState,
     rewards: BattleRewards,
     status: 'victory' | 'defeat',
-  ): Promise<void> {
+  ): Promise<number> {
     const [player, guild] = await Promise.all([
       this.db.playerStates.get(profileId),
       this.db.guildStates.get(profileId),
@@ -2144,13 +2886,14 @@ export class BattleRepository {
         ? Math.max(1, Math.round(player.hpMax * 0.3))
         : Math.max(1, state.player.hp);
     player.mp = Math.max(0, state.player.mp);
-    grantPlayerExperience(player, rewards.experience);
-    player.gold += rewards.gold;
+    const levelsGained = grantPlayerExperience(player, rewards.experience);
+    player.gold = Math.max(0, state.player.gold ?? player.gold) + rewards.gold;
     player.updatedAt = Date.now();
     await this.db.playerStates.put(player);
     if (guild) {
       guild.experience += rewards.guildExperience;
       guild.updatedAt = Date.now();
+      updateGuildRank(guild);
       await this.db.guildStates.put(guild);
     }
     for (const item of rewards.items) {
@@ -2164,6 +2907,98 @@ export class BattleRepository {
         quantity: (existing?.quantity ?? 0) + item.quantity,
         updatedAt: Date.now(),
       });
+    }
+    return levelsGained;
+  }
+
+  private createRewardChoices(
+    state: LocalBattleState,
+    levelsGained: number,
+  ): NonNullable<LocalBattleState['rewardChoices']> {
+    const cardIds = ['merchant', 'astrologer'].includes(
+      state.player.subclass ?? '',
+    )
+      ? []
+      : this.shuffle(
+          Object.entries(this.cards ?? {})
+            .filter(
+              ([, card]) =>
+                card.rarity !== 'legendary' &&
+                (card.cls === state.player.subclass || card.cat === 'common'),
+            )
+            .map(([id]) => id),
+        ).slice(0, 3);
+    const offerEquipment =
+      levelsGained > 0 || state.difficulty === 'hard' || state.difficulty === 'hell';
+    const equipmentIds = offerEquipment
+      ? this.shuffle(Object.keys(this.equipment ?? {})).slice(0, levelsGained > 0 ? 5 : 3)
+      : [];
+    const relicIds =
+      levelsGained > 0
+        ? this.shuffle(
+            Object.entries(this.relics ?? {})
+              .filter(([, relic]) => relic.levelReward === true)
+              .map(([id]) => id),
+          ).slice(0, 3)
+        : [];
+    return {
+      cardIds,
+      equipmentIds,
+      relicIds,
+      cardClaimed: cardIds.length === 0,
+      equipmentClaimed: equipmentIds.length === 0,
+      relicClaimed: relicIds.length === 0,
+      levelsGained,
+    };
+  }
+
+  private async persistBattlePlayer(
+    profileId: string,
+    state: LocalBattleState,
+  ): Promise<void> {
+    const player = await this.db.playerStates.get(profileId);
+    if (!player) throw new Error('玩家档案不存在');
+    player.hp = Math.max(1, state.player.hp);
+    player.mp = Math.max(0, state.player.mp);
+    player.gold = Math.max(0, state.player.gold ?? player.gold);
+    player.updatedAt = Date.now();
+    await this.db.playerStates.put(player);
+  }
+
+  private async advanceCombatCommissions(
+    profileId: string,
+    state: LocalBattleState,
+  ): Promise<void> {
+    const defeatedNames = new Map<string, number>();
+    for (const enemy of state.enemies.filter((entry) => entry.hp <= 0)) {
+      for (const key of [enemy.definitionId, enemy.name]) {
+        const normalized = key.replace(/[\s·・_\-—]+/g, '').toLowerCase();
+        defeatedNames.set(normalized, (defeatedNames.get(normalized) ?? 0) + 1);
+      }
+    }
+    const quests = await this.db.questRecords
+      .where('profileId')
+      .equals(profileId)
+      .filter(
+        (quest) =>
+          quest.kind === 'commission' &&
+          quest.status === 'active' &&
+          quest.commissionType === 'combat',
+      )
+      .toArray();
+    for (const quest of quests) {
+      const target = (quest.commissionTarget ?? '')
+        .replace(/[\s·・_\-—]+/g, '')
+        .toLowerCase();
+      const count = defeatedNames.get(target) ?? 0;
+      if (count <= 0) continue;
+      quest.currentStage = Math.min(
+        quest.totalStages,
+        quest.currentStage + count,
+      );
+      if (quest.currentStage >= quest.totalStages) quest.status = 'ready';
+      quest.updatedAt = Date.now();
+      await this.db.questRecords.put(quest);
     }
   }
 
@@ -2476,7 +3311,15 @@ export class BattleRepository {
   }
 
   private assertPrepared(): void {
-    if (!this.cards || !this.monsters || !this.rules || !this.passives) {
+    if (
+      !this.cards ||
+      !this.monsters ||
+      !this.rules ||
+      !this.passives ||
+      !this.battleItems ||
+      !this.relics ||
+      !this.equipment
+    ) {
       throw new Error('战斗内容尚未加载');
     }
   }

@@ -9,6 +9,7 @@ import type { EquipmentSlot, GameSnapshot } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
+import { childEffects } from '@/battle/consumables';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -80,6 +81,29 @@ function setCarried(relicId: string, carried: boolean) {
   });
 }
 
+function itemDefinition(itemId: string, name: string) {
+  return items.value[itemId] ?? items.value[name];
+}
+
+function isBattlePreparationItem(itemId: string, name: string) {
+  const effect = itemDefinition(itemId, name)?.effect;
+  if (!effect) return false;
+  const effects = effect.type === 'multi' ? childEffects(effect) : [effect];
+  return effects.some((child) =>
+    ['next_battle_buff', 'next_battle_shield', 'next_battle_draw', 'next_battle_ap'].includes(
+      child.type,
+    ),
+  );
+}
+
+function prepareBattleItem(itemId: string) {
+  return execute({
+    id: commandId('battle.prepare-item'),
+    type: 'battle.prepare-item',
+    payload: { itemId },
+  });
+}
+
 onMounted(async () => {
   [snapshot.value, items.value, relics.value] = await Promise.all([
     props.context.api.query('state'),
@@ -134,11 +158,20 @@ onMounted(async () => {
             <i>◆</i>
             <div>
               <strong>{{ stack.name }}</strong>
-              <span v-if="items[stack.itemId]?.desc">
-                {{ items[stack.itemId]?.desc }}
+              <span v-if="itemDefinition(stack.itemId, stack.name)?.desc">
+                {{ itemDefinition(stack.itemId, stack.name)?.desc }}
               </span>
             </div>
             <b>×{{ stack.quantity }}</b>
+            <button
+              v-if="isBattlePreparationItem(stack.itemId, stack.name)"
+              type="button"
+              class="ca-button primary"
+              :disabled="Boolean(snapshot.battle)"
+              @click="prepareBattleItem(stack.itemId)"
+            >
+              {{ snapshot.battle ? '战斗中不可用' : '用于下场战斗' }}
+            </button>
           </article>
         </div>
       </section>

@@ -157,6 +157,24 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       rewardGold: z.number().int().min(0),
       rewardGuildExperience: z.number().int().min(0),
       minimumLevel: z.number().int().min(1).max(999),
+      commissionType: z
+        .enum(['combat', 'gather', 'escort', 'investigate'])
+        .optional(),
+      targetName: z.string().trim().min(1).max(160).optional(),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('quest.commission-progress'),
+    payload: z.object({
+      questId: z.string().trim().min(1).max(220),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('quest.commission-complete'),
+    payload: z.object({
+      questId: z.string().trim().min(1).max(220),
     }),
   }),
   z.object({
@@ -291,6 +309,13 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...commandBase,
+    type: z.literal('battle.prepare-item'),
+    payload: z.object({
+      itemId: z.string().trim().min(1).max(180),
+    }),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal('battle.end-turn'),
     payload: z.object({
       battleId: z.string().trim().min(1).max(220),
@@ -315,6 +340,15 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('battle.finish'),
     payload: z.object({
       battleId: z.string().trim().min(1).max(220),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('battle.claim-reward'),
+    payload: z.object({
+      battleId: z.string().trim().min(1).max(220),
+      kind: z.enum(['card', 'equipment', 'relic']),
+      choiceId: z.string().trim().min(1).max(180).optional(),
     }),
   }),
   z.object({

@@ -10,6 +10,7 @@ import type {
 } from '@/domain/types';
 import type { CaelianDatabase } from '@/storage/database';
 import { grantPlayerExperience } from '@/player/progression';
+import { updateGuildRank } from '@/guild-progression';
 import {
   questNode,
   type QuestDefinition,
@@ -495,6 +496,7 @@ export class QuestProgressRepository {
         this.db.profiles,
         this.db.playerStates,
         this.db.guildStates,
+        this.db.regionAccess,
         this.db.questRecords,
         this.db.questHistory,
         this.db.questTrackerStates,
@@ -532,8 +534,16 @@ export class QuestProgressRepository {
         guild.experience += reward.guildExperience;
         guild.completedTaskCount += 1;
         guild.updatedAt = now;
+        updateGuildRank(guild);
         await this.db.playerStates.put(player);
         await this.db.guildStates.put(guild);
+        if (definition.id === 'main_niyasos_failed_sacrifice') {
+          await this.db.regionAccess.update(`${profileId}:abyss_sea`, {
+            accessible: true,
+            unlockCondition: '',
+            updatedAt: now,
+          });
+        }
 
         let carriedCount = await this.db.ownedRelics
           .where('profileId')

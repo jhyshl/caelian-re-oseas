@@ -6,8 +6,17 @@ import {
   type MonsterDefinition,
 } from '@/content/catalogs/battle';
 import { loadCardCatalog } from '@/content/catalogs/cards';
-import { loadBattleItems } from '@/content/catalogs/inventory';
-import type { BattleItemDefinition, CardDefinition } from '@/content/types';
+import {
+  loadBattleItems,
+  loadEquipmentDefinitions,
+  loadRelics,
+} from '@/content/catalogs/inventory';
+import type {
+  BattleItemDefinition,
+  CardDefinition,
+  EquipmentDefinition,
+  RelicDefinition,
+} from '@/content/types';
 import {
   canApplyBattleConsumable,
   isBattleUsableItem,
@@ -28,6 +37,8 @@ const snapshot = ref<GameSnapshot>();
 const monsters = ref<Record<string, MonsterDefinition>>({});
 const cards = ref<Record<string, CardDefinition>>({});
 const battleItems = ref<Record<string, BattleItemDefinition>>({});
+const equipmentRewards = ref<Record<string, EquipmentDefinition>>({});
+const relicRewards = ref<Record<string, RelicDefinition>>({});
 const selectedTarget = ref(0);
 const selectedHandIndex = ref<number | null>(null);
 const showBattleInfo = ref(false);
@@ -773,13 +784,37 @@ async function closeResult() {
   });
 }
 
+async function claimReward(
+  kind: 'card' | 'equipment' | 'relic',
+  choiceId?: string,
+) {
+  if (!battle.value) return;
+  await execute(
+    {
+      id: commandId('battle.claim-reward'),
+      type: 'battle.claim-reward',
+      payload: { battleId: battle.value.id, kind, choiceId },
+    },
+    choiceId ? '额外奖励已放入本地背包。' : '已跳过该项额外奖励。',
+  );
+}
+
 onMounted(async () => {
-  [snapshot.value, monsters.value, cards.value, battleItems.value] =
+  [
+    snapshot.value,
+    monsters.value,
+    cards.value,
+    battleItems.value,
+    equipmentRewards.value,
+    relicRewards.value,
+  ] =
     await Promise.all([
     props.context.api.query('state'),
     loadMonsterCatalog(),
     loadCardCatalog(),
     loadBattleItems(),
+    loadEquipmentDefinitions(),
+    loadRelics(),
   ]);
   selectedTarget.value = state.value?.selectedTarget ?? 0;
   disposeStateListener = props.context.api.on('state.changed', refresh);
@@ -828,6 +863,50 @@ onUnmounted(() => {
             {{ item.name }} ×{{ item.quantity }}
           </li>
         </ul>
+        <div v-if="state.rewardChoices" class="reward-choices">
+          <section v-if="!state.rewardChoices.cardClaimed">
+            <strong>胜利卡牌 · 选择一张</strong>
+            <div>
+              <button
+                v-for="cardId in state.rewardChoices.cardIds"
+                :key="cardId"
+                type="button"
+                @click="claimReward('card', cardId)"
+              >
+                {{ cards[cardId]?.name ?? cardId }}
+              </button>
+              <button type="button" @click="claimReward('card')">跳过</button>
+            </div>
+          </section>
+          <section v-if="!state.rewardChoices.equipmentClaimed">
+            <strong>装备奖励 · 选择一件</strong>
+            <div>
+              <button
+                v-for="equipmentId in state.rewardChoices.equipmentIds"
+                :key="equipmentId"
+                type="button"
+                @click="claimReward('equipment', equipmentId)"
+              >
+                {{ equipmentRewards[equipmentId]?.name ?? equipmentId }}
+              </button>
+              <button type="button" @click="claimReward('equipment')">跳过</button>
+            </div>
+          </section>
+          <section v-if="!state.rewardChoices.relicClaimed">
+            <strong>升级藏品 · 选择一件</strong>
+            <div>
+              <button
+                v-for="relicId in state.rewardChoices.relicIds"
+                :key="relicId"
+                type="button"
+                @click="claimReward('relic', relicId)"
+              >
+                {{ relicRewards[relicId]?.name ?? relicId }}
+              </button>
+              <button type="button" @click="claimReward('relic')">跳过</button>
+            </div>
+          </section>
+        </div>
         <button
           type="button"
           class="battle-main-button"
@@ -2243,6 +2322,43 @@ onUnmounted(() => {
   color: var(--ca-text);
   font-size: 10px;
   list-style: none;
+}
+
+.reward-choices {
+  display: grid;
+  gap: 9px;
+  margin: 0 0 16px;
+  text-align: left;
+}
+
+.reward-choices section {
+  padding: 10px;
+  border: 1px solid var(--ca-border);
+  border-radius: 10px;
+  background: var(--ca-surface-soft);
+}
+
+.reward-choices strong {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--ca-gold-light);
+  font-size: 10px;
+}
+
+.reward-choices div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reward-choices button {
+  padding: 6px 9px;
+  border: 1px solid var(--ca-gold-dark);
+  border-radius: 8px;
+  color: var(--ca-text-bright);
+  background: rgba(212, 168, 67, 0.1);
+  font: 700 9px var(--ca-ui);
+  cursor: pointer;
 }
 
 .battle-main-button {

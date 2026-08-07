@@ -112,4 +112,66 @@ describe('GameRepository', () => {
       totalStages: 5,
     });
   });
+
+  it('提交采集委托材料并完成本地结算与公会晋升', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-commission-settlement-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:guild-settlement');
+    await repository.execute(profile.id, {
+      id: 'settlement-player-create',
+      type: 'player.create',
+      payload: {
+        name: '委托测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    await repository.execute(profile.id, {
+      id: 'grant-commission-material',
+      type: 'inventory.adjust',
+      payload: { itemId: '食人花花粉', name: '食人花花粉', delta: 3 },
+    });
+    const taskId = '采集食人花花粉:艾瑟拉森林';
+    await repository.execute(profile.id, {
+      id: 'accept-gather-commission',
+      type: 'quest.accept',
+      payload: {
+        taskId,
+        title: '采集食人花花粉',
+        region: '艾瑟拉森林',
+        objective: '提交食人花花粉',
+        totalStages: 3,
+        rewardExperience: 90,
+        rewardGold: 165,
+        rewardGuildExperience: 220,
+        minimumLevel: 1,
+        commissionType: 'gather',
+        targetName: '食人花花粉',
+      },
+    });
+    const questId = `${profile.id}:commission:${taskId}`;
+    await repository.execute(profile.id, {
+      id: 'progress-gather-commission',
+      type: 'quest.commission-progress',
+      payload: { questId },
+    });
+    expect((await repository.snapshot(profile.id)).quests[0]).toMatchObject({
+      status: 'ready',
+      currentStage: 3,
+    });
+    await repository.execute(profile.id, {
+      id: 'complete-gather-commission',
+      type: 'quest.commission-complete',
+      payload: { questId },
+    });
+    const settled = await repository.snapshot(profile.id);
+    expect(settled.quests).toEqual([]);
+    expect(settled.inventory).toEqual([]);
+    expect(settled.questHistory[0]?.title).toBe('采集食人花花粉');
+    expect(settled.guild).toMatchObject({ rank: 'iron', completedTaskCount: 1 });
+  });
 });

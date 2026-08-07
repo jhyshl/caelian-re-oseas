@@ -6,12 +6,12 @@ import {
 } from '@/content/release-notes';
 
 describe('release notes', () => {
-  it('从当前版本开始按新到旧返回，且最多展示五个版本', () => {
-    const releases = releaseNotesFor('0.2.0-alpha.26');
+  it('从当前版本开始按新到旧返回全部历史版本', () => {
+    const releases = releaseNotesFor('0.2.0-alpha.27');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.26');
-    expect(releases.length).toBeLessThanOrEqual(5);
-    expect(releases).toEqual(RELEASE_NOTES.slice(0, 5));
+    expect(releases[0]?.version).toBe('0.2.0-alpha.27');
+    expect(releases).toEqual(RELEASE_NOTES);
+    expect(releases.length).toBeGreaterThan(5);
   });
 
   it('不会为没有公告内容的构建触发窗口', () => {

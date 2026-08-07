@@ -2,6 +2,10 @@ import {
   classSubclasses,
   getStarterDeck,
 } from '@/content/catalogs/professions';
+import {
+  loadPassiveCatalog,
+  type PassiveDefinition,
+} from '@/content/catalogs/battle';
 import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
 import type {
   OwnedCardRecord,
@@ -18,8 +22,40 @@ type AllocatableStat =
   | 'speed'
   | 'actionPointsPerTurn';
 
+const STANDARD_PASSIVE_BY_SUBCLASS: Record<string, string> = {
+  holy_knight: 'pas_shield_master',
+  shadow_knight: 'pas_first_strike',
+  dragon_knight: 'pas_sharp_blade',
+  elementalist: 'pas_lucky_draw',
+  arcane_mage: 'pas_lucky_draw',
+  alchemist: 'pas_hunter_eye',
+  apothecary: 'pas_regen',
+  blacksmith: 'pas_iron_skin',
+  fire_mage: 'pas_sharp_blade',
+  thunder_mage: 'pas_sharp_blade',
+  weapon_master: 'pas_sharp_blade',
+  water_mage: 'pas_regen',
+  wood_mage: 'pas_regen',
+  priest: 'pas_regen',
+  nun: 'pas_regen',
+  wind_mage: 'pas_hunter_eye',
+  astrologer: 'pas_hunter_eye',
+  dark_mage: 'pas_leech',
+  vampire_hunter: 'pas_leech',
+  summoner: 'pas_tough',
+  mechanic: 'pas_iron_skin',
+  merchant: 'pas_gold_finder',
+  dark_priest: 'pas_leech',
+};
+
 export class PlayerRepository {
+  private passives?: Record<string, PassiveDefinition>;
+
   constructor(private readonly db: CaelianDatabase) {}
+
+  async prepare(): Promise<void> {
+    this.passives ??= await loadPassiveCatalog();
+  }
 
   async get(profileId: string): Promise<PlayerRecord> {
     const player = await this.db.playerStates.get(profileId);
@@ -198,7 +234,11 @@ export class PlayerRepository {
     await this.db.passiveTalents
       .where('profileId')
       .equals(profileId)
-      .filter((entry) => entry.passiveId.startsWith('custom_passive_'))
+      .filter(
+        (entry) =>
+          entry.passiveId.startsWith('custom_passive_') ||
+          entry.passiveId.startsWith('pas_'),
+      )
       .delete();
     await this.db.ownedCards.bulkAdd(ownedCards);
     await this.db.decks.add({
@@ -222,6 +262,19 @@ export class PlayerRepository {
         description: customProfession.talent.description,
         updatedAt: now,
       });
+    } else {
+      const passiveId = STANDARD_PASSIVE_BY_SUBCLASS[subclass] ?? 'pas_tough';
+      const passive = this.passives?.[passiveId];
+      if (passive) {
+        await this.db.passiveTalents.put({
+          id: `${profileId}:${passiveId}`,
+          profileId,
+          passiveId,
+          name: passive.name,
+          description: passive.description,
+          updatedAt: now,
+        });
+      }
     }
   }
 }

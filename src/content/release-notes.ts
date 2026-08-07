@@ -5,9 +5,21 @@ export interface ReleaseNote {
   changes: readonly string[];
 }
 
-const MAX_VISIBLE_RELEASES = 5;
-
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '0.2.0-alpha.27',
+    label: 'Alpha 27',
+    releasedAt: '2026-08-07',
+    changes: [
+      '新增剧情战斗桥接：主 API 输出 BattleStart 后会自动识别怪物、数量和原因并打开本地战斗；关闭结算页时会把 BattleResult 写回聊天框，让剧情按真实胜负、消耗与掉落继续。',
+      '修复协会委托只能接取不能推进的问题：讨伐胜利自动累计，采集会校验并扣除材料，护送与调查会校验所在地区，完成后可结算经验、金币、协会经验和历史记录。',
+      '修复协会牌位停滞与阿必塞海无法按主线解锁的问题；公会经验会自动晋升至铁、银、金、白金、秘银和精金，奈亚索斯主线完成后会开放阿必塞海。',
+      '补齐本地战斗规则链路：特殊职业资源与卡牌效果、敌方治疗/真实伤害/破盾、十类职业被动、常规藏品效果及八种首领机制已接入结算。',
+      '背包新增战前药剂配置，下一场战斗的增益、护盾、抽牌与 AP 会在开战时生效；混合药剂同时处理即时恢复和战前效果。',
+      '胜利后新增卡牌三选一；困难/地狱战斗可获得装备选择，升级时追加装备与藏品选择，所选奖励直接写入本地牌库或背包。',
+      '更新公告不再限制最近五个版本；从公告入口可以查看当前版本之后完整的历史公告。',
+    ],
+  },
   {
     version: '0.2.0-alpha.26',
     label: 'Alpha 26',
@@ -289,10 +301,7 @@ export function releaseNotesFor(version: string): readonly ReleaseNote[] {
     (release) => release.version === version,
   );
   if (currentIndex < 0) return [];
-  return RELEASE_NOTES.slice(
-    currentIndex,
-    currentIndex + MAX_VISIBLE_RELEASES,
-  );
+  return RELEASE_NOTES.slice(currentIndex);
 }
 
 export function releaseAnnouncementId(version: string): string {

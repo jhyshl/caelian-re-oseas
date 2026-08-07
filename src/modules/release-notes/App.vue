@@ -94,7 +94,7 @@ onUnmounted(() => {
       </div>
 
       <footer class="release-footer">
-        <p>新版本首次加载时自动显示，之后可从悬浮面板的“公告”入口随时重读。</p>
+        <p>这里会保留全部历史版本公告；之后可从悬浮面板的“公告”入口随时重读。</p>
         <button type="button" @click="close">知道了，开始冒险</button>
       </footer>
     </section>

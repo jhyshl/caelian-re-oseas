@@ -48,6 +48,8 @@ export interface PlayerRecord {
   statPoints: number;
   gold: number;
   reclassCount: number;
+  /** Consumable effects queued for the next locally simulated battle. */
+  pendingBattleEffects?: unknown[];
   updatedAt: number;
 }
 
@@ -105,6 +107,8 @@ export interface QuestRecord {
   id: string;
   profileId: string;
   definitionId?: string;
+  commissionType?: 'combat' | 'gather' | 'escort' | 'investigate';
+  commissionTarget?: string;
   kind: QuestKind;
   title: string;
   region: string;
@@ -150,6 +154,8 @@ export interface TavernFloorReference {
   id: string;
   index: number;
   role: 'user' | 'assistant' | 'system';
+  /** Plain message text used by local-only scene bridges. */
+  text?: string;
   fingerprint: string;
   lineageHash: string;
 }
@@ -321,6 +327,7 @@ export interface BattleChantState {
 
 export interface BattlePlayerState {
   name: string;
+  subclass?: string;
   hp: number;
   hpMax: number;
   mp: number;
@@ -346,6 +353,13 @@ export interface BattlePlayerState {
    * starts. Older Alpha saves may omit this field.
    */
   passiveEffects?: unknown[];
+  gold?: number;
+  classResources?: Record<string, number>;
+  sanity?: number;
+  abyssEcho?: number;
+  lastCardId?: string;
+  lastCardType?: string;
+  summonsLost?: number;
 }
 
 export interface BattleEnemyState {
@@ -423,6 +437,7 @@ export interface BattleAnimationEvent {
 
 export interface LocalBattleState {
   schemaVersion: 1;
+  difficulty?: 'easy' | 'normal' | 'hard' | 'hell';
   status: BattleStatus;
   phase: 'player' | 'enemy' | 'ended';
   turn: number;
@@ -430,6 +445,24 @@ export interface LocalBattleState {
   player: BattlePlayerState;
   enemies: BattleEnemyState[];
   rewards: BattleRewards | null;
+  bossMechanic?: {
+    id: string;
+    phase: number;
+    gauge: number;
+    requiredCardType?: string;
+    playedCardTypes: string[];
+    repeatedCardType?: string;
+    repeatedCount: number;
+  };
+  rewardChoices?: {
+    cardIds: string[];
+    equipmentIds: string[];
+    relicIds: string[];
+    cardClaimed: boolean;
+    equipmentClaimed: boolean;
+    relicClaimed: boolean;
+    levelsGained: number;
+  };
   log: BattleLogEntry[];
   /**
    * Browser-local presentation events. Older Alpha saves can omit this field;

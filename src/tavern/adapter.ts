@@ -1066,6 +1066,7 @@ export class TavernAdapter {
         id: `${index}:${fingerprint}`,
         index,
         role: message.role,
+        text: message.text,
         fingerprint,
         lineageHash,
       };

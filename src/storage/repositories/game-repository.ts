@@ -182,6 +182,9 @@ export class GameRepository {
     if (command.type.startsWith('battle.')) {
       await this.battles.prepare();
     }
+    if (command.type === 'player.create' || command.type === 'player.reclass') {
+      await this.players.prepare();
+    }
     if (command.type.startsWith('market.')) {
       await this.market.prepare();
     }
@@ -399,6 +402,11 @@ export class GameRepository {
         return this.narrative.update(profileId, command.payload);
       case 'quest.accept':
         return this.guild.acceptCommission(profileId, command.payload);
+      case 'quest.commission-progress':
+        return this.guild.progressCommission(profileId, command.payload.questId);
+      case 'quest.commission-complete':
+        await this.guild.completeCommission(profileId, command.payload.questId);
+        return;
       case 'quest.abandon':
         await this.guild.abandon(profileId, command.payload.questId);
         return this.questProgress.clearQuest(
@@ -447,6 +455,8 @@ export class GameRepository {
         return this.battles.playCard(profileId, command.payload);
       case 'battle.use-item':
         return this.battles.useItem(profileId, command.payload);
+      case 'battle.prepare-item':
+        return this.battles.prepareItem(profileId, command.payload.itemId);
       case 'battle.end-turn':
         return this.battles.endTurn(
           profileId,
@@ -464,6 +474,8 @@ export class GameRepository {
         );
       case 'battle.finish':
         return this.battles.finish(profileId, command.payload.battleId);
+      case 'battle.claim-reward':
+        return this.battles.claimReward(profileId, command.payload);
       case 'settings.update':
         return this.profiles.updateSettings(profileId, command.payload);
     }

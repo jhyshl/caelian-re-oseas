@@ -237,6 +237,48 @@ describe('本地战斗仓库', () => {
     ]);
   });
 
+  it('在战斗前消耗秘药，并把增益带入下一场战斗', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-battle-preparation-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:battle-preparation');
+    await repository.execute(profile.id, {
+      id: 'preparation-player-create',
+      type: 'player.create',
+      payload: {
+        name: '战前药剂测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    await repository.execute(profile.id, {
+      id: 'grant-preparation-item',
+      type: 'inventory.adjust',
+      payload: { itemId: '力量秘药', name: '力量秘药', delta: 1 },
+    });
+    await repository.execute(profile.id, {
+      id: 'prepare-battle-item',
+      type: 'battle.prepare-item',
+      payload: { itemId: '力量秘药' },
+    });
+    expect((await repository.snapshot(profile.id)).inventory).toEqual([]);
+
+    await repository.execute(profile.id, {
+      id: 'prepared-battle-start',
+      type: 'battle.start',
+      payload: { monsterId: 'mon_slime' },
+    });
+    const snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.battle?.state.player.buffs.strength).toEqual({
+      value: 5,
+      turns: 3,
+    });
+    expect(snapshot.player.pendingBattleEffects).toEqual([]);
+  });
+
   it('按实际结算顺序保存敌方攻击、伤害与回合结束动画事件', async () => {
     const database = new CaelianDatabase(
       'alpha',

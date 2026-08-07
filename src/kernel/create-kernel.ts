@@ -82,6 +82,10 @@ import {
   type LegacyQuestWorldbookCleanupResult,
   type RegionWorldbookSyncResult,
 } from '@/worldbook/region-switcher';
+import {
+  formatStoryBattleResult,
+  parseStoryBattleStart,
+} from '@/battle/story-bridge';
 
 const SURVEY_POLL_INTERVAL_MS = 2 * 60 * 1_000;
 const REGION_WORLDBOOK_RETRY_DELAYS = [300, 1_000, 2_500, 5_000, 10_000];
@@ -137,6 +141,7 @@ export class CaelianKernel {
   private readonly promptedSurveyIds = new Set<string>();
   private readonly pendingTavernUpdates = new Set<Promise<void>>();
   private tavernUpdateQueue: Promise<void> = Promise.resolve();
+  private readonly handledStoryBattleFloors = new Set<string>();
 
   constructor(options: KernelOptions) {
     if (options.channel !== 'alpha') {
@@ -257,8 +262,30 @@ export class CaelianKernel {
       };
     }
     try {
-      const result = await this.repository.execute(this.profileId, command);
       const type = this.commandType(command);
+      const battleBeforeFinish =
+        type === 'battle.finish'
+          ? (await this.repository.snapshot(this.profileId)).battle
+          : null;
+      const result = await this.repository.execute(this.profileId, command);
+      if (
+        result.status === 'applied' &&
+        type === 'battle.finish' &&
+        battleBeforeFinish
+      ) {
+        const currentInput = this.adapter.currentInputText().trim();
+        const battleResult = formatStoryBattleResult(battleBeforeFinish);
+        const filled = this.adapter.setUserInput(
+          currentInput ? `${currentInput}\n\n${battleResult}` : battleResult,
+        );
+        this.notifyRuntime(
+          filled ? 'success' : 'warning',
+          filled
+            ? '战斗结果已写入聊天框，发送后主 API 会继续当前剧情。'
+            : '战斗已结束，但没有找到酒馆输入框；可重新打开战斗记录查看结果。',
+          '剧情战斗结果',
+        );
+      }
       if (
         result.status === 'applied' &&
         type &&
@@ -730,6 +757,7 @@ export class CaelianKernel {
     }
     if (eventName === 'CHAT_CHANGED') {
       await this.activateCurrentProfile();
+      this.handledStoryBattleFloors.clear();
       this.regionWorldbook.reset();
       await this.initializeWorldbookAutomation();
     }
@@ -737,6 +765,7 @@ export class CaelianKernel {
     await this.ingestMvuNarrative();
     await this.syncRegionWorldbook(eventName);
     if (eventName === 'MESSAGE_RECEIVED') {
+      await this.triggerStoryBattle(payload);
       await this.evaluateTrackedQuest(payload);
       await this.advanceTrackedQuestFromLocalState();
     }
@@ -744,6 +773,57 @@ export class CaelianKernel {
     await this.scanCurrentAchievements();
     await this.syncProjection();
     await this.events.emit('tavern.changed', { event: eventName });
+  }
+
+  private async triggerStoryBattle(
+    payload?: TavernEventPayload,
+  ): Promise<void> {
+    if (!this.profileId) return;
+    const floors = await this.adapter.chatFloors();
+    if (!floors?.length) return;
+    const floor =
+      (payload?.messageId === undefined
+        ? undefined
+        : floors.find((entry) => entry.index === payload.messageId)) ??
+      [...floors].reverse().find((entry) => entry.role === 'assistant');
+    if (!floor || floor.role !== 'assistant' || !floor.text) return;
+    const request = parseStoryBattleStart(floor.text);
+    if (!request || this.handledStoryBattleFloors.has(floor.id)) return;
+    this.handledStoryBattleFloors.add(floor.id);
+    const snapshot = await this.repository.snapshot(this.profileId);
+    if (snapshot.battle) {
+      this.notifyRuntime(
+        'warning',
+        '剧情返回了新的战斗标记，但当前仍有一场战斗未关闭。',
+        '剧情战斗未触发',
+      );
+      return;
+    }
+    const tracked = await this.repository.selectedQuestTracker(this.profileId);
+    const result = await this.execute({
+      id: `story-battle:${floor.fingerprint}`,
+      type: 'battle.start',
+      payload: {
+        monsterId: request.monster,
+        count: request.count,
+        source: request.reason || '剧情自动触发',
+        relatedQuestId: tracked?.questId || undefined,
+      },
+    });
+    if (result.status !== 'applied' && result.status !== 'duplicate') {
+      this.notifyRuntime(
+        'error',
+        result.message || `无法识别剧情怪物：${request.monster}`,
+        '剧情战斗触发失败',
+      );
+      return;
+    }
+    await this.panels.open('battle');
+    this.notifyRuntime(
+      'success',
+      `${request.monster}${request.count > 1 ? ` × ${request.count}` : ''}`,
+      '剧情战斗已触发',
+    );
   }
 
   private async initializeWorldbookAutomation(): Promise<void> {
