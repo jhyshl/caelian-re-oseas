@@ -78,6 +78,10 @@ export interface CardSquareSubmission {
   payload: unknown;
 }
 
+export interface CardSquareEditableSubmission extends CardSquareSubmission {
+  id: string;
+}
+
 export interface CardSquareSubmissionReceipt {
   id: string;
   receiptToken: string;
@@ -161,6 +165,26 @@ const receiptStatusSchema = z.object({
     .nullable(),
 });
 
+const editableSubmissionSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(['deck_build', 'custom_class', 'mechanism']),
+  title: z.string().trim().min(2).max(50),
+  author_name: z.string().trim().min(2).max(30).nullable(),
+  summary: z.string().trim().min(4).max(240),
+  tags: z.array(z.string()),
+  payload: z.unknown(),
+});
+
+interface NormalizedSubmission {
+  title: string;
+  authorName: string;
+  summary: string;
+  tags: string[];
+  payload: unknown;
+  professionId: string;
+  professionName: string;
+}
+
 function normalizedTags(tags: string[]): string[] {
   const allowed = new Set<string>(CARD_SQUARE_TAGS);
   const normalized = [
@@ -177,6 +201,56 @@ function normalizedTags(tags: string[]): string[] {
   }
   if (normalized.length > 8) throw new Error('每份作品最多选择 8 个标签。');
   return normalized;
+}
+
+function normalizeSubmissionDraft(
+  draft: CardSquareSubmission,
+): NormalizedSubmission {
+  const title = draft.title.trim();
+  const authorName = draft.authorName.trim();
+  const summary = draft.summary.trim();
+  if (title.length < 2 || title.length > 50) {
+    throw new Error('作品名称需要填写 2–50 个字。');
+  }
+  if (!draft.anonymous && (authorName.length < 2 || authorName.length > 30)) {
+    throw new Error('署名需要填写 2–30 个字，或选择匿名发布。');
+  }
+  if (summary.length < 4 || summary.length > 240) {
+    throw new Error('作品简介需要填写 4–240 个字。');
+  }
+
+  let payload: unknown = draft.payload;
+  let professionId: string;
+  let professionName: string;
+  if (draft.kind === 'deck_build') {
+    const build = normalizeDeckBuild(payload);
+    payload = build;
+    professionId = build.professionId;
+    professionName = build.professionName;
+  } else if (draft.kind === 'custom_class') {
+    const pack = normalizeWorkshopPack(payload);
+    if (pack.classes.length !== 1) {
+      throw new Error('每次只能提交一个自制职业。');
+    }
+    payload = pack;
+    professionId = pack.classes[0]?.id ?? '';
+    professionName = pack.classes[0]?.name ?? '';
+  } else {
+    const mechanism = normalizeWorkshopMechanism(payload);
+    payload = mechanism;
+    professionId = mechanism.id;
+    professionName = mechanism.name;
+  }
+
+  return {
+    title,
+    authorName,
+    summary,
+    tags: normalizedTags(draft.tags),
+    payload,
+    professionId,
+    professionName,
+  };
 }
 
 export function normalizeDeckBuild(value: unknown): SquareDeckBuild {
@@ -269,41 +343,7 @@ export async function submitCardSquareEntry(
   runtime: RuntimeInfo,
   sourceWindow: Window,
 ): Promise<CardSquareSubmissionReceipt> {
-  const title = draft.title.trim();
-  const authorName = draft.authorName.trim();
-  const summary = draft.summary.trim();
-  if (title.length < 2 || title.length > 50) {
-    throw new Error('作品名称需要填写 2–50 个字。');
-  }
-  if (!draft.anonymous && (authorName.length < 2 || authorName.length > 30)) {
-    throw new Error('署名需要填写 2–30 个字，或选择匿名发布。');
-  }
-  if (summary.length < 4 || summary.length > 240) {
-    throw new Error('作品简介需要填写 4–240 个字。');
-  }
-
-  let payload: unknown = draft.payload;
-  let professionId: string;
-  let professionName: string;
-  if (draft.kind === 'deck_build') {
-    const build = normalizeDeckBuild(payload);
-    payload = build;
-    professionId = build.professionId;
-    professionName = build.professionName;
-  } else if (draft.kind === 'custom_class') {
-    const pack = normalizeWorkshopPack(payload);
-    if (pack.classes.length !== 1) {
-      throw new Error('每次只能提交一个自制职业。');
-    }
-    payload = pack;
-    professionId = pack.classes[0]?.id ?? '';
-    professionName = pack.classes[0]?.name ?? '';
-  } else {
-    const mechanism = normalizeWorkshopMechanism(payload);
-    payload = mechanism;
-    professionId = mechanism.id;
-    professionName = mechanism.name;
-  }
+  const normalized = normalizeSubmissionDraft(draft);
 
   const status: CardSquareStatus =
     draft.kind === 'deck_build' ? 'published' : 'pending';
@@ -315,13 +355,13 @@ export async function submitCardSquareEntry(
     submission_token: receiptToken,
     kind: draft.kind,
     status,
-    title,
-    author_name: draft.anonymous ? null : authorName,
-    summary,
-    tags: normalizedTags(draft.tags),
-    profession_id: professionId,
-    profession_name: professionName,
-    payload,
+    title: normalized.title,
+    author_name: draft.anonymous ? null : normalized.authorName,
+    summary: normalized.summary,
+    tags: normalized.tags,
+    profession_id: normalized.professionId,
+    profession_name: normalized.professionName,
+    payload: normalized.payload,
     app_version: runtime.version,
     build_id: runtime.buildId,
     created_at: createdAt,
@@ -343,7 +383,7 @@ export async function submitCardSquareEntry(
   const receipt: CardSquareSubmissionReceipt = {
     id,
     receiptToken,
-    title,
+    title: normalized.title,
     kind: draft.kind,
     status,
     reviewNote: null,
@@ -354,6 +394,107 @@ export async function submitCardSquareEntry(
   };
   saveCardSquareReceipt(receipt, sourceWindow);
   return receipt;
+}
+
+export async function loadCardSquareSubmissionForEdit(
+  receipt: CardSquareSubmissionReceipt,
+  sourceWindow: Window,
+): Promise<CardSquareEditableSubmission> {
+  const response = await sourceWindow.fetch(RECEIPT_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      Authorization: `Receipt ${receipt.receiptToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ action: 'edit', id: receipt.id }),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error(await responseMessage(response));
+  const envelope = (await response.json()) as { result?: unknown };
+  const parsed = editableSubmissionSchema.safeParse(envelope.result);
+  if (!parsed.success) {
+    throw new Error('服务器返回的投稿内容格式无法识别，请稍后重试。');
+  }
+  const current = parsed.data;
+  if (current.id !== receipt.id || current.kind !== receipt.kind) {
+    throw new Error('投稿回执与服务器记录不匹配。');
+  }
+  let payload: unknown = current.payload;
+  if (current.kind === 'deck_build') payload = normalizeDeckBuild(payload);
+  if (current.kind === 'custom_class') payload = normalizeWorkshopPack(payload);
+  if (current.kind === 'mechanism') {
+    payload = normalizeWorkshopMechanism(payload);
+  }
+  return {
+    id: current.id,
+    kind: current.kind,
+    title: current.title,
+    anonymous: current.author_name === null,
+    authorName: current.author_name ?? '',
+    summary: current.summary,
+    tags: normalizedTags(current.tags),
+    payload,
+  };
+}
+
+export async function updateCardSquareSubmission(
+  receipt: CardSquareSubmissionReceipt,
+  draft: CardSquareSubmission,
+  runtime: RuntimeInfo,
+  sourceWindow: Window,
+): Promise<CardSquareSubmissionReceipt> {
+  if (draft.kind !== receipt.kind) {
+    throw new Error('修改投稿时不能更换投稿类型。');
+  }
+  const normalized = normalizeSubmissionDraft(draft);
+  const body = {
+    action: 'update',
+    id: receipt.id,
+    kind: draft.kind,
+    title: normalized.title,
+    author_name: draft.anonymous ? null : normalized.authorName,
+    summary: normalized.summary,
+    tags: normalized.tags,
+    profession_id: normalized.professionId,
+    profession_name: normalized.professionName,
+    payload: normalized.payload,
+    app_version: runtime.version,
+    build_id: runtime.buildId,
+  };
+  if (JSON.stringify(body).length > 250_000) {
+    throw new Error('作品文件超过 250 KB，无法上传。');
+  }
+  const response = await sourceWindow.fetch(RECEIPT_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      Authorization: `Receipt ${receipt.receiptToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error(await responseMessage(response));
+  const envelope = (await response.json()) as { result?: unknown };
+  const parsed = receiptStatusSchema.safeParse(envelope.result);
+  if (!parsed.success) {
+    throw new Error('服务器返回的投稿状态格式无法识别，请稍后重试。');
+  }
+  const current = parsed.data;
+  if (current.id !== receipt.id || current.kind !== receipt.kind) {
+    throw new Error('投稿回执与服务器记录不匹配。');
+  }
+  return saveCardSquareReceipt(
+    {
+      ...receipt,
+      title: current.title,
+      status: current.status,
+      reviewNote: current.review_note,
+      reviewedAt: current.reviewed_at,
+      publishedAt: current.published_at,
+      lastCheckedAt: new Date().toISOString(),
+    },
+    sourceWindow,
+  );
 }
 
 export function readCardSquareReceipts(

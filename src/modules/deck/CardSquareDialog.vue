@@ -7,11 +7,14 @@ import {
   exportCardSquareReceipt,
   importCardSquareReceipt,
   listCardSquareEntries,
+  loadCardSquareSubmissionForEdit,
   readCardSquareFavorites,
   readCardSquareReceipts,
   refreshCardSquareReceipt,
   submitCardSquareEntry,
   toggleCardSquareFavorite,
+  updateCardSquareSubmission,
+  type CardSquareEditableSubmission,
   type CardSquareEntry,
   type CardSquareKind,
   type CardSquareStatus,
@@ -63,6 +66,8 @@ const authorName = ref('');
 const selectedClassId = ref('');
 const selectedMechanismId = ref('');
 const selectedSavedDeckId = ref('');
+const editingReceipt = ref<CardSquareSubmissionReceipt>();
+const editingSubmission = ref<CardSquareEditableSubmission>();
 
 const localClasses = computed(() =>
   readWorkshopPacks().flatMap((pack) => pack.classes),
@@ -188,6 +193,65 @@ async function refreshOneReceipt(
     error.value = caught instanceof Error ? caught.message : String(caught);
   } finally {
     refreshingReceiptId.value = '';
+  }
+}
+
+function resetSubmissionForm(): void {
+  editingReceipt.value = undefined;
+  editingSubmission.value = undefined;
+  submitKind.value = 'deck_build';
+  submitTitle.value = '';
+  submitSummary.value = '';
+  submitTags.value = [];
+  anonymous.value = true;
+  authorName.value = '';
+  selectedClassId.value = '';
+  selectedMechanismId.value = '';
+  selectedSavedDeckId.value = '';
+}
+
+function openNewSubmission(): void {
+  resetSubmissionForm();
+  error.value = '';
+  notice.value = '';
+  tab.value = 'submit';
+}
+
+function cancelSubmission(): void {
+  const wasEditing = Boolean(editingReceipt.value);
+  resetSubmissionForm();
+  tab.value = wasEditing ? 'receipts' : 'browse';
+}
+
+async function startEditing(
+  receipt: CardSquareSubmissionReceipt,
+): Promise<void> {
+  busy.value = true;
+  error.value = '';
+  notice.value = '';
+  try {
+    const current = await loadCardSquareSubmissionForEdit(
+      receipt,
+      sourceWindow(),
+    );
+    editingReceipt.value = receipt;
+    editingSubmission.value = current;
+    submitKind.value = current.kind;
+    submitTitle.value = current.title;
+    submitSummary.value = current.summary;
+    submitTags.value = [...current.tags];
+    anonymous.value = current.anonymous;
+    authorName.value = current.authorName;
+    selectedClassId.value = '';
+    selectedMechanismId.value = '';
+    selectedSavedDeckId.value = '';
+    tab.value = 'submit';
+    notice.value =
+      '已载入当前投稿。若不重新选择本地构筑、职业或机制，将保留服务器上的现有作品内容。';
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    busy.value = false;
   }
 }
 
@@ -353,6 +417,23 @@ function mechanismPayload(): WorkshopMechanismManifest {
   return structuredClone(toRaw(mechanism));
 }
 
+function submissionPayload(): unknown {
+  const existing = editingSubmission.value;
+  if (submitKind.value === 'deck_build') {
+    if (selectedSavedDeckId.value) return deckPayload();
+  } else if (submitKind.value === 'custom_class') {
+    if (selectedClassId.value) return classPayload();
+  } else if (selectedMechanismId.value) {
+    return mechanismPayload();
+  }
+  if (existing && existing.kind === submitKind.value) return existing.payload;
+  return submitKind.value === 'deck_build'
+    ? deckPayload()
+    : submitKind.value === 'custom_class'
+      ? classPayload()
+      : mechanismPayload();
+}
+
 function toggleSubmitTag(tag: string): void {
   if (submitTags.value.includes(tag)) {
     submitTags.value = submitTags.value.filter((entry) => entry !== tag);
@@ -370,34 +451,37 @@ async function submit(): Promise<void> {
   error.value = '';
   notice.value = '';
   try {
-    const payload =
-      submitKind.value === 'deck_build'
-        ? deckPayload()
-        : submitKind.value === 'custom_class'
-          ? classPayload()
-          : mechanismPayload();
-    const result = await submitCardSquareEntry(
-      {
-        kind: submitKind.value,
-        title: submitTitle.value,
-        anonymous: anonymous.value,
-        authorName: authorName.value,
-        summary: submitSummary.value,
-        tags: [...submitTags.value],
-        payload,
-      },
-      props.context.api.getRuntimeInfo(),
-      sourceWindow(),
-    );
+    const draft = {
+      kind: submitKind.value,
+      title: submitTitle.value,
+      anonymous: anonymous.value,
+      authorName: authorName.value,
+      summary: submitSummary.value,
+      tags: [...submitTags.value],
+      payload: submissionPayload(),
+    };
+    const currentReceipt = editingReceipt.value;
+    const result = currentReceipt
+      ? await updateCardSquareSubmission(
+          currentReceipt,
+          draft,
+          props.context.api.getRuntimeInfo(),
+          sourceWindow(),
+        )
+      : await submitCardSquareEntry(
+          draft,
+          props.context.api.getRuntimeInfo(),
+          sourceWindow(),
+        );
     notice.value =
-      result.status === 'published'
+      currentReceipt
+        ? '投稿修改已保存，旧审核结果已清空，作品已重新进入待审核队列。'
+        : result.status === 'published'
         ? '构筑已公开发布到卡牌广场，并已保存本机投稿回执。'
         : '投稿已进入作者审核队列；可在“我的投稿”查看审核结果。';
     receipts.value = readCardSquareReceipts(sourceWindow());
-    submitTitle.value = '';
-    submitSummary.value = '';
-    submitTags.value = [];
-    if (result.status === 'published') {
+    resetSubmissionForm();
+    if (!currentReceipt && result.status === 'published') {
       await refresh();
       tab.value = 'browse';
     } else {
@@ -439,7 +523,7 @@ watch(tab, (next) => {
           <button :class="{ active: tab === 'browse' }" @click="tab = 'browse'">全部作品</button>
           <button :class="{ active: tab === 'favorites' }" @click="tab = 'favorites'">我的收藏 {{ favorites.size }}</button>
           <button :class="{ active: tab === 'receipts' }" @click="tab = 'receipts'">我的投稿 {{ receipts.length }}</button>
-          <button :class="{ active: tab === 'submit' }" @click="tab = 'submit'">上传作品</button>
+          <button :class="{ active: tab === 'submit' }" @click="openNewSubmission">上传作品</button>
         </nav>
 
         <main v-if="tab === 'browse' || tab === 'favorites'" class="square-browser">
@@ -566,6 +650,14 @@ watch(tab, (next) => {
               <footer>
                 <button
                   type="button"
+                  class="ca-button"
+                  :disabled="busy || Boolean(refreshingReceiptId)"
+                  @click="startEditing(receipt)"
+                >
+                  修改投稿
+                </button>
+                <button
+                  type="button"
                   class="ca-button primary"
                   :disabled="busy || Boolean(refreshingReceiptId)"
                   @click="refreshOneReceipt(receipt)"
@@ -580,11 +672,12 @@ watch(tab, (next) => {
 
         <main v-else class="square-submit">
           <section class="submit-explainer">
-            <strong>投稿规则</strong>
-            <p>官方职业卡组构筑通过格式校验后直接公开；自制职业和底层机制必须先由作者审核。作品名称为必填项，可选择匿名发布。</p>
+            <strong>{{ editingReceipt ? '修改投稿并重新送审' : '投稿规则' }}</strong>
+            <p v-if="editingReceipt">保存任何修改后，作品都会先从公开列表撤下，清空旧审核意见并重新进入作者审核队列。投稿类型不可更换。</p>
+            <p v-else>官方职业卡组构筑通过格式校验后直接公开；自制职业和底层机制必须先由作者审核。作品名称为必填项，可选择匿名发布。</p>
           </section>
           <div class="submit-grid">
-            <label><span>投稿类型</span><select v-model="submitKind"><option value="deck_build">已保存的官方职业构筑</option><option value="custom_class">本地自制职业</option><option value="mechanism">本地底层机制</option></select></label>
+            <label><span>投稿类型</span><select v-model="submitKind" :disabled="Boolean(editingReceipt)"><option value="deck_build">已保存的官方职业构筑</option><option value="custom_class">本地自制职业</option><option value="mechanism">本地底层机制</option></select></label>
             <label><span>作品名称</span><input v-model="submitTitle" maxlength="50" placeholder="用于卡牌广场搜索" /></label>
             <label v-if="submitKind === 'deck_build'" class="wide">
               <span>选择已保存构筑</span>
@@ -594,10 +687,11 @@ watch(tab, (next) => {
                   {{ build.name }} · {{ build.professionName }} · {{ build.cardIds.length }} 张
                 </option>
               </select>
+              <small v-if="editingReceipt && !selectedSavedDeckId">不选择时保留当前投稿里的构筑内容。</small>
               <small v-if="savedOfficialDecks.length === 0">请先在牌组面板的“我的构筑预设”中保存一份官方职业构筑。</small>
             </label>
-            <label v-if="submitKind === 'custom_class'"><span>选择职业</span><select v-model="selectedClassId"><option value="">请选择</option><option v-for="profession in localClasses" :key="profession.id" :value="profession.id">{{ profession.name }}</option></select></label>
-            <label v-if="submitKind === 'mechanism'"><span>选择机制</span><select v-model="selectedMechanismId"><option value="">请选择</option><option v-for="mechanism in localMechanisms" :key="mechanism.id" :value="mechanism.id">{{ mechanism.name }}</option></select></label>
+            <label v-if="submitKind === 'custom_class'"><span>选择职业</span><select v-model="selectedClassId"><option value="">{{ editingReceipt ? '保留当前投稿内容' : '请选择' }}</option><option v-for="profession in localClasses" :key="profession.id" :value="profession.id">{{ profession.name }}</option></select></label>
+            <label v-if="submitKind === 'mechanism'"><span>选择机制</span><select v-model="selectedMechanismId"><option value="">{{ editingReceipt ? '保留当前投稿内容' : '请选择' }}</option><option v-for="mechanism in localMechanisms" :key="mechanism.id" :value="mechanism.id">{{ mechanism.name }}</option></select></label>
             <label class="wide"><span>作品简介</span><textarea v-model="submitSummary" maxlength="240" placeholder="玩法思路、核心循环、适合的战斗场景"></textarea></label>
             <fieldset class="wide submit-tags">
               <legend>搜索标签（最多 8 个）</legend>
@@ -616,8 +710,8 @@ watch(tab, (next) => {
             <label v-if="!anonymous"><span>公开署名</span><input v-model="authorName" maxlength="30" placeholder="卡牌广场显示的作者名" /></label>
           </div>
           <footer class="submit-actions">
-            <button type="button" class="ca-button" @click="tab = 'browse'">返回广场</button>
-            <button type="button" class="ca-button primary" :disabled="busy" @click="submit">{{ busy ? '正在提交……' : '提交作品' }}</button>
+            <button type="button" class="ca-button" @click="cancelSubmission">{{ editingReceipt ? '取消修改' : '返回广场' }}</button>
+            <button type="button" class="ca-button primary" :disabled="busy" @click="submit">{{ busy ? '正在提交……' : editingReceipt ? '保存修改并重新送审' : '提交作品' }}</button>
           </footer>
         </main>
 
@@ -680,7 +774,7 @@ watch(tab, (next) => {
 .receipt-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 12px; padding: 16px; }
 .receipt-list article { padding: 15px; border: 1px solid #343a45; border-left: 3px solid #7d8797; border-radius: 11px; background: rgba(255,255,255,.025); }.receipt-list article.status-published { border-left-color: #64bd86; }.receipt-list article.status-rejected { border-left-color: #d86f68; }.receipt-list article.status-unpublished { border-left-color: #b7885d; }
 .receipt-list header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }.receipt-list small { color: var(--ca-gold); font-size: 9px; letter-spacing: .12em; }.receipt-list h3 { margin: 4px 0 0; color: var(--ca-text-bright); font: 700 17px/1.2 var(--ca-serif); }.receipt-list header > strong { flex: 0 0 auto; padding: 5px 8px; border-radius: 999px; color: #d8d1c5; background: #2a3039; font-size: 9px; }
-.receipt-list .review-note { padding: 10px; border-radius: 8px; color: #d9d0c1; background: rgba(255,255,255,.035); font-size: 11px; line-height: 1.6; }.receipt-list dl { display: grid; gap: 4px; margin: 12px 0 0; }.receipt-list dl div { display: flex; justify-content: space-between; gap: 8px; font-size: 9px; }.receipt-list dt { color: var(--ca-muted); }.receipt-list dd { margin: 0; color: #cfc7bb; }.receipt-list footer { display: flex; justify-content: flex-end; margin-top: 12px; }
+.receipt-list .review-note { padding: 10px; border-radius: 8px; color: #d9d0c1; background: rgba(255,255,255,.035); font-size: 11px; line-height: 1.6; }.receipt-list dl { display: grid; gap: 4px; margin: 12px 0 0; }.receipt-list dl div { display: flex; justify-content: space-between; gap: 8px; font-size: 9px; }.receipt-list dt { color: var(--ca-muted); }.receipt-list dd { margin: 0; color: #cfc7bb; }.receipt-list footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-top: 12px; }
 .square-empty { padding: 60px 20px; color: var(--ca-muted); text-align: center; }
 .square-notice, .square-error { margin: 0; padding: 10px 16px; border-top: 1px solid #282d36; font-size: 11px; text-align: center; }.square-notice { color: #8ed4aa; }.square-error { color: #ed8d86; }
 @media (max-width: 680px) { .square-backdrop { padding: 0; }.square-dialog { width: 100%; height: 100%; border: 0; border-radius: 0; }.square-header { padding: 15px 16px; }.square-tabs { overflow-x: auto; }.square-tabs button { flex: 0 0 auto; }.square-layout { grid-template-columns: 1fr; }.square-list { display: flex; gap: 7px; overflow-x: auto; border-right: 0; border-bottom: 1px solid #282d36; }.square-list button { flex: 0 0 210px; margin: 0; }.square-detail { padding: 20px 16px 30px; }.square-toolbar { flex-wrap: wrap; }.square-toolbar input { flex-basis: 100%; }.submit-grid { grid-template-columns: 1fr; }.submit-grid .wide { grid-column: auto; }.receipt-toolbar { align-items: stretch; flex-direction: column; }.receipt-toolbar > div:last-child { flex-wrap: wrap; }.receipt-list { grid-template-columns: 1fr; } }

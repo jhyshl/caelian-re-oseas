@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   exportCardSquareReceipt,
   importCardSquareReceipt,
+  loadCardSquareSubmissionForEdit,
   readCardSquareReceipts,
   refreshCardSquareReceipt,
   saveCardSquareReceipt,
   submitCardSquareEntry,
+  updateCardSquareSubmission,
   type CardSquareSubmissionReceipt,
 } from '@/card-square';
 import type { RuntimeInfo } from '@/domain/types';
@@ -137,6 +139,114 @@ describe('创意工坊声明式扩展', () => {
       expect(updated.status).toBe('rejected');
       expect(updated.reviewNote).toBe('强度需要调整。');
       expect(updated.reviewedAt).toBe('2026-08-07T06:48:56.653Z');
+    } finally {
+      window.fetch = originalFetch;
+    }
+  });
+
+  it('持有投稿回执的玩家可以载入作品并在修改后重新进入审核', async () => {
+    const receipt: CardSquareSubmissionReceipt = {
+      id: '5f9df001-1b92-4c34-8a57-36cd61a7fbc1',
+      receiptToken: '8f97d253-4cc0-4e95-998c-6e2fa8562a5a',
+      title: '星辉机制',
+      kind: 'mechanism',
+      status: 'published',
+      reviewNote: '原审核已通过。',
+      createdAt: '2026-08-07T00:00:00.000Z',
+      reviewedAt: '2026-08-07T01:00:00.000Z',
+      publishedAt: '2026-08-07T01:00:00.000Z',
+      lastCheckedAt: '2026-08-07T01:00:00.000Z',
+    };
+    const payload = {
+      format: 'caelian_workshop_mechanism',
+      version: 1,
+      id: 'author.starlight-edit',
+      name: '星辉机制',
+      resources: [],
+      rules: [
+        {
+          id: 'author.starlight-edit.log',
+          trigger: 'battle_start',
+          once: 'battle',
+          actions: [{ type: 'log', message: '星辉机制已启用' }],
+        },
+      ],
+    };
+    const requests: Record<string, unknown>[] = [];
+    const originalFetch = window.fetch;
+    window.fetch = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requests.push(body);
+      if (body.action === 'edit') {
+        return new Response(
+          JSON.stringify({
+            result: {
+              id: receipt.id,
+              kind: receipt.kind,
+              title: receipt.title,
+              author_name: null,
+              summary: '原始作品简介。',
+              tags: ['机制向'],
+              payload,
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          result: {
+            id: receipt.id,
+            title: '星辉机制·改',
+            kind: receipt.kind,
+            status: 'pending',
+            review_note: null,
+            reviewed_at: null,
+            published_at: null,
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    try {
+      const editable = await loadCardSquareSubmissionForEdit(receipt, window);
+      expect(editable.anonymous).toBe(true);
+      expect(editable.tags).toEqual(['机制向']);
+      const updated = await updateCardSquareSubmission(
+        receipt,
+        {
+          ...editable,
+          title: '星辉机制·改',
+          summary: '修改后的作品简介。',
+        },
+        {
+          channel: 'alpha',
+          version: '0.2.0-alpha.29',
+          buildId: 'test-build',
+          databaseName: 'test-db',
+          databaseVersion: 1,
+          status: 'ready',
+          mvuAvailable: false,
+        } satisfies RuntimeInfo,
+        window,
+      );
+      expect(requests.map((request) => request.action)).toEqual([
+        'edit',
+        'update',
+      ]);
+      expect(requests[1]).toMatchObject({
+        kind: 'mechanism',
+        title: '星辉机制·改',
+      });
+      expect(requests[1]).not.toHaveProperty('status');
+      expect(updated).toMatchObject({
+        title: '星辉机制·改',
+        status: 'pending',
+        reviewNote: null,
+        reviewedAt: null,
+        publishedAt: null,
+      });
     } finally {
       window.fetch = originalFetch;
     }
