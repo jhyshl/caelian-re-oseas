@@ -374,14 +374,29 @@ function removeMechanism(mechanism: WorkshopMechanismManifest): void {
   }
 }
 
-function downloadGuide(): void {
-  const anchor = document.createElement('a');
-  anchor.href =
-    'https://jhyshl.github.io/caelian-re-oseas/docs/caelian-workshop-ai-guide.md';
-  anchor.download = '凯利安创意工坊-AI制作指导手册.md';
-  anchor.target = '_blank';
-  anchor.rel = 'noopener';
-  anchor.click();
+async function downloadGuide(): Promise<void> {
+  error.value = '';
+  try {
+    const buildId = encodeURIComponent(
+      props.context.api.getRuntimeInfo().buildId,
+    );
+    const response = await (
+      props.context.document.defaultView ?? window
+    ).fetch(
+      `https://jhyshl.github.io/caelian-re-oseas/builds/${buildId}/docs/caelian-workshop-ai-guide.md`,
+      { cache: 'no-store' },
+    );
+    if (!response.ok) throw new Error(`指导手册下载失败：HTTP ${response.status}`);
+    const url = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = '凯利安创意工坊-AI制作指导手册.md';
+    anchor.click();
+    URL.revokeObjectURL(url);
+    notice.value = 'AI 制作指导手册已下载。';
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : String(caught);
+  }
 }
 
 function download(value?: unknown): void {
