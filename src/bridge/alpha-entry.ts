@@ -1,6 +1,7 @@
 import '@/styles/alpha.css';
 import { createKernel } from '@/kernel/create-kernel';
 import { resolveTavernHost } from '@/tavern/adapter';
+import { createWorkshopExtensionApi } from '@/workshop';
 
 const host = resolveTavernHost(window);
 let bootstrapTask: Promise<void> | undefined;
@@ -18,6 +19,7 @@ async function initializeCaelian(): Promise<void> {
     sourceWindow: window,
   });
   host.Caelian = kernel.api;
+  host.CaelianWorkshopExtensions = createWorkshopExtensionApi();
   try {
     await kernel.initialize();
   } catch (error) {

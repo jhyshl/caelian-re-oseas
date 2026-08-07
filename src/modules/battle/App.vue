@@ -31,6 +31,7 @@ import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import MeterBar from '@/ui/adventurer/MeterBar.vue';
+import { readWorkshopMechanisms } from '@/workshop-mechanisms';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -120,6 +121,26 @@ const battleInventory = computed<BattleInventoryRow[]>(() =>
 const battleInventoryCount = computed(() =>
   battleInventory.value.reduce((total, item) => total + item.quantity, 0),
 );
+const mechanismResources = computed(() => {
+  const runtime = state.value?.workshopMechanisms;
+  if (!runtime) return [];
+  const manifests = readWorkshopMechanisms().filter((entry) =>
+    runtime.ids.includes(entry.id),
+  );
+  return manifests.flatMap((manifest) =>
+    manifest.resources
+      .filter((resource) => resource.visible)
+      .map((resource) => ({
+        id: `${manifest.id}:${resource.id}`,
+        label: resource.label,
+        value:
+          runtime.resources[`${manifest.id}:${resource.id}`] ??
+          resource.initial,
+        min: resource.min,
+        max: resource.max,
+      })),
+  );
+});
 const regionalMonsterCount = computed(() => {
   const region = snapshot.value?.world.region;
   const regional = Object.values(monsters.value).filter((monster) =>
@@ -1028,6 +1049,16 @@ onUnmounted(() => {
             <span v-else>暂无召唤物</span>
           </div>
 
+          <div v-if="mechanismResources.length" class="mechanism-resource-strip">
+            <span
+              v-for="resource in mechanismResources"
+              :key="resource.id"
+              :title="`${resource.min}–${resource.max}`"
+            >
+              {{ resource.label }} <b>{{ resource.value }}</b>
+            </span>
+          </div>
+
           <div class="battle-field-row">
             <b>场上状态</b>
             <div class="status-row">
@@ -1551,6 +1582,32 @@ onUnmounted(() => {
 .summon-strip article span {
   color: rgba(224, 255, 225, 0.7);
   font-size: 8px;
+}
+
+.mechanism-resource-strip {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 3px 6px;
+}
+
+.mechanism-resource-strip span {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid rgba(212, 168, 67, 0.35);
+  border-radius: 999px;
+  color: rgba(245, 231, 199, 0.72);
+  background: rgba(212, 168, 67, 0.08);
+  font-size: 8px;
+}
+
+.mechanism-resource-strip b {
+  margin-left: 3px;
+  color: #f3d383;
+  font-size: 9px;
 }
 
 .battle-field-row {

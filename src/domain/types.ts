@@ -454,6 +454,11 @@ export interface LocalBattleState {
     repeatedCardType?: string;
     repeatedCount: number;
   };
+  workshopMechanisms?: {
+    ids: string[];
+    resources: Record<string, number>;
+    fired: string[];
+  };
   rewardChoices?: {
     cardIds: string[];
     equipmentIds: string[];

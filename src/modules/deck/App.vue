@@ -6,6 +6,7 @@ import type { GameSnapshot } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import WorkshopDialog from '@/modules/deck/WorkshopDialog.vue';
+import CardSquareDialog from '@/modules/deck/CardSquareDialog.vue';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
@@ -17,6 +18,7 @@ const filter = ref('all');
 const search = ref('');
 const notice = ref('');
 const workshopOpen = ref(false);
+const squareOpen = ref(false);
 
 const typeNames: Record<string, string> = {
   all: '全部',
@@ -175,6 +177,9 @@ onMounted(async () => {
             >
               创意工坊
             </button>
+            <button type="button" class="ca-button" @click="squareOpen = true">
+              卡牌广场
+            </button>
             <button type="button" class="ca-button primary" @click="beginEdit">
               编辑牌组
             </button>
@@ -269,6 +274,12 @@ onMounted(async () => {
       :context="context"
       @close="workshopOpen = false"
       @saved="workshopSaved"
+    />
+    <CardSquareDialog
+      v-if="squareOpen"
+      :context="context"
+      @close="squareOpen = false"
+      @changed="workshopSaved"
     />
   </AdventurerFrame>
 </template>

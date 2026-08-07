@@ -2,7 +2,10 @@ import type { CardDefinition, CardEffect } from '@/content/types';
 
 export const WORKSHOP_STORAGE_KEY = 'caelian_custom_workshop_packs_v1';
 export const WORKSHOP_DRAFT_STORAGE_KEY = 'caelian_custom_workshop_drafts_v1';
+export const WORKSHOP_EXTENSION_STORAGE_KEY =
+  'caelian_custom_workshop_extensions_v1';
 export const WORKSHOP_FORMAT = 'caelian_workshop_class_pack';
+export const WORKSHOP_EXTENSION_FORMAT = 'caelian_workshop_extension';
 export const WORKSHOP_MAIN_CLASSES = [
   'knight',
   'mage',
@@ -32,6 +35,7 @@ export interface WorkshopClass {
   talent: WorkshopTalent;
   cards: WorkshopCard[];
   starterDeck: string[];
+  mechanismIds?: string[];
   custom: true;
 }
 
@@ -48,6 +52,37 @@ export interface WorkshopDraft {
   id: string;
   updatedAt: number;
   value: Partial<WorkshopClass>;
+}
+
+export interface WorkshopEffectPreset {
+  id: string;
+  label: string;
+  description: string;
+  cardTypes: Array<'attack' | 'defense' | 'skill' | 'summon'>;
+  effects: CardEffect[];
+}
+
+export interface WorkshopExtensionManifest {
+  format: typeof WORKSHOP_EXTENSION_FORMAT;
+  version: 1;
+  id: string;
+  name: string;
+  author: string;
+  description: string;
+  presets: WorkshopEffectPreset[];
+}
+
+export type WorkshopImportResult =
+  | { kind: 'class-pack'; pack: WorkshopPack }
+  | { kind: 'extension'; extension: WorkshopExtensionManifest };
+
+export interface WorkshopExtensionApi {
+  readonly apiVersion: 1;
+  register(value: unknown): WorkshopExtensionManifest;
+  list(): WorkshopExtensionManifest[];
+  remove(extensionId: string): boolean;
+  validateClassPack(value: unknown): WorkshopPack;
+  importArtifact(value: unknown): WorkshopImportResult;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -241,6 +276,16 @@ function slug(value: unknown): string {
 
 function safeId(value: unknown): string {
   return String(value ?? '').replace(/[^\w-]/g, '_');
+}
+
+function extensionId(value: unknown, fallback: string): string {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._:-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return normalized || fallback;
 }
 
 function normalizeTarget(effect: UnknownRecord, type: string): string {
@@ -932,6 +977,13 @@ export function normalizeWorkshopClass(
     },
     cards,
     starterDeck,
+    mechanismIds: (Array.isArray(source.mechanismIds)
+      ? source.mechanismIds
+      : []
+    )
+      .map((entry) => extensionId(entry, ''))
+      .filter(Boolean)
+      .slice(0, 12),
     custom: true,
   };
 }
@@ -1055,4 +1107,129 @@ export function saveWorkshopDraft(draft: WorkshopDraft): void {
     WORKSHOP_DRAFT_STORAGE_KEY,
     JSON.stringify([draft, ...kept].slice(0, 40)),
   );
+}
+
+export function normalizeWorkshopExtension(
+  value: unknown,
+): WorkshopExtensionManifest {
+  const source = record(value);
+  const name = String(source.name ?? '').trim().slice(0, 40);
+  if (!name) throw new Error('扩展缺少名称。');
+  const id = extensionId(source.id, `extension-${slug(name)}`);
+  const rawPresets = Array.isArray(source.presets) ? source.presets : [];
+  const presets = rawPresets.slice(0, 80).map((entry, index) => {
+    const preset = record(entry);
+    const label = String(preset.label ?? preset.name ?? '')
+      .trim()
+      .slice(0, 40);
+    if (!label) throw new Error(`扩展「${name}」的第 ${index + 1} 个预设缺少名称。`);
+    const effects = (Array.isArray(preset.effects) ? preset.effects : [])
+      .slice(0, 8)
+      .flatMap((effect) => {
+        const normalized = normalizeCardEffect(effect);
+        return normalized ? [normalized] : [];
+      });
+    if (!effects.length) {
+      throw new Error(`扩展预设「${label}」没有可用效果。`);
+    }
+    const requestedTypes = Array.isArray(preset.cardTypes)
+      ? preset.cardTypes.map(String)
+      : [];
+    const cardTypes = requestedTypes.filter(
+      (type): type is 'attack' | 'defense' | 'skill' | 'summon' =>
+        ['attack', 'defense', 'skill', 'summon'].includes(type),
+    );
+    return {
+      id: extensionId(preset.id, `${id}.preset-${index + 1}`),
+      label,
+      description: String(preset.description ?? '').trim().slice(0, 160),
+      cardTypes: cardTypes.length
+        ? [...new Set(cardTypes)]
+        : (['attack', 'defense', 'skill', 'summon'] as Array<
+            'attack' | 'defense' | 'skill' | 'summon'
+          >),
+      effects,
+    };
+  });
+  if (!presets.length) throw new Error(`扩展「${name}」没有效果预设。`);
+  const presetIds = presets.map((preset) => preset.id);
+  if (new Set(presetIds).size !== presetIds.length) {
+    throw new Error(`扩展「${name}」包含重复的预设 ID。`);
+  }
+  return {
+    format: WORKSHOP_EXTENSION_FORMAT,
+    version: 1,
+    id,
+    name,
+    author: String(source.author ?? '匿名作者').trim().slice(0, 40),
+    description: String(source.description ?? '').trim().slice(0, 240),
+    presets,
+  };
+}
+
+export function readWorkshopExtensions(): WorkshopExtensionManifest[] {
+  try {
+    const raw = localStorage.getItem(WORKSHOP_EXTENSION_STORAGE_KEY);
+    const values: unknown[] = raw ? JSON.parse(raw) : [];
+    return Array.isArray(values)
+      ? values.flatMap((value) => {
+          try {
+            return [normalizeWorkshopExtension(value)];
+          } catch {
+            return [];
+          }
+        })
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeWorkshopExtensions(
+  extensions: WorkshopExtensionManifest[],
+): void {
+  localStorage.setItem(
+    WORKSHOP_EXTENSION_STORAGE_KEY,
+    JSON.stringify(extensions.slice(0, 40)),
+  );
+}
+
+export function saveWorkshopExtension(
+  value: unknown,
+): WorkshopExtensionManifest {
+  const normalized = normalizeWorkshopExtension(value);
+  const kept = readWorkshopExtensions().filter(
+    (extension) => extension.id !== normalized.id,
+  );
+  writeWorkshopExtensions([...kept, normalized]);
+  return normalized;
+}
+
+export function deleteWorkshopExtension(extensionIdValue: string): boolean {
+  const extensions = readWorkshopExtensions();
+  const next = extensions.filter(
+    (extension) => extension.id !== extensionIdValue,
+  );
+  if (next.length === extensions.length) return false;
+  writeWorkshopExtensions(next);
+  return true;
+}
+
+export function importWorkshopArtifact(value: unknown): WorkshopImportResult {
+  const source = record(value);
+  if (source.format === WORKSHOP_EXTENSION_FORMAT) {
+    return { kind: 'extension', extension: saveWorkshopExtension(value) };
+  }
+  return { kind: 'class-pack', pack: saveWorkshopPack(value) };
+}
+
+export function createWorkshopExtensionApi(): WorkshopExtensionApi {
+  return Object.freeze({
+    apiVersion: 1 as const,
+    register: (value: unknown) => saveWorkshopExtension(value),
+    list: () => readWorkshopExtensions(),
+    remove: (id: string) => deleteWorkshopExtension(id),
+    validateClassPack: (value: unknown) => normalizeWorkshopPack(value),
+    importArtifact: (value: unknown) => importWorkshopArtifact(value),
+  });
 }

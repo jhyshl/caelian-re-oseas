@@ -11,21 +11,32 @@ import type { CardEffect } from '@/content/types';
 import type { PanelContext } from '@/kernel/public-api';
 import WorkshopEffectEditor from '@/modules/deck/WorkshopEffectEditor.vue';
 import {
+  WORKSHOP_MECHANISM_FORMAT,
+  deleteWorkshopMechanism,
+  readWorkshopMechanisms,
+  saveWorkshopMechanism,
+  type WorkshopMechanismManifest,
+} from '@/workshop-mechanisms';
+import {
   WORKSHOP_EFFECT_OPTIONS,
   WORKSHOP_MAIN_CLASSES,
   WORKSHOP_TALENT_OPTIONS,
   cardLimit,
   cardScore,
   deleteWorkshopClass,
+  deleteWorkshopExtension,
   exportWorkshopPack,
+  importWorkshopArtifact,
   normalizeWorkshopCard,
   readWorkshopDrafts,
+  readWorkshopExtensions,
   readWorkshopPacks,
   saveWorkshopDraft,
   saveWorkshopPack,
   talentScore,
   type WorkshopClass,
   type WorkshopDraft,
+  type WorkshopExtensionManifest,
   type WorkshopMainClass,
 } from '@/workshop';
 
@@ -50,14 +61,17 @@ interface EditableClass {
   };
   cards: EditableCard[];
   starterDeck: string[];
+  mechanismIds: string[];
 }
 
 const props = defineProps<{ context: PanelContext }>();
 const emit = defineEmits<{ close: []; saved: [] }>();
 
-const tab = ref<'library' | 'editor' | 'drafts'>('library');
+const tab = ref<'library' | 'editor' | 'drafts' | 'extensions'>('library');
 const published = ref(readWorkshopPacks());
 const drafts = ref(readWorkshopDrafts());
+const extensions = ref(readWorkshopExtensions());
+const mechanisms = ref(readWorkshopMechanisms());
 const editor = ref<EditableClass>(createEditor());
 const activeCardId = ref('');
 const notice = ref('');
@@ -77,6 +91,7 @@ const typeNames: Record<string, string> = {
   skill: '技能',
   summon: '召唤',
 };
+const workshopCardTypes = ['attack', 'defense', 'skill', 'summon'] as const;
 const activeCard = computed(() =>
   editor.value.cards.find((card) => card.id === activeCardId.value),
 );
@@ -95,6 +110,31 @@ const activeCardPower = computed(() =>
 const activeCardLimit = computed(() =>
   activeCard.value ? cardLimit(activeCard.value.cost) : 0,
 );
+const effectOptions = computed(() => [
+  ...WORKSHOP_EFFECT_OPTIONS.map((option) => ({
+    id: `builtin:${option.type}`,
+    label: option.label,
+    description: '内置效果',
+    cardTypes: [...workshopCardTypes],
+    effects: [option],
+  })),
+  ...extensions.value.flatMap((extension) =>
+    extension.presets.map((preset) => ({
+      id: `${extension.id}:${preset.id}`,
+      label: `${extension.name}｜${preset.label}`,
+      description: preset.description,
+      cardTypes: preset.cardTypes,
+      effects: preset.effects,
+    })),
+  ),
+]);
+
+function supportsCardType(
+  option: { cardTypes: readonly string[] },
+  cardType: string,
+): boolean {
+  return option.cardTypes.includes(cardType);
+}
 
 watch(
   editor,
@@ -133,6 +173,7 @@ function createEditor(): EditableClass {
     },
     cards: [],
     starterDeck: [],
+    mechanismIds: [],
   };
 }
 
@@ -205,17 +246,29 @@ function deleteCard(cardId: string): void {
   activeCardId.value = editor.value.cards[0]?.id ?? '';
 }
 
-function addEffect(type: string): void {
+function addEffect(optionId: string): void {
   const card = activeCard.value;
-  const option = WORKSHOP_EFFECT_OPTIONS.find((entry) => entry.type === type);
+  const option = effectOptions.value.find((entry) => entry.id === optionId);
   if (!card || !option || card.effects.length >= 8) return;
-  if (type === 'summon' && card.type !== 'summon') {
+  if (!supportsCardType(option, card.type)) {
+    error.value = '这个扩展预设不支持当前卡牌类型。';
+    return;
+  }
+  const effects = option.effects.map((entry) => {
+    const effect = structuredClone(entry) as EditableEffect;
+    delete effect.label;
+    return effect;
+  });
+  if (card.effects.length + effects.length > 8) {
+    error.value = '添加该预设后会超过每张卡牌 8 个效果的上限。';
+    return;
+  }
+  if (effects.some((effect) => effect.type === 'summon') && card.type !== 'summon') {
     error.value = '只有召唤类型卡牌才能创建召唤物。';
     return;
   }
-  const effect = structuredClone(option) as EditableEffect;
-  delete effect.label;
-  card.effects.push(effect);
+  card.effects.push(...effects);
+  notice.value = option.description || `已添加「${option.label}」。`;
 }
 
 async function validateCard(): Promise<void> {
@@ -305,6 +358,32 @@ function removeProfession(profession: WorkshopClass): void {
   }
 }
 
+function removeExtension(extension: WorkshopExtensionManifest): void {
+  if (!window.confirm(`确认删除扩展「${extension.name}」？`)) return;
+  if (deleteWorkshopExtension(extension.id)) {
+    extensions.value = readWorkshopExtensions();
+    notice.value = `扩展「${extension.name}」已删除。`;
+  }
+}
+
+function removeMechanism(mechanism: WorkshopMechanismManifest): void {
+  if (!window.confirm(`确认删除底层机制「${mechanism.name}」？依赖它的职业将无法正常使用。`)) return;
+  if (deleteWorkshopMechanism(mechanism.id)) {
+    mechanisms.value = readWorkshopMechanisms();
+    notice.value = `底层机制「${mechanism.name}」已删除。`;
+  }
+}
+
+function downloadGuide(): void {
+  const anchor = document.createElement('a');
+  anchor.href =
+    'https://jhyshl.github.io/caelian-re-oseas/docs/caelian-workshop-ai-guide.md';
+  anchor.download = '凯利安创意工坊-AI制作指导手册.md';
+  anchor.target = '_blank';
+  anchor.rel = 'noopener';
+  anchor.click();
+}
+
 function download(value?: unknown): void {
   try {
     const pack = exportWorkshopPack(value);
@@ -327,14 +406,28 @@ async function importFile(event: Event): Promise<void> {
   if (!file) return;
   error.value = '';
   try {
-    saveWorkshopPack(JSON.parse(await file.text()));
-    refreshWorkshopProfessionCatalogs();
-    await loadCardCatalog();
-    refreshWorkshopCardCatalog();
-    refreshWorkshopPassiveCatalog();
-    published.value = readWorkshopPacks();
-    notice.value = '职业包已按旧版格式校验并导入。';
-    emit('saved');
+    const raw = JSON.parse(await file.text()) as Record<string, unknown>;
+    if (raw.format === WORKSHOP_MECHANISM_FORMAT) {
+      const mechanism = saveWorkshopMechanism(raw);
+      mechanisms.value = readWorkshopMechanisms();
+      notice.value = `底层机制「${mechanism.name}」已导入，包含 ${mechanism.rules.length} 条运行规则。`;
+      tab.value = 'extensions';
+      return;
+    }
+    const result = importWorkshopArtifact(raw);
+    if (result.kind === 'extension') {
+      extensions.value = readWorkshopExtensions();
+      notice.value = `扩展「${result.extension.name}」已导入，新增 ${result.extension.presets.length} 个效果预设。`;
+      tab.value = 'extensions';
+    } else {
+      refreshWorkshopProfessionCatalogs();
+      await loadCardCatalog();
+      refreshWorkshopCardCatalog();
+      refreshWorkshopPassiveCatalog();
+      published.value = readWorkshopPacks();
+      notice.value = `职业包「${result.pack.packName}」已通过安全校验并导入。`;
+      emit('saved');
+    }
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught);
   } finally {
@@ -354,7 +447,7 @@ async function importFile(event: Event): Promise<void> {
       >
         <header class="workshop-header">
           <div>
-            <small>CREATIVE WORKSHOP v2.1</small>
+            <small>CREATIVE WORKSHOP v3.0</small>
             <h2 id="workshop-title">创意工坊</h2>
             <p>只保存职业与卡牌数据模板，不执行任何自定义脚本。</p>
           </div>
@@ -371,6 +464,12 @@ async function importFile(event: Event): Promise<void> {
           <button :class="{ active: tab === 'drafts' }" @click="tab = 'drafts'">
             草稿 {{ drafts.length }}
           </button>
+          <button
+            :class="{ active: tab === 'extensions' }"
+            @click="tab = 'extensions'"
+          >
+            扩展 {{ extensions.length + mechanisms.length }}
+          </button>
         </nav>
 
         <main v-if="tab === 'library'" class="workshop-library">
@@ -379,7 +478,10 @@ async function importFile(event: Event): Promise<void> {
               + 创建新职业
             </button>
             <button type="button" class="ca-button" @click="importInput?.click()">
-              导入职业包
+              导入职业包 / 扩展
+            </button>
+            <button type="button" class="ca-button" @click="downloadGuide">
+              下载 AI 制作指导手册
             </button>
             <button
               type="button"
@@ -433,6 +535,64 @@ async function importFile(event: Event): Promise<void> {
                 type="button"
                 class="ca-button danger"
                 @click="removeProfession(profession)"
+              >
+                删除
+              </button>
+            </div>
+          </article>
+        </main>
+
+        <main v-else-if="tab === 'extensions'" class="workshop-library">
+          <div class="extension-intro">
+            <strong>声明式扩展接口</strong>
+            <p>
+              扩展只能组合受支持的战斗效果，不执行脚本，也不能读取聊天记录或玩家存档。
+              可将指导手册交给 AI 生成职业包或效果扩展，再从这里导入。
+            </p>
+          </div>
+          <div v-if="extensions.length + mechanisms.length === 0" class="workshop-empty">
+            尚未安装扩展。下载指导手册即可查看完整格式、示例和强度限制。
+          </div>
+          <article
+            v-for="mechanism in mechanisms"
+            :key="mechanism.id"
+            class="published-class"
+          >
+            <div>
+              <span>底层机制 · {{ mechanism.author || '匿名作者' }}</span>
+              <h3>{{ mechanism.name }}</h3>
+              <p>{{ mechanism.description || '未填写机制说明' }}</p>
+              <small>
+                {{ mechanism.resources.length }} 个资源 ·
+                {{ mechanism.rules.length }} 条规则 · {{ mechanism.id }}
+              </small>
+            </div>
+            <div>
+              <button
+                type="button"
+                class="ca-button danger"
+                @click="removeMechanism(mechanism)"
+              >
+                删除
+              </button>
+            </div>
+          </article>
+          <article
+            v-for="extension in extensions"
+            :key="extension.id"
+            class="published-class"
+          >
+            <div>
+              <span>{{ extension.author || '匿名作者' }}</span>
+              <h3>{{ extension.name }}</h3>
+              <p>{{ extension.description || '未填写扩展说明' }}</p>
+              <small>{{ extension.presets.length }} 个效果预设 · {{ extension.id }}</small>
+            </div>
+            <div>
+              <button
+                type="button"
+                class="ca-button danger"
+                @click="removeExtension(extension)"
               >
                 删除
               </button>
@@ -502,6 +662,17 @@ async function importFile(event: Event): Promise<void> {
                   maxlength="100"
                 ></textarea>
               </label>
+              <fieldset v-if="mechanisms.length" class="wide mechanism-links">
+                <legend>启用底层机制</legend>
+                <label v-for="mechanism in mechanisms" :key="mechanism.id">
+                  <input
+                    v-model="editor.mechanismIds"
+                    type="checkbox"
+                    :value="mechanism.id"
+                  />
+                  <span>{{ mechanism.name }}</span>
+                </label>
+              </fieldset>
             </div>
             <div class="talent-effects">
               <div
@@ -631,11 +802,11 @@ async function importFile(event: Event): Promise<void> {
                 >
                   <option value="" disabled>+ 添加卡牌效果</option>
                   <option
-                    v-for="option in WORKSHOP_EFFECT_OPTIONS"
-                    :key="option.type"
-                    :value="option.type"
+                    v-for="option in effectOptions"
+                    :key="option.id"
+                    :value="option.id"
                     :disabled="
-                      option.type === 'summon' && activeCard.type !== 'summon'
+                      !supportsCardType(option, activeCard.type)
                     "
                   >
                     {{ option.label }}
@@ -835,6 +1006,25 @@ async function importFile(event: Event): Promise<void> {
   gap: 7px;
 }
 
+.extension-intro {
+  padding: 13px 14px;
+  border: 1px solid rgba(212, 168, 67, 0.28);
+  border-radius: 12px;
+  background: rgba(212, 168, 67, 0.06);
+}
+
+.extension-intro strong {
+  color: var(--ca-gold-light);
+  font-size: 12px;
+}
+
+.extension-intro p {
+  margin: 5px 0 0;
+  color: var(--ca-muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
 .published-class {
   display: flex;
   align-items: center;
@@ -949,6 +1139,32 @@ async function importFile(event: Event): Promise<void> {
   gap: 5px;
   color: var(--ca-muted);
   font-size: 9px;
+}
+
+.mechanism-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--ca-border);
+  border-radius: 10px;
+}
+
+.mechanism-links legend {
+  padding: 0 6px;
+  color: var(--ca-gold);
+  font-size: 9px;
+}
+
+.mechanism-links label {
+  display: flex;
+  align-items: center;
+  grid-template-columns: none;
+  gap: 6px;
+}
+
+.mechanism-links input {
+  width: auto;
 }
 
 .form-grid label.wide {
