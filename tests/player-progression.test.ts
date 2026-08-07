@@ -11,6 +11,7 @@ describe('玩家等级成长', () => {
       experience: 90,
       experienceToNext: 100,
       statPoints: 3,
+      pendingLevelRewards: [],
     };
 
     const levelsGained = grantPlayerExperience(player, 170);
@@ -22,6 +23,24 @@ describe('玩家等级成长', () => {
       experience: 10,
       experienceToNext: 200,
       statPoints: 19,
+      pendingLevelRewards: [
+        {
+          id: 'level-2',
+          level: 2,
+          equipmentIds: [],
+          relicIds: [],
+          equipmentClaimed: false,
+          relicClaimed: false,
+        },
+        {
+          id: 'level-3',
+          level: 3,
+          equipmentIds: [],
+          relicIds: [],
+          equipmentClaimed: false,
+          relicClaimed: false,
+        },
+      ],
     });
   });
 });

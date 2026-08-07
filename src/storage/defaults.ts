@@ -36,6 +36,7 @@ export function defaultPlayer(
     statPoints: 0,
     gold: 500,
     reclassCount: 0,
+    pendingLevelRewards: [],
     updatedAt: now,
   };
 }

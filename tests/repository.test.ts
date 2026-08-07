@@ -174,4 +174,92 @@ describe('GameRepository', () => {
     expect(settled.questHistory[0]?.title).toBe('采集食人花花粉');
     expect(settled.guild).toMatchObject({ rank: 'iron', completedTaskCount: 1 });
   });
+
+  it('任务升级后持久保留装备与藏品选择并可分别领取', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-level-reward-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:level-reward');
+    await repository.execute(profile.id, {
+      id: 'level-reward-player-create',
+      type: 'player.create',
+      payload: {
+        name: '升级奖励测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    await database.playerStates.update(profile.id, { experience: 90 });
+    const taskId = '升级奖励测试委托:伊拉亚城';
+    await repository.execute(profile.id, {
+      id: 'accept-level-reward-commission',
+      type: 'quest.accept',
+      payload: {
+        taskId,
+        title: '升级奖励测试委托',
+        region: '伊拉亚城',
+        objective: '完成一次测试',
+        totalStages: 1,
+        rewardExperience: 20,
+        rewardGold: 0,
+        rewardGuildExperience: 0,
+        minimumLevel: 1,
+      },
+    });
+    const questId = `${profile.id}:commission:${taskId}`;
+    await repository.execute(profile.id, {
+      id: 'progress-level-reward-commission',
+      type: 'quest.commission-progress',
+      payload: { questId },
+    });
+    await repository.execute(profile.id, {
+      id: 'complete-level-reward-commission',
+      type: 'quest.commission-complete',
+      payload: { questId },
+    });
+
+    let snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.player).toMatchObject({ level: 2, statPoints: 8 });
+    expect(snapshot.player.pendingLevelRewards).toEqual([
+      expect.objectContaining({ id: 'level-2', level: 2 }),
+    ]);
+
+    await repository.execute(profile.id, {
+      id: 'prepare-level-reward',
+      type: 'player.prepare-level-rewards',
+      payload: {},
+    });
+    snapshot = await repository.snapshot(profile.id);
+    const reward = snapshot.player.pendingLevelRewards?.[0];
+    expect(reward?.equipmentIds).toHaveLength(5);
+    expect(reward?.relicIds).toHaveLength(3);
+
+    await repository.execute(profile.id, {
+      id: 'claim-level-equipment',
+      type: 'player.claim-level-reward',
+      payload: {
+        rewardId: reward!.id,
+        kind: 'equipment',
+        choiceId: reward!.equipmentIds[0],
+      },
+    });
+    await repository.execute(profile.id, {
+      id: 'claim-level-relic',
+      type: 'player.claim-level-reward',
+      payload: {
+        rewardId: reward!.id,
+        kind: 'relic',
+        choiceId: reward!.relicIds[0],
+      },
+    });
+    snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.equipment).toEqual([
+      expect.objectContaining({ stars: 2 }),
+    ]);
+    expect(snapshot.relics).toHaveLength(1);
+    expect(snapshot.player.pendingLevelRewards).toEqual([]);
+  });
 });

@@ -949,6 +949,84 @@ describe('CaelianKernel integration', () => {
     await kernel.api.shutdown();
   });
 
+  it('只有剧情触发的战斗会在结算后写入聊天框', async () => {
+    const databaseName = `caelian-alpha-story-battle-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const textarea = document.createElement('textarea');
+    textarea.id = 'send_textarea';
+    document.body.appendChild(textarea);
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'story-battle-source-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+    const database = new CaelianDatabase('alpha', databaseName);
+
+    const endBattleInStorage = async (battleId: string) => {
+      const session = await database.battleSessions.get(battleId);
+      if (!session) throw new Error('测试战斗不存在');
+      session.state.status = 'surrendered';
+      session.state.phase = 'ended';
+      session.phase = 'ended';
+      await database.battleSessions.put(session);
+    };
+
+    try {
+      await kernel.initialize();
+      await kernel.api.execute({
+        id: 'create-story-battle-source-adventurer',
+        type: 'player.create',
+        payload: {
+          name: '测试冒险者',
+          classMain: 'knight',
+          subclass: 'holy_knight',
+        },
+      });
+      await database.open();
+
+      await kernel.api.execute({
+        id: 'start-local-battle-source-test',
+        type: 'battle.start',
+        payload: { monsterId: 'mon_slime', source: '玩家本地遭遇' },
+      });
+      let battle = (await kernel.api.query('state')).battle;
+      expect(battle?.storyTriggered).toBe(false);
+      await endBattleInStorage(battle!.id);
+      await kernel.api.execute({
+        id: 'finish-local-battle-source-test',
+        type: 'battle.finish',
+        payload: { battleId: battle!.id },
+      });
+      expect(textarea.value).toBe('');
+
+      await kernel.api.execute({
+        id: 'start-story-battle-source-test',
+        type: 'battle.start',
+        payload: {
+          monsterId: 'mon_slime',
+          source: '剧情中的史莱姆伏击',
+          storyTriggered: true,
+        },
+      });
+      battle = (await kernel.api.query('state')).battle;
+      expect(battle?.storyTriggered).toBe(true);
+      await endBattleInStorage(battle!.id);
+      await kernel.api.execute({
+        id: 'finish-story-battle-source-test',
+        type: 'battle.finish',
+        payload: { battleId: battle!.id },
+      });
+      expect(textarea.value).toContain('<BattleResult>');
+      expect(textarea.value).toContain('source: 剧情中的史莱姆伏击');
+    } finally {
+      database.close();
+      textarea.remove();
+      await kernel.api.shutdown();
+    }
+  });
+
   it('设置面板可拉取模型并由玩家选择判定模型', async () => {
     const databaseName = `caelian-alpha-judge-settings-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);

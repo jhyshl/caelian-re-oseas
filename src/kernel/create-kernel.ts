@@ -278,7 +278,7 @@ export class CaelianKernel {
       if (
         result.status === 'applied' &&
         type === 'battle.finish' &&
-        battleBeforeFinish
+        battleBeforeFinish?.storyTriggered === true
       ) {
         const currentInput = this.adapter.currentInputText().trim();
         const battleResult = formatStoryBattleResult(battleBeforeFinish);
@@ -814,6 +814,7 @@ export class CaelianKernel {
         monsterId: request.monster,
         count: request.count,
         source: request.reason || '剧情自动触发',
+        storyTriggered: true,
         relatedQuestId: tracked?.questId || undefined,
       },
     });

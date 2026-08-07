@@ -29,6 +29,14 @@ import type {
 } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
+import {
+  cardRewardEffect,
+  cardRewardMeta,
+  equipmentRewardEffect,
+  equipmentRewardMeta,
+  relicRewardEffect,
+  rewardRarityName,
+} from '@/rewards/reward-display';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import MeterBar from '@/ui/adventurer/MeterBar.vue';
 import { readWorkshopMechanisms } from '@/workshop-mechanisms';
@@ -896,12 +904,15 @@ onUnmounted(() => {
               <button
                 v-for="cardId in state.rewardChoices.cardIds"
                 :key="cardId"
+                class="reward-option"
                 type="button"
                 @click="claimReward('card', cardId)"
               >
-                {{ cards[cardId]?.name ?? cardId }}
+                <b>{{ cards[cardId]?.name ?? cardId }}</b>
+                <small>{{ cardRewardMeta(cards[cardId]) }}</small>
+                <p>{{ cardRewardEffect(cards[cardId]) }}</p>
               </button>
-              <button type="button" @click="claimReward('card')">跳过</button>
+              <button class="reward-skip" type="button" @click="claimReward('card')">跳过</button>
             </div>
           </section>
           <section v-if="!state.rewardChoices.equipmentClaimed">
@@ -910,12 +921,29 @@ onUnmounted(() => {
               <button
                 v-for="equipmentId in state.rewardChoices.equipmentIds"
                 :key="equipmentId"
+                class="reward-option"
                 type="button"
                 @click="claimReward('equipment', equipmentId)"
               >
-                {{ equipmentRewards[equipmentId]?.name ?? equipmentId }}
+                <b>{{ equipmentRewards[equipmentId]?.name ?? equipmentId }}</b>
+                <small>
+                  {{
+                    equipmentRewardMeta(
+                      equipmentRewards[equipmentId],
+                      state.rewardChoices.levelsGained > 0 ? 2 : 1,
+                    )
+                  }}
+                </small>
+                <p>
+                  {{
+                    equipmentRewardEffect(
+                      equipmentRewards[equipmentId],
+                      state.rewardChoices.levelsGained > 0 ? 2 : 1,
+                    )
+                  }}
+                </p>
               </button>
-              <button type="button" @click="claimReward('equipment')">跳过</button>
+              <button class="reward-skip" type="button" @click="claimReward('equipment')">跳过</button>
             </div>
           </section>
           <section v-if="!state.rewardChoices.relicClaimed">
@@ -924,12 +952,15 @@ onUnmounted(() => {
               <button
                 v-for="relicId in state.rewardChoices.relicIds"
                 :key="relicId"
+                class="reward-option"
                 type="button"
                 @click="claimReward('relic', relicId)"
               >
-                {{ relicRewards[relicId]?.name ?? relicId }}
+                <b>{{ relicRewards[relicId]?.name ?? relicId }}</b>
+                <small>{{ rewardRarityName(String(relicRewards[relicId]?.rarity ?? 'level')) }} · 藏品</small>
+                <p>{{ relicRewardEffect(relicRewards[relicId]) }}</p>
               </button>
-              <button type="button" @click="claimReward('relic')">跳过</button>
+              <button class="reward-skip" type="button" @click="claimReward('relic')">跳过</button>
             </div>
           </section>
         </div>
@@ -2411,8 +2442,8 @@ onUnmounted(() => {
 }
 
 .reward-choices div {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 6px;
 }
 
@@ -2424,6 +2455,38 @@ onUnmounted(() => {
   background: rgba(212, 168, 67, 0.1);
   font: 700 9px var(--ca-ui);
   cursor: pointer;
+}
+
+.reward-choices .reward-option {
+  min-height: 92px;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  text-align: left;
+}
+
+.reward-option b {
+  color: var(--ca-text-bright);
+  font-size: 11px;
+}
+
+.reward-option small {
+  color: var(--ca-gold-light);
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.reward-option p {
+  margin: 0;
+  color: var(--ca-muted);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.reward-choices .reward-skip {
+  align-self: stretch;
+  min-height: 38px;
 }
 
 .battle-main-button {

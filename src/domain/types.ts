@@ -48,9 +48,20 @@ export interface PlayerRecord {
   statPoints: number;
   gold: number;
   reclassCount: number;
+  /** Persistent equipment and relic choices created once for every gained level. */
+  pendingLevelRewards?: LevelRewardRecord[];
   /** Consumable effects queued for the next locally simulated battle. */
   pendingBattleEffects?: unknown[];
   updatedAt: number;
+}
+
+export interface LevelRewardRecord {
+  id: string;
+  level: number;
+  equipmentIds: string[];
+  relicIds: string[];
+  equipmentClaimed: boolean;
+  relicClaimed: boolean;
 }
 
 export interface StatAllocationRecord {
@@ -478,6 +489,8 @@ export interface LocalBattleState {
     equipmentClaimed: boolean;
     relicClaimed: boolean;
     levelsGained: number;
+    /** Links battle settlement choices to the persistent level-up reward queue. */
+    levelRewardId?: string;
   };
   log: BattleLogEntry[];
   /**
@@ -492,6 +505,8 @@ export interface BattleSessionRecord {
   profileId: string;
   active: boolean;
   source: string;
+  /** Only battles created from an assistant <BattleStart> may write results back to chat. */
+  storyTriggered?: boolean;
   relatedQuestId: string;
   turn: number;
   phase: string;

@@ -6,6 +6,14 @@ import {
   loadPassiveCatalog,
   type PassiveDefinition,
 } from '@/content/catalogs/battle';
+import {
+  loadEquipmentDefinitions,
+  loadRelics,
+} from '@/content/catalogs/inventory';
+import type {
+  EquipmentDefinition,
+  RelicDefinition,
+} from '@/content/types';
 import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
 import type {
   OwnedCardRecord,
@@ -50,11 +58,20 @@ const STANDARD_PASSIVE_BY_SUBCLASS: Record<string, string> = {
 
 export class PlayerRepository {
   private passives?: Record<string, PassiveDefinition>;
+  private equipment?: Record<string, EquipmentDefinition>;
+  private relics?: Record<string, RelicDefinition>;
 
   constructor(private readonly db: CaelianDatabase) {}
 
   async prepare(): Promise<void> {
     this.passives ??= await loadPassiveCatalog();
+  }
+
+  async prepareLevelRewards(): Promise<void> {
+    [this.equipment, this.relics] = await Promise.all([
+      this.equipment ?? loadEquipmentDefinitions(),
+      this.relics ?? loadRelics(),
+    ]);
   }
 
   async get(profileId: string): Promise<PlayerRecord> {
@@ -151,6 +168,137 @@ export class PlayerRepository {
     allocations.updatedAt = now;
     await this.db.playerStates.put(player);
     await this.db.statAllocations.put(allocations);
+  }
+
+  async populateLevelRewardChoices(profileId: string): Promise<void> {
+    if (!this.equipment || !this.relics) {
+      throw new Error('升级奖励目录尚未加载');
+    }
+    const player = await this.get(profileId);
+    const reward = player.pendingLevelRewards?.find(
+      (entry) => !entry.equipmentClaimed || !entry.relicClaimed,
+    );
+    if (!reward) return;
+
+    if (!reward.equipmentClaimed && reward.equipmentIds.length === 0) {
+      reward.equipmentIds = this.sample(Object.keys(this.equipment), 5);
+      reward.equipmentClaimed = reward.equipmentIds.length === 0;
+    }
+    if (!reward.relicClaimed && reward.relicIds.length === 0) {
+      const owned = new Set(
+        (await this.db.ownedRelics.where('profileId').equals(profileId).toArray())
+          .map((entry) => entry.relicId),
+      );
+      reward.relicIds = this.sample(
+        Object.entries(this.relics)
+          .filter(
+            ([id, relic]) => relic.levelReward === true && !owned.has(id),
+          )
+          .map(([id]) => id),
+        3,
+      );
+      reward.relicClaimed = reward.relicIds.length === 0;
+    }
+    this.removeCompletedLevelRewards(player);
+    player.updatedAt = Date.now();
+    await this.db.playerStates.put(player);
+  }
+
+  async claimLevelReward(
+    profileId: string,
+    input: {
+      rewardId: string;
+      kind: 'equipment' | 'relic';
+      choiceId?: string;
+    },
+  ): Promise<void> {
+    if (!this.equipment || !this.relics) {
+      throw new Error('升级奖励目录尚未加载');
+    }
+    const player = await this.get(profileId);
+    const reward = player.pendingLevelRewards?.find(
+      (entry) => entry.id === input.rewardId,
+    );
+    if (!reward) throw new Error('升级奖励不存在或已经领取');
+    const now = Date.now();
+
+    if (input.kind === 'equipment') {
+      if (reward.equipmentClaimed) throw new Error('装备奖励已经处理');
+      if (input.choiceId) {
+        if (!reward.equipmentIds.includes(input.choiceId)) {
+          throw new Error('装备不在候选列表中');
+        }
+        const definition = this.equipment[input.choiceId];
+        if (!definition) throw new Error('装备定义不存在');
+        const stars = 2;
+        await this.db.equipmentInstances.add({
+          id: `${profileId}:${definition.id}:level:${reward.level}:${now}`,
+          profileId,
+          baseId: definition.id,
+          name: `${definition.name} ${'★'.repeat(stars)}`,
+          slot: definition.slot,
+          rarity: definition.rarity,
+          stars,
+          stats: Object.fromEntries(
+            Object.entries(definition.stats).map(([key, value]) => [
+              key,
+              Math.round(value * 1.35),
+            ]),
+          ),
+          description: `${definition.description}（升级奖励）`,
+          updatedAt: now,
+        });
+      }
+      reward.equipmentClaimed = true;
+    } else {
+      if (reward.relicClaimed) throw new Error('藏品奖励已经处理');
+      if (input.choiceId) {
+        if (!reward.relicIds.includes(input.choiceId)) {
+          throw new Error('藏品不在候选列表中');
+        }
+        if (!this.relics[input.choiceId]) throw new Error('藏品定义不存在');
+        const id = `${profileId}:${input.choiceId}`;
+        if (!(await this.db.ownedRelics.get(id))) {
+          const carried =
+            (await this.db.ownedRelics
+              .where('profileId')
+              .equals(profileId)
+              .filter((entry) => entry.carried)
+              .count()) < 5;
+          await this.db.ownedRelics.add({
+            id,
+            profileId,
+            relicId: input.choiceId,
+            carried,
+            acquiredAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+      reward.relicClaimed = true;
+    }
+
+    this.removeCompletedLevelRewards(player);
+    player.updatedAt = now;
+    await this.db.playerStates.put(player);
+  }
+
+  private removeCompletedLevelRewards(player: PlayerRecord): void {
+    player.pendingLevelRewards = (player.pendingLevelRewards ?? []).filter(
+      (entry) => !entry.equipmentClaimed || !entry.relicClaimed,
+    );
+  }
+
+  private sample<T>(values: T[], limit: number): T[] {
+    const shuffled = [...values];
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const selected = Math.floor(Math.random() * (index + 1));
+      [shuffled[index], shuffled[selected]] = [
+        shuffled[selected]!,
+        shuffled[index]!,
+      ];
+    }
+    return shuffled.slice(0, limit);
   }
 
   private addStat(

@@ -158,6 +158,7 @@ describe('本地战斗仓库', () => {
 
     let snapshot = await repository.snapshot(profile.id);
     expect(snapshot.battle).not.toBeNull();
+    expect(snapshot.battle?.storyTriggered).toBe(false);
     expect(snapshot.battle?.state).toMatchObject({
       schemaVersion: 1,
       status: 'ongoing',

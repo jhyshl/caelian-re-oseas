@@ -4,7 +4,11 @@ export const STAT_POINTS_PER_LEVEL = 8;
 
 type ExperienceState = Pick<
   PlayerRecord,
-  'experience' | 'experienceToNext' | 'level' | 'statPoints'
+  | 'experience'
+  | 'experienceToNext'
+  | 'level'
+  | 'statPoints'
+  | 'pendingLevelRewards'
 >;
 
 export function grantPlayerExperience(
@@ -18,6 +22,15 @@ export function grantPlayerExperience(
     player.level += 1;
     player.statPoints += STAT_POINTS_PER_LEVEL;
     player.experienceToNext = 100 + (player.level - 1) * 50;
+    player.pendingLevelRewards ??= [];
+    player.pendingLevelRewards.push({
+      id: `level-${player.level}`,
+      level: player.level,
+      equipmentIds: [],
+      relicIds: [],
+      equipmentClaimed: false,
+      relicClaimed: false,
+    });
   }
   return player.level - startingLevel;
 }

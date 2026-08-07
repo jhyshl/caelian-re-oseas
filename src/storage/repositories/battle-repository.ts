@@ -176,6 +176,7 @@ export class BattleRepository {
       monsterId?: string;
       count?: number;
       source?: string;
+      storyTriggered?: boolean;
       relatedQuestId?: string;
       workshopTest?: WorkshopTestInput;
     },
@@ -322,6 +323,7 @@ export class BattleRepository {
       source:
         input.source?.trim() ||
         `${world?.location || region} · ${enemyCount > 1 ? '群体遭遇' : monster.name}`,
+      storyTriggered: input.storyTriggered === true,
       relatedQuestId: input.relatedQuestId?.trim() || '',
       turn: state.turn,
       phase: state.phase,
@@ -755,6 +757,9 @@ export class BattleRepository {
       }
       choices.relicClaimed = true;
     }
+    if (input.kind !== 'card') {
+      await this.syncClaimedLevelReward(profileId, choices);
+    }
     await this.save(session);
   }
 
@@ -899,6 +904,7 @@ export class BattleRepository {
       profileId,
       active: true,
       source: `创意工坊测试场 · ${profession.name}`,
+      storyTriggered: false,
       relatedQuestId: '',
       turn: 1,
       phase: 'player',
@@ -2970,14 +2976,22 @@ export class BattleRepository {
     if (status === 'victory') {
       await this.advanceCombatCommissions(session.profileId, state);
     }
-    const levelsGained = await this.applyRewards(
+    const levelResult = await this.applyRewards(
       session.profileId,
       state,
       rewards,
       status,
     );
     if (status === 'victory') {
-      state.rewardChoices = this.createRewardChoices(state, levelsGained);
+      state.rewardChoices = this.createRewardChoices(
+        state,
+        levelResult.levelsGained,
+        levelResult.levelRewardId,
+      );
+      await this.syncBattleLevelRewardChoices(
+        session.profileId,
+        state.rewardChoices,
+      );
     }
     this.log(
       state,
@@ -3187,7 +3201,7 @@ export class BattleRepository {
     state: LocalBattleState,
     rewards: BattleRewards,
     status: 'victory' | 'defeat',
-  ): Promise<number> {
+  ): Promise<{ levelsGained: number; levelRewardId?: string }> {
     const [player, guild] = await Promise.all([
       this.db.playerStates.get(profileId),
       this.db.guildStates.get(profileId),
@@ -3198,6 +3212,7 @@ export class BattleRepository {
         ? Math.max(1, Math.round(player.hpMax * 0.3))
         : Math.max(1, state.player.hp);
     player.mp = Math.max(0, state.player.mp);
+    const levelBefore = player.level;
     const levelsGained = grantPlayerExperience(player, rewards.experience);
     player.gold = Math.max(0, state.player.gold ?? player.gold) + rewards.gold;
     player.updatedAt = Date.now();
@@ -3220,12 +3235,17 @@ export class BattleRepository {
         updatedAt: Date.now(),
       });
     }
-    return levelsGained;
+    return {
+      levelsGained,
+      levelRewardId:
+        levelsGained > 0 ? `level-${levelBefore + 1}` : undefined,
+    };
   }
 
   private createRewardChoices(
     state: LocalBattleState,
     levelsGained: number,
+    levelRewardId?: string,
   ): NonNullable<LocalBattleState['rewardChoices']> {
     const subclass = state.player.subclass ?? '';
     const customProfession = readWorkshopPacks()
@@ -3265,7 +3285,48 @@ export class BattleRepository {
       equipmentClaimed: equipmentIds.length === 0,
       relicClaimed: relicIds.length === 0,
       levelsGained,
+      levelRewardId,
     };
+  }
+
+  private async syncBattleLevelRewardChoices(
+    profileId: string,
+    choices: NonNullable<LocalBattleState['rewardChoices']>,
+  ): Promise<void> {
+    if (!choices.levelRewardId) return;
+    const player = await this.db.playerStates.get(profileId);
+    const reward = player?.pendingLevelRewards?.find(
+      (entry) => entry.id === choices.levelRewardId,
+    );
+    if (!player || !reward) return;
+    reward.equipmentIds = [...choices.equipmentIds];
+    reward.relicIds = [...choices.relicIds];
+    reward.equipmentClaimed = choices.equipmentClaimed;
+    reward.relicClaimed = choices.relicClaimed;
+    player.pendingLevelRewards = player.pendingLevelRewards?.filter(
+      (entry) => !entry.equipmentClaimed || !entry.relicClaimed,
+    );
+    player.updatedAt = Date.now();
+    await this.db.playerStates.put(player);
+  }
+
+  private async syncClaimedLevelReward(
+    profileId: string,
+    choices: NonNullable<LocalBattleState['rewardChoices']>,
+  ): Promise<void> {
+    if (!choices.levelRewardId) return;
+    const player = await this.db.playerStates.get(profileId);
+    const reward = player?.pendingLevelRewards?.find(
+      (entry) => entry.id === choices.levelRewardId,
+    );
+    if (!player || !reward) return;
+    reward.equipmentClaimed = choices.equipmentClaimed;
+    reward.relicClaimed = choices.relicClaimed;
+    player.pendingLevelRewards = player.pendingLevelRewards?.filter(
+      (entry) => !entry.equipmentClaimed || !entry.relicClaimed,
+    );
+    player.updatedAt = Date.now();
+    await this.db.playerStates.put(player);
   }
 
   private async persistBattlePlayer(

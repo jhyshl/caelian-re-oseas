@@ -1,19 +1,34 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { getProfessionTalent, subclassNames } from '@/content/catalogs/professions';
+import {
+  loadEquipmentDefinitions,
+  loadRelics,
+} from '@/content/catalogs/inventory';
+import type { EquipmentDefinition, RelicDefinition } from '@/content/types';
 import type { GameSnapshot } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import ProfessionDialog from '@/modules/character/ProfessionDialog.vue';
+import {
+  equipmentRewardEffect,
+  equipmentRewardMeta,
+  relicRewardEffect,
+  rewardRarityName,
+} from '@/rewards/reward-display';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import AdjustableAvatar from '@/ui/AdjustableAvatar.vue';
 import MeterBar from '@/ui/adventurer/MeterBar.vue';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
+const equipmentRewards = ref<Record<string, EquipmentDefinition>>({});
+const relicRewards = ref<Record<string, RelicDefinition>>({});
 const playerAvatarUrl = ref('');
 const playerAvatarFallbackUrl = ref('');
 const busyStat = ref('');
+const busyReward = ref('');
+const preparingRewards = ref(false);
 const statEditMode = ref(false);
 const professionDialog = ref<'create' | 'reclass'>();
 const notice = ref('');
@@ -22,6 +37,11 @@ const disposers: Array<() => void> = [];
 const player = computed(() => snapshot.value?.player);
 const profession = computed(() =>
   player.value ? getProfessionTalent(player.value.subclass) : undefined,
+);
+const pendingLevelReward = computed(() =>
+  snapshot.value?.player.pendingLevelRewards?.find(
+    (entry) => !entry.equipmentClaimed || !entry.relicClaimed,
+  ),
 );
 const experiencePercent = computed(() => {
   const value = player.value;
@@ -61,6 +81,30 @@ const statRows = [
 async function refreshState() {
   snapshot.value = await props.context.api.query('state');
   if (!snapshot.value.player.created) professionDialog.value = 'create';
+  await ensureLevelRewardChoices();
+}
+
+async function ensureLevelRewardChoices() {
+  const reward = pendingLevelReward.value;
+  if (!reward || preparingRewards.value) return;
+  const needsChoices =
+    (!reward.equipmentClaimed && reward.equipmentIds.length === 0) ||
+    (!reward.relicClaimed && reward.relicIds.length === 0);
+  if (!needsChoices) return;
+  preparingRewards.value = true;
+  try {
+    const result = await props.context.api.execute({
+      id: commandId('player.prepare-level-rewards'),
+      type: 'player.prepare-level-rewards',
+      payload: {},
+    });
+    if (result.status === 'rejected') throw new Error(result.message);
+    snapshot.value = await props.context.api.query('state');
+  } catch (caught) {
+    notice.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    preparingRewards.value = false;
+  }
 }
 
 async function refreshAvatar(force = false) {
@@ -75,6 +119,10 @@ async function refreshAvatar(force = false) {
 }
 
 async function refresh() {
+  [equipmentRewards.value, relicRewards.value] = await Promise.all([
+    loadEquipmentDefinitions(),
+    loadRelics(),
+  ]);
   await Promise.all([refreshState(), refreshAvatar(true)]);
 }
 
@@ -101,6 +149,30 @@ async function allocate(
     notice.value = caught instanceof Error ? caught.message : String(caught);
   } finally {
     busyStat.value = '';
+  }
+}
+
+async function claimLevelReward(
+  kind: 'equipment' | 'relic',
+  choiceId?: string,
+) {
+  const reward = pendingLevelReward.value;
+  if (!reward) return;
+  busyReward.value = `${kind}:${choiceId ?? 'skip'}`;
+  notice.value = '';
+  try {
+    const result = await props.context.api.execute({
+      id: commandId('player.claim-level-reward'),
+      type: 'player.claim-level-reward',
+      payload: { rewardId: reward.id, kind, choiceId },
+    });
+    if (result.status === 'rejected') throw new Error(result.message);
+    notice.value = choiceId ? '升级奖励已放入本地背包。' : '已跳过这项升级奖励。';
+    await refreshState();
+  } catch (caught) {
+    notice.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    busyReward.value = '';
   }
 }
 
@@ -206,6 +278,63 @@ onUnmounted(() => {
             :value="snapshot.player.experience"
             :max="snapshot.player.experienceToNext"
           />
+        </div>
+      </section>
+
+      <section v-if="pendingLevelReward" class="ca-section level-rewards">
+        <h2 class="ca-section-title">
+          <span>升级奖励 <small>Lv.{{ pendingLevelReward.level }}</small></span>
+        </h2>
+        <p class="level-reward-copy">
+          每提升一级都可分别选择一件 2★ 装备与一件藏品；未领取的奖励会保留在当前档案中。
+        </p>
+        <div v-if="!pendingLevelReward.equipmentClaimed" class="level-reward-group">
+          <strong>装备 · 选择一件</strong>
+          <div class="level-reward-grid">
+            <button
+              v-for="equipmentId in pendingLevelReward.equipmentIds"
+              :key="equipmentId"
+              type="button"
+              :disabled="Boolean(busyReward)"
+              @click="claimLevelReward('equipment', equipmentId)"
+            >
+              <b>{{ equipmentRewards[equipmentId]?.name ?? equipmentId }}</b>
+              <small>{{ equipmentRewardMeta(equipmentRewards[equipmentId], 2) }}</small>
+              <span>{{ equipmentRewardEffect(equipmentRewards[equipmentId], 2) }}</span>
+            </button>
+            <button
+              type="button"
+              class="skip"
+              :disabled="Boolean(busyReward)"
+              @click="claimLevelReward('equipment')"
+            >
+              跳过装备
+            </button>
+          </div>
+        </div>
+        <div v-if="!pendingLevelReward.relicClaimed" class="level-reward-group">
+          <strong>藏品 · 选择一件</strong>
+          <div class="level-reward-grid">
+            <button
+              v-for="relicId in pendingLevelReward.relicIds"
+              :key="relicId"
+              type="button"
+              :disabled="Boolean(busyReward)"
+              @click="claimLevelReward('relic', relicId)"
+            >
+              <b>{{ relicRewards[relicId]?.name ?? relicId }}</b>
+              <small>{{ rewardRarityName(String(relicRewards[relicId]?.rarity ?? 'level')) }} · 藏品</small>
+              <span>{{ relicRewardEffect(relicRewards[relicId]) }}</span>
+            </button>
+            <button
+              type="button"
+              class="skip"
+              :disabled="Boolean(busyReward)"
+              @click="claimLevelReward('relic')"
+            >
+              跳过藏品
+            </button>
+          </div>
         </div>
       </section>
 
@@ -403,6 +532,81 @@ onUnmounted(() => {
     "vitals vitals vitals" auto /
     auto 1fr auto;
   gap: 12px;
+}
+
+.level-rewards {
+  border-color: rgba(212, 168, 67, 0.42);
+  background:
+    radial-gradient(circle at 0 0, rgba(212, 168, 67, 0.12), transparent 38%),
+    var(--ca-surface);
+}
+
+.level-reward-copy {
+  margin: 0 0 12px;
+  color: var(--ca-muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.level-reward-group + .level-reward-group {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ca-border);
+}
+
+.level-reward-group > strong {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--ca-gold-light);
+  font-size: 11px;
+}
+
+.level-reward-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 7px;
+}
+
+.level-reward-grid button {
+  min-height: 92px;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 9px;
+  border: 1px solid rgba(212, 168, 67, 0.34);
+  border-radius: 9px;
+  color: var(--ca-text);
+  background: rgba(212, 168, 67, 0.07);
+  text-align: left;
+  cursor: pointer;
+}
+
+.level-reward-grid button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.level-reward-grid b {
+  color: var(--ca-text-bright);
+  font-size: 12px;
+}
+
+.level-reward-grid small {
+  color: var(--ca-gold-light);
+  font-size: 9px;
+}
+
+.level-reward-grid span {
+  color: var(--ca-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.level-reward-grid .skip {
+  min-height: 40px;
+  place-content: center;
+  color: var(--ca-muted);
+  text-align: center;
 }
 
 .avatar {

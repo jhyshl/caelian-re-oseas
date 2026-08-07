@@ -185,6 +185,12 @@ export class GameRepository {
     if (command.type === 'player.create' || command.type === 'player.reclass') {
       await this.players.prepare();
     }
+    if (
+      command.type === 'player.prepare-level-rewards' ||
+      command.type === 'player.claim-level-reward'
+    ) {
+      await this.players.prepareLevelRewards();
+    }
     if (command.type.startsWith('market.')) {
       await this.market.prepare();
     }
@@ -396,6 +402,10 @@ export class GameRepository {
           command.payload.stat,
           command.payload.direction,
         );
+      case 'player.prepare-level-rewards':
+        return this.players.populateLevelRewardChoices(profileId);
+      case 'player.claim-level-reward':
+        return this.players.claimLevelReward(profileId, command.payload);
       case 'world.move':
         return this.world.move(profileId, command.payload);
       case 'narrative.update':

@@ -91,6 +91,20 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...commandBase,
+    type: z.literal('player.prepare-level-rewards'),
+    payload: z.object({}),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('player.claim-level-reward'),
+    payload: z.object({
+      rewardId: z.string().trim().min(1).max(180),
+      kind: z.enum(['equipment', 'relic']),
+      choiceId: z.string().trim().min(1).max(180).optional(),
+    }),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal('world.move'),
     payload: z.object({
       region: z.string().trim().min(1).max(120),
@@ -279,6 +293,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       monsterId: z.string().trim().min(1).max(160).optional(),
       count: z.number().int().min(1).max(12).optional(),
       source: z.string().trim().min(1).max(180).optional(),
+      storyTriggered: z.boolean().optional().default(false),
       relatedQuestId: z.string().trim().max(220).optional(),
       workshopTest: z
         .object({
