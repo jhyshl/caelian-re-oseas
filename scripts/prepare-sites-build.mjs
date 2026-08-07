@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -126,7 +127,7 @@ export default {
 
     if (
       request.method === 'GET' &&
-      /^\/channels\/(alpha|beta)(\.previous)?\.json$/.test(pathname)
+      /^\\/channels\\/(alpha|beta)(\\.previous)?\\.json$/.test(pathname)
     ) {
       const upstreamUrl = new URL(upstreamBase + pathname);
       upstreamUrl.search = requestUrl.search;
@@ -177,7 +178,9 @@ export default {
 `;
 
 await mkdir(serverRoot, { recursive: true });
-await writeFile(path.join(serverRoot, 'index.js'), worker, 'utf8');
+const serverEntry = path.join(serverRoot, 'index.js');
+await writeFile(serverEntry, worker, 'utf8');
+execFileSync(process.execPath, ['--check', serverEntry], { stdio: 'inherit' });
 await mkdir(hostingRoot, { recursive: true });
 await copyFile(
   path.join(root, '.openai', 'hosting.json'),
