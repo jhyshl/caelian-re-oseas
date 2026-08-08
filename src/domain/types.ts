@@ -469,6 +469,9 @@ export interface LocalBattleState {
     ids: string[];
     resources: Record<string, number>;
     fired: string[];
+    /** Script mechanisms are disabled for the current battle after repeated errors. */
+    disabled?: string[];
+    errors?: Record<string, number>;
   };
   /** Isolated Creative Workshop battle. It never writes rewards or player loss. */
   workshopTest?: {

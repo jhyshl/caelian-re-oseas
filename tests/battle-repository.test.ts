@@ -126,6 +126,119 @@ describe('本地战斗仓库', () => {
     });
   });
 
+  it('让导入代码机制读取玩家卡牌标签并改写实际伤害', async () => {
+    const cards = Array.from({ length: 8 }, (_, index) => ({
+      id: `custom_script_card_${index}`,
+      name: `近战测试${index + 1}`,
+      type: 'attack',
+      tags: ['melee'],
+      cost: 0,
+      effects: [{ type: 'damage', value: 1, target: 'enemy' }],
+    }));
+    saveWorkshopPack({
+      format: 'caelian_workshop_class_pack',
+      version: 1,
+      packName: '代码机制测试职业包',
+      mechanisms: [
+        {
+          format: 'caelian_workshop_script_mechanism',
+          version: 1,
+          id: 'test.melee-runtime',
+          name: '近战覆写',
+          triggers: ['before_damage'],
+          resources: [
+            {
+              id: 'hits',
+              label: '近战命中',
+              min: 0,
+              max: 99,
+              initial: 0,
+              visible: true,
+            },
+          ],
+          source: `
+            function handle(ctx) {
+              if (!ctx.event.cardTags.includes('melee')) return {};
+              return {
+                resources: { hits: ctx.resources.hits + 1 },
+                event: { amount: 100 }
+              };
+            }
+          `,
+        },
+      ],
+      classes: [
+        {
+          id: 'custom_class_script_battle_test',
+          main: 'freelance',
+          name: '脚本测试师',
+          talent: { name: '无', description: '无额外效果', effects: [] },
+          cards,
+          cardPool: [...cards, ...cards].map((card) => card.id),
+          starterDeck: Array.from(
+            { length: 15 },
+            (_, index) => cards[index % cards.length]!.id,
+          ),
+          mechanismIds: ['test.melee-runtime'],
+        },
+      ],
+    });
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-workshop-script-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:workshop-script');
+    await repository.execute(profile.id, {
+      id: 'workshop-script-player-create',
+      type: 'player.create',
+      payload: {
+        name: '代码机制测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const battleRepository = new BattleRepository(database, () => 0);
+    await battleRepository.prepare();
+    await battleRepository.start(profile.id, {
+      workshopTest: {
+        professionId: 'custom_class_script_battle_test',
+        mechanismIds: [],
+        dummyCount: 1,
+        dummyHp: 500,
+        dummyAttack: 0,
+        dummyDefense: 0,
+        dummyInvincible: false,
+        dummyAttackEnabled: false,
+        autoRespawn: false,
+        playerInvincible: true,
+        attributes: {
+          hpMax: 0,
+          mpMax: 0,
+          attack: 0,
+          defense: 0,
+          speed: 0,
+          actionPointsPerTurn: 0,
+        },
+      },
+    });
+    let snapshot = await repository.snapshot(profile.id);
+    const battleId = snapshot.battle!.id;
+    await battleRepository.playCard(profile.id, {
+      battleId,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.battle?.state.enemies[0]?.hp).toBe(400);
+    expect(
+      snapshot.battle?.state.workshopMechanisms?.resources[
+        'test.melee-runtime:hits'
+      ],
+    ).toBe(1);
+  });
+
   it('从出战牌组创建战斗，并按旧版规则保留手牌后每回合抽三张', async () => {
     const database = new CaelianDatabase(
       'alpha',

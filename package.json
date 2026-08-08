@@ -1,6 +1,6 @@
 {
   "name": "caelian-re-oseas",
-  "version": "0.2.0-alpha.32",
+  "version": "0.2.0-alpha.33",
   "private": true,
   "type": "module",
   "description": "Re∞ Oseas browser-first rewrite for SillyTavern.",
@@ -22,8 +22,10 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
     "dexie": "^4.2.1",
     "pinia": "^3.0.3",
+    "quickjs-emscripten-core": "^0.32.0",
     "vue": "^3.5.22",
     "zod": "^4.1.12"
   },

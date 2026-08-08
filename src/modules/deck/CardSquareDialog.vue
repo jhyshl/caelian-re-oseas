@@ -30,14 +30,21 @@ import type { PanelContext } from '@/kernel/public-api';
 import { readSavedDeckBuilds, saveNamedDeckBuild } from '@/saved-decks';
 import {
   exportWorkshopPack,
+  normalizeWorkshopPack,
   readWorkshopPacks,
   saveWorkshopPack,
 } from '@/workshop';
 import {
+  isWorkshopScriptMechanism,
+  normalizeWorkshopMechanism,
   readWorkshopMechanisms,
   saveWorkshopMechanism,
   type WorkshopMechanismManifest,
 } from '@/workshop-mechanisms';
+import {
+  prepareWorkshopScriptRuntime,
+  validateWorkshopScriptMechanism,
+} from '@/workshop-script-runtime';
 
 const props = defineProps<{ context: PanelContext }>();
 const emit = defineEmits<{ close: []; changed: [] }>();
@@ -338,7 +345,9 @@ async function installProfession(
   entry: CardSquareEntry,
   reclass: boolean,
 ): Promise<void> {
-  const pack = saveWorkshopPack(entry.payload);
+  const normalized = normalizeWorkshopPack(entry.payload);
+  if (!(await approveCodeMechanisms(normalized.mechanisms ?? []))) return;
+  const pack = saveWorkshopPack(normalized);
   await refreshWorkshopCatalogs();
   const profession = pack.classes[0];
   if (!profession) throw new Error('职业包中没有可用职业。');
@@ -360,6 +369,25 @@ async function installProfession(
   emit('changed');
 }
 
+async function approveCodeMechanisms(
+  mechanisms: WorkshopMechanismManifest[],
+): Promise<boolean> {
+  const scripts = mechanisms.filter(isWorkshopScriptMechanism);
+  if (!scripts.length) return true;
+  if (
+    !window.confirm(
+      `该作品包含 ${scripts.length} 个可执行代码机制。代码会在隔离且限时的战斗沙箱中运行，但仍可能改变战斗平衡或造成短暂卡顿。是否继续校验并安装？`,
+    )
+  ) {
+    return false;
+  }
+  await prepareWorkshopScriptRuntime();
+  for (const mechanism of scripts) {
+    await validateWorkshopScriptMechanism(mechanism);
+  }
+  return true;
+}
+
 async function useEntry(entry: CardSquareEntry, reclass = false): Promise<void> {
   busy.value = true;
   error.value = '';
@@ -370,7 +398,9 @@ async function useEntry(entry: CardSquareEntry, reclass = false): Promise<void> 
     } else if (entry.kind === 'custom_class') {
       await installProfession(entry, reclass);
     } else {
-      const mechanism = saveWorkshopMechanism(entry.payload);
+      const normalized = normalizeWorkshopMechanism(entry.payload);
+      if (!(await approveCodeMechanisms([normalized]))) return;
+      const mechanism = saveWorkshopMechanism(normalized);
       notice.value = `底层机制「${mechanism.name}」已安装。只有声明依赖它的职业会在战斗中启用。`;
     }
   } catch (caught) {

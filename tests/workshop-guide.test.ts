@@ -62,4 +62,12 @@ describe('创意工坊 AI 制作手册', () => {
     ).toBe(22);
     expect(guide).toContain('天赋最多 4 个不同类型词条，总分必须 `≤24`');
   });
+
+  it('说明玩家标签、代码机制格式与沙箱边界', () => {
+    expect(guide).toContain('"tags": ["melee", "weapon", "fire"]');
+    expect(guide).toContain('"format": "caelian_workshop_script_mechanism"');
+    expect(guide).toContain('`before_damage` 可修改 `amount`、`ignoreDefense`、`cancel`');
+    expect(guide).toContain('沙箱内没有 `window`、`document`、`fetch`、`localStorage`');
+    expect(guide).toContain('## 新职业制作流程（AI 必须按顺序完成）');
+  });
 });

@@ -13,11 +13,18 @@ import { commandId } from '@/kernel/ids';
 import WorkshopEffectEditor from '@/modules/deck/WorkshopEffectEditor.vue';
 import {
   WORKSHOP_MECHANISM_FORMAT,
+  WORKSHOP_SCRIPT_MECHANISM_FORMAT,
   deleteWorkshopMechanism,
+  isWorkshopScriptMechanism,
+  normalizeWorkshopMechanism,
   readWorkshopMechanisms,
   saveWorkshopMechanism,
   type WorkshopMechanismManifest,
 } from '@/workshop-mechanisms';
+import {
+  prepareWorkshopScriptRuntime,
+  validateWorkshopScriptMechanism,
+} from '@/workshop-script-runtime';
 import {
   WORKSHOP_EFFECT_OPTIONS,
   WORKSHOP_MAIN_CLASSES,
@@ -48,6 +55,7 @@ interface EditableCard {
   type: string;
   cost: number;
   description: string;
+  tags: string[];
   effects: EditableEffect[];
 }
 interface EditableClass {
@@ -236,6 +244,7 @@ function editableFromValue(value: Partial<WorkshopClass>): EditableClass {
         type: String(card?.type || 'skill'),
         cost: Number.isFinite(Number(card?.cost)) ? Number(card?.cost) : 1,
         description: String(card?.description || ''),
+        tags: Array.isArray(card?.tags) ? card.tags.map(String) : [],
         effects: Array.isArray(card?.effects) ? card.effects : [],
       }))
     : [];
@@ -328,10 +337,29 @@ function addCard(): void {
     type: 'skill',
     cost: 1,
     description: '',
+    tags: [],
     effects: [],
   });
   editor.value.cardPool.push(id);
   activeCardId.value = id;
+}
+
+function setCardTags(card: EditableCard, value: string): void {
+  card.tags = [
+    ...new Set(
+      value
+        .split(/[，,\s]+/)
+        .map((tag) =>
+          tag
+            .normalize('NFKC')
+            .trim()
+            .toLocaleLowerCase('zh-CN')
+            .replace(/[^\p{L}\p{N}._:-]+/gu, '-')
+            .replace(/^-+|-+$/g, ''),
+        )
+        .filter(Boolean),
+    ),
+  ].slice(0, 12);
 }
 
 function deleteCard(cardId: string): void {
@@ -531,16 +559,59 @@ function download(value?: unknown): void {
   }
 }
 
+function scriptMechanismsFromArtifact(
+  raw: Record<string, unknown>,
+): WorkshopMechanismManifest[] {
+  const candidates =
+    raw.format === WORKSHOP_SCRIPT_MECHANISM_FORMAT
+      ? [raw]
+      : Array.isArray(raw.mechanisms)
+        ? raw.mechanisms
+        : [];
+  return candidates.flatMap((candidate) => {
+    try {
+      const mechanism = normalizeWorkshopMechanism(candidate);
+      return isWorkshopScriptMechanism(mechanism) ? [mechanism] : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+async function approveScriptMechanisms(
+  raw: Record<string, unknown>,
+): Promise<boolean> {
+  const scripts = scriptMechanismsFromArtifact(raw);
+  if (!scripts.length) return true;
+  const accepted = window.confirm(
+    `该文件包含 ${scripts.length} 个可执行代码机制：${scripts
+      .map((mechanism) => mechanism.name)
+      .join('、')}。代码会在隔离战斗沙箱中运行，不会获得页面、存档、变量管理器、网络或浏览器存储权限，但仍可能造成战斗数值异常或短暂卡顿。是否继续校验并安装？`,
+  );
+  if (!accepted) return false;
+  await prepareWorkshopScriptRuntime();
+  for (const mechanism of scripts) {
+    await validateWorkshopScriptMechanism(mechanism);
+  }
+  return true;
+}
+
 async function importFile(event: Event): Promise<void> {
   const file = (event.target as HTMLInputElement).files?.[0];
   if (!file) return;
   error.value = '';
   try {
     const raw = JSON.parse(await file.text()) as Record<string, unknown>;
-    if (raw.format === WORKSHOP_MECHANISM_FORMAT) {
+    if (!(await approveScriptMechanisms(raw))) return;
+    if (
+      raw.format === WORKSHOP_MECHANISM_FORMAT ||
+      raw.format === WORKSHOP_SCRIPT_MECHANISM_FORMAT
+    ) {
       const mechanism = saveWorkshopMechanism(raw);
       mechanisms.value = readWorkshopMechanisms();
-      notice.value = `底层机制「${mechanism.name}」已导入，包含 ${mechanism.rules.length} 条运行规则。`;
+      notice.value = isWorkshopScriptMechanism(mechanism)
+        ? `代码机制「${mechanism.name}」已通过沙箱校验并导入，可由职业声明依赖。`
+        : `底层机制「${mechanism.name}」已导入，包含 ${mechanism.rules.length} 条运行规则。`;
       tab.value = 'extensions';
       return;
     }
@@ -629,9 +700,9 @@ async function startWorkshopTest(): Promise<void> {
       >
         <header class="workshop-header">
           <div>
-            <small>CREATIVE WORKSHOP v3.0</small>
+            <small>CREATIVE WORKSHOP v3.1</small>
             <h2 id="workshop-title">创意工坊</h2>
-            <p>只保存职业与卡牌数据模板，不执行任何自定义脚本。</p>
+            <p>支持声明式扩展，也可导入经过隔离和限时校验的代码机制。</p>
           </div>
           <button type="button" aria-label="关闭" @click="emit('close')">×</button>
         </header>
@@ -730,10 +801,10 @@ async function startWorkshopTest(): Promise<void> {
 
         <main v-else-if="tab === 'extensions'" class="workshop-library">
           <div class="extension-intro">
-            <strong>声明式扩展接口</strong>
+            <strong>扩展与底层机制</strong>
             <p>
-              扩展只能组合受支持的战斗效果，不执行脚本，也不能读取聊天记录或玩家存档。
-              可将指导手册交给 AI 生成职业包或效果扩展，再从这里导入。
+              普通扩展组合受支持的效果；当现有效果无法表达设计时，可导入独立代码机制。
+              代码只接收本场战斗快照并返回受控战斗指令，不能读取聊天记录、存档、变量管理器、页面或网络。
             </p>
           </div>
           <div v-if="extensions.length + mechanisms.length === 0" class="workshop-empty">
@@ -745,12 +816,19 @@ async function startWorkshopTest(): Promise<void> {
             class="published-class"
           >
             <div>
-              <span>底层机制 · {{ mechanism.author || '匿名作者' }}</span>
+              <span>
+                {{ isWorkshopScriptMechanism(mechanism) ? '代码机制' : '声明式机制' }}
+                · {{ mechanism.author || '匿名作者' }}
+              </span>
               <h3>{{ mechanism.name }}</h3>
               <p>{{ mechanism.description || '未填写机制说明' }}</p>
               <small>
                 {{ mechanism.resources.length }} 个资源 ·
-                {{ mechanism.rules.length }} 条规则 · {{ mechanism.id }}
+                <template v-if="isWorkshopScriptMechanism(mechanism)">
+                  {{ mechanism.triggers?.length ?? 0 }} 个触发器 · 沙箱执行
+                </template>
+                <template v-else>{{ mechanism.rules.length }} 条规则</template>
+                · {{ mechanism.id }}
               </small>
             </div>
             <div>
@@ -1047,6 +1125,21 @@ async function startWorkshopTest(): Promise<void> {
                       v-model="activeCard.description"
                       maxlength="90"
                     ></textarea>
+                  </label>
+                  <label class="wide">
+                    <span>机制标签（逗号分隔）</span>
+                    <input
+                      :value="activeCard.tags.join(', ')"
+                      maxlength="160"
+                      placeholder="例如：近战, melee, weapon；支持自定义中英文标签"
+                      @change="
+                        setCardTags(
+                          activeCard,
+                          ($event.target as HTMLInputElement).value,
+                        )
+                      "
+                    />
+                    <small>代码机制可读取这些标签；每张牌最多 12 个。</small>
                   </label>
                 </div>
                 <WorkshopEffectEditor

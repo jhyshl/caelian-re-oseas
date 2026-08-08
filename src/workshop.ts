@@ -29,6 +29,8 @@ export interface WorkshopTalent {
 
 export interface WorkshopCard extends CardDefinition {
   id: string;
+  /** Player-defined classification used by imported script mechanisms. */
+  tags: string[];
   custom: true;
   powerScore: number;
 }
@@ -55,7 +57,7 @@ export interface WorkshopPack {
   author: string;
   exported_at: string;
   classes: WorkshopClass[];
-  /** Declarative mechanisms bundled with the profession for portable imports. */
+  /** Declarative or script mechanisms bundled for portable profession imports. */
   mechanisms?: WorkshopMechanismManifest[];
 }
 
@@ -297,6 +299,16 @@ function extensionId(value: unknown, fallback: string): string {
     .replace(/^-+|-+$/g, '')
     .slice(0, 80);
   return normalized || fallback;
+}
+
+function workshopTag(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase('zh-CN')
+    .replace(/[^\p{L}\p{N}._:-]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
 }
 
 function normalizeTarget(effect: UnknownRecord, type: string): string {
@@ -885,6 +897,16 @@ export function normalizeWorkshopCard(
   const description =
     String(source.description ?? source.brief ?? '').trim().slice(0, 90) ||
     name;
+  const requestedTags = Array.isArray(source.tags)
+    ? source.tags
+    : String(source.tags ?? '').split(/[，,\s]+/);
+  const tags = [
+    ...new Set(
+      requestedTags
+        .map(workshopTag)
+        .filter(Boolean),
+    ),
+  ].slice(0, 12);
   const card: WorkshopCard = {
     id: safeId(
       source.id ??
@@ -896,6 +918,7 @@ export function normalizeWorkshopCard(
     rarity: 'common',
     description,
     brief: description,
+    tags,
     effects,
     cat: `sub_${classId}`,
     cls: 'custom',

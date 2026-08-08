@@ -1,13 +1,13 @@
 # 凯利安创意工坊 AI 制作手册
 
-适用格式版本：`1`。把本文件完整交给 AI，并说明你想制作的职业、卡组或底层机制。AI 最终必须只输出一个可保存为 `.json` 的 JSON 对象，不要输出 JavaScript、Markdown 代码围栏或解释文字。保存后在“创意工坊 → 导入”中校验；职业与底层机制公开到卡牌广场前需要作者审核。
+适用格式版本：`1`。把本文件完整交给 AI，并说明你想制作的职业、卡组或底层机制。AI 最终必须只输出一个可保存为 `.json` 的 JSON 对象，不要输出 Markdown 代码围栏或解释文字。代码机制的 JavaScript 必须放在 JSON 的 `source` 字符串中。保存后在“创意工坊 → 导入”中校验；职业与底层机制公开到卡牌广场前需要作者审核。
 
 ## 最先复制给 AI 的制作指令
 
 直接复制下面整段，并把方括号里的内容换成你的需求：
 
 ```text
-请完整阅读我随后提供的《凯利安创意工坊 AI 制作手册》，严格按照格式版本 1 制作【职业包 / 效果预设扩展 / 底层机制包】。
+请完整阅读我随后提供的《凯利安创意工坊 AI 制作手册》，严格按照格式版本 1 制作【职业包 / 效果预设扩展 / 声明式机制包 / 代码机制包】。
 
 主题：【填写主题】
 核心循环：【填写玩法循环】
@@ -18,10 +18,77 @@
 1. 使用 8–16 种不同名称、不同 ID 的卡牌，完整 cardPool 为 16–32 张，starterDeck 正好 15 张。
 2. starterDeck 与 cardPool 只能引用本职业 cards 中的 ID，且每个 ID 的使用次数不能超过 cardPool 持有数。
 3. 职业依赖新机制时，把完整机制放在职业包根级 mechanisms 中，并由 mechanismIds 引用。
-4. 只使用手册列出的字段、效果、条件、触发器、公式和动作，不得输出任意代码或未定义效果。
+4. 优先使用声明式机制。只有需求无法由现有效果、条件和动作表达时，才使用 `caelian_workshop_script_mechanism`；代码只能通过手册规定的输入和返回接口影响本场战斗。
 5. 生成后必须在内部执行手册中的“AI 强度校验器”：逐张计算卡牌强度和费用上限，计算天赋总强度，并完成结构、引用、唯一性与循环风险检查。任何一项失败都要先自行修改并重新校验，直到全部通过。
 6. 最终只输出一个有效 JSON 对象，不要输出校验过程、解释文字或 Markdown 代码围栏。
 ```
+
+## 新职业制作流程（AI 必须按顺序完成）
+
+### 1. 先把概念改写成可运行的核心循环
+
+在生成 JSON 前，先在内部回答以下问题，不要把分析过程输出到最终文件：
+
+1. 这个职业每回合最常做的动作是什么？例如积累资源、交替使用两类牌、维持召唤物、消耗护盾或承受减益。
+2. 它如何获得优势，如何支付代价？只写“高伤害、能治疗、能防御”不是核心循环。
+3. 玩家在手牌中需要做什么选择？至少应有“现在爆发还是继续积累”“保命还是推进循环”之一。
+4. 职业最弱的局面是什么？不能同时拥有无条件的启动、爆发、回复、护盾、过牌和回 AP。
+5. 哪些效果必须跨卡牌或跨回合记忆？只有这些内容才需要底层机制。
+
+建议用一句内部设计式约束职业：
+
+`通过【主要动作】积累【资源/状态】，在【触发时机】消耗它获得【收益】，代价是【限制或风险】。`
+
+### 2. 选择最小实现层级
+
+按以下顺序判断，能够在更上层完成时不要下沉：
+
+- 一张牌立即造成伤害、治疗、护盾、抽牌、状态或召唤：使用普通 `effects`。
+- 一张牌根据当前护盾、生命、状态或召唤物分支：使用 `conditional_group`。
+- 多张牌或多个回合共享计数、资源和固定触发规则：使用声明式底层机制。
+- 需要自行编写算法、读取玩家自定义卡牌标签、动态修改费用或伤害事件，且声明式规则无法表达：使用代码底层机制。
+- 需要新面板、新动画、新网络请求、读取聊天/MVU/存档或改变非战斗系统：创意工坊机制不支持，不得伪造字段声称已经实现。
+
+### 3. 先规划职业卡池，再写每张卡
+
+职业需要 8–16 种不同卡牌。先在内部列出功能分工，避免多张牌只是改名换数值：
+
+- 2–4 种循环启动牌：稳定产生职业资源或建立状态。
+- 2–4 种循环收益牌：消耗或利用资源形成主要输出/防御。
+- 1–3 种防御或恢复牌：让职业能度过弱势回合，但不能抹掉全部代价。
+- 1–3 种过牌、调度或转换牌：改善手牌，但注意抽牌与回 AP 的高分值。
+- 1–2 种高费用终结牌：提供明确爆发，不应成为低费无限循环。
+
+`cardPool` 是安装后拥有的 16–32 张完整职业牌池，允许同一种牌重复；`starterDeck` 是其中正好 15 张的初始出战构筑。先决定每种牌在卡池中的持有数，再从中取基础构筑，不能让基础构筑使用的某张牌多于卡池持有数。
+
+### 4. 为机制分类牌，而不是滥用基础 type
+
+基础 `type` 只决定引擎既有结算：`attack`、`defense`、`skill`、`summon`。近战、远程、法术、武器技、元素等属于玩家机制分类，应写入 `tags`，例如：
+
+```json
+"tags": ["melee", "weapon", "fire"]
+```
+
+同一张牌可以有多个标签。标签最多 12 个，支持中英文；同一职业中要保持拼写一致。不要把所有 `attack` 自动视为近战，也不要把所有 `skill` 自动视为法术。
+
+### 5. 设计机制依赖与便携导入
+
+职业使用底层机制时：
+
+1. 为机制使用带作者前缀的稳定 ID。
+2. 在职业 `mechanismIds` 中引用该 ID。
+3. 推荐把完整机制放进职业包根级 `mechanisms`，这样一个 JSON 即可安装。
+4. 若机制准备被多个职业复用，也可以单独导入机制包；职业包只保存引用。
+5. 代码机制必须在 `triggers` 中只声明实际需要的事件，避免每个事件都执行。
+
+### 6. 完成后执行四轮内部自检
+
+1. **结构检查**：格式、版本、ID、引用、卡牌数量、卡池数量、15 张构筑和唯一性全部合法。
+2. **强度检查**：逐个效果算分，逐张对照费用上限，再计算天赋总分；代码机制无法自动评分，必须按测试结果保守调整卡牌本体。
+3. **运行检查**：逐条模拟首回合、普通循环、资源上限、资源不足、无目标、满手牌、空弃牌堆、多个敌人和战斗结束。
+4. **循环检查**：确认没有 0 AP 回 AP 无限循环、伤害触发伤害的无限递归、无条件永久增长或同一事件不断自触发。
+
+最终 JSON 只保留实际需要的字段。说明文字与真实执行必须一致：无法由卡牌效果或机制代码实现的描述必须删除，不能只把预期效果写进 `description`。
 
 ## AI 强度校验器（生成后必须执行）
 
@@ -98,11 +165,11 @@
 
 ## 安全边界
 
-- 扩展只能使用下面列出的声明式字段，不能执行任意 JavaScript、访问网络、读取聊天记录或修改存档。
+- 效果预设与声明式机制不执行代码。代码机制运行在独立 QuickJS 沙箱中，只能读取本场战斗快照并返回受控结果，不能访问页面、网络、聊天记录、变量管理器、浏览器存储或玩家存档。
 - ID 只使用小写英文字母、数字、点、下划线、冒号和短横线，并加上作者前缀避免重名。
 - 单个职业必须包含 8–16 种不同名称的卡牌；`cardPool` 总计 16–32 张，`starterDeck` 必须正好 15 张，且两者只能引用本职业卡牌 ID。
 - 数值会被导入器限制，超限、未知字段或不支持的效果会被拒绝或移除。
-- 新底层机制应保持可解释、可预估，避免无限循环；运行时还有嵌套深度和动作数量上限。
+- 代码机制不参与自动强度评分，导入时会单独警告。每次执行限制为 50ms、8MB 沙箱内存和 64KB 返回值；递归与动作链最多 64 步，连续失败 3 次会在本场战斗停用。
 
 ## 一、职业包
 
@@ -169,13 +236,14 @@
   "mpCost": 0,
   "rarity": "common",
   "description": "造成 8 点伤害。",
+  "tags": ["ranged", "arcane"],
   "effects": [{ "type": "damage", "value": 8, "target": "enemy" }],
   "custom": true,
   "powerScore": 8
 }
 ```
 
-卡牌 `type` 使用 `attack`、`defense`、`skill`、`summon`；`rarity` 使用 `common`、`uncommon`、`rare`、`epic`、`legendary`。`powerScore` 只是建议值，导入时会重新校验。
+卡牌 `type` 使用 `attack`、`defense`、`skill`、`summon`；`rarity` 使用 `common`、`uncommon`、`rare`、`epic`、`legendary`。`tags` 最多 12 个，由玩家自由定义，例如 `melee`、`ranged`、`spell`、`weapon`，代码机制可据此判断哪张牌属于近战、远程、法术或其他自定义类别。`powerScore` 只是建议值，导入时会重新校验。
 
 常用卡牌效果：
 
@@ -220,9 +288,9 @@
 }
 ```
 
-## 三、底层机制包
+## 三、声明式底层机制包
 
-底层机制是受限的“事件 → 条件 → 动作”规则，不允许脚本。完整示例：
+声明式机制是受限的“事件 → 条件 → 动作”规则，不执行代码。完整示例：
 
 ```json
 {
@@ -273,7 +341,7 @@
 }
 ```
 
-触发器：`battle_start`、`turn_start`、`turn_end`、`before_card`、`after_card`、`before_enemy_turn`、`after_enemy_turn`、`player_damaged`、`enemy_damaged`、`summon_created`、`summon_removed`、`battle_victory`、`battle_defeat`。
+触发器：`battle_start`、`turn_start`、`turn_end`、`before_card`、`after_card`、`before_damage`、`before_enemy_turn`、`after_enemy_turn`、`player_damaged`、`enemy_damaged`、`summon_created`、`summon_removed`、`battle_victory`、`battle_defeat`。
 
 `once` 为 `never`、`turn` 或 `battle`。同一触发器按 `priority` 从高到低执行。
 
@@ -298,4 +366,50 @@
 
 可读取状态：`player.hp`、`player.hpMax`、`player.mp`、`player.mpMax`、`player.shield`、`player.attack`、`player.defense`、`player.speed`、`player.ap`、`player.apMax`、`battle.turn`、`enemy.hp`、`enemy.hpMax`、`enemy.shield`、`enemy.attack`、`enemy.defense`、`enemies.alive`、`summons.count`、`hand.count`、`discard.count`。
 
-职业若依赖新机制，优先把机制对象放在职业包根级 `mechanisms` 中，并让职业的 `mechanismIds` 引用机制 ID，以便一个 JSON 完整上传、下载和安装。导入后可在“创意工坊 → 测试场”配置木桩与 Lv.100 属性点进行隔离测试。
+## 四、代码底层机制包
+
+只有声明式机制无法表达新算法时才使用代码机制。它是职业包可携带、也可单独导入的 JSON；`source` 中写普通同步 JavaScript，并提供指定入口函数：
+
+```json
+{
+  "format": "caelian_workshop_script_mechanism",
+  "version": 1,
+  "id": "author.melee-combo",
+  "name": "近战连击",
+  "author": "作者名",
+  "description": "连续使用近战牌会逐步提高本次伤害。",
+  "entrypoint": "handle",
+  "priority": 10,
+  "triggers": ["before_damage"],
+  "resources": [
+    {
+      "id": "combo",
+      "label": "连击",
+      "description": "最多 5 层。",
+      "min": 0,
+      "max": 5,
+      "initial": 0,
+      "visible": true
+    }
+  ],
+  "source": "function handle(ctx) {\n  const tags = Array.isArray(ctx.event.cardTags) ? ctx.event.cardTags : [];\n  if (!tags.includes('melee')) return {};\n  const combo = Math.min(5, ctx.resources.combo + 1);\n  return {\n    resources: { combo },\n    event: { amount: ctx.event.amount * (1 + combo / 10) },\n    actions: [{ type: 'log', message: '近战连击生效' }]\n  };\n}"
+}
+```
+
+入口函数接收 `ctx`：
+
+- `ctx.trigger`：当前触发器。
+- `ctx.battle`：只读战斗快照，包含回合、阶段、玩家公开战斗数值、手牌摘要、召唤物和敌人状态。
+- `ctx.event`：事件数据。`before_card` 含 `cardId`、`cardName`、`cardType`、`cardTags`、`cardCost`、`mpCost`；`before_damage` 还含伤害值、攻防双方与当前卡牌标签。
+- `ctx.resources`：该机制自己的资源值。
+- `ctx.random`：本次事件提供的 0–1 随机数。
+
+入口函数返回一个普通对象，可包含：
+
+- `resources`：更新本机制已声明的资源，最终值仍受 `min` / `max` 限制。
+- `actions`：与声明式机制相同的受控战斗动作；每次最多 16 个。
+- `event`：修改当前底层事件。`before_card` 可修改 `cardCost`、`mpCost`；`before_damage` 可修改 `amount`、`ignoreDefense`、`cancel`。
+
+代码可以自由使用函数、分支、循环、数组、对象和数学计算来定义新算法，但不能使用异步函数、模块导入或宿主对象。沙箱内没有 `window`、`document`、`fetch`、`localStorage`、IndexedDB、酒馆接口或变量管理器。机制文件超过 24000 个字符会被拒绝；单个机制调用最多运行 50ms，同一底层事件触发的整条机制链最多运行 150ms。
+
+职业若依赖新机制，把声明式或代码机制对象放在职业包根级 `mechanisms` 中，并让职业的 `mechanismIds` 引用机制 ID；也可以先单独导入机制，再导入只引用 ID 的职业包。导入后应在“创意工坊 → 测试场”配置木桩与 Lv.100 属性点进行隔离测试。

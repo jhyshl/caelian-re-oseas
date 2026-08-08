@@ -1,6 +1,8 @@
 import type { LocalBattleState } from '@/domain/types';
 
 export const WORKSHOP_MECHANISM_FORMAT = 'caelian_workshop_mechanism';
+export const WORKSHOP_SCRIPT_MECHANISM_FORMAT =
+  'caelian_workshop_script_mechanism';
 export const WORKSHOP_MECHANISM_STORAGE_KEY =
   'caelian_custom_workshop_mechanisms_v1';
 
@@ -10,6 +12,7 @@ export type WorkshopMechanismTrigger =
   | 'turn_end'
   | 'before_card'
   | 'after_card'
+  | 'before_damage'
   | 'before_enemy_turn'
   | 'after_enemy_turn'
   | 'player_damaged'
@@ -107,14 +110,28 @@ export interface WorkshopMechanismRule {
 }
 
 export interface WorkshopMechanismManifest {
-  format: typeof WORKSHOP_MECHANISM_FORMAT;
+  format:
+    | typeof WORKSHOP_MECHANISM_FORMAT
+    | typeof WORKSHOP_SCRIPT_MECHANISM_FORMAT;
   version: 1;
+  engine: 'declarative' | 'script';
   id: string;
   name: string;
   author: string;
   description: string;
   resources: WorkshopMechanismResource[];
   rules: WorkshopMechanismRule[];
+  /** Script mechanisms run inside an isolated QuickJS runtime. */
+  source?: string;
+  entrypoint?: string;
+  triggers?: WorkshopMechanismTrigger[];
+  priority?: number;
+}
+
+export interface WorkshopScriptMechanismResult {
+  actions: WorkshopMechanismAction[];
+  resources: Record<string, number>;
+  event: Record<string, number | boolean | string | string[]>;
 }
 
 export interface WorkshopMechanismRuntimeContext {
@@ -132,6 +149,7 @@ const TRIGGERS = new Set<WorkshopMechanismTrigger>([
   'turn_end',
   'before_card',
   'after_card',
+  'before_damage',
   'before_enemy_turn',
   'after_enemy_turn',
   'player_damaged',
@@ -308,21 +326,60 @@ function normalizeAction(value: unknown): WorkshopMechanismAction {
   return result;
 }
 
-export function normalizeWorkshopMechanism(
+const SCRIPT_EVENT_PATCHES: Partial<
+  Record<WorkshopMechanismTrigger, ReadonlySet<string>>
+> = {
+  before_card: new Set(['cardCost', 'mpCost']),
+  before_damage: new Set(['amount', 'ignoreDefense', 'cancel']),
+};
+
+export function normalizeWorkshopScriptResult(
   value: unknown,
-): WorkshopMechanismManifest {
+  manifest: WorkshopMechanismManifest,
+  trigger: WorkshopMechanismTrigger,
+): WorkshopScriptMechanismResult {
   const source = record(value);
-  const name = limitedText(source.name, 40);
-  if (!name) throw new Error('底层机制缺少名称。');
-  const id = safeId(source.id, `mechanism-${Date.now().toString(36)}`);
-  const resources = (Array.isArray(source.resources) ? source.resources : [])
+  const actions = (Array.isArray(source.actions) ? source.actions : [])
+    .slice(0, 16)
+    .map(normalizeAction);
+  const resourceValues = record(source.resources);
+  const resources: Record<string, number> = {};
+  for (const definition of manifest.resources) {
+    if (!(definition.id in resourceValues)) continue;
+    resources[definition.id] = Math.max(
+      definition.min,
+      Math.min(definition.max, finite(resourceValues[definition.id], definition.initial)),
+    );
+  }
+  const eventSource = record(source.event);
+  const allowedPatches = SCRIPT_EVENT_PATCHES[trigger] ?? new Set<string>();
+  const event: WorkshopScriptMechanismResult['event'] = {};
+  for (const key of allowedPatches) {
+    if (!(key in eventSource)) continue;
+    if (key === 'cancel' || key === 'ignoreDefense') {
+      event[key] = eventSource[key] === true;
+      continue;
+    }
+    event[key] = Math.max(
+      -999_999,
+      Math.min(999_999, finite(eventSource[key])),
+    );
+  }
+  return { actions, resources, event };
+}
+
+function normalizeResources(
+  value: unknown,
+  mechanismId: string,
+): WorkshopMechanismResource[] {
+  const resources = (Array.isArray(value) ? value : [])
     .slice(0, 12)
     .map((entry, index) => {
       const resource = record(entry);
       const min = Math.max(-999_999, finite(resource.min));
       const max = Math.min(999_999, Math.max(min, finite(resource.max, 100)));
       return {
-        id: safeId(resource.id, `${id}.resource-${index + 1}`),
+        id: safeId(resource.id, `${mechanismId}.resource-${index + 1}`),
         label: limitedText(resource.label ?? resource.name, 30) || `资源${index + 1}`,
         description: limitedText(resource.description, 120),
         min,
@@ -332,8 +389,76 @@ export function normalizeWorkshopMechanism(
       };
     });
   if (new Set(resources.map((entry) => entry.id)).size !== resources.length) {
-    throw new Error(`机制「${name}」包含重复的资源 ID。`);
+    throw new Error('底层机制包含重复的资源 ID。');
   }
+  return resources;
+}
+
+export function isWorkshopScriptMechanism(
+  mechanism: WorkshopMechanismManifest,
+): boolean {
+  return (
+    mechanism.engine === 'script' ||
+    mechanism.format === WORKSHOP_SCRIPT_MECHANISM_FORMAT
+  );
+}
+
+export function normalizeWorkshopMechanism(
+  value: unknown,
+): WorkshopMechanismManifest {
+  const source = record(value);
+  const name = limitedText(source.name, 40);
+  if (!name) throw new Error('底层机制缺少名称。');
+  const id = safeId(source.id, `mechanism-${Date.now().toString(36)}`);
+  const resources = normalizeResources(source.resources, id);
+  const script =
+    source.format === WORKSHOP_SCRIPT_MECHANISM_FORMAT ||
+    source.engine === 'script';
+
+  if (script) {
+    const code = String(source.source ?? '').trim();
+    if (!code) throw new Error(`代码机制「${name}」缺少 source。`);
+    if (code.length > 24_000) {
+      throw new Error(`代码机制「${name}」超过 24000 个字符。`);
+    }
+    const requestedEntrypoint = String(source.entrypoint ?? 'handle').trim();
+    const entrypoint = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/.test(
+      requestedEntrypoint,
+    )
+      ? requestedEntrypoint
+      : 'handle';
+    const triggers = [
+      ...new Set(
+        (Array.isArray(source.triggers) ? source.triggers : [])
+          .map(String)
+          .filter((trigger): trigger is WorkshopMechanismTrigger =>
+            TRIGGERS.has(trigger as WorkshopMechanismTrigger),
+          ),
+      ),
+    ].slice(0, TRIGGERS.size);
+    if (!triggers.length) {
+      throw new Error(`代码机制「${name}」至少需要一个有效触发器。`);
+    }
+    return {
+      format: WORKSHOP_SCRIPT_MECHANISM_FORMAT,
+      version: 1,
+      engine: 'script',
+      id,
+      name,
+      author: limitedText(source.author ?? '匿名作者', 40),
+      description: limitedText(source.description, 240),
+      resources,
+      rules: [],
+      source: code,
+      entrypoint,
+      triggers,
+      priority: Math.max(
+        -100,
+        Math.min(100, Math.trunc(finite(source.priority))),
+      ),
+    };
+  }
+
   const rules = (Array.isArray(source.rules) ? source.rules : [])
     .slice(0, 40)
     .map((entry, index) => {
@@ -364,6 +489,7 @@ export function normalizeWorkshopMechanism(
   return {
     format: WORKSHOP_MECHANISM_FORMAT,
     version: 1,
+    engine: 'declarative',
     id,
     name,
     author: limitedText(source.author ?? '匿名作者', 40),
