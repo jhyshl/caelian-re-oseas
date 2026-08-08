@@ -2,6 +2,9 @@ name: Beta
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: [Alpha]
+    types: [completed]
 
 permissions:
   contents: read
@@ -13,9 +16,15 @@ concurrency:
 
 jobs:
   verify:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      contains(github.event.workflow_run.head_commit.message, '[release-beta]'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -61,7 +70,7 @@ jobs:
           cp -a .previous-site/. dist/
       - run: npm run build:beta
         env:
-          CAELIAN_BUILD_ID: ${{ github.sha }}-beta
+          CAELIAN_BUILD_ID: ${{ github.event.workflow_run.head_sha || github.sha }}-beta
           CAELIAN_BETA_RELEASE: '1'
       - uses: actions/upload-pages-artifact@v3
         with:

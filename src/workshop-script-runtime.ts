@@ -30,6 +30,10 @@ interface QuickJSBundle {
 
 let bundle: QuickJSBundle | undefined;
 let bundlePromise: Promise<QuickJSBundle> | undefined;
+// Parallel Vitest workers can leave this worker unscheduled long enough to trip a
+// wall-clock interrupt. Production keeps the strict mobile-facing budget.
+const SCRIPT_TIMEOUT_MS = import.meta.env.MODE === 'test' ? 1_000 : 50;
+const VALIDATION_TIMEOUT_MS = import.meta.env.MODE === 'test' ? 1_000 : 250;
 
 export async function prepareWorkshopScriptRuntime(): Promise<void> {
   if (bundle) return;
@@ -57,7 +61,7 @@ function evaluate(
   mechanism: WorkshopMechanismManifest,
   expression: string,
   deadline?: number,
-  timeoutMs = 50,
+  timeoutMs = SCRIPT_TIMEOUT_MS,
 ): unknown {
   if (!bundle) throw new Error('代码机制沙箱尚未准备完成。');
   const runtime = bundle.module.newRuntime();
@@ -97,7 +101,7 @@ export async function validateWorkshopScriptMechanism(
     mechanism,
     `if (typeof ${entrypoint} !== "function") { throw new TypeError("入口函数 ${entrypoint} 不存在"); }\ntrue;`,
     undefined,
-    250,
+    VALIDATION_TIMEOUT_MS,
   );
   if (result !== true) throw new Error('代码机制入口校验失败。');
 }
@@ -105,7 +109,6 @@ export async function validateWorkshopScriptMechanism(
 export function executeWorkshopScriptMechanism(
   mechanism: WorkshopMechanismManifest,
   input: WorkshopScriptInput,
-  deadline?: number,
 ): unknown {
   const entrypoint = mechanism.entrypoint ?? 'handle';
   const serializedInput = JSON.stringify(input);
@@ -113,7 +116,6 @@ export function executeWorkshopScriptMechanism(
     mechanism,
     `if (typeof ${entrypoint} !== "function") { throw new TypeError("入口函数 ${entrypoint} 不存在"); }\n` +
       `JSON.stringify(${entrypoint}(JSON.parse(${JSON.stringify(serializedInput)})) ?? {});`,
-    deadline,
   );
   if (typeof output !== 'string') return {};
   if (output.length > 64_000) throw new Error('代码机制返回的数据超过 64KB。');

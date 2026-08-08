@@ -141,7 +141,6 @@ export class BattleRepository {
   private animationSequence = 0;
   private mechanismDepth = 0;
   private mechanismSteps = 0;
-  private mechanismDeadline = 0;
   private activeMechanismCard?: {
     id: string;
     name: string;
@@ -3475,11 +3474,7 @@ export class BattleRepository {
   ): Record<string, unknown> {
     const runtime = state.workshopMechanisms;
     if (!runtime?.ids.length || this.mechanismDepth >= 4) return event;
-    const isRootExecution = this.mechanismDepth === 0;
-    if (isRootExecution) {
-      this.mechanismSteps = 0;
-      this.mechanismDeadline = Date.now() + 150;
-    }
+    if (this.mechanismDepth === 0) this.mechanismSteps = 0;
     this.mechanismDepth += 1;
     try {
       const manifests = readWorkshopMechanisms().filter((entry) =>
@@ -3512,10 +3507,6 @@ export class BattleRepository {
       }
       executions.sort((left, right) => right.priority - left.priority);
       for (const { manifest, rule } of executions) {
-        if (Date.now() >= this.mechanismDeadline) {
-          this.log(state, 'system', '创意工坊机制达到单次时间上限，后续规则已停止。');
-          break;
-        }
         if (this.mechanismSteps >= 64) {
           this.log(state, 'system', '创意工坊机制达到单次执行上限，后续规则已停止。');
           break;
@@ -3531,7 +3522,7 @@ export class BattleRepository {
               event: { ...event },
               resources,
               random: this.random(),
-            }, this.mechanismDeadline);
+            });
             const result = normalizeWorkshopScriptResult(
               rawResult,
               manifest,
@@ -3603,7 +3594,6 @@ export class BattleRepository {
       }
     } finally {
       this.mechanismDepth -= 1;
-      if (isRootExecution) this.mechanismDeadline = 0;
     }
     return event;
   }
