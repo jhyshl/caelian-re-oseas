@@ -52,6 +52,7 @@ import {
 } from '@/quests/judge-preferences';
 import {
   buildCurrentNodeContext,
+  buildQuestPlayerGuidance,
   buildQuestNavigationContext,
 } from '@/quests/prompt-builder';
 import { questNode, type QuestDefinition } from '@/quests/schema';
@@ -90,6 +91,12 @@ interface KernelOptions {
   buildId: string;
   databaseName?: string;
   sourceWindow?: Window;
+}
+
+interface QuestEvaluationPresentation {
+  questId: string;
+  transitionAccepted: boolean;
+  summary: string;
 }
 
 export class CaelianKernel {
@@ -434,6 +441,7 @@ export class CaelianKernel {
   async acceptManagedQuest(
     definitionId: string,
   ): Promise<TrackedQuestView> {
+    this.notifications.clearQuestGuidance();
     const profileId = this.requireProfile();
     const [catalog, snapshot] = await Promise.all([
       this.questCatalogs.load(),
@@ -485,6 +493,7 @@ export class CaelianKernel {
   }
 
   async trackQuest(questId: string): Promise<TrackedQuestView> {
+    this.notifications.clearQuestGuidance();
     const profileId = this.requireProfile();
     const quest = await this.requireManagedQuest(profileId, questId);
     const definition = await this.questDefinition(quest);
@@ -513,6 +522,7 @@ export class CaelianKernel {
   }
 
   async pauseTrackedQuest(): Promise<TrackedQuestView | null> {
+    this.notifications.clearQuestGuidance();
     const profileId = this.requireProfile();
     const tracker = await this.repository.pauseTrackedQuest(profileId);
     if (!tracker) return null;
@@ -563,6 +573,7 @@ export class CaelianKernel {
   }
 
   async performTrackedQuestAction(): Promise<TrackedQuestView> {
+    this.notifications.clearQuestGuidance();
     const profileId = this.requireProfile();
     const tracker = await this.repository.selectedQuestTracker(profileId);
     if (!tracker) throw new Error('当前没有正在追踪的任务');
@@ -624,6 +635,7 @@ export class CaelianKernel {
   }
 
   async completeTrackedQuest(): Promise<QuestCompletionResult> {
+    this.notifications.clearQuestGuidance();
     const profileId = this.requireProfile();
     const tracker = await this.repository.selectedQuestTracker(profileId);
     if (!tracker) throw new Error('当前没有等待结算的任务');
@@ -740,6 +752,7 @@ export class CaelianKernel {
       return;
     }
     if (eventName === 'CHAT_CHANGED') {
+      this.notifications.clearQuestGuidance();
       await this.activateCurrentProfile();
       this.handledStoryBattleFloors.clear();
       await this.initializeWorldbook();
@@ -748,8 +761,9 @@ export class CaelianKernel {
     await this.ingestMvuNarrative();
     if (eventName === 'MESSAGE_RECEIVED') {
       await this.triggerStoryBattle(payload);
-      await this.evaluateTrackedQuest(payload);
+      const evaluation = await this.evaluateTrackedQuest(payload);
       await this.advanceTrackedQuestFromLocalState();
+      if (evaluation) await this.presentQuestGuidance(evaluation);
     }
     await this.syncQuestContext();
     await this.scanCurrentAchievements();
@@ -847,6 +861,8 @@ export class CaelianKernel {
     const rollbacks = [...direct, ...reconciled];
     if (rollbacks.length === 0) return;
 
+    this.notifications.clearQuestGuidance();
+
     await this.events.emit('quest.progress-rolled-back', {
       questIds: [...new Set(rollbacks.map((result) => result.questId))],
       cutoffFloorIndex: Math.min(
@@ -857,22 +873,22 @@ export class CaelianKernel {
 
   private async evaluateTrackedQuest(
     payload?: TavernEventPayload,
-  ): Promise<void> {
-    if (!this.profileId || !this.questTracker) return;
+  ): Promise<QuestEvaluationPresentation | undefined> {
+    if (!this.profileId || !this.questTracker) return undefined;
     const tracker = await this.repository.selectedQuestTracker(
       this.profileId,
     );
-    if (!tracker) return;
+    if (!tracker) return undefined;
     const snapshot = await this.repository.snapshot(this.profileId);
     const quest = snapshot.quests.find(
       (candidate) => candidate.id === tracker.questId,
     );
-    if (!quest?.definitionId) return;
+    if (!quest?.definitionId) return undefined;
     const catalog = await this.questCatalogs.load();
     const definition = catalog.get(quest.definitionId);
-    if (!definition) return;
+    if (!definition) return undefined;
     const floors = await this.adapter.chatFloors();
-    if (!floors) return;
+    if (!floors) return undefined;
     const direct =
       payload?.messageId === undefined
         ? undefined
@@ -881,7 +897,9 @@ export class CaelianKernel {
       direct?.role === 'assistant'
         ? direct
         : [...floors].reverse().find((item) => item.role === 'assistant');
-    if (!floor) return;
+    if (!floor) return undefined;
+
+    let progressBannerId: number | undefined;
 
     try {
       const result = await this.questTracker.evaluateAssistantTurn({
@@ -891,8 +909,21 @@ export class CaelianKernel {
         floor,
         currentLocation: this.snapshotLocation(snapshot),
         recentMessages: await this.adapter.chatConversation(),
+        onEvaluationStart: () => {
+          this.notifications.clearQuestGuidance();
+          progressBannerId = this.notifications.show({
+            kind: 'task',
+            icon: '✦',
+            eyebrow: 'STORY PROGRESSION',
+            title: '正在推进剧情',
+            description: `正在让副 API 判定「${quest.title}」的本轮进度，请稍候。`,
+            meta: '判定中',
+            duration: 35_000,
+            priority: 96,
+          });
+        },
       });
-      if (result.status !== 'evaluated') return;
+      if (result.status !== 'evaluated') return undefined;
       await this.events.emit('quest.evaluated', {
         questId: quest.id,
         floorIndex: floor.index,
@@ -900,6 +931,11 @@ export class CaelianKernel {
         currentNodeId: result.tracker.current.currentNodeId,
         trackerState: result.tracker.current.trackerState,
       });
+      return {
+        questId: quest.id,
+        transitionAccepted: result.decision.accepted,
+        summary: result.decision.next.summary,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await this.events.emit('quest.judge-failed', {
@@ -913,7 +949,64 @@ export class CaelianKernel {
         description: `${message}。本轮不会推进任务进度。`,
         duration: 6_000,
       });
+      return undefined;
+    } finally {
+      if (progressBannerId !== undefined) {
+        this.notifications.dismiss(progressBannerId);
+      }
     }
+  }
+
+  private async presentQuestGuidance(
+    evaluation: QuestEvaluationPresentation,
+  ): Promise<void> {
+    if (!this.profileId) return;
+    const tracker = await this.repository.selectedQuestTracker(this.profileId);
+    if (!tracker || tracker.questId !== evaluation.questId) return;
+    const quest = await this.requireManagedQuest(this.profileId, tracker.questId);
+    const definition = await this.questDefinition(quest);
+    const node = questNode(definition, tracker.current.currentNodeId);
+    const guidance = buildQuestPlayerGuidance(definition, tracker.current);
+    const injectable = ['armed', 'tracking', 'detour'].includes(
+      tracker.current.trackerState,
+    );
+    const status =
+      tracker.current.trackerState === 'suspended'
+        ? '追踪已挂起'
+        : tracker.current.trackerState === 'ended'
+          ? '节点已结束'
+          : evaluation.transitionAccepted
+            ? '已推进一个节拍'
+            : '保持当前节拍';
+
+    this.notifications.showQuestGuidance({
+      questName: definition.name,
+      status,
+      stageTitle: node.stageTitle,
+      sceneTitle: node.sceneTitle,
+      beatTitle: node.title,
+      summary: tracker.current.summary || evaluation.summary,
+      objective: node.objective,
+      hint: guidance.hint,
+      clues: guidance.clues,
+      ...(injectable
+        ? {
+            injectText: guidance.injectText,
+            onInject: () => {
+              const filled = this.adapter.setUserInput(guidance.injectText);
+              this.notifications.show({
+                kind: filled ? 'success' : 'warning',
+                title: filled ? '剧情引导已填入' : '未找到酒馆输入框',
+                description: filled
+                  ? '内容尚未发送，你可以继续修改或直接发送。'
+                  : '请根据卡片提示手动输入下一步行动。',
+                duration: 4_500,
+              });
+              return filled;
+            },
+          }
+        : {}),
+    });
   }
 
   private async advanceTrackedQuestFromLocalState(): Promise<boolean> {

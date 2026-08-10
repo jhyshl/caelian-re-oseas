@@ -20,6 +20,7 @@ import {
 import {
   buildCurrentNodeContext,
   buildQuestJudgeMessages,
+  buildQuestPlayerGuidance,
 } from '@/quests/prompt-builder';
 import type { QuestJudgeResult } from '@/quests/schema';
 import {
@@ -167,6 +168,7 @@ describe('任务定义与提示词', () => {
       currentLocation: '中央商业区',
       recentMessages: [{ role: 'user', content: '我帮她一起卖花。' }],
     });
+    const playerGuidance = buildQuestPlayerGuidance(flora, progress);
 
     expect(context).toContain('今天的花');
     expect(context).not.toContain('深渊暗潮');
@@ -174,6 +176,10 @@ describe('任务定义与提示词', () => {
     expect(judgeMessages[1]?.content).not.toContain(
       'inventory-has-eight-lilies',
     );
+    expect(playerGuidance.injectText).toContain(progress.objective);
+    expect(playerGuidance.injectText).toContain('不要开始后续节点');
+    expect(playerGuidance.injectText).not.toContain('深渊暗潮');
+    expect(playerGuidance.injectText).not.toContain('<legacy_story_material>');
   });
 });
 
@@ -700,6 +706,7 @@ describe('副 API 与楼层编排', () => {
     };
     const progress = new QuestProgressRepository(database);
     const service = new QuestTrackerService(progress, judge);
+    const onEvaluationStart = vi.fn();
     const floor: TavernFloorReference = {
       id: '4:assistant-reply',
       index: 4,
@@ -718,6 +725,7 @@ describe('副 API 与楼层编排', () => {
         { role: 'user', content: '好，我陪你去采花。' },
         { role: 'assistant', content: '芙萝拉开心地点了点头。' },
       ],
+      onEvaluationStart,
     });
 
     expect(evaluated).toMatchObject({
@@ -761,6 +769,7 @@ describe('副 API 与楼层编排', () => {
       reason: 'already-evaluated',
     });
     expect(judge.evaluate).toHaveBeenCalledOnce();
+    expect(onEvaluationStart).toHaveBeenCalledOnce();
   });
 
   it('尚未到场时不开判定，进入剧情后允许判断离场', async () => {

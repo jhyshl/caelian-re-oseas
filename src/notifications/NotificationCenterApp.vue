@@ -8,6 +8,8 @@ defineProps<{
   pause: (id: number) => void;
   resume: (id: number) => void;
   respond: (accepted: boolean) => void;
+  dismissQuestGuidance: () => void;
+  injectQuestGuidance: () => void;
 }>();
 </script>
 
@@ -68,6 +70,69 @@ defineProps<{
       </article>
     </div>
 
+    <aside
+      v-if="model.questGuidance"
+      class="quest-guidance"
+      data-caelian-quest-guidance
+      role="complementary"
+      aria-live="polite"
+      aria-label="剧情推进提示"
+    >
+      <div class="quest-guidance-glow" aria-hidden="true"></div>
+      <header>
+        <div class="quest-guidance-sigil" aria-hidden="true">✦</div>
+        <div>
+          <span>STORY NAVIGATOR · {{ model.questGuidance.status }}</span>
+          <h2>{{ model.questGuidance.questName }}</h2>
+        </div>
+        <button
+          type="button"
+          class="quest-guidance-close"
+          aria-label="关闭剧情提示"
+          @click="dismissQuestGuidance"
+        >
+          ×
+        </button>
+      </header>
+
+      <div class="quest-guidance-route">
+        <span>{{ model.questGuidance.stageTitle }}</span>
+        <b>›</b>
+        <span>{{ model.questGuidance.sceneTitle }}</span>
+        <b>›</b>
+        <strong>{{ model.questGuidance.beatTitle }}</strong>
+      </div>
+
+      <section v-if="model.questGuidance.summary" class="quest-guidance-summary">
+        <small>本轮判定</small>
+        <p>{{ model.questGuidance.summary }}</p>
+      </section>
+
+      <section class="quest-guidance-objective">
+        <small>当前目标</small>
+        <strong>{{ model.questGuidance.objective }}</strong>
+        <p>{{ model.questGuidance.hint }}</p>
+      </section>
+
+      <ul v-if="model.questGuidance.clues.length" class="quest-guidance-clues">
+        <li v-for="clue in model.questGuidance.clues" :key="clue">
+          {{ clue }}
+        </li>
+      </ul>
+
+      <footer>
+        <p>你可以根据提示自行行动，也可以把完整引导填入输入框。</p>
+        <button
+          v-if="model.questGuidance.injectable"
+          type="button"
+          :class="{ injected: model.questGuidance.injected }"
+          @click="injectQuestGuidance"
+        >
+          {{ model.questGuidance.injected ? '已填入输入框' : '填入完整引导' }}
+        </button>
+      </footer>
+    </aside>
+
     <div
       v-if="model.confirmation"
       class="confirm-overlay"
@@ -124,6 +189,233 @@ defineProps<{
   width: min(560px, calc(100vw - 24px));
   gap: 9px;
   transform: translateX(-50%);
+}
+
+.quest-guidance {
+  --guide-accent: #d9ae54;
+  position: absolute;
+  right: max(18px, env(safe-area-inset-right));
+  bottom: max(18px, env(safe-area-inset-bottom));
+  width: min(430px, calc(100vw - 28px));
+  max-height: min(650px, calc(100vh - 36px));
+  padding: 18px;
+  overflow: auto;
+  border: 1px solid rgba(217, 174, 84, 0.56);
+  border-radius: 22px;
+  color: #f5ecde;
+  background:
+    radial-gradient(circle at 100% 0, rgba(217, 174, 84, 0.17), transparent 34%),
+    radial-gradient(circle at 0 100%, rgba(92, 125, 176, 0.13), transparent 42%),
+    linear-gradient(145deg, rgba(28, 25, 34, 0.985), rgba(13, 17, 24, 0.99));
+  box-shadow:
+    0 26px 80px rgba(0, 0, 0, 0.58),
+    0 0 0 1px rgba(255, 255, 255, 0.045) inset;
+  backdrop-filter: blur(18px) saturate(140%);
+  pointer-events: auto;
+  animation: guidance-enter 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.quest-guidance-glow {
+  position: absolute;
+  top: -90px;
+  right: -70px;
+  width: 190px;
+  height: 190px;
+  border: 1px solid rgba(217, 174, 84, 0.12);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 18px rgba(217, 174, 84, 0.035),
+    0 0 0 42px rgba(217, 174, 84, 0.018);
+  pointer-events: none;
+}
+
+.quest-guidance header {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+}
+
+.quest-guidance-sigil {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(255, 226, 154, 0.68);
+  border-radius: 13px;
+  color: #2a1a05;
+  background: linear-gradient(145deg, #ffe9a9, #c89133);
+  box-shadow: 0 0 24px rgba(217, 174, 84, 0.25);
+  font: 900 20px/1 Georgia, serif;
+}
+
+.quest-guidance header span,
+.quest-guidance small {
+  display: block;
+  color: #d9b867;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.quest-guidance h2 {
+  margin: 3px 0 0;
+  color: #fff4df;
+  font: 700 19px/1.25 Georgia, "Noto Serif SC", serif;
+}
+
+.quest-guidance-close {
+  align-self: start;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  color: rgba(245, 236, 222, 0.58);
+  background: rgba(255, 255, 255, 0.055);
+  font: 400 19px/26px sans-serif;
+  cursor: pointer;
+}
+
+.quest-guidance-close:hover,
+.quest-guidance-close:focus-visible {
+  color: #fff3dc;
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+}
+
+.quest-guidance-route {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 15px 0 12px;
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 11px;
+  color: rgba(226, 219, 209, 0.68);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.quest-guidance-route span,
+.quest-guidance-route strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quest-guidance-route strong {
+  color: #f0cf7e;
+}
+
+.quest-guidance-route b {
+  color: rgba(217, 174, 84, 0.5);
+}
+
+.quest-guidance-summary,
+.quest-guidance-objective {
+  position: relative;
+  margin-top: 10px;
+  padding: 12px 13px;
+  border-radius: 14px;
+}
+
+.quest-guidance-summary {
+  border: 1px solid rgba(105, 142, 192, 0.18);
+  background: rgba(77, 105, 151, 0.09);
+}
+
+.quest-guidance-objective {
+  border: 1px solid rgba(217, 174, 84, 0.2);
+  background: rgba(217, 174, 84, 0.07);
+}
+
+.quest-guidance-summary p,
+.quest-guidance-objective p {
+  margin: 6px 0 0;
+  color: rgba(231, 223, 213, 0.76);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.quest-guidance-objective strong {
+  display: block;
+  margin-top: 6px;
+  color: #fff0cf;
+  font: 650 13px/1.55 Georgia, "Noto Serif SC", serif;
+}
+
+.quest-guidance-clues {
+  display: grid;
+  gap: 6px;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.quest-guidance-clues li {
+  position: relative;
+  padding-left: 15px;
+  color: rgba(229, 219, 203, 0.72);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.quest-guidance-clues li::before {
+  position: absolute;
+  top: 0.58em;
+  left: 2px;
+  width: 5px;
+  height: 5px;
+  border: 1px solid #d8ad53;
+  transform: rotate(45deg);
+  content: "";
+}
+
+.quest-guidance footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.quest-guidance footer p {
+  margin: 0;
+  color: rgba(223, 214, 201, 0.55);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.quest-guidance footer button {
+  flex: 0 0 auto;
+  min-width: 118px;
+  padding: 9px 12px;
+  border: 1px solid rgba(240, 202, 113, 0.66);
+  border-radius: 11px;
+  color: #251705;
+  background: linear-gradient(145deg, #f8d985, #c89339);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.25);
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.quest-guidance footer button:hover,
+.quest-guidance footer button:focus-visible {
+  filter: brightness(1.08);
+  outline: none;
+}
+
+.quest-guidance footer button.injected {
+  border-color: rgba(105, 198, 150, 0.58);
+  color: #d9f6e7;
+  background: rgba(64, 139, 101, 0.28);
 }
 
 .notification-toast {
@@ -503,6 +795,13 @@ defineProps<{
   }
 }
 
+@keyframes guidance-enter {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+}
+
 @media (max-width: 600px) {
   .notification-stack {
     top: max(8px, env(safe-area-inset-top));
@@ -530,6 +829,29 @@ defineProps<{
     font-size: 10px;
   }
 
+  .quest-guidance {
+    right: 8px;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    left: 8px;
+    width: auto;
+    max-height: min(72vh, 620px);
+    padding: 15px;
+    border-radius: 18px;
+  }
+
+  .quest-guidance-route {
+    overflow-x: auto;
+  }
+
+  .quest-guidance footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .quest-guidance footer button {
+    width: 100%;
+  }
+
   .confirm-dialog {
     padding: 21px 17px 17px;
     border-radius: 17px;
@@ -539,6 +861,7 @@ defineProps<{
 @media (prefers-reduced-motion: reduce) {
   .notification-toast,
   .notification-toast::before,
+  .quest-guidance,
   .confirm-overlay,
   .confirm-dialog {
     animation: none;

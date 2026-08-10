@@ -18,6 +18,12 @@ export interface QuestJudgePromptInput {
   recentMessages: QuestConversationMessage[];
 }
 
+export interface QuestPlayerGuidance {
+  hint: string;
+  clues: string[];
+  injectText: string;
+}
+
 export function buildCurrentNodeContext(
   quest: QuestDefinition,
   progress: QuestProgressSnapshot,
@@ -78,6 +84,35 @@ export function buildQuestNavigationContext(
     `前往地点：${remainingParallel || listOrNone(node.locations)}`,
     '玩家尚未进入当前剧情环境。只在玩家主动前往目标地点后自然开启场景；不要远程触发事件，不要提前给出线索或未来节拍。',
   ].join('\n');
+}
+
+export function buildQuestPlayerGuidance(
+  quest: QuestDefinition,
+  progress: QuestProgressSnapshot,
+): QuestPlayerGuidance {
+  const node = questNode(quest, progress.currentNodeId);
+  const clues = node.availableClues.slice(0, 3);
+  const hint =
+    progress.trackerState === 'suspended'
+      ? '剧情场景已经离开，任务追踪暂时挂起。返回对应地点并继续追踪后再推进。'
+      : progress.trackerState === 'detour'
+        ? '当前属于临时插曲。你可以先处理眼前行动，准备好后再回到当前任务目标。'
+        : progress.status !== 'active'
+          ? '当前剧情节点已经结束，请在任务面板完成后续结算。'
+          : `围绕“${node.objective}”描述你的下一步行动；本轮只处理当前节拍。`;
+  const injectText = [
+    `我选择继续推进任务「${quest.name}」。`,
+    `当前阶段：${node.stageTitle}`,
+    `当前场景：${node.sceneTitle}`,
+    `当前节拍：${node.title}`,
+    `当前目标：${node.objective}`,
+    `推进提示：${hint}`,
+    ...(clues.length > 0
+      ? [`当前可以围绕这些线索展开：${clues.join('；')}`]
+      : []),
+    '请只呈现当前节拍能够发生的内容，最多完成这一个节拍，不要开始后续节点，也不要替我决定具体行动。',
+  ].join('\n');
+  return { hint, clues, injectText };
 }
 
 export function buildQuestJudgeMessages(

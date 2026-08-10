@@ -23,6 +23,7 @@ export interface EvaluateQuestTurnInput {
   floor: TavernFloorReference;
   currentLocation: string;
   recentMessages: QuestConversationMessage[];
+  onEvaluationStart?: () => void;
 }
 
 export type EvaluateQuestTurnResult =
@@ -93,6 +94,7 @@ export class QuestTrackerService {
       return { status: 'skipped', reason: 'outside-node-location' };
     }
 
+    input.onEvaluationStart?.();
     const evaluation = await this.judge.evaluate({
       quest: input.quest,
       progress: current,

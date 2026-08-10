@@ -63,4 +63,53 @@ describe('NotificationCenter', () => {
 
     await expect(response).resolves.toBe(true);
   });
+
+  it('显示常驻剧情引导卡，并把完整引导填入输入框但不自动发送', async () => {
+    const onInject = vi.fn(() => true);
+    center = new NotificationCenter(document);
+    center.showQuestGuidance({
+      questName: '芙萝拉说',
+      status: '已推进一个节拍',
+      stageTitle: '相遇',
+      sceneTitle: '中央商业区',
+      beatTitle: '卖花少女',
+      summary: '玩家答应帮助芙萝拉。',
+      objective: '帮助芙萝拉卖完鲜花。',
+      hint: '围绕卖花行动推进当前节拍。',
+      clues: ['可以购买花束', '也可以帮忙吆喝'],
+      injectText: '我选择继续推进任务「芙萝拉说」。',
+      onInject,
+    });
+
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLElement>(
+            '[data-caelian-quest-guidance]',
+          )?.textContent,
+      )
+      .toContain('帮助芙萝拉卖完鲜花');
+    document
+      .querySelector<HTMLButtonElement>('.quest-guidance footer button')
+      ?.click();
+
+    expect(onInject).toHaveBeenCalledOnce();
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLElement>(
+            '[data-caelian-quest-guidance]',
+          )?.textContent,
+      )
+      .toContain('已填入输入框');
+
+    document
+      .querySelector<HTMLButtonElement>('.quest-guidance-close')
+      ?.click();
+    await expect
+      .poll(() =>
+        document.querySelector('[data-caelian-quest-guidance]'),
+      )
+      .toBeNull();
+  });
 });

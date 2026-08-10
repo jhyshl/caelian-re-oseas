@@ -5,6 +5,7 @@ import type {
   ConfirmationView,
   NotificationInput,
   NotificationKind,
+  QuestGuidanceInput,
   NotificationToastView,
   NotificationViewModel,
 } from '@/notifications/types';
@@ -58,6 +59,7 @@ export class NotificationCenter {
   private readonly model = reactive<NotificationViewModel>({
     toasts: [],
     confirmation: null,
+    questGuidance: null,
   });
   private readonly queue: NotificationToastView[] = [];
   private readonly actions = new Map<
@@ -68,6 +70,7 @@ export class NotificationCenter {
   private readonly confirmations: PendingConfirmation[] = [];
   private app?: App;
   private host?: HTMLDivElement;
+  private questGuidanceAction?: QuestGuidanceInput['onInject'];
   private pumpHandle?: ReturnType<typeof setTimeout>;
   private sequence = 0;
 
@@ -90,6 +93,8 @@ export class NotificationCenter {
       pause: (id: number) => this.pause(id),
       resume: (id: number) => this.resume(id),
       respond: (accepted: boolean) => this.respond(accepted),
+      dismissQuestGuidance: () => this.clearQuestGuidance(),
+      injectQuestGuidance: () => this.injectQuestGuidance(),
     });
     this.app.mount(host);
     this.document.addEventListener('keydown', this.handleKeydown);
@@ -150,6 +155,31 @@ export class NotificationCenter {
     });
   }
 
+  showQuestGuidance(input: QuestGuidanceInput): void {
+    this.mount();
+    this.questGuidanceAction = input.onInject;
+    this.model.questGuidance = {
+      questName: input.questName.trim(),
+      status: input.status.trim(),
+      stageTitle: input.stageTitle.trim(),
+      sceneTitle: input.sceneTitle.trim(),
+      beatTitle: input.beatTitle.trim(),
+      summary: input.summary.trim(),
+      objective: input.objective.trim(),
+      hint: input.hint.trim(),
+      clues: (input.clues ?? []).map((clue) => clue.trim()).filter(Boolean),
+      injectable:
+        Boolean(input.injectText?.trim()) &&
+        typeof input.onInject === 'function',
+      injected: false,
+    };
+  }
+
+  clearQuestGuidance(): void {
+    this.questGuidanceAction = undefined;
+    this.model.questGuidance = null;
+  }
+
   dismiss(id: number): void {
     const item = this.model.toasts.find((toast) => toast.id === id);
     if (!item || item.leaving) return;
@@ -205,6 +235,7 @@ export class NotificationCenter {
     this.actions.clear();
     this.model.toasts.splice(0);
     this.model.confirmation = null;
+    this.clearQuestGuidance();
     this.document.removeEventListener('keydown', this.handleKeydown);
     this.app?.unmount();
     this.host?.remove();
@@ -218,6 +249,12 @@ export class NotificationCenter {
       this.respond(false);
     }
   };
+
+  private injectQuestGuidance(): void {
+    const guidance = this.model.questGuidance;
+    if (!guidance?.injectable || !this.questGuidanceAction) return;
+    if (this.questGuidanceAction()) guidance.injected = true;
+  }
 
   private async activate(id: number): Promise<void> {
     const action = this.actions.get(id);

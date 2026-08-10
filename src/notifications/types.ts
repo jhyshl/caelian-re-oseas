@@ -52,7 +52,36 @@ export interface ConfirmationView {
   tone: 'default' | 'danger';
 }
 
+export interface QuestGuidanceInput {
+  questName: string;
+  status: string;
+  stageTitle: string;
+  sceneTitle: string;
+  beatTitle: string;
+  summary: string;
+  objective: string;
+  hint: string;
+  clues?: string[];
+  injectText?: string;
+  onInject?: () => boolean;
+}
+
+export interface QuestGuidanceView {
+  questName: string;
+  status: string;
+  stageTitle: string;
+  sceneTitle: string;
+  beatTitle: string;
+  summary: string;
+  objective: string;
+  hint: string;
+  clues: string[];
+  injectable: boolean;
+  injected: boolean;
+}
+
 export interface NotificationViewModel {
   toasts: NotificationToastView[];
   confirmation: ConfirmationView | null;
+  questGuidance: QuestGuidanceView | null;
 }

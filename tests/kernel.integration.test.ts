@@ -1292,6 +1292,9 @@ describe('CaelianKernel integration', () => {
       mes: string;
       is_user: boolean;
     }> = [];
+    const textarea = document.createElement('textarea');
+    textarea.id = 'send_textarea';
+    document.body.appendChild(textarea);
     const setExtensionPrompt = vi.fn();
     window.SillyTavern = {
       getContext: () => ({
@@ -1336,9 +1339,10 @@ describe('CaelianKernel integration', () => {
       summary: '花已经卖完，玩家答应陪芙萝拉去采花。',
     };
     const fetchMock = vi.spyOn(window, 'fetch').mockImplementation(
-      async (input) =>
-        String(input).includes('judge.example')
-          ? new Response(
+      async (input) => {
+        if (String(input).includes('judge.example')) {
+          await new Promise((resolve) => window.setTimeout(resolve, 120));
+          return new Response(
               JSON.stringify({
                 choices: [
                   { message: { content: JSON.stringify(judgeResult) } },
@@ -1348,8 +1352,10 @@ describe('CaelianKernel integration', () => {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' },
               },
-            )
-          : new Response(null, { status: 404 }),
+            );
+        }
+        return new Response(null, { status: 404 });
+      },
     );
     const kernel = createKernel({
       channel: 'alpha',
@@ -1381,12 +1387,30 @@ describe('CaelianKernel integration', () => {
     handlers.get('message-received')?.(1);
 
     await expect
+      .poll(() => document.body.textContent, { timeout: 3000 })
+      .toContain('正在推进剧情');
+
+    await expect
       .poll(
         async () =>
           (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId,
         { timeout: 3000 },
       )
       .toBe('flora-selling-flowers');
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLElement>(
+            '[data-caelian-quest-guidance]',
+          )?.textContent,
+        { timeout: 3000 },
+      )
+      .toContain('允许买花、吆喝、介绍花束或陪伴等方式帮她卖完');
+    document
+      .querySelector<HTMLButtonElement>('.quest-guidance footer button')
+      ?.click();
+    expect(textarea.value).toContain('我选择继续推进任务「芙萝拉说」');
+    expect(textarea.value).toContain('不要开始后续节点');
 
     chat.splice(1, 1);
     handlers.get('message-deleted')?.(1);
@@ -1397,6 +1421,9 @@ describe('CaelianKernel integration', () => {
         { timeout: 3000 },
       )
       .toBe('flora-encounter');
+    expect(
+      document.querySelector('[data-caelian-quest-guidance]'),
+    ).toBeNull();
 
     chat.push({
       mes: '芙萝拉开心地点了点头，收好花篮准备出发。',
@@ -1413,5 +1440,6 @@ describe('CaelianKernel integration', () => {
 
     await kernel.api.shutdown();
     fetchMock.mockRestore();
+    textarea.remove();
   });
 });
