@@ -60,6 +60,7 @@ import { questNode, type QuestDefinition } from '@/quests/schema';
 import { initialQuestProgress } from '@/quests/state-machine';
 import {
   questLocationMatches,
+  questSceneActivationMatches,
   QuestTrackerService,
 } from '@/quests/tracker-service';
 import { QuestProgressRepository } from '@/storage/repositories/quest-progress-repository';
@@ -137,6 +138,7 @@ export class CaelianKernel {
   private readonly pendingTavernUpdates = new Set<Promise<void>>();
   private tavernUpdateQueue: Promise<void> = Promise.resolve();
   private readonly handledStoryBattleFloors = new Set<string>();
+  private readonly missingQuestJudgeFloors = new Set<string>();
 
   constructor(options: KernelOptions) {
     this.channel = options.channel;
@@ -354,6 +356,7 @@ export class CaelianKernel {
   configureQuestJudge(
     config: OpenAiCompatibleJudgeConfig | null,
   ): void {
+    this.missingQuestJudgeFloors.clear();
     if (!config) {
       this.questTracker = undefined;
       this.questJudgeApiKey = undefined;
@@ -490,6 +493,7 @@ export class CaelianKernel {
       questId: quest.id,
       trackerState: tracker.current.trackerState,
     });
+    if (!this.questTracker) this.showQuestJudgeSetupNotice(definition.name);
     return this.trackedQuestView(profileId, quest, tracker, definition);
   }
 
@@ -756,11 +760,18 @@ export class CaelianKernel {
       this.notifications.clearQuestGuidance();
       await this.activateCurrentProfile();
       this.handledStoryBattleFloors.clear();
+      this.missingQuestJudgeFloors.clear();
       await this.initializeWorldbook();
     }
     await this.reconcileQuestFloors(eventName, payload);
     await this.ingestMvuNarrative();
-    if (eventName === 'MESSAGE_RECEIVED') {
+    if (
+      [
+        'MESSAGE_RECEIVED',
+        'CHARACTER_MESSAGE_RENDERED',
+        'GENERATION_ENDED',
+      ].includes(eventName)
+    ) {
       await this.triggerStoryBattle(payload);
       const evaluation = await this.evaluateTrackedQuest(payload);
       await this.advanceTrackedQuestFromLocalState();
@@ -875,7 +886,7 @@ export class CaelianKernel {
   private async evaluateTrackedQuest(
     payload?: TavernEventPayload,
   ): Promise<QuestEvaluationPresentation | undefined> {
-    if (!this.profileId || !this.questTracker) return undefined;
+    if (!this.profileId) return undefined;
     const tracker = await this.repository.selectedQuestTracker(
       this.profileId,
     );
@@ -899,6 +910,38 @@ export class CaelianKernel {
         ? direct
         : [...floors].reverse().find((item) => item.role === 'assistant');
     if (!floor) return undefined;
+    const currentLocation = this.snapshotLocation(snapshot);
+    const recentMessages = await this.adapter.chatConversation();
+
+    if (!this.questTracker) {
+      const node = questNode(definition, tracker.current.currentNodeId);
+      const trackerActive = ['armed', 'tracking', 'detour'].includes(
+        tracker.current.trackerState,
+      );
+      const sceneActive =
+        tracker.current.trackerState !== 'armed' ||
+        questSceneActivationMatches({
+          currentLocation,
+          node,
+          recentMessages,
+        });
+      const alreadyEvaluated = await this.questProgress.hasCheckpointForFloor(
+        this.profileId,
+        quest.id,
+        floor,
+      );
+      if (
+        quest.status === 'active' &&
+        trackerActive &&
+        sceneActive &&
+        !alreadyEvaluated &&
+        !this.missingQuestJudgeFloors.has(floor.id)
+      ) {
+        this.missingQuestJudgeFloors.add(floor.id);
+        this.showQuestJudgeSetupNotice(quest.title);
+      }
+      return undefined;
+    }
 
     let progressBannerId: number | undefined;
 
@@ -908,8 +951,8 @@ export class CaelianKernel {
         questRecord: quest,
         quest: definition,
         floor,
-        currentLocation: this.snapshotLocation(snapshot),
-        recentMessages: await this.adapter.chatConversation(),
+        currentLocation,
+        recentMessages,
         onEvaluationStart: () => {
           this.notifications.clearQuestGuidance();
           progressBannerId = this.notifications.show({
@@ -1007,6 +1050,22 @@ export class CaelianKernel {
             },
           }
         : {}),
+    });
+  }
+
+  private showQuestJudgeSetupNotice(questName: string): void {
+    this.notifications.show({
+      kind: 'warning',
+      icon: '✦',
+      eyebrow: 'STORY PROGRESSION',
+      title: '剧情推进器尚未启用',
+      description: `任务「${questName}」已经进入追踪状态，但尚未配置副 API。点击此提示打开设置；配置完成后，从下一轮 AI 回复开始自动判定。`,
+      meta: '需要配置',
+      duration: 12_000,
+      priority: 94,
+      onClick: () => {
+        void this.panels.navigate('settings');
+      },
     });
   }
 

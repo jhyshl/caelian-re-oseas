@@ -603,4 +603,34 @@ describe('TavernAdapter', () => {
     });
     adapter.unsubscribeAll();
   });
+
+  it('兼容角色楼层渲染和生成结束事件作为 AI 回复完成信号', () => {
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return { stop: () => handlers.delete(event) };
+    });
+    window.tavern_events = {
+      CHARACTER_MESSAGE_RENDERED: 'character-message-rendered',
+      GENERATION_ENDED: 'generation-ended',
+    };
+    const listener = vi.fn();
+    const adapter = new TavernAdapter(window);
+    adapter.subscribe(listener);
+
+    handlers.get('character-message-rendered')?.(8);
+    handlers.get('generation-ended')?.(9);
+
+    expect(listener).toHaveBeenNthCalledWith(
+      1,
+      'CHARACTER_MESSAGE_RENDERED',
+      { messageId: 8 },
+    );
+    expect(listener).toHaveBeenNthCalledWith(
+      2,
+      'GENERATION_ENDED',
+      undefined,
+    );
+    adapter.unsubscribeAll();
+  });
 });

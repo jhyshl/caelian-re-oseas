@@ -459,6 +459,7 @@ export class TavernAdapter {
       'CHAT_CHANGED',
       'CHAT_LOADED',
       'MESSAGE_RECEIVED',
+      'GENERATION_ENDED',
       'MESSAGE_UPDATED',
       'MESSAGE_EDITED',
       'MESSAGE_DELETED',
@@ -1042,6 +1043,7 @@ export class TavernAdapter {
     if (
       ![
         'MESSAGE_RECEIVED',
+        'CHARACTER_MESSAGE_RENDERED',
         'MESSAGE_UPDATED',
         'MESSAGE_EDITED',
         'MESSAGE_DELETED',

@@ -8,6 +8,7 @@ import type { QuestConversationMessage } from '@/quests/prompt-builder';
 import {
   questNode,
   type QuestDefinition,
+  type QuestNodeDefinition,
 } from '@/quests/schema';
 import {
   applyJudgeResult,
@@ -89,7 +90,11 @@ export class QuestTrackerService {
     const node = questNode(input.quest, current.currentNodeId);
     if (
       current.trackerState === 'armed' &&
-      !questLocationMatches(input.currentLocation, node.locations)
+      !questSceneActivationMatches({
+        currentLocation: input.currentLocation,
+        node,
+        recentMessages: input.recentMessages,
+      })
     ) {
       return { status: 'skipped', reason: 'outside-node-location' };
     }
@@ -129,10 +134,72 @@ export function questLocationMatches(
   allowed: string[],
 ): boolean {
   if (allowed.length === 0) return true;
-  const normalized = current.trim().toLocaleLowerCase();
+  const normalized = normalizeQuestLocationText(current);
   if (!normalized) return false;
   return allowed.some((location) => {
-    const candidate = location.trim().toLocaleLowerCase();
+    const candidate = normalizeQuestLocationText(location);
+    if (!candidate) return false;
     return normalized.includes(candidate) || candidate.includes(normalized);
   });
+}
+
+export interface QuestSceneActivationInput {
+  currentLocation: string;
+  node: Pick<QuestNodeDefinition, 'locations' | 'sceneTitle'>;
+  recentMessages: QuestConversationMessage[];
+}
+
+/**
+ * Prefer the local world location, but allow the latest conversation to arm
+ * the judge when Tavern/MVU location output is late or uses a common alias.
+ * The secondary judge remains authoritative for whether the scene is active.
+ */
+export function questSceneActivationMatches(
+  input: QuestSceneActivationInput,
+): boolean {
+  if (input.node.locations.length === 0) return true;
+  if (questLocationMatches(input.currentLocation, input.node.locations)) {
+    return true;
+  }
+
+  const recent = normalizeQuestLocationText(
+    input.recentMessages
+      .slice(-6)
+      .map((message) => message.content)
+      .join('\n'),
+  );
+  if (!recent) return false;
+
+  return sceneActivationHints(input.node).some((hint) =>
+    recent.includes(hint),
+  );
+}
+
+function sceneActivationHints(
+  node: Pick<QuestNodeDefinition, 'locations' | 'sceneTitle'>,
+): string[] {
+  const hints = new Set<string>();
+  const sceneTitle = normalizeQuestLocationText(node.sceneTitle);
+  if (sceneTitle.length >= 2) hints.add(sceneTitle);
+
+  for (const location of node.locations) {
+    const normalized = normalizeQuestLocationText(location);
+    if (normalized.length < 2) continue;
+    hints.add(normalized);
+    if (sceneTitle.includes(normalized)) {
+      const remainder = sceneTitle.replace(normalized, '');
+      if (remainder.length >= 2) hints.add(remainder);
+    }
+  }
+  return [...hints];
+}
+
+function normalizeQuestLocationText(value: string): string {
+  return value
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/中央商业(?:街区|街)/g, '中央商业区')
+    .replace(/冒险家协会/g, '冒险者协会')
+    .replace(/[\s·・—:：>＞/\\\-_,，。！？!?；;（）()【】[\]「」“”'"]+/g, '');
 }

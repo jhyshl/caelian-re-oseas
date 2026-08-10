@@ -1247,6 +1247,9 @@ describe('CaelianKernel integration', () => {
     });
     expect(textarea.value).toContain('前往中央商业区');
     await expect
+      .poll(() => document.body.textContent)
+      .toContain('剧情推进器尚未启用');
+    await expect
       .poll(() => guildPanel?.textContent)
       .toContain('暂停追踪');
     expect(setExtensionPrompt.mock.calls.at(-1)?.[1]).toContain(
@@ -1286,6 +1289,8 @@ describe('CaelianKernel integration', () => {
     });
     window.tavern_events = {
       MESSAGE_RECEIVED: 'message-received',
+      CHARACTER_MESSAGE_RENDERED: 'character-message-rendered',
+      GENERATION_ENDED: 'generation-ended',
       MESSAGE_DELETED: 'message-deleted',
     };
     const chat: Array<{
@@ -1384,7 +1389,7 @@ describe('CaelianKernel integration', () => {
       { mes: '好，我陪你去采花。', is_user: true },
       { mes: '芙萝拉开心地点头，收好花篮准备出发。', is_user: false },
     );
-    handlers.get('message-received')?.(1);
+    handlers.get('character-message-rendered')?.(1);
 
     await expect
       .poll(() => document.body.textContent, { timeout: 3000 })
@@ -1429,7 +1434,7 @@ describe('CaelianKernel integration', () => {
       mes: '芙萝拉开心地点了点头，收好花篮准备出发。',
       is_user: false,
     });
-    handlers.get('message-received')?.(1);
+    handlers.get('generation-ended')?.(2);
     await expect
       .poll(
         async () =>

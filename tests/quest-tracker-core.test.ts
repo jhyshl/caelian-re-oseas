@@ -28,7 +28,11 @@ import {
   applyJudgeResult,
   initialQuestProgress,
 } from '@/quests/state-machine';
-import { QuestTrackerService } from '@/quests/tracker-service';
+import {
+  questLocationMatches,
+  questSceneActivationMatches,
+  QuestTrackerService,
+} from '@/quests/tracker-service';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { GameRepository } from '@/storage/repository';
@@ -75,6 +79,40 @@ afterEach(async () => {
 });
 
 describe('任务定义与提示词', () => {
+  it('地点变量滞后或使用常见别名时仍可识别已经进入剧情场景', () => {
+    const node = flora.nodes.find(
+      (candidate) => candidate.id === 'flora-encounter',
+    );
+    if (!node) throw new Error('芙萝拉开场节点不存在');
+
+    expect(
+      questLocationMatches('伊拉亚城 · 中央商业街', ['中央商业区']),
+    ).toBe(true);
+    expect(
+      questSceneActivationMatches({
+        currentLocation: '圣德里安学院 · 宿舍',
+        node,
+        recentMessages: [
+          { role: 'user', content: '我前往中央商业街。' },
+          {
+            role: 'assistant',
+            content: '你来到花摊前，看见芙萝拉正努力招呼路人。',
+          },
+        ],
+      }),
+    ).toBe(true);
+    expect(
+      questSceneActivationMatches({
+        currentLocation: '圣德里安学院 · 宿舍',
+        node,
+        recentMessages: [
+          { role: 'user', content: '我今天先留在宿舍休息。' },
+          { role: 'assistant', content: '夜色渐深，宿舍里很安静。' },
+        ],
+      }),
+    ).toBe(false);
+  });
+
   it('把芙萝拉说解析为合法节点图并按地区和等级筛选', () => {
     expect(catalog.data.quests).toHaveLength(8);
     expect(
