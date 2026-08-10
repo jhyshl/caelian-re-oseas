@@ -560,6 +560,105 @@ describe('副 API 与楼层编排', () => {
     });
   });
 
+  it('使用 Responses 端点时发送对应请求体并解析 output_text', async () => {
+    const judgeResult: QuestJudgeResult = {
+      sceneState: 'in_scene',
+      progress: 'stay',
+      completionGateSatisfied: false,
+      matchedTransitionId: null,
+      suggestedNodeId: null,
+      confidence: 0.9,
+      evidence: ['玩家仍在当前场景。'],
+      summary: '玩家仍在当前任务场景中。',
+    };
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        void input;
+        void init;
+        return new Response(
+          JSON.stringify({ output_text: JSON.stringify(judgeResult) }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
+      },
+    );
+    const client = new OpenAiCompatibleQuestJudgeClient(
+      {
+        endpoint: 'https://judge.example/v1/responses',
+        model: 'judge-model',
+        jsonMode: true,
+      },
+      fetchMock as unknown as typeof fetch,
+    );
+
+    await expect(
+      client.evaluate({
+        quest: flora,
+        progress: initialQuestProgress(flora),
+        currentLocation: '中央商业区',
+        recentMessages: [],
+      }),
+    ).resolves.toMatchObject({ result: judgeResult });
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(request.body));
+    expect(body).toMatchObject({
+      model: 'judge-model',
+      temperature: 0,
+      text: { format: { type: 'json_object' } },
+    });
+    expect(body.input).toEqual(expect.any(Array));
+    expect(body).not.toHaveProperty('messages');
+    expect(body).not.toHaveProperty('response_format');
+  });
+
+  it('兼容聊天补全返回的分段文本内容', async () => {
+    const judgeResult: QuestJudgeResult = {
+      sceneState: 'uncertain',
+      progress: 'stay',
+      completionGateSatisfied: false,
+      matchedTransitionId: null,
+      suggestedNodeId: null,
+      confidence: 0.6,
+      evidence: ['证据不足。'],
+      summary: '本轮没有确认新的任务进度。',
+    };
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: [
+                  { type: 'text', text: JSON.stringify(judgeResult) },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const client = new OpenAiCompatibleQuestJudgeClient(
+      {
+        endpoint: 'https://judge.example/v1/chat/completions',
+        model: 'judge-model',
+      },
+      fetchMock as unknown as typeof fetch,
+    );
+
+    await expect(
+      client.evaluate({
+        quest: flora,
+        progress: initialQuestProgress(flora),
+        currentLocation: '中央商业区',
+        recentMessages: [],
+      }),
+    ).resolves.toMatchObject({ result: judgeResult });
+  });
+
   it('把通过保护器的判定结果和原始返回绑定到当前楼层', async () => {
     const database = new CaelianDatabase(
       'alpha',

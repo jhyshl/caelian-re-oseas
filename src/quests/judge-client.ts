@@ -119,6 +119,8 @@ export class OpenAiCompatibleQuestJudgeClient
       this.config.timeoutMs ?? 30_000,
     );
     try {
+      const messages = buildQuestJudgeMessages(input);
+      const responsesApi = isResponsesEndpoint(endpoint);
       const response = await this.fetcher(endpoint, {
         method: 'POST',
         headers: {
@@ -128,24 +130,36 @@ export class OpenAiCompatibleQuestJudgeClient
             : {}),
           ...(this.config.headers ?? {}),
         },
-        body: JSON.stringify({
-          model,
-          temperature: 0,
-          messages: buildQuestJudgeMessages(input),
-          ...(this.config.jsonMode
-            ? { response_format: { type: 'json_object' } }
-            : {}),
-        }),
+        body: JSON.stringify(
+          responsesApi
+            ? {
+                model,
+                temperature: 0,
+                input: messages,
+                ...(this.config.jsonMode
+                  ? { text: { format: { type: 'json_object' } } }
+                  : {}),
+              }
+            : {
+                model,
+                temperature: 0,
+                messages,
+                ...(this.config.jsonMode
+                  ? { response_format: { type: 'json_object' } }
+                  : {}),
+              },
+        ),
         signal: controller.signal,
       });
       if (!response.ok) {
-        throw new Error(`副 API 请求失败：HTTP ${response.status}`);
+        const detail = await responseErrorDetail(response);
+        throw new Error(
+          `副 API 请求失败：HTTP ${response.status}${detail ? ` · ${detail}` : ''}`,
+        );
       }
-      const payload = (await response.json()) as {
-        choices?: Array<{ message?: { content?: unknown } }>;
-      };
-      const content = payload.choices?.[0]?.message?.content;
-      if (typeof content !== 'string' || !content.trim()) {
+      const payload = await parseResponsePayload(response);
+      const content = extractResponseText(payload);
+      if (!content.trim()) {
         throw new Error('副 API 没有返回可解析的文本');
       }
       if (content.length > 20_000) throw new Error('副 API 返回内容过长');
@@ -153,10 +167,79 @@ export class OpenAiCompatibleQuestJudgeClient
         result: questJudgeResultSchema.parse(parseJsonObject(content)),
         rawResponse: content,
       };
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw new Error('副 API 请求超时', { cause: error });
+      }
+      throw error;
     } finally {
       clearTimeout(timeout);
     }
   }
+}
+
+function isResponsesEndpoint(endpoint: string): boolean {
+  try {
+    return /\/responses\/?$/i.test(new URL(endpoint).pathname);
+  } catch {
+    return false;
+  }
+}
+
+async function responseErrorDetail(response: Response): Promise<string> {
+  const text = (await response.text()).trim();
+  if (!text) return '';
+  try {
+    const payload = asRecord(JSON.parse(text));
+    const error = asRecord(payload?.error);
+    return firstText(error?.message, payload?.message).slice(0, 500);
+  } catch {
+    return text.replace(/\s+/g, ' ').slice(0, 500);
+  }
+}
+
+async function parseResponsePayload(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch (error) {
+    throw new Error('副 API 返回的响应不是 JSON', { cause: error });
+  }
+}
+
+function extractResponseText(payload: unknown): string {
+  const root = asRecord(payload);
+  const direct = firstText(root?.output_text);
+  if (direct) return direct;
+
+  const choices = Array.isArray(root?.choices) ? root.choices : [];
+  for (const choiceValue of choices) {
+    const choice = asRecord(choiceValue);
+    const message = asRecord(choice?.message);
+    const text = textFromContent(message?.content);
+    if (text) return text;
+  }
+
+  const output = Array.isArray(root?.output) ? root.output : [];
+  for (const itemValue of output) {
+    const item = asRecord(itemValue);
+    const text = textFromContent(item?.content);
+    if (text) return text;
+  }
+  return '';
+}
+
+function textFromContent(content: unknown): string {
+  if (typeof content === 'string') return content.trim();
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((partValue) => {
+      if (typeof partValue === 'string') return partValue;
+      const part = asRecord(partValue);
+      return firstText(part?.text, part?.output_text);
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim();
 }
 
 function parseJsonObject(source: string): unknown {

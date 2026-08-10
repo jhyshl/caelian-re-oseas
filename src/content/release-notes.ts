@@ -9,6 +9,15 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.34',
+    label: 'Alpha 34',
+    releasedAt: '2026-08-10',
+    changes: [
+      '修复剧情推进器副 API 兼容问题：使用 /v1/responses 地址时会发送正确的 Responses 请求并解析 output_text，不再因沿用 Chat Completions 格式而判定失败。',
+      '兼容副 API 返回的分段文本内容；请求失败时会显示接口返回的具体错误，超时和非 JSON 响应也会给出明确提示，本轮任务仍保持不推进。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.33',
     label: 'Alpha 33',
     releasedAt: '2026-08-07',
