@@ -79,6 +79,7 @@ export type PanelName =
   | 'deck'
   | 'card-square'
   | 'inventory'
+  | 'crafting'
   | 'market'
   | 'guild'
   | 'map'

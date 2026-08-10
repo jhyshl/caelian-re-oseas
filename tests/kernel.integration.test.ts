@@ -1,13 +1,19 @@
 import Dexie from 'dexie';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createKernel } from '@/kernel/create-kernel';
 import { CaelianDatabase } from '@/storage/database';
 import { avatarPreferenceKey } from '@/ui/avatar-preferences';
 import { SAVED_DECKS_STORAGE_KEY } from '@/saved-decks';
 
 const databaseNames: string[] = [];
+const defaultFetch = window.fetch;
+
+beforeEach(() => {
+  window.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
+});
 
 afterEach(async () => {
+  window.fetch = defaultFetch;
   delete window.__CaelianRuntime;
   delete window.Mvu;
   delete window.SillyTavern;
@@ -27,6 +33,33 @@ afterEach(async () => {
 });
 
 describe('CaelianKernel integration', () => {
+  it('从独立入口挂载完整合成台并读取全部 50 条配方', async () => {
+    const databaseName = `caelian-alpha-crafting-panel-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const fetchMock = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 404 }));
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'crafting-panel-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    await kernel.api.navigatePanel('crafting');
+    await expect
+      .poll(() => document.querySelectorAll('.recipe-list > button').length)
+      .toBe(50);
+    expect(document.body.textContent).toContain('合成台');
+    expect(document.body.textContent).toContain('装备升星');
+    expect(document.body.textContent).toContain('材料和产物会在同一事务内写入');
+
+    await kernel.api.shutdown();
+    fetchMock.mockRestore();
+  });
+
   it('清理旧剧情，但只在玩家手动操作时切换地区世界书', async () => {
     const databaseName = `caelian-alpha-region-book-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
@@ -338,6 +371,7 @@ describe('CaelianKernel integration', () => {
       'deck',
       'card-square',
       'inventory',
+      'crafting',
       'guild',
       'mailbox',
       'market',
@@ -951,7 +985,7 @@ describe('CaelianKernel integration', () => {
     databaseNames.push(databaseName);
     const kernel = createKernel({
       channel: 'beta',
-      version: '1.0.0-beta.1',
+      version: '1.1.0-beta.1',
       buildId: 'beta-release-test-build',
       databaseName,
       sourceWindow: window,
@@ -961,13 +995,14 @@ describe('CaelianKernel integration', () => {
     expect(kernel.api.channel).toBe('beta');
     expect(kernel.api.getRuntimeInfo()).toMatchObject({
       channel: 'beta',
-      version: '1.0.0-beta.1',
+      version: '1.1.0-beta.1',
       databaseName,
     });
     const announcement = document.querySelector(
       '[data-caelian-panel="release-notes"]',
     );
-    expect(announcement?.textContent).toContain('Beta 1.0');
+    expect(announcement?.textContent).toContain('Beta 1.1');
+    expect(announcement?.textContent).toContain('完整合成台');
     expect(announcement?.textContent).not.toContain('Alpha 30');
     await kernel.api.shutdown();
   });

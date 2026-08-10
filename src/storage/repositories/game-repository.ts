@@ -20,6 +20,7 @@ import {
   type LegacyAchievementPayload,
 } from '@/storage/repositories/achievement-repository';
 import { CardRepository } from '@/storage/repositories/card-repository';
+import { CraftingRepository } from '@/storage/repositories/crafting-repository';
 import { InventoryRepository } from '@/storage/repositories/inventory-repository';
 import { MarketRepository } from '@/storage/repositories/market-repository';
 import { NarrativeRepository } from '@/storage/repositories/narrative-repository';
@@ -40,6 +41,7 @@ export class GameRepository {
   private readonly world: WorldRepository;
   private readonly inventory: InventoryRepository;
   private readonly cards: CardRepository;
+  private readonly crafting: CraftingRepository;
   private readonly guild: GuildRepository;
   private readonly battles: BattleRepository;
   private readonly narrative: NarrativeRepository;
@@ -56,6 +58,7 @@ export class GameRepository {
     this.world = new WorldRepository(db);
     this.inventory = new InventoryRepository(db);
     this.cards = new CardRepository(db);
+    this.crafting = new CraftingRepository(db);
     this.guild = new GuildRepository(db);
     this.battles = new BattleRepository(db);
     this.narrative = new NarrativeRepository(db);
@@ -193,6 +196,9 @@ export class GameRepository {
     }
     if (command.type.startsWith('market.')) {
       await this.market.prepare();
+    }
+    if (command.type.startsWith('craft.')) {
+      await this.crafting.prepare();
     }
     if (command.type === 'achievement.claim-daily-gift') {
       await this.achievements.prepareDailyGiftPool();
@@ -425,6 +431,19 @@ export class GameRepository {
         );
       case 'inventory.adjust':
         return this.inventory.adjust(profileId, command.payload);
+      case 'craft.item':
+        return this.crafting.craftItem(
+          profileId,
+          command.payload.recipeId,
+          command.payload.count,
+        );
+      case 'craft.equipment':
+        await this.crafting.mergeEquipment(
+          profileId,
+          command.payload.baseId,
+          command.payload.stars,
+        );
+        return;
       case 'deck.update':
         return this.cards.updateActiveDeck(profileId, command.payload.cardIds);
       case 'equipment.equip':

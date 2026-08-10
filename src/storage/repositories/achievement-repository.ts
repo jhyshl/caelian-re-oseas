@@ -336,6 +336,18 @@ export class AchievementRepository {
       await this.recordTravel(command.payload);
     }
 
+    if (command.type === 'craft.item') {
+      await this.incrementCounter('craft.item', command.payload.count);
+      await this.syncCounterProgress('craft.item');
+    }
+
+    if (
+      command.type === 'craft.equipment' &&
+      command.payload.stars + 1 >= 3
+    ) {
+      await this.unlock('ach_craft_3star_equipment');
+    }
+
     if (command.type === 'battle.play-card' && before.battle) {
       await this.recordPlayedCard(profileId, before.battle);
     }

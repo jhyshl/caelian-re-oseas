@@ -64,6 +64,22 @@ describe('NotificationCenter', () => {
     await expect(response).resolves.toBe(true);
   });
 
+  it('高优先级剧情提示不会被四条普通通知长时间挡在队列里', async () => {
+    center = new NotificationCenter(document);
+    for (let index = 0; index < 4; index += 1) {
+      center.show({ kind: 'achievement', title: `普通通知 ${index}` });
+    }
+    center.show({
+      kind: 'warning',
+      title: '剧情推进器尚未启用',
+      priority: 94,
+    });
+
+    await expect
+      .poll(() => document.body.textContent)
+      .toContain('剧情推进器尚未启用');
+  });
+
   it('显示常驻剧情引导卡，并把完整引导填入输入框但不自动发送', async () => {
     const onInject = vi.fn(() => true);
     center = new NotificationCenter(document);

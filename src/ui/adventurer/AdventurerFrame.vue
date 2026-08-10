@@ -22,6 +22,7 @@ const navigation: Array<{
   { id: 'character', icon: '♙', label: '角色' },
   { id: 'deck', icon: '▱', label: '牌组' },
   { id: 'inventory', icon: '◇', label: '背包' },
+  { id: 'crafting', icon: '⚗', label: '合成' },
   { id: 'guild', icon: '⚔', label: '协会' },
 ];
 

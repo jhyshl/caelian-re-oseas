@@ -73,6 +73,7 @@ const primary: Array<{ panel: PanelName; icon: string; label: string }> = [
   { panel: 'deck', icon: '▱', label: '牌组' },
   { panel: 'card-square', icon: '▦', label: '卡牌广场' },
   { panel: 'inventory', icon: '◇', label: '背包' },
+  { panel: 'crafting', icon: '⚗', label: '合成' },
   { panel: 'guild', icon: '⚔', label: '协会' },
   { panel: 'mailbox', icon: '✉', label: '邮箱' },
   { panel: 'market', icon: '¤', label: '集市' },

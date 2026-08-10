@@ -64,7 +64,7 @@ describe('Tavern Helper Alpha bridge export', () => {
       env: {
         ...process.env,
         CAELIAN_CHANNEL: 'beta',
-        CAELIAN_VERSION: '1.0.0-beta.1',
+        CAELIAN_VERSION: '1.1.0-beta.1',
       },
     });
 

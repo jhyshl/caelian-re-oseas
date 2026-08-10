@@ -210,6 +210,22 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
         .min(-999999)
         .max(999999)
         .refine((value) => value !== 0),
+      }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('craft.item'),
+    payload: z.object({
+      recipeId: z.string().trim().min(1).max(180),
+      count: z.number().int().min(1).max(99999),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('craft.equipment'),
+    payload: z.object({
+      baseId: z.string().trim().min(1).max(180),
+      stars: z.number().int().min(1).max(2),
     }),
   }),
   z.object({

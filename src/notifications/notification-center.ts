@@ -135,6 +135,7 @@ export class NotificationCenter {
     this.actions.set(id, input.onClick);
     this.queue.push(item);
     this.sortQueue();
+    this.promoteHighestPriorityToast();
     this.pump();
     return id;
   }
@@ -284,6 +285,28 @@ export class NotificationCenter {
       this.pumpHandle = undefined;
       this.pump();
     }, TOAST_GAP_MS);
+  }
+
+  private promoteHighestPriorityToast(): void {
+    const next = this.queue[0];
+    if (!next || this.model.toasts.length < MAX_VISIBLE_TOASTS) return;
+    let lowestIndex = 0;
+    for (let index = 1; index < this.model.toasts.length; index += 1) {
+      if (
+        this.model.toasts[index]!.priority <
+        this.model.toasts[lowestIndex]!.priority
+      ) {
+        lowestIndex = index;
+      }
+    }
+    const lowest = this.model.toasts[lowestIndex];
+    if (!lowest || next.priority <= lowest.priority) return;
+    this.model.toasts.splice(lowestIndex, 1);
+    this.clearTimer(lowest.id);
+    lowest.leaving = false;
+    lowest.paused = false;
+    this.queue.push(lowest);
+    this.sortQueue();
   }
 
   private startTimer(

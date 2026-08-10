@@ -16,10 +16,15 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.0.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.1.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
-    expect(releases.map((release) => release.label)).toEqual(['Beta 1.0']);
+    expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.1',
+      'Beta 1.0',
+    ]);
+    expect(releases[0]?.changes.join('\n')).toContain('剧情推进器');
+    expect(releases[0]?.changes.join('\n')).toContain('完整合成台');
     expect(releases.some((release) => release.label.startsWith('Alpha'))).toBe(
       false,
     );
