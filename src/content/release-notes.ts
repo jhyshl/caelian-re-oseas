@@ -9,6 +9,17 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.36',
+    label: 'Alpha 36',
+    releasedAt: '2026-08-10',
+    changes: [
+      '修复副 API“模型可以拉取但剧情无法判定”的地址陷阱：填写服务根地址或 /v1 地址时会自动补全为标准聊天补全地址，仍兼容玩家手动填写的 chat/completions 与 responses 完整路径。',
+      '强化剧情判定器 JSON 类型要求，并保守兼容模型把 progress 错写成节点编号、把 evidence 返回为单条字符串等常见偏差；无法确认跳转时一律停留当前节拍，不会误推进。',
+      '模型列表遇到一次临时网络断连会自动重试，降低偶发 TLS 抖动导致的配置失败。',
+      '已在 SillyTavern 1.18.0 真实 Alpha 角色卡中确认运行加载，并使用 gcli OpenAI 兼容接口完成模型拉取、CORS 与实际任务节点判定回归。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.35',
     label: 'Alpha 35',
     releasedAt: '2026-08-10',

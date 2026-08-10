@@ -10,6 +10,7 @@ import {
   deriveModelsEndpoint,
   fetchOpenAiCompatibleModels,
   OpenAiCompatibleQuestJudgeClient,
+  resolveChatEndpoint,
   type QuestJudgeClient,
 } from '@/quests/judge-client';
 import {
@@ -271,6 +272,15 @@ describe('副 API 与楼层编排', () => {
     expect(deriveModelsEndpoint('https://api.example/v1')).toBe(
       'https://api.example/v1/models',
     );
+    expect(resolveChatEndpoint('https://api.example')).toBe(
+      'https://api.example/v1/chat/completions',
+    );
+    expect(resolveChatEndpoint('https://api.example/v1')).toBe(
+      'https://api.example/v1/chat/completions',
+    );
+    expect(
+      resolveChatEndpoint('https://api.example/openai/v1/responses'),
+    ).toBe('https://api.example/openai/v1/responses');
   });
 
   it('由本地背包推进、提交物品，并在楼层回退时返还物品后完成结算', async () => {
@@ -483,6 +493,26 @@ describe('副 API 与楼层编排', () => {
     );
   });
 
+  it('模型列表遇到一次临时网络错误会自动重试', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ data: [{ id: 'judge-a' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+    await expect(
+      fetchOpenAiCompatibleModels(
+        { endpoint: 'https://api.example/v1/chat/completions' },
+        fetchMock as unknown as typeof fetch,
+      ),
+    ).resolves.toEqual([{ id: 'judge-a' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('长期保存地址和模型，但只把密钥放在当前会话', () => {
     saveQuestJudgePreferences(window, {
       endpoint: 'https://api.example/v1/chat/completions',
@@ -663,6 +693,60 @@ describe('副 API 与楼层编排', () => {
         recentMessages: [],
       }),
     ).resolves.toMatchObject({ result: judgeResult });
+  });
+
+  it('保守修正模型返回的节点编号和单条证据，不因此误推进', async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  sceneState: 'in_scene',
+                  progress: 'todays-flowers',
+                  completionGateSatisfied: false,
+                  matchedTransitionId: null,
+                  suggestedNodeId: null,
+                  confidence: 1,
+                  evidence: '玩家仍在花摊附近观察。',
+                  summary: '玩家尚未开始后续剧情。',
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    const client = new OpenAiCompatibleQuestJudgeClient(
+      {
+        endpoint: 'https://judge.example',
+        model: 'judge-model',
+        jsonMode: true,
+      },
+      fetchMock as unknown as typeof fetch,
+    );
+
+    await expect(
+      client.evaluate({
+        quest: flora,
+        progress: initialQuestProgress(flora),
+        currentLocation: '中央商业区',
+        recentMessages: [],
+      }),
+    ).resolves.toMatchObject({
+      result: {
+        progress: 'stay',
+        matchedTransitionId: null,
+        suggestedNodeId: null,
+        evidence: ['玩家仍在花摊附近观察。'],
+      },
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://judge.example/v1/chat/completions',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
 
   it('把通过保护器的判定结果和原始返回绑定到当前楼层', async () => {

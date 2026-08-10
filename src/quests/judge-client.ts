@@ -50,17 +50,25 @@ export async function fetchOpenAiCompatibleModels(
     config.timeoutMs ?? 20_000,
   );
   try {
-    const response = await fetcher(endpoint, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        ...(config.apiKey
-          ? { Authorization: `Bearer ${config.apiKey}` }
-          : {}),
-        ...(config.headers ?? {}),
-      },
-      signal: controller.signal,
-    });
+    const request = () =>
+      fetcher(endpoint, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          ...(config.apiKey
+            ? { Authorization: `Bearer ${config.apiKey}` }
+            : {}),
+          ...(config.headers ?? {}),
+        },
+        signal: controller.signal,
+      });
+    let response: Response;
+    try {
+      response = await request();
+    } catch (error) {
+      if (controller.signal.aborted) throw error;
+      response = await request();
+    }
     if (!response.ok) {
       throw new Error(`模型列表请求失败：HTTP ${response.status}`);
     }
@@ -98,6 +106,25 @@ export function deriveModelsEndpoint(chatEndpoint: string): string {
   return url.href;
 }
 
+export function resolveChatEndpoint(endpoint: string): string {
+  let url: URL;
+  try {
+    url = new URL(endpoint.trim());
+  } catch {
+    throw new Error('副 API 地址格式无效');
+  }
+  const path = url.pathname.replace(/\/+$/, '');
+  if (/\/(?:chat\/completions|responses|completions)$/i.test(path)) {
+    return url.href;
+  }
+  url.pathname = !path
+    ? '/v1/chat/completions'
+    : /\/v\d+$/i.test(path)
+      ? `${path}/chat/completions`
+      : path;
+  return url.href;
+}
+
 export class OpenAiCompatibleQuestJudgeClient
   implements QuestJudgeClient
 {
@@ -109,7 +136,7 @@ export class OpenAiCompatibleQuestJudgeClient
   async evaluate(
     input: QuestJudgePromptInput,
   ): Promise<QuestJudgeEvaluation> {
-    const endpoint = this.config.endpoint.trim();
+    const endpoint = resolveChatEndpoint(this.config.endpoint);
     const model = this.config.model.trim();
     if (!endpoint || !model) throw new Error('副 API 地址和模型不能为空');
 
@@ -163,8 +190,9 @@ export class OpenAiCompatibleQuestJudgeClient
         throw new Error('副 API 没有返回可解析的文本');
       }
       if (content.length > 20_000) throw new Error('副 API 返回内容过长');
+      const parsed = parseJsonObject(content);
       return {
-        result: questJudgeResultSchema.parse(parseJsonObject(content)),
+        result: questJudgeResultSchema.parse(normalizeJudgeResult(parsed)),
         rawResponse: content,
       };
     } catch (error) {
@@ -260,6 +288,77 @@ function parseJsonObject(source: string): unknown {
       throw new Error('副 API 返回的 JSON 格式无效');
     }
   }
+}
+
+function normalizeJudgeResult(value: unknown): unknown {
+  const source = asRecord(value);
+  if (!source) return value;
+
+  const matchedTransitionId = nullableText(source.matchedTransitionId);
+  const suggestedNodeId = nullableText(source.suggestedNodeId);
+  const completionGateSatisfied = booleanValue(
+    source.completionGateSatisfied,
+  );
+  const transitionSupported = Boolean(
+    completionGateSatisfied && matchedTransitionId && suggestedNodeId,
+  );
+  const progress =
+    source.progress === 'transition' ||
+    (source.progress !== 'stay' && transitionSupported)
+      ? transitionSupported
+        ? 'transition'
+        : 'stay'
+      : 'stay';
+  const sceneState = JUDGE_SCENE_STATES.has(String(source.sceneState))
+    ? source.sceneState
+    : 'uncertain';
+  const evidenceSource = Array.isArray(source.evidence)
+    ? source.evidence
+    : [source.evidence];
+  const evidence = evidenceSource
+    .flatMap((item) =>
+      typeof item === 'string' && item.trim()
+        ? [item.trim().slice(0, 500)]
+        : [],
+    )
+    .slice(0, 8);
+  const confidenceValue = Number(source.confidence);
+  const summary = firstText(source.summary, evidence[0]).slice(0, 2_000);
+
+  return {
+    ...source,
+    sceneState,
+    progress,
+    completionGateSatisfied,
+    matchedTransitionId: progress === 'transition' ? matchedTransitionId : null,
+    suggestedNodeId: progress === 'transition' ? suggestedNodeId : null,
+    confidence: Number.isFinite(confidenceValue)
+      ? Math.min(1, Math.max(0, confidenceValue))
+      : 0,
+    evidence,
+    summary: summary || '本轮没有确认新的任务进度。',
+  };
+}
+
+const JUDGE_SCENE_STATES = new Set([
+  'in_scene',
+  'temporary_detour',
+  'left_scene',
+  'drifted',
+  'uncertain',
+  'candidate_complete',
+  'candidate_failed',
+]);
+
+function nullableText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim()
+    ? value.trim().slice(0, 160)
+    : null;
+}
+
+function booleanValue(value: unknown): boolean {
+  if (value === true || value === 'true' || value === 1) return true;
+  return false;
 }
 
 function resolveModelsEndpoint(

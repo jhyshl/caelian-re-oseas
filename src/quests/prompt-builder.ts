@@ -140,8 +140,11 @@ export function buildQuestJudgeMessages(
         '只返回一个 JSON 对象，不要代码块、解释或思考过程。',
         '字段固定为：sceneState、progress、completionGateSatisfied、matchedTransitionId、suggestedNodeId、confidence、evidence、summary。',
         'sceneState 只能是 in_scene、temporary_detour、left_scene、drifted、uncertain、candidate_complete、candidate_failed。',
+        'progress 只能是字符串 stay 或 transition，绝对不能填写阶段、场景、节拍或节点编号。',
+        'completionGateSatisfied 必须是布尔值；confidence 必须是 0 到 1 的数字；evidence 必须是字符串数组，即使只有一条证据也必须使用数组。',
         'stay 时 matchedTransitionId 与 suggestedNodeId 必须为 null；transition 时 completionGateSatisfied 必须为 true。',
         'summary 只总结已经发生并可被证实的剧情事实，不得写入未来内容。',
+        '严格按这个类型模板返回并替换内容：{"sceneState":"uncertain","progress":"stay","completionGateSatisfied":false,"matchedTransitionId":null,"suggestedNodeId":null,"confidence":0.5,"evidence":["可核验证据"],"summary":"已发生事实摘要"}',
       ].join('\n'),
     },
     {

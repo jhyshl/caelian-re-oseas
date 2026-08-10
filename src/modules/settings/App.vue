@@ -205,11 +205,11 @@ onMounted(async () => {
 
         <div class="judge-form">
           <label>
-            <span>聊天补全地址</span>
+            <span>聊天补全地址（支持服务根地址）</span>
             <input
               v-model="questJudgeDraft.endpoint"
               type="url"
-              placeholder="https://example.com/v1/chat/completions"
+              placeholder="https://example.com 或 https://example.com/v1/chat/completions"
               spellcheck="false"
             />
           </label>

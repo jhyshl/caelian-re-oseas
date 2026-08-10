@@ -41,6 +41,7 @@ import {
 import {
   fetchOpenAiCompatibleModels,
   OpenAiCompatibleQuestJudgeClient,
+  resolveChatEndpoint,
   type OpenAiCompatibleJudgeConfig,
   type QuestJudgeModel,
   type QuestJudgeModelListConfig,
@@ -360,7 +361,7 @@ export class CaelianKernel {
       clearQuestJudgePreferences(this.adapter.host);
       return;
     }
-    const endpoint = config.endpoint.trim();
+    const endpoint = resolveChatEndpoint(config.endpoint);
     const model = config.model.trim();
     if (!endpoint || !model) {
       throw new Error('副 API 地址和模型不能为空');
