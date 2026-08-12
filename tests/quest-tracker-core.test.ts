@@ -223,6 +223,27 @@ describe('任务定义与提示词', () => {
 });
 
 describe('任务跳转保护器', () => {
+  it('等待提交时把单项背包动态写入主 API 提示并禁止下一节点', () => {
+    const progress = {
+      ...initialQuestProgress(flora),
+      pendingItemSubmission: {
+        itemId: '圣心百合',
+        itemName: '圣心百合',
+        count: 8,
+        requestedFloorId: '2:reply',
+        requestedFloorIndex: 2,
+        requestedFloorFingerprint: 'reply',
+        requestedLineageHash: 'lineage',
+        requestedAt: 1,
+        deferredProgress: floraProgressAt('flora-selling-flowers'),
+      },
+    };
+    const context = buildCurrentNodeContext(flora, progress, 3);
+    expect(context).toContain('尚未完成的物品提交');
+    expect(context).toContain('背包当前持有：3；尚缺：5');
+    expect(context).toContain('禁止开始下一节拍');
+  });
+
   it('只接受当前节点声明、目标一致且置信度足够的跳转', () => {
     const progress = initialQuestProgress(flora);
     const accepted = applyJudgeResult(flora, progress, {
@@ -298,6 +319,106 @@ describe('任务跳转保护器', () => {
 });
 
 describe('副 API 与楼层编排', () => {
+  it('只应用数据库合法赠礼，并在提交成功前暂存剧情跳转', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-dynamic-gift-submission-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const questRecord: QuestRecord = {
+      id: 'profile:side:dynamic',
+      profileId: 'profile',
+      definitionId: flora.id,
+      kind: 'side',
+      title: flora.name,
+      region: flora.region,
+      objective: flora.nodes[0]?.objective ?? '',
+      status: 'active',
+      currentStage: 1,
+      totalStages: 3,
+      rewardExperience: 120,
+      rewardGold: 240,
+      rewardGuildExperience: 45,
+      updatedAt: 1,
+    };
+    await database.questRecords.put(questRecord);
+    const result: QuestJudgeResult = {
+      sceneState: 'in_scene',
+      progress: 'transition',
+      completionGateSatisfied: true,
+      matchedTransitionId: 'advance-flora-encounter',
+      suggestedNodeId: 'flora-selling-flowers',
+      confidence: 1,
+      evidence: ['NPC 赠送药瓶，并要求交付百合。'],
+      summary: '等待玩家提交材料。',
+      giftItems: [
+        { itemId: '小血瓶', count: 2 },
+        { itemId: '不存在的礼物', count: 99 },
+      ],
+      requiredItemSubmission: { itemId: '圣心百合', count: 8 },
+    };
+    const service = new QuestTrackerService(
+      new QuestProgressRepository(database),
+      { evaluate: vi.fn(async () => ({ result, rawResponse: '{}' })) },
+    );
+    const evaluated = await service.evaluateAssistantTurn({
+      profileId: 'profile',
+      questRecord,
+      quest: flora,
+      floor: {
+        id: '2:dynamic',
+        index: 2,
+        role: 'assistant',
+        fingerprint: 'dynamic',
+        lineageHash: 'dynamic-lineage',
+      },
+      currentLocation: '中央商业区',
+      recentMessages: [],
+      legalItems: [
+        { itemId: '小血瓶', itemName: '小血瓶' },
+        { itemId: '圣心百合', itemName: '圣心百合' },
+      ],
+    });
+    expect(evaluated).toMatchObject({
+      status: 'evaluated',
+      decision: {
+        accepted: false,
+        reason: 'awaiting-item-submission',
+        next: {
+          currentNodeId: 'flora-encounter',
+          pendingItemSubmission: {
+            itemId: '圣心百合',
+            deferredProgress: { currentNodeId: 'flora-selling-flowers' },
+          },
+        },
+      },
+      giftItems: [{ itemId: '小血瓶', count: 2 }],
+    });
+    expect(await database.inventoryStacks.get('profile:小血瓶')).toMatchObject({
+      quantity: 2,
+    });
+    expect(await database.inventoryStacks.get('profile:不存在的礼物')).toBeUndefined();
+
+    const progress = new QuestProgressRepository(database);
+    await expect(progress.submitPendingItem('profile', questRecord.id)).rejects.toThrow(
+      '数量不足',
+    );
+    await database.inventoryStacks.put({
+      id: 'profile:圣心百合',
+      profileId: 'profile',
+      itemId: '圣心百合',
+      name: '圣心百合',
+      quantity: 8,
+      updatedAt: 2,
+    });
+    const submitted = await progress.submitPendingItem('profile', questRecord.id);
+    expect(submitted.current).toMatchObject({
+      currentNodeId: 'flora-selling-flowers',
+    });
+    expect(submitted.current.pendingItemSubmission).toBeUndefined();
+    expect(await database.inventoryStacks.get('profile:圣心百合')).toBeUndefined();
+  });
+
   it('从聊天接口推导模型列表地址', () => {
     expect(
       deriveModelsEndpoint(
@@ -624,7 +745,11 @@ describe('副 API 与楼层编排', () => {
       recentMessages: [],
     });
 
-    expect(evaluation.result).toEqual(judgeResult);
+    expect(evaluation.result).toEqual({
+      ...judgeResult,
+      giftItems: [],
+      requiredItemSubmission: null,
+    });
     expect(fetchMock).toHaveBeenCalledOnce();
     const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(JSON.parse(String(request.body))).toMatchObject({

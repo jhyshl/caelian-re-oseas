@@ -10,7 +10,7 @@ import type { PanelContext } from '@/kernel/public-api';
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
 const special = ref<AchievementSpecialState>();
-const stage = ref<'loading' | 'envelope' | 'letter' | 'gift'>('loading');
+const stage = ref<'loading' | 'envelope' | 'letter' | 'gift' | 'creator-gift'>('loading');
 const busy = ref(false);
 const error = ref('');
 let previousBodyOverflow = '';
@@ -75,8 +75,46 @@ async function claimDailyGift(): Promise<void> {
   }
 }
 
+async function claimCreatorGift(): Promise<void> {
+  if (busy.value) return;
+  busy.value = true;
+  error.value = '';
+  try {
+    const result = await props.context.api.execute({
+      id: commandId('creator-gift'),
+      type: 'achievement.claim-creator-gift',
+      payload: {},
+    });
+    if (result.status === 'rejected') {
+      throw new Error(result.message || '特殊赠礼领取失败');
+    }
+    await refresh();
+    stage.value = 'creator-gift';
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : String(reason);
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function continueFromLetter(): Promise<void> {
+  if (special.value?.creatorGiftAvailable) {
+    await claimCreatorGift();
+    return;
+  }
   if (special.value?.dailyGiftAvailable) {
+    await claimDailyGift();
+    return;
+  }
+  close();
+}
+
+async function continueFromCreatorGift(): Promise<void> {
+  if (!special.value?.letterClaimed) {
+    stage.value = 'envelope';
+    return;
+  }
+  if (special.value.dailyGiftAvailable) {
     await claimDailyGift();
     return;
   }
@@ -101,7 +139,9 @@ onMounted(async () => {
 
   try {
     await refresh();
-    if (!special.value?.letterClaimed) {
+    if (special.value?.creatorGiftAvailable) {
+      await claimCreatorGift();
+    } else if (!special.value?.letterClaimed) {
       stage.value = 'envelope';
     } else if (special.value.dailyGiftAvailable) {
       await claimDailyGift();
@@ -149,7 +189,7 @@ onUnmounted(() => {
         <div>
           <span>PAST &amp; PRESENT</span>
           <h1 id="poem-title">
-            {{ stage === 'gift' ? '空白的书页 · 今日赠礼' : '写给今昔的感谢信' }}
+            {{ stage === 'creator-gift' ? '江海有声 · 特殊赠礼' : stage === 'gift' ? '空白的书页 · 今日赠礼' : '写给今昔的感谢信' }}
           </h1>
         </div>
         <button
@@ -164,6 +204,20 @@ onUnmounted(() => {
       </header>
 
       <div v-if="stage === 'loading'" class="loading">正在展开信纸……</div>
+
+      <div v-else-if="stage === 'creator-gift'" class="gift-body">
+        <div class="gift-mark">✦</div>
+        <p>收到一份来自江海有声的特殊赠礼~</p>
+        <div class="gift-list">
+          <span>金币 × {{ special?.creatorGiftGold ?? 0 }}</span>
+          <span>小血瓶合成材料包 × 10</span>
+          <span>小魔药瓶合成材料包 × 10</span>
+          <span>小血瓶 × 15</span>
+          <span>小魔药瓶 × 15</span>
+        </div>
+        <p class="signature">江海有声</p>
+        <button type="button" class="primary" @click="continueFromCreatorGift">收下赠礼</button>
+      </div>
 
       <div v-else-if="stage === 'gift'" class="gift-body">
         <div class="gift-mark">♛</div>

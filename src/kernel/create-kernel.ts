@@ -3,6 +3,7 @@ import {
   releaseAnnouncementId,
   releaseNotesFor,
 } from '@/content/release-notes';
+import { loadItemCatalog } from '@/content/catalogs/inventory';
 import type {
   QuestCompletionResult,
   QuestRecord,
@@ -18,6 +19,7 @@ import type {
   QueryName,
   QueryResultMap,
   QuestJudgeStatus,
+  PendingQuestSubmissionView,
   TrackedQuestView,
 } from '@/kernel/public-api';
 import { createAiProjection } from '@/mvu/projection';
@@ -139,6 +141,7 @@ export class CaelianKernel {
   private tavernUpdateQueue: Promise<void> = Promise.resolve();
   private readonly handledStoryBattleFloors = new Set<string>();
   private readonly missingQuestJudgeFloors = new Set<string>();
+  private legalQuestItemCache?: Array<{ itemId: string; itemName: string }>;
 
   constructor(options: KernelOptions) {
     this.channel = options.channel;
@@ -228,6 +231,10 @@ export class CaelianKernel {
       this.status = 'ready';
       await this.syncProjection();
       await this.panels.open('shell');
+      if (await this.getPendingQuestSubmission()) {
+        await this.events.emit('quest.submission-changed', { pending: true });
+        await this.panels.open('quest-submission');
+      }
       await this.openReleaseNotesIfNew();
       await this.openAchievementSpecialIfNeeded();
       this.startManagedContentUpdates();
@@ -573,6 +580,45 @@ export class CaelianKernel {
     return this.trackedQuestView(profileId, quest, tracker);
   }
 
+  async getPendingQuestSubmission(): Promise<PendingQuestSubmissionView | null> {
+    const profileId = this.requireProfile();
+    const tracker = await this.repository.selectedQuestTracker(profileId);
+    const pending = tracker?.current.pendingItemSubmission;
+    if (!tracker || !pending) return null;
+    const quest = await this.requireManagedQuest(profileId, tracker.questId);
+    const snapshot = await this.repository.snapshot(profileId);
+    const ownedCount =
+      snapshot.inventory.find((stack) => stack.itemId === pending.itemId)
+        ?.quantity ?? 0;
+    return {
+      questId: quest.id,
+      questName: quest.title,
+      itemId: pending.itemId,
+      itemName: pending.itemName,
+      count: pending.count,
+      ownedCount,
+      available: ownedCount >= pending.count,
+    };
+  }
+
+  async submitPendingQuestItem(): Promise<PendingQuestSubmissionView | null> {
+    const profileId = this.requireProfile();
+    const pending = await this.getPendingQuestSubmission();
+    if (!pending) return null;
+    await this.repository.submitPendingQuestItem(profileId, pending.questId);
+    await this.syncQuestContext();
+    await this.syncProjection();
+    await this.events.emit('quest.submission-changed', { pending: false });
+    await this.events.emit('quest.tracking-changed', {
+      questId: pending.questId,
+      trackerState:
+        (await this.repository.selectedQuestTracker(profileId))?.current
+          .trackerState ?? 'none',
+    });
+    await this.panels.close('quest-submission');
+    return null;
+  }
+
   async submitTrackedQuestAction(): Promise<TrackedQuestView> {
     return this.performTrackedQuestAction();
   }
@@ -762,6 +808,9 @@ export class CaelianKernel {
       this.handledStoryBattleFloors.clear();
       this.missingQuestJudgeFloors.clear();
       await this.initializeWorldbook();
+      await this.events.emit('quest.submission-changed', {
+        pending: Boolean(await this.getPendingQuestSubmission()),
+      });
     }
     await this.reconcileQuestFloors(eventName, payload);
     await this.ingestMvuNarrative();
@@ -881,6 +930,9 @@ export class CaelianKernel {
         ...rollbacks.map((result) => result.cutoffFloorIndex),
       ),
     });
+    const pending = Boolean(await this.getPendingQuestSubmission());
+    await this.events.emit('quest.submission-changed', { pending });
+    if (!pending) await this.panels.close('quest-submission');
   }
 
   private async evaluateTrackedQuest(
@@ -953,6 +1005,7 @@ export class CaelianKernel {
         floor,
         currentLocation,
         recentMessages,
+        legalItems: await this.legalQuestItems(),
         onEvaluationStart: () => {
           this.notifications.clearQuestGuidance();
           progressBannerId = this.notifications.show({
@@ -968,6 +1021,18 @@ export class CaelianKernel {
         },
       });
       if (result.status !== 'evaluated') return undefined;
+      if (result.giftItems.length > 0) {
+        const description = result.giftItems
+          .map((item) => `${item.itemName} × ${item.count}`)
+          .join('、');
+        this.notifications.show({
+          kind: 'success',
+          icon: '◇',
+          title: '获得剧情赠礼',
+          description,
+          duration: 7_000,
+        });
+      }
       await this.events.emit('quest.evaluated', {
         questId: quest.id,
         floorIndex: floor.index,
@@ -975,6 +1040,10 @@ export class CaelianKernel {
         currentNodeId: result.tracker.current.currentNodeId,
         trackerState: result.tracker.current.trackerState,
       });
+      if (result.tracker.current.pendingItemSubmission) {
+        await this.events.emit('quest.submission-changed', { pending: true });
+        await this.panels.open('quest-submission');
+      }
       return {
         questId: quest.id,
         transitionAccepted: result.decision.accepted,
@@ -1194,12 +1263,33 @@ export class CaelianKernel {
     const node = questNode(definition, tracker.current.currentNodeId);
     const snapshot = await this.repository.snapshot(this.profileId);
     const location = this.snapshotLocation(snapshot);
+    const pending = tracker.current.pendingItemSubmission;
+    const pendingOwnedCount = pending
+      ? snapshot.inventory.find((stack) => stack.itemId === pending.itemId)
+          ?.quantity ?? 0
+      : undefined;
     const content =
       tracker.current.trackerState === 'armed' &&
       !questLocationMatches(location, node.locations)
         ? buildQuestNavigationContext(definition, tracker.current)
-        : buildCurrentNodeContext(definition, tracker.current);
+        : buildCurrentNodeContext(
+            definition,
+            tracker.current,
+            pendingOwnedCount,
+          );
     return this.adapter.setQuestContext(content);
+  }
+
+  private async legalQuestItems(): Promise<
+    Array<{ itemId: string; itemName: string }>
+  > {
+    if (!this.legalQuestItemCache) {
+      const catalog = await loadItemCatalog();
+      this.legalQuestItemCache = Object.entries(catalog).map(
+        ([itemId, item]) => ({ itemId, itemName: item.name || itemId }),
+      );
+    }
+    return this.legalQuestItemCache;
   }
 
   private createPublicApi(): CaelianPublicApi {
@@ -1250,6 +1340,8 @@ export class CaelianKernel {
       pauseTrackedQuest: () => this.pauseTrackedQuest(),
       resumeTrackedQuest: () => this.resumeTrackedQuest(),
       getTrackedQuest: () => this.getTrackedQuest(),
+      getPendingQuestSubmission: () => this.getPendingQuestSubmission(),
+      submitPendingQuestItem: () => this.submitPendingQuestItem(),
       submitTrackedQuestAction: () => this.submitTrackedQuestAction(),
       performTrackedQuestAction: () => this.performTrackedQuestAction(),
       completeTrackedQuest: () => this.completeTrackedQuest(),
@@ -1301,6 +1393,8 @@ export class CaelianKernel {
       pauseTrackedQuest: () => this.pauseTrackedQuest(),
       resumeTrackedQuest: () => this.resumeTrackedQuest(),
       getTrackedQuest: () => this.getTrackedQuest(),
+      getPendingQuestSubmission: () => this.getPendingQuestSubmission(),
+      submitPendingQuestItem: () => this.submitPendingQuestItem(),
       submitTrackedQuestAction: () => this.submitTrackedQuestAction(),
       performTrackedQuestAction: () => this.performTrackedQuestAction(),
       completeTrackedQuest: () => this.completeTrackedQuest(),
@@ -1581,7 +1675,11 @@ export class CaelianKernel {
     const state = await this.repository.achievementSpecialState(
       this.profileId,
     );
-    if (state.letterClaimed && !state.dailyGiftAvailable) return;
+    if (
+      state.letterClaimed &&
+      !state.dailyGiftAvailable &&
+      !state.creatorGiftAvailable
+    ) return;
     await this.panels.open('achievement-letter');
   }
 

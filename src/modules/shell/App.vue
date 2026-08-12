@@ -45,6 +45,8 @@ const info = computed(() => props.context.api.getRuntimeInfo());
 const pageIndex = ref(0);
 const pageDirection = ref<-1 | 1>(1);
 const ordering = ref(false);
+const pendingSubmission = ref(false);
+let disposeSubmission: (() => void) | undefined;
 
 let idleTimer: number | undefined;
 let activationTimer: number | undefined;
@@ -371,6 +373,16 @@ function open(panel: PanelName): void {
   closeWheel();
 }
 
+async function refreshPendingSubmission(): Promise<void> {
+  pendingSubmission.value = Boolean(
+    await props.context.api.getPendingQuestSubmission(),
+  );
+}
+
+function openPendingSubmission(): void {
+  void props.context.api.openPanel('quest-submission');
+}
+
 function beginOrdering(): void {
   orderDraft.value = [];
   ordering.value = true;
@@ -604,12 +616,29 @@ onMounted(() => {
   win.visualViewport?.addEventListener('resize', handleResize);
   win.visualViewport?.addEventListener('scroll', handleResize);
   scheduleIdle();
+  void refreshPendingSubmission();
+  disposeSubmission = props.context.api.on(
+    'quest.submission-changed',
+    ({ pending }) => {
+      pendingSubmission.value = pending;
+    },
+  );
+  const disposeTracking = props.context.api.on(
+    'quest.tracking-changed',
+    () => void refreshPendingSubmission(),
+  );
+  const prior = disposeSubmission;
+  disposeSubmission = () => {
+    prior?.();
+    disposeTracking();
+  };
 });
 
 onUnmounted(() => {
   const win = hostWindow();
   clearIdleTimer();
   clearActivationTimer();
+  disposeSubmission?.();
   props.context.document.removeEventListener(
     'pointerdown',
     handleOutsidePointerDown,
@@ -621,6 +650,17 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <button
+    v-if="pendingSubmission"
+    type="button"
+    class="submission-fab"
+    aria-label="打开剧情材料提交窗口"
+    title="待提交剧情材料"
+    @click="openPendingSubmission"
+  >
+    <span>◇</span>
+    <i>!</i>
+  </button>
   <div
     ref="shellElement"
     class="shell"
@@ -741,6 +781,9 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.submission-fab { position: fixed; right: max(12px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); z-index: 2147483647; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 1px solid rgba(240,214,138,.82); border-radius: 14px; color: #f5dda0; background: linear-gradient(145deg,#302719,#17130d); box-shadow: 0 9px 28px rgba(0,0,0,.6); cursor: pointer; }
+.submission-fab span { font-size: 24px; line-height: 1; }
+.submission-fab i { position: absolute; top: -5px; right: -5px; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: white; background: #c94a43; font: 700 11px/1 sans-serif; box-shadow: 0 0 0 2px #0d0f14; }
 .shell {
   --launcher-size: 58px;
   position: fixed;

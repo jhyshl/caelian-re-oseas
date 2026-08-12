@@ -61,6 +61,29 @@ async function setup() {
 }
 
 describe('QuestProgressRepository', () => {
+  it('原子发放合法剧情赠礼，并在楼层回退时撤销', async () => {
+    const { database, quest, repository } = await setup();
+    await repository.bindFloor('profile', {
+      questId: quest.id,
+      floor: floor(2, 'gift', 'gift-lineage'),
+      judgeResult: { progress: 'stay' },
+      giftItems: [{ itemId: '小血瓶', itemName: '小血瓶', count: 2 }],
+      summary: 'NPC 赠送了药瓶。',
+      next: {
+        status: 'active',
+        trackerState: 'tracking',
+        currentStage: 0,
+        currentNodeId: 'stage:0',
+        objective: '前往任务地点',
+      },
+    });
+    expect(await database.inventoryStacks.get('profile:小血瓶')).toMatchObject({
+      quantity: 2,
+    });
+    await repository.rollbackFromFloor('profile', 2);
+    expect(await database.inventoryStacks.get('profile:小血瓶')).toBeUndefined();
+  });
+
   it('把副 API 结果、摘要和任务状态绑定到同一个楼层', async () => {
     const { database, quest, repository } = await setup();
     await repository.bindFloor('profile', {

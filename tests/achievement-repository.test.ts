@@ -34,6 +34,47 @@ afterEach(async () => {
 });
 
 describe('AchievementRepository integration', () => {
+  it('江海有声特殊赠礼只发放一次并同步金币、材料与可用药瓶', async () => {
+    const { repository } = createRepository();
+    const profile = await repository.ensureProfile('creator-gift');
+    const before = await repository.snapshot(profile.id);
+    await expect(
+      repository.achievementSpecialState(profile.id),
+    ).resolves.toMatchObject({ creatorGiftAvailable: true });
+
+    await repository.execute(profile.id, {
+      id: 'claim-creator-gift',
+      type: 'achievement.claim-creator-gift',
+      payload: {},
+    });
+    const after = await repository.snapshot(profile.id);
+    expect(after.player.gold - before.player.gold).toBe(2000);
+    expect(after.inventory).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ itemId: '城郊药草', quantity: 20 }),
+        expect.objectContaining({ itemId: '治愈苔', quantity: 10 }),
+        expect.objectContaining({ itemId: '月露草', quantity: 20 }),
+        expect.objectContaining({ itemId: '蓝晶花', quantity: 10 }),
+        expect.objectContaining({ itemId: '空玻璃瓶', quantity: 20 }),
+        expect.objectContaining({ itemId: '小血瓶', quantity: 15 }),
+        expect.objectContaining({ itemId: '小魔药瓶', quantity: 15 }),
+      ]),
+    );
+    await expect(
+      repository.achievementSpecialState(profile.id),
+    ).resolves.toMatchObject({
+      creatorGiftAvailable: false,
+      creatorGiftClaimed: true,
+    });
+    await expect(
+      repository.execute(profile.id, {
+        id: 'claim-creator-gift-again',
+        type: 'achievement.claim-creator-gift',
+        payload: {},
+      }),
+    ).rejects.toThrow('已经领取过');
+  });
+
   it('保留旧版 95 项并接入今昔的诗行特殊成就', async () => {
     const definitions = await loadAchievementDefinitions();
     expect(Object.keys(definitions)).toHaveLength(97);

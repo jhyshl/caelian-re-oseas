@@ -109,6 +109,18 @@ const COUNTER_PROGRESS: Record<string, string[]> = {
   'trelao.feedDislikeStreak': ['ach_trelao_feed_dislike_streak_5'],
 };
 
+const CREATOR_GIFT_KEY = 'special.creatorGift.alpha39-beta12';
+const CREATOR_GIFT_GOLD = 2_000;
+const CREATOR_GIFT_ITEMS = [
+  { itemId: '城郊药草', name: '城郊药草', quantity: 20 },
+  { itemId: '治愈苔', name: '治愈苔', quantity: 10 },
+  { itemId: '月露草', name: '月露草', quantity: 20 },
+  { itemId: '蓝晶花', name: '蓝晶花', quantity: 10 },
+  { itemId: '空玻璃瓶', name: '空玻璃瓶', quantity: 20 },
+  { itemId: '小血瓶', name: '小血瓶', quantity: 15 },
+  { itemId: '小魔药瓶', name: '小魔药瓶', quantity: 15 },
+] as const;
+
 export class AchievementRepository {
   private definitions?: Record<string, AchievementDefinition>;
   private dailyGiftPool?: Array<{ itemId: string; name: string }>;
@@ -785,13 +797,47 @@ export class AchievementRepository {
     });
   }
 
+  async claimCreatorGift(profileId: string): Promise<void> {
+    const counterId = this.counterId(CREATOR_GIFT_KEY);
+    const claimed = await this.db.achievementCounters.get(counterId);
+    if ((claimed?.value ?? 0) > 0) {
+      throw new Error('这份特殊赠礼已经领取过了');
+    }
+    const player = await this.db.playerStates.get(profileId);
+    if (!player) throw new Error('玩家档案不存在');
+    const now = Date.now();
+    player.gold += CREATOR_GIFT_GOLD;
+    player.updatedAt = now;
+    await this.db.playerStates.put(player);
+    for (const item of CREATOR_GIFT_ITEMS) {
+      const id = `${profileId}:${item.itemId}`;
+      const current = await this.db.inventoryStacks.get(id);
+      await this.db.inventoryStacks.put({
+        id,
+        profileId,
+        itemId: item.itemId,
+        name: item.name,
+        quantity: (current?.quantity ?? 0) + item.quantity,
+        updatedAt: now,
+      });
+    }
+    await this.db.achievementCounters.put({
+      id: counterId,
+      profileId: GLOBAL_ACHIEVEMENT_PROFILE_ID,
+      key: CREATOR_GIFT_KEY,
+      value: 1,
+      updatedAt: now,
+    });
+  }
+
   async specialState(
     profileId: string,
   ): Promise<AchievementSpecialState> {
-    const [claimed, daily, poem] = await Promise.all([
+    const [claimed, daily, poem, creatorGift] = await Promise.all([
       this.counter('poem.claimed'),
       this.counter('poem.dailyGift'),
       this.db.achievementProgress.get(this.progressId(PAST_PRESENT_POEM_ID)),
+      this.counter(CREATOR_GIFT_KEY),
     ]);
     const data = this.object(daily.data);
     const items = Array.isArray(data.items)
@@ -817,6 +863,10 @@ export class AchievementRepository {
         letterClaimed && lastDailyGiftDate !== this.todayKey(),
       lastDailyGiftDate,
       lastDailyGiftItems: items,
+      creatorGiftAvailable: creatorGift.value <= 0,
+      creatorGiftClaimed: creatorGift.value > 0,
+      creatorGiftItems: CREATOR_GIFT_ITEMS.map((item) => ({ ...item })),
+      creatorGiftGold: CREATOR_GIFT_GOLD,
     };
   }
 

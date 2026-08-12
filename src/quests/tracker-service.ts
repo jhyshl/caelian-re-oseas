@@ -24,6 +24,7 @@ export interface EvaluateQuestTurnInput {
   floor: TavernFloorReference;
   currentLocation: string;
   recentMessages: QuestConversationMessage[];
+  legalItems?: Array<{ itemId: string; itemName: string }>;
   onEvaluationStart?: () => void;
 }
 
@@ -42,6 +43,7 @@ export type EvaluateQuestTurnResult =
       status: 'evaluated';
       decision: QuestTransitionDecision;
       tracker: QuestTrackerRecord;
+      giftItems: Array<{ itemId: string; itemName: string; count: number }>;
     };
 
 export class QuestTrackerService {
@@ -69,6 +71,9 @@ export class QuestTrackerService {
       input.questRecord.id,
     );
     const current = existing?.current ?? baseline;
+    if (current.pendingItemSubmission) {
+      return { status: 'skipped', reason: 'tracker-disabled' };
+    }
     if (
       ['idle', 'manualPaused', 'suspended', 'ended'].includes(
         current.trackerState,
@@ -105,12 +110,47 @@ export class QuestTrackerService {
       progress: current,
       currentLocation: input.currentLocation,
       recentMessages: input.recentMessages,
+      legalItems: input.legalItems,
     });
-    const decision = applyJudgeResult(
+    const judgedDecision = applyJudgeResult(
       input.quest,
       current,
       evaluation.result,
     );
+    const legalItems = new Map(
+      (input.legalItems ?? []).map((item) => [item.itemId, item.itemName]),
+    );
+    const giftItems = mergeLegalItems(
+      evaluation.result.giftItems ?? [],
+      legalItems,
+    );
+    const requested = evaluation.result.requiredItemSubmission ?? null;
+    const requestedName = requested
+      ? legalItems.get(requested.itemId)
+      : undefined;
+    const decision: QuestTransitionDecision =
+      judgedDecision.accepted && requested && requestedName
+        ? {
+            accepted: false,
+            reason: 'awaiting-item-submission',
+            next: {
+              ...current,
+              trackerState: 'tracking',
+              summary: evaluation.result.summary,
+              pendingItemSubmission: {
+                itemId: requested.itemId,
+                itemName: requestedName,
+                count: requested.count,
+                requestedFloorId: input.floor.id,
+                requestedFloorIndex: input.floor.index,
+                requestedFloorFingerprint: input.floor.fingerprint,
+                requestedLineageHash: input.floor.lineageHash,
+                requestedAt: Date.now(),
+                deferredProgress: { ...judgedDecision.next },
+              },
+            },
+          }
+        : judgedDecision;
     const { summary, ...next } = decision.next;
     const tracker = await this.progress.bindFloor(input.profileId, {
       questId: input.questRecord.id,
@@ -118,15 +158,37 @@ export class QuestTrackerService {
       summary,
       baseline,
       next,
+      giftItems,
       judgeResult: {
         ...evaluation.result,
         rawResponse: evaluation.rawResponse,
         transitionAccepted: decision.accepted,
         transitionDecision: decision.reason,
+        ignoredGiftItemCount:
+          (evaluation.result.giftItems?.length ?? 0) - giftItems.length,
+        invalidItemSubmission: Boolean(requested && !requestedName),
       },
     });
-    return { status: 'evaluated', decision, tracker };
+    return { status: 'evaluated', decision, tracker, giftItems };
   }
+}
+
+function mergeLegalItems(
+  items: Array<{ itemId: string; count: number }>,
+  legalItems: Map<string, string>,
+): Array<{ itemId: string; itemName: string; count: number }> {
+  const merged = new Map<string, { itemId: string; itemName: string; count: number }>();
+  for (const item of items) {
+    const itemName = legalItems.get(item.itemId);
+    if (!itemName) continue;
+    const current = merged.get(item.itemId);
+    merged.set(item.itemId, {
+      itemId: item.itemId,
+      itemName,
+      count: Math.min(999_999, (current?.count ?? 0) + item.count),
+    });
+  }
+  return [...merged.values()];
 }
 
 export function questLocationMatches(

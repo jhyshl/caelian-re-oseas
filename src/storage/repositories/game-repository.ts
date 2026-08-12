@@ -343,6 +343,10 @@ export class GameRepository {
     return this.questProgress.applyLocalQuestTransition(profileId, input);
   }
 
+  submitPendingQuestItem(profileId: string, questId: string) {
+    return this.questProgress.submitPendingItem(profileId, questId);
+  }
+
   availableAutomaticQuestTransition(
     profileId: string,
     questId: string,
@@ -462,6 +466,8 @@ export class GameRepository {
         return this.achievements.claimPoemLetter(profileId);
       case 'achievement.claim-daily-gift':
         return this.achievements.claimDailyGift(profileId);
+      case 'achievement.claim-creator-gift':
+        return this.achievements.claimCreatorGift(profileId);
       case 'mail.open':
         return this.achievements.openMail(
           profileId,

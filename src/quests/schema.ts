@@ -10,6 +10,11 @@ const questItemSchema = z.object({
   count: z.number().int().min(1).max(999_999),
 });
 
+const questJudgeGiftSchema = z.object({
+  itemId: z.string().trim().min(1).max(160),
+  count: z.number().int().min(1).max(999_999),
+});
+
 const questEquipmentSchema = z.object({
   baseId: z.string().trim().min(1).max(160),
   name: z.string().trim().min(1).max(160),
@@ -463,6 +468,8 @@ export const questJudgeResultSchema = z
     confidence: z.number().min(0).max(1),
     evidence: z.array(z.string().trim().min(1).max(500)).max(8),
     summary: z.string().trim().min(1).max(2_000),
+    giftItems: z.array(questJudgeGiftSchema).max(20).optional(),
+    requiredItemSubmission: questJudgeGiftSchema.nullable().optional(),
   })
   .superRefine((result, context) => {
     if (
@@ -483,6 +490,13 @@ export const questJudgeResultSchema = z
         code: 'custom',
         message: '保持节拍时不能伪造跳转目标',
         path: ['progress'],
+      });
+    }
+    if (result.requiredItemSubmission && result.progress !== 'transition') {
+      context.addIssue({
+        code: 'custom',
+        message: '要求玩家提交物品时必须同时提供一个合法的剧情跳转',
+        path: ['requiredItemSubmission'],
       });
     }
   });

@@ -72,6 +72,16 @@ export interface TrackedQuestView {
   };
 }
 
+export interface PendingQuestSubmissionView {
+  questId: string;
+  questName: string;
+  itemId: string;
+  itemName: string;
+  count: number;
+  ownedCount: number;
+  available: boolean;
+}
+
 export type PanelName =
   | 'shell'
   | 'character'
@@ -92,6 +102,7 @@ export type PanelName =
   | 'surveys'
   | 'release-notes'
   | 'achievement-letter'
+  | 'quest-submission'
   | 'diagnostics';
 export type QueryName =
   | 'runtime'
@@ -177,6 +188,8 @@ export interface CaelianPublicApi {
   pauseTrackedQuest(): Promise<TrackedQuestView | null>;
   resumeTrackedQuest(): Promise<TrackedQuestView | null>;
   getTrackedQuest(): Promise<TrackedQuestView | null>;
+  getPendingQuestSubmission(): Promise<PendingQuestSubmissionView | null>;
+  submitPendingQuestItem(): Promise<PendingQuestSubmissionView | null>;
   submitTrackedQuestAction(): Promise<TrackedQuestView>;
   performTrackedQuestAction(): Promise<TrackedQuestView>;
   completeTrackedQuest(): Promise<QuestCompletionResult>;
@@ -216,6 +229,8 @@ export type PanelApi = Pick<
   | 'pauseTrackedQuest'
   | 'resumeTrackedQuest'
   | 'getTrackedQuest'
+  | 'getPendingQuestSubmission'
+  | 'submitPendingQuestItem'
   | 'submitTrackedQuestAction'
   | 'performTrackedQuestAction'
   | 'completeTrackedQuest'

@@ -134,7 +134,7 @@ export interface QuestRecord {
   updatedAt: number;
 }
 
-export interface QuestProgressSnapshot {
+export interface QuestDeferredProgressSnapshot {
   status: QuestStatus;
   trackerState: QuestTrackerState;
   currentStage: number;
@@ -149,6 +149,22 @@ export interface QuestProgressSnapshot {
   rewardExperience?: number;
   rewardGold?: number;
   rewardGuildExperience?: number;
+}
+
+export interface QuestPendingItemSubmission {
+  itemId: string;
+  itemName: string;
+  count: number;
+  requestedFloorId: string;
+  requestedFloorIndex: number;
+  requestedFloorFingerprint: string;
+  requestedLineageHash: string;
+  requestedAt: number;
+  deferredProgress: QuestDeferredProgressSnapshot;
+}
+
+export interface QuestProgressSnapshot extends QuestDeferredProgressSnapshot {
+  pendingItemSubmission?: QuestPendingItemSubmission;
 }
 
 export interface QuestTrackerRecord {
@@ -571,6 +587,14 @@ export interface AchievementSpecialState {
     name: string;
     quantity: number;
   }>;
+  creatorGiftAvailable: boolean;
+  creatorGiftClaimed: boolean;
+  creatorGiftItems: Array<{
+    itemId: string;
+    name: string;
+    quantity: number;
+  }>;
+  creatorGiftGold: number;
 }
 
 export interface MailRecord {

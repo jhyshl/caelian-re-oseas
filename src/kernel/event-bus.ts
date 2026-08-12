@@ -33,6 +33,7 @@ export interface KernelEventMap {
     questId?: string;
     trackerState: QuestTrackerState | 'none';
   };
+  'quest.submission-changed': { pending: boolean };
   'achievement.unlocked': AchievementUnlockNotice;
 }
 

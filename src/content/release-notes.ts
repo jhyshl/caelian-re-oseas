@@ -9,6 +9,17 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.39',
+    label: 'Alpha 39',
+    releasedAt: '2026-08-12',
+    changes: [
+      '剧情判定器新增合法物品赠礼与材料提交判定：副 API 只能返回数据库中的精确物品，非法物品会静默忽略，合法赠礼会原子写入背包并随聊天楼层回退。',
+      '剧情要求提交材料时会冻结下一节点，向剧情提示同步当前单项材料的需求、持有与缺少数量；只有本地背包成功扣除全部材料后才继续推进。',
+      '新增不可直接关闭的剧情材料提交窗口：材料不足时明确提示且禁止提交，只能最小化；最小化后通过独立于原悬浮导航的材料按钮重新打开。',
+      '新增江海有声一次性特殊赠礼：2000 金币、可合成 10 个小血瓶与 10 个小魔药瓶的完整材料，以及可直接使用的小血瓶与小魔药瓶各 15 个。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.38',
     label: 'Alpha 38',
     releasedAt: '2026-08-12',
@@ -428,6 +439,18 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 ] as const;
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.2.0-beta.1',
+    label: 'Beta 1.2',
+    releasedAt: '2026-08-12',
+    changes: [
+      '同步 Alpha 39 的剧情赠礼与材料提交系统：所有物品必须命中本地数据库，合法赠礼原子进入背包，非法数据静默忽略。',
+      '材料提交会在扣除成功前阻塞下一剧情节点，并把当前所需、持有和缺少数量同步给剧情提示。',
+      '新增可最小化但不可跳过的材料提交窗口，以及独立于原悬浮导航的待提交入口。',
+      '加入江海有声的一次性特殊赠礼：2000 金币、两类药瓶的十份合成材料包，以及小血瓶和小魔药瓶各 15 个。',
+      '同步 Alpha 38 的 10–20 张普通牌组、API Key 自动恢复、移动端模型选择、战斗滚动、弃牌重抽、护盾显示与旧版战斗机制对齐。',
+    ],
+  },
   {
     version: '1.1.0-beta.1',
     label: 'Beta 1.1',

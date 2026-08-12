@@ -274,6 +274,11 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...commandBase,
+    type: z.literal('achievement.claim-creator-gift'),
+    payload: z.object({}),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal('mail.open'),
     payload: z.object({
       mailId: z.string().trim().min(1).max(160),

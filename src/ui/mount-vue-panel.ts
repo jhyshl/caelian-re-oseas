@@ -22,7 +22,8 @@ export function mountVuePanel(
       : panel === 'feedback' ||
           panel === 'surveys' ||
           panel === 'release-notes' ||
-          panel === 'achievement-letter'
+          panel === 'achievement-letter' ||
+          panel === 'quest-submission'
         ? 'caelian-panel-host caelian-modal-host'
         : 'caelian-panel-host';
   const root = context.document.createElement('div');

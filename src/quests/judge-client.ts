@@ -324,6 +324,11 @@ function normalizeJudgeResult(value: unknown): unknown {
     .slice(0, 8);
   const confidenceValue = Number(source.confidence);
   const summary = firstText(source.summary, evidence[0]).slice(0, 2_000);
+  const giftItems = normalizeJudgeItems(source.giftItems, 20);
+  const requiredItemSubmission = normalizeJudgeItems(
+    source.requiredItemSubmission ? [source.requiredItemSubmission] : [],
+    1,
+  )[0] ?? null;
 
   return {
     ...source,
@@ -337,7 +342,27 @@ function normalizeJudgeResult(value: unknown): unknown {
       : 0,
     evidence,
     summary: summary || '本轮没有确认新的任务进度。',
+    giftItems,
+    requiredItemSubmission:
+      progress === 'transition' ? requiredItemSubmission : null,
   };
+}
+
+function normalizeJudgeItems(
+  value: unknown,
+  limit: number,
+): Array<{ itemId: string; count: number }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .flatMap((entry) => {
+      const item = asRecord(entry);
+      const itemId = firstText(item?.itemId, item?.id).slice(0, 160);
+      const count = Math.floor(Number(item?.count));
+      return itemId && Number.isFinite(count) && count > 0
+        ? [{ itemId, count: Math.min(999_999, count) }]
+        : [];
+    })
+    .slice(0, limit);
 }
 
 const JUDGE_SCENE_STATES = new Set([

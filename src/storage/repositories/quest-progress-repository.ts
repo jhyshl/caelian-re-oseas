@@ -24,6 +24,7 @@ export interface BindQuestFloorInput {
   summary: string;
   next: Omit<QuestProgressSnapshot, 'summary'>;
   baseline?: QuestProgressSnapshot;
+  giftItems?: Array<{ itemId: string; itemName: string; count: number }>;
 }
 
 export interface QuestFloorRollbackResult {
@@ -104,7 +105,12 @@ export class QuestProgressRepository {
           floorFingerprint: input.floor.fingerprint,
           lineageHash: input.floor.lineageHash,
           source: 'judge',
-          judgeResult: input.judgeResult,
+          judgeResult: {
+            ...(input.judgeResult && typeof input.judgeResult === 'object'
+              ? input.judgeResult
+              : { raw: input.judgeResult }),
+            appliedGiftItems: input.giftItems ?? [],
+          },
           summary,
           before,
           after,
@@ -116,6 +122,18 @@ export class QuestProgressRepository {
           await this.db.questFloorCheckpoints.bulkDelete(
             removed.map((item) => item.id),
           );
+        }
+        for (const item of input.giftItems ?? []) {
+          const id = `${profileId}:${item.itemId}`;
+          const stack = await this.db.inventoryStacks.get(id);
+          await this.db.inventoryStacks.put({
+            id,
+            profileId,
+            itemId: item.itemId,
+            name: stack?.name ?? item.itemName,
+            quantity: (stack?.quantity ?? 0) + item.count,
+            updatedAt: now,
+          });
         }
         await this.db.questFloorCheckpoints.put(checkpoint);
 
@@ -435,6 +453,87 @@ export class QuestProgressRepository {
         await this.db.questFloorCheckpoints.put(checkpoint);
         await this.db.questTrackerStates.put(updated);
         await this.applySnapshotToQuest(quest, decision.next, now);
+        return updated;
+      },
+    );
+  }
+
+  async submitPendingItem(
+    profileId: string,
+    questId: string,
+  ): Promise<QuestTrackerRecord> {
+    return this.db.transaction(
+      'rw',
+      this.db.questRecords,
+      this.db.questTrackerStates,
+      this.db.questFloorCheckpoints,
+      this.db.inventoryStacks,
+      async () => {
+        const quest = await this.requireQuest(profileId, questId);
+        const trackerId = this.trackerId(profileId, questId);
+        const tracker = await this.db.questTrackerStates.get(trackerId);
+        if (!tracker?.selected) throw new Error('该任务当前没有被追踪');
+        const pending = tracker.current.pendingItemSubmission;
+        if (!pending) throw new Error('当前剧情没有等待提交的物品');
+        const stackId = `${profileId}:${pending.itemId}`;
+        const stack = await this.db.inventoryStacks.get(stackId);
+        const owned = stack?.quantity ?? 0;
+        if (owned < pending.count) {
+          throw new Error(
+            `${pending.itemName}数量不足：需要 ${pending.count}，当前 ${owned}`,
+          );
+        }
+        const now = Date.now();
+        const remaining = owned - pending.count;
+        if (remaining === 0) await this.db.inventoryStacks.delete(stackId);
+        else if (stack) {
+          await this.db.inventoryStacks.put({
+            ...stack,
+            quantity: remaining,
+            updatedAt: now,
+          });
+        }
+        const after: QuestProgressSnapshot = {
+          ...pending.deferredProgress,
+          summary: `${tracker.current.summary}\n玩家已提交${pending.itemName}×${pending.count}。`.trim(),
+        };
+        const checkpoint: QuestFloorCheckpointRecord = {
+          id: `${this.checkpointId(trackerId, {
+            id: pending.requestedFloorId,
+            index: pending.requestedFloorIndex,
+            role: 'assistant',
+            fingerprint: pending.requestedFloorFingerprint,
+            lineageHash: pending.requestedLineageHash,
+          })}:pending-submission`,
+          profileId,
+          questId,
+          floorId: pending.requestedFloorId,
+          floorIndex: pending.requestedFloorIndex,
+          floorFingerprint: pending.requestedFloorFingerprint,
+          lineageHash: pending.requestedLineageHash,
+          source: 'local',
+          judgeResult: {
+            source: 'pending-item-submission',
+            trigger: {
+              type: 'submit_item',
+              itemId: pending.itemId,
+              itemName: pending.itemName,
+              count: pending.count,
+            },
+          },
+          summary: after.summary,
+          before: tracker.current,
+          after,
+          createdAt: now,
+        };
+        const updated: QuestTrackerRecord = {
+          ...tracker,
+          current: after,
+          updatedAt: now,
+        };
+        await this.db.questFloorCheckpoints.put(checkpoint);
+        await this.db.questTrackerStates.put(updated);
+        await this.applySnapshotToQuest(quest, after, now);
         return updated;
       },
     );
@@ -802,9 +901,13 @@ export class QuestProgressRepository {
       .where('[profileId+questId]')
       .equals([profileId, questId])
       .toArray();
+    const flowRank = (checkpoint: QuestFloorCheckpointRecord) =>
+      checkpoint.source === 'judge' ? 0 : 1;
     return checkpoints.sort((left, right) => {
       const floorOrder = left.floorIndex - right.floorIndex;
       if (floorOrder !== 0) return floorOrder;
+      const sourceOrder = flowRank(left) - flowRank(right);
+      if (sourceOrder !== 0) return sourceOrder;
       if (left.after.currentNodeId === right.before.currentNodeId) return -1;
       if (right.after.currentNodeId === left.before.currentNodeId) return 1;
       return left.createdAt - right.createdAt || left.id.localeCompare(right.id);
@@ -816,11 +919,34 @@ export class QuestProgressRepository {
     updatedAt: number,
   ): Promise<void> {
     for (const checkpoint of checkpoints) {
-      if (checkpoint.source !== 'local') continue;
       const result = checkpoint.judgeResult;
-      if (!result || typeof result !== 'object' || !('trigger' in result)) {
-        continue;
+      if (
+        result &&
+        typeof result === 'object' &&
+        'appliedGiftItems' in result
+      ) {
+        const gifts = Array.isArray(result.appliedGiftItems)
+          ? result.appliedGiftItems
+          : [];
+        for (const gift of gifts) {
+          if (
+            !gift ||
+            typeof gift !== 'object' ||
+            !('itemId' in gift) ||
+            typeof gift.itemId !== 'string' ||
+            !('count' in gift) ||
+            typeof gift.count !== 'number'
+          ) continue;
+          const id = `${checkpoint.profileId}:${gift.itemId}`;
+          const stack = await this.db.inventoryStacks.get(id);
+          if (!stack) continue;
+          const quantity = stack.quantity - gift.count;
+          if (quantity <= 0) await this.db.inventoryStacks.delete(id);
+          else await this.db.inventoryStacks.put({ ...stack, quantity, updatedAt });
+        }
       }
+      if (checkpoint.source !== 'local') continue;
+      if (!result || typeof result !== 'object' || !('trigger' in result)) continue;
       const trigger = result.trigger;
       if (!trigger || typeof trigger !== 'object' || !('type' in trigger)) {
         continue;

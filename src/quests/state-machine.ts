@@ -19,7 +19,8 @@ export interface QuestTransitionDecision {
     | 'wrong-target'
     | 'guard-not-satisfied'
     | 'completion-gate-not-satisfied'
-    | 'low-confidence';
+    | 'low-confidence'
+    | 'awaiting-item-submission';
   next: QuestProgressSnapshot;
 }
 
