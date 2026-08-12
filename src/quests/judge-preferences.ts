@@ -7,6 +7,7 @@ interface StoredQuestJudgePreferences {
   endpoint: string;
   modelsEndpoint?: string;
   model: string;
+  apiKey?: string;
   jsonMode: boolean;
 }
 
@@ -30,7 +31,9 @@ export function loadQuestJudgePreferences(
       parsed.modelsEndpoint.trim()
         ? parsed.modelsEndpoint.trim()
         : undefined;
-    const apiKey = host.sessionStorage.getItem(SESSION_KEY)?.trim();
+    const apiKey =
+      (typeof parsed.apiKey === 'string' ? parsed.apiKey.trim() : '') ||
+      host.sessionStorage.getItem(SESSION_KEY)?.trim();
     return {
       endpoint: parsed.endpoint.trim(),
       ...(modelsEndpoint ? { modelsEndpoint } : {}),
@@ -54,12 +57,11 @@ export function saveQuestJudgePreferences(
         ? { modelsEndpoint: config.modelsEndpoint.trim() }
         : {}),
       model: config.model.trim(),
+      ...(config.apiKey?.trim() ? { apiKey: config.apiKey.trim() } : {}),
       jsonMode: config.jsonMode !== false,
     };
     host.localStorage.setItem(PREFERENCES_KEY, JSON.stringify(stored));
-    const apiKey = config.apiKey?.trim();
-    if (apiKey) host.sessionStorage.setItem(SESSION_KEY, apiKey);
-    else host.sessionStorage.removeItem(SESSION_KEY);
+    host.sessionStorage.removeItem(SESSION_KEY);
   } catch {
     // Private browsing or a restricted host may reject browser storage.
   }

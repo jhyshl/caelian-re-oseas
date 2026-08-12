@@ -551,7 +551,7 @@ describe('副 API 与楼层编排', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('长期保存地址和模型，但只把密钥放在当前会话', () => {
+  it('把副 API 地址、模型和密钥都长期保存到当前浏览器', () => {
     saveQuestJudgePreferences(window, {
       endpoint: 'https://api.example/v1/chat/completions',
       modelsEndpoint: 'https://api.example/v1/models',
@@ -562,10 +562,10 @@ describe('副 API 与楼层编排', () => {
 
     expect(
       localStorage.getItem('caelian_quest_judge_preferences_v1'),
-    ).not.toContain('session-secret');
+    ).toContain('session-secret');
     expect(
       sessionStorage.getItem('caelian_quest_judge_api_key_session_v1'),
-    ).toBe('session-secret');
+    ).toBeNull();
     expect(loadQuestJudgePreferences(window)).toEqual({
       endpoint: 'https://api.example/v1/chat/completions',
       modelsEndpoint: 'https://api.example/v1/models',

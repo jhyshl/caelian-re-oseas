@@ -328,6 +328,16 @@ describe('本地战斗仓库', () => {
     let snapshot = await repository.snapshot(profile.id);
     const battleId = snapshot.battle!.id;
     const initialAp = snapshot.battle!.state.player.ap;
+    const session = await database.battleSessions.get(battleId);
+    session!.state.player.hp = session!.state.player.hpMax;
+    session!.state.player.buffs.blood_burn = {
+      value: 20,
+      turns: 2,
+      stacks: 2,
+    };
+    const expectedBloodBurnLoss =
+      Math.max(1, Math.floor(session!.state.player.hpMax * 0.02)) * 2;
+    await database.battleSessions.put(session!);
     const result = await repository.execute(profile.id, {
       id: 'discard-hand',
       type: 'battle.discard-hand',
@@ -339,6 +349,9 @@ describe('本地战斗仓库', () => {
     expect(snapshot.battle?.state.player.ap).toBe(initialAp - 1);
     expect(snapshot.battle?.state.player.hand).toHaveLength(3);
     expect(snapshot.battle?.state.player.discardPile).toHaveLength(5);
+    expect(snapshot.battle?.state.player.hp).toBe(
+      snapshot.battle!.state.player.hpMax - expectedBloodBurnLoss,
+    );
   });
 
   it('在玩家行动阶段从背包使用回血、回蓝与增益药剂并实时扣除数量', async () => {
@@ -498,6 +511,7 @@ describe('本地战斗仓库', () => {
     expect(snapshot.battle?.state.player.buffs.strength).toEqual({
       value: 5,
       turns: 3,
+      fresh: true,
     });
     expect(snapshot.player.pendingBattleEffects).toEqual([]);
   });
@@ -519,7 +533,7 @@ describe('本地战斗仓库', () => {
         subclass: 'holy_knight',
       },
     });
-    const battleRepository = new BattleRepository(database, () => 0);
+    const battleRepository = new BattleRepository(database, () => 0.5);
     await battleRepository.prepare();
     await battleRepository.start(profile.id, {
       monsterId: 'mon_slime',
@@ -548,6 +562,162 @@ describe('本地战斗仓库', () => {
       phaseAfter: 'player',
       turnAfter: 2,
     });
+  });
+
+  it('按旧版让速度、敏捷、坚韧和百分比减伤参与实际结算', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-battle-legacy-stats-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:battle-legacy-stats');
+    await repository.execute(profile.id, {
+      id: 'legacy-stats-player-create',
+      type: 'player.create',
+      payload: {
+        name: '旧版属性测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const battleRepository = new BattleRepository(database, () => 0.5);
+    await battleRepository.prepare();
+    await battleRepository.start(profile.id, {
+      monsterId: 'mon_slime',
+      count: 1,
+    });
+
+    let snapshot = await repository.snapshot(profile.id);
+    const battleId = snapshot.battle!.id;
+    const session = await database.battleSessions.get(battleId);
+    expect(session).toBeDefined();
+    session!.state.player.buffs.agility = { value: 95, turns: 2 };
+    const hpBeforeDodge = session!.state.player.hp;
+    await database.battleSessions.put(session!);
+    await battleRepository.endTurn(profile.id, battleId);
+
+    snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.battle!.state.player.hp).toBe(hpBeforeDodge);
+    expect(snapshot.battle!.state.log.some((entry) => entry.text.includes('敏捷/速度闪避'))).toBe(true);
+
+    const secondSession = await database.battleSessions.get(battleId);
+    secondSession!.state.player.buffs = {
+      fortitude: { value: 50, turns: 2 },
+      damage_resist: { value: 50, turns: 2 },
+    };
+    secondSession!.state.player.speed = 0;
+    secondSession!.state.player.defense = 0;
+    const hpBeforeDefense = secondSession!.state.player.hp;
+    await database.battleSessions.put(secondSession!);
+    await battleRepository.endTurn(profile.id, battleId);
+
+    snapshot = await repository.snapshot(profile.id);
+    expect(hpBeforeDefense - snapshot.battle!.state.player.hp).toBe(1);
+  });
+
+  it('按旧版实际结算冻结、再生、流血与濒死保护', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-battle-legacy-status-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:battle-legacy-status');
+    await repository.execute(profile.id, {
+      id: 'legacy-status-player-create',
+      type: 'player.create',
+      payload: {
+        name: '旧版状态测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const battleRepository = new BattleRepository(database, () => 0.5);
+    await battleRepository.prepare();
+    await battleRepository.start(profile.id, {
+      monsterId: 'mon_slime',
+      count: 1,
+    });
+
+    let snapshot = await repository.snapshot(profile.id);
+    const battleId = snapshot.battle!.id;
+    let session = await database.battleSessions.get(battleId);
+    const enemy = session!.state.enemies[0]!;
+    enemy.debuffs.freeze = { value: 1, turns: 2 };
+    session!.state.player.hp = session!.state.player.hpMax - 10;
+    session!.state.player.buffs.regen = { value: 3, turns: 2 };
+    session!.state.player.debuffs.bleed = { value: 2, turns: 2 };
+    const hpBeforeStatuses = session!.state.player.hp;
+    const expectedBleed = 2 + Math.floor(enemy.attack * 0.06);
+    await database.battleSessions.put(session!);
+    await battleRepository.endTurn(profile.id, battleId);
+
+    snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.battle!.state.player.hp).toBe(
+      hpBeforeStatuses + 3 - expectedBleed,
+    );
+    expect(
+      snapshot.battle!.state.log.some((entry) =>
+        entry.text.includes('被冰冻，跳过行动'),
+      ),
+    ).toBe(true);
+
+    session = await database.battleSessions.get(battleId);
+    session!.state.player.hp = 1;
+    session!.state.player.shield = 0;
+    session!.state.player.speed = 0;
+    session!.state.player.defense = 0;
+    session!.state.player.buffs = {
+      death_save: { value: 1, turns: 2, charges: 1 },
+    };
+    session!.state.player.debuffs = {};
+    session!.state.enemies[0]!.debuffs = {};
+    session!.state.enemies[0]!.intent = null;
+    await database.battleSessions.put(session!);
+    await battleRepository.endTurn(profile.id, battleId);
+
+    snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.battle!.state.player.hp).toBe(1);
+    expect(snapshot.battle!.state.player.buffs.death_save).toBeUndefined();
+    expect(
+      snapshot.battle!.state.log.some((entry) =>
+        entry.text.includes('守护效果抵挡了致命伤'),
+      ),
+    ).toBe(true);
+  });
+
+  it('按旧版概率为普通怪物生成迅捷词缀和敏捷效果', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-battle-swift-affix-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:battle-swift-affix');
+    await repository.execute(profile.id, {
+      id: 'swift-affix-player-create',
+      type: 'player.create',
+      payload: {
+        name: '词缀测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const battleRepository = new BattleRepository(database, () => 0);
+    await battleRepository.prepare();
+    await battleRepository.start(profile.id, {
+      monsterId: 'mon_slime',
+      count: 1,
+    });
+
+    const enemy = (await repository.snapshot(profile.id)).battle!.state.enemies[0]!;
+    expect(enemy).toMatchObject({
+      affix: 'swift',
+      affixName: '迅捷',
+      buffs: { agility: { value: 8, turns: 2 } },
+    });
+    expect(enemy.name).toMatch(/^迅捷/);
   });
 
   it('探索时只从当前地区加权抽取怪物，并能生成独立的群体敌人', async () => {

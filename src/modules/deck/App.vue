@@ -114,10 +114,7 @@ function beginEdit() {
 
 function addCard(id: string) {
   const owned = snapshot.value?.cards.find((entry) => entry.cardId === id);
-  if (!owned || draft.value.filter((cardId) => cardId === id).length >= owned.quantity) {
-    return;
-  }
-  if (draft.value.length >= 30) return;
+  if (!owned || owned.quantity < 1 || draft.value.length >= 20) return;
   draft.value.push(id);
 }
 
@@ -128,6 +125,10 @@ function removeCard(id: string) {
 
 async function saveDeck() {
   notice.value = '';
+  if (draft.value.length < 10 || draft.value.length > 20) {
+    notice.value = '牌组构筑需要保持在 10–20 张。';
+    return;
+  }
   const result = await props.context.api.execute({
     id: commandId('deck.update'),
     type: 'deck.update',
@@ -280,7 +281,7 @@ onMounted(async () => {
             <button
               type="button"
               class="ca-button primary"
-              :disabled="draft.length === 0"
+              :disabled="draft.length < 10 || draft.length > 20"
               @click="saveDeck"
             >
               保存牌组
@@ -385,7 +386,7 @@ onMounted(async () => {
       <section class="ca-section">
         <h2 class="ca-section-title">
           牌组内容
-          <small>{{ deckIds.length }}/30</small>
+          <small>{{ deckIds.length }} / 10–20</small>
         </h2>
         <div v-if="groupedDeck.length === 0" class="ca-empty">
           当前筛选条件下没有卡牌
@@ -435,11 +436,11 @@ onMounted(async () => {
               <span>{{ entry.definition.description }}</span>
             </div>
             <div>
-              <small>{{ entry.inDeck }}/{{ entry.quantity }}</small>
+              <small>已入组 {{ entry.inDeck }} · 可重复</small>
               <button
                 type="button"
                 class="ca-button primary"
-                :disabled="entry.inDeck >= entry.quantity || draft.length >= 30"
+                :disabled="draft.length >= 20"
                 @click="addCard(entry.id)"
               >
                 加入

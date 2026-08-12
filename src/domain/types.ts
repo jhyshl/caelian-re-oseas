@@ -305,6 +305,12 @@ export type BattleStatus =
 export interface BattleTimedEffect {
   value: number;
   turns: number;
+  charges?: number;
+  stacks?: number;
+  debuff?: string;
+  fresh?: boolean;
+  undispellable?: boolean;
+  uncleanseable?: boolean;
 }
 
 export interface BattleCardInstance {
@@ -394,6 +400,9 @@ export interface BattleEnemyState {
   }>;
   buffs: Record<string, BattleTimedEffect>;
   debuffs: Record<string, BattleTimedEffect>;
+  affix?: string;
+  affixName?: string;
+  onHitDebuff?: string;
   intent: BattleIntent | null;
 }
 

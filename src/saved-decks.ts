@@ -25,7 +25,7 @@ const savedDeckSchema = z.object({
   professionId: identifier,
   professionName: z.string().trim().min(1).max(40),
   mainClass: identifier,
-  cardIds: z.array(z.string().trim().min(1).max(160)).min(1).max(30),
+  cardIds: z.array(z.string().trim().min(1).max(160)).min(10).max(20),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

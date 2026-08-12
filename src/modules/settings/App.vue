@@ -220,8 +220,8 @@ onMounted(async () => {
               type="password"
               :placeholder="
                 questJudgeStatus.apiKeyPresent
-                  ? '当前会话已有密钥；留空则继续使用'
-                  : '仅保留在当前浏览器会话'
+                  ? '本机已有保存的密钥；留空则继续使用'
+                  : '保存在当前浏览器本机并自动恢复'
               "
               autocomplete="new-password"
               spellcheck="false"
@@ -239,21 +239,27 @@ onMounted(async () => {
           <label>
             <span>判定模型</span>
             <div class="model-picker">
-              <input
-                v-model="questJudgeDraft.model"
-                list="caelian-quest-judge-models"
-                placeholder="拉取后选择，也可以手动填写"
-                spellcheck="false"
-              />
-              <datalist id="caelian-quest-judge-models">
-                <option
-                  v-for="model in questJudgeModels"
-                  :key="model.id"
-                  :value="model.id"
+              <div class="model-fields">
+                <select
+                  v-if="questJudgeModels.length"
+                  v-model="questJudgeDraft.model"
+                  aria-label="拉取到的模型列表"
                 >
-                  {{ model.ownedBy ? `${model.id} · ${model.ownedBy}` : model.id }}
-                </option>
-              </datalist>
+                  <option value="">请选择拉取到的模型</option>
+                  <option
+                    v-for="model in questJudgeModels"
+                    :key="model.id"
+                    :value="model.id"
+                  >
+                    {{ model.ownedBy ? `${model.id} · ${model.ownedBy}` : model.id }}
+                  </option>
+                </select>
+                <input
+                  v-model="questJudgeDraft.model"
+                  placeholder="也可以手动填写模型名称"
+                  spellcheck="false"
+                />
+              </div>
               <button
                 type="button"
                 class="ca-button"
@@ -292,7 +298,7 @@ onMounted(async () => {
           </button>
         </div>
         <p class="judge-security">
-          地址、模型和 JSON 模式保存在本机；API Key 只保留在当前浏览器会话，关闭会话后需要重新填写。
+          地址、模型、JSON 模式和 API Key 都保存在当前浏览器本机，重新打开时会自动恢复。
         </p>
       </section>
 
@@ -514,7 +520,8 @@ onMounted(async () => {
   font-size: 10px;
 }
 
-.judge-form input:not([type="checkbox"]) {
+.judge-form input:not([type="checkbox"]),
+.judge-form select {
   min-width: 0;
   padding: 9px 10px;
   border: 1px solid var(--ca-border-light);
@@ -524,8 +531,10 @@ onMounted(async () => {
   font: inherit;
 }
 
-.model-picker input {
+.model-fields {
   flex: 1;
+  display: grid;
+  gap: 6px;
 }
 
 .judge-toggle {

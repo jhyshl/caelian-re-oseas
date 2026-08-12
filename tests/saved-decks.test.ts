@@ -9,25 +9,27 @@ afterEach(() => localStorage.clear());
 
 describe('本地命名构筑预设', () => {
   it('保存、覆盖和删除命名构筑', () => {
+    const firstCards = Array.from({ length: 10 }, (_, index) => `card_${index}`);
+    const updatedCards = [...firstCards, 'card_10'];
     const first = saveNamedDeckBuild({
       id: 'saved_build_1',
       name: '圣盾循环',
       professionId: 'holy_knight',
       professionName: '圣骑士',
       mainClass: 'knight',
-      cardIds: ['card_a', 'card_b'],
+      cardIds: firstCards,
     });
     expect(readSavedDeckBuilds()).toHaveLength(1);
 
     saveNamedDeckBuild({
       ...first,
       name: '圣盾循环·改',
-      cardIds: ['card_a', 'card_b', 'card_c'],
+      cardIds: updatedCards,
     });
     expect(readSavedDeckBuilds()[0]).toMatchObject({
       id: 'saved_build_1',
       name: '圣盾循环·改',
-      cardIds: ['card_a', 'card_b', 'card_c'],
+      cardIds: updatedCards,
     });
 
     expect(deleteSavedDeckBuild(first.id)).toBe(true);
@@ -52,7 +54,7 @@ describe('本地命名构筑预设', () => {
         professionId: 'holy_knight',
         professionName: '圣骑士',
         mainClass: 'knight',
-        cardIds: ['card_a'],
+        cardIds: Array.from({ length: 10 }, () => 'card_a'),
       },
       hostWindow,
     );
@@ -79,10 +81,34 @@ describe('本地命名构筑预设', () => {
           professionId: 'holy_knight',
           professionName: '圣骑士',
           mainClass: 'knight',
-          cardIds: ['card_a'],
+          cardIds: Array.from({ length: 10 }, () => 'card_a'),
         },
         unavailable,
       ),
     ).toThrow('当前酒馆窗口无法使用本地存储');
+  });
+
+  it('只接受 10–20 张构筑，并允许任意数量的同名卡牌', () => {
+    expect(() =>
+      saveNamedDeckBuild({
+        id: 'saved_build_too_short',
+        name: '不足十张',
+        professionId: 'holy_knight',
+        professionName: '圣骑士',
+        mainClass: 'knight',
+        cardIds: Array.from({ length: 9 }, () => 'same_card'),
+      }),
+    ).toThrow();
+
+    expect(
+      saveNamedDeckBuild({
+        id: 'saved_build_duplicates',
+        name: '同名构筑',
+        professionId: 'holy_knight',
+        professionName: '圣骑士',
+        mainClass: 'knight',
+        cardIds: Array.from({ length: 20 }, () => 'same_card'),
+      }).cardIds,
+    ).toHaveLength(20);
   });
 });

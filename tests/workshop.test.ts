@@ -236,4 +236,37 @@ describe('旧版创意工坊规则', () => {
       }),
     ).toThrow('必须正好 15 张');
   });
+
+  it('自制职业的固定 15 张基础构筑仍限制同名卡最多 3 张', () => {
+    const cards = Array.from({ length: 8 }, (_, index) => ({
+      id: `limited_card_${index}`,
+      name: `限制卡牌${index}`,
+      type: 'skill',
+      cost: 1,
+      effects: [{ type: 'draw', value: 1 }],
+    }));
+    expect(() =>
+      normalizeWorkshopPack({
+        classes: [
+          {
+            id: 'custom_class_copy_limit',
+            main: 'mage',
+            name: '重复限制职业',
+            talent: { name: '天赋', effects: [] },
+            cards,
+            cardPool: [
+              ...Array.from({ length: 4 }, () => cards[0]!.id),
+              ...cards.slice(1).flatMap((card) => [card.id, card.id]),
+            ],
+            starterDeck: [
+              ...Array.from({ length: 4 }, () => cards[0]!.id),
+              ...Array.from({ length: 11 }, (_, index) =>
+                cards[(index % 7) + 1]!.id,
+              ),
+            ],
+          },
+        ],
+      }),
+    ).toThrow('同名卡牌最多放入 3 张');
+  });
 });

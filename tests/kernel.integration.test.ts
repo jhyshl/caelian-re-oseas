@@ -1143,13 +1143,13 @@ describe('CaelianKernel integration', () => {
     await expect
       .poll(
         () =>
-          panel?.querySelectorAll<HTMLDataListElement>(
-            '#caelian-quest-judge-models option',
+          panel?.querySelectorAll<HTMLOptionElement>(
+            'select[aria-label="拉取到的模型列表"] option:not([value=""])',
           ).length,
       )
       .toBe(2);
     const model = panel?.querySelector<HTMLInputElement>(
-      'input[list="caelian-quest-judge-models"]',
+      'input[placeholder="也可以手动填写模型名称"]',
     );
     expect(model).not.toBeNull();
     setInput(model!, 'judge-large');
@@ -1170,10 +1170,10 @@ describe('CaelianKernel integration', () => {
       });
     expect(
       localStorage.getItem('caelian_quest_judge_preferences_v1'),
-    ).not.toContain('settings-session-secret');
+    ).toContain('settings-session-secret');
     expect(
       sessionStorage.getItem('caelian_quest_judge_api_key_session_v1'),
-    ).toBe('settings-session-secret');
+    ).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(
       'https://judge.example/v1/models',
       expect.objectContaining({ method: 'GET' }),

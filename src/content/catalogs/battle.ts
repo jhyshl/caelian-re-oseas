@@ -34,6 +34,22 @@ export interface MonsterDefinition {
   level_range?: number[];
   patterns?: string[];
   skills?: Record<string, MonsterSkillDefinition>;
+  battle_start_buffs?: Array<{
+    buff?: string;
+    key?: string;
+    value?: number;
+    turns?: number;
+    charges?: number;
+    undispellable?: boolean;
+  }>;
+  battle_start_debuffs?: Array<{
+    debuff?: string;
+    key?: string;
+    value?: number;
+    turns?: number;
+    charges?: number;
+    uncleanseable?: boolean;
+  }>;
   [key: string]: unknown;
 }
 
@@ -45,6 +61,8 @@ export interface BattleRules {
   playerDefenseScale: number;
   enemyAttackScale: number;
   enemyDefenseScale: number;
+  speedDodgePerPoint: number;
+  maxSpeedDodge: number;
   mpRegenBase?: number;
   mpRegenDivisor?: number;
 }

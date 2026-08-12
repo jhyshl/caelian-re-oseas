@@ -1022,6 +1022,9 @@ export function normalizeWorkshopClass(
     },
     {},
   );
+  if (Object.values(starterCounts).some((count) => count > 3)) {
+    throw new Error(`职业「${name}」的基础构筑中，同名卡牌最多放入 3 张。`);
+  }
   const poolCounts = cardPool.reduce<Record<string, number>>(
     (result, cardId) => {
       result[cardId] = (result[cardId] ?? 0) + 1;

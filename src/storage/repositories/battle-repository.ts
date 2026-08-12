@@ -98,7 +98,103 @@ const MONSTER_VARIANCE: Record<string, [number, number]> = {
   nightmare: [0.92, 1.46],
 };
 
+interface EnemyInstanceAffix {
+  id: string;
+  name: string;
+  chance: number;
+  hp: number;
+  attack: number;
+  defense: number;
+  speed: number;
+  buff?: {
+    key: string;
+    value: number;
+    turns: number;
+    undispellable?: boolean;
+  };
+  onHitDebuff?: string;
+}
+
+const ENEMY_INSTANCE_AFFIXES: EnemyInstanceAffix[] = [
+  {
+    id: 'swift',
+    name: '迅捷',
+    chance: 12,
+    hp: 0.94,
+    attack: 1.04,
+    defense: 0.95,
+    speed: 1.28,
+    buff: { key: 'agility', value: 8, turns: 2 },
+  },
+  {
+    id: 'thick_hide',
+    name: '厚皮',
+    chance: 12,
+    hp: 1.16,
+    attack: 0.96,
+    defense: 1.24,
+    speed: 0.92,
+    buff: {
+      key: 'damage_resist',
+      value: 12,
+      turns: 2,
+      undispellable: true,
+    },
+  },
+  {
+    id: 'bloodthirsty',
+    name: '嗜血',
+    chance: 10,
+    hp: 0.98,
+    attack: 1.18,
+    defense: 0.95,
+    speed: 1.04,
+    buff: { key: 'strength', value: 2, turns: 2 },
+  },
+  {
+    id: 'cursed',
+    name: '咒蚀',
+    chance: 8,
+    hp: 1.04,
+    attack: 1.08,
+    defense: 1,
+    speed: 1,
+    onHitDebuff: 'curse_mark',
+  },
+  {
+    id: 'armored',
+    name: '装甲',
+    chance: 8,
+    hp: 1.08,
+    attack: 0.98,
+    defense: 1.34,
+    speed: 0.86,
+    buff: {
+      key: 'fortitude',
+      value: 2,
+      turns: 3,
+      undispellable: true,
+    },
+  },
+  {
+    id: 'unstable',
+    name: '异变',
+    chance: 6,
+    hp: 1.22,
+    attack: 1.16,
+    defense: 1.08,
+    speed: 1.08,
+    buff: {
+      key: 'monster_frenzy',
+      value: 12,
+      turns: 3,
+      undispellable: true,
+    },
+  },
+];
+
 type Combatant = {
+  name?: string;
   hp: number;
   hpMax: number;
   shield: number;
@@ -107,6 +203,7 @@ type Combatant = {
   speed: number;
   buffs: Record<string, BattleTimedEffect>;
   debuffs: Record<string, BattleTimedEffect>;
+  onHitDebuff?: string;
 };
 
 interface WorkshopTestInput {
@@ -378,6 +475,12 @@ export class BattleRepository {
     if (!cardInstance) throw new Error('这张手牌已经不存在');
     const card = this.cards?.[cardInstance.cardId];
     if (!card) throw new Error('卡牌数据不存在');
+    if (state.player.debuffs.freeze && !this.isCleanseCard(card)) {
+      throw new Error('冰冻中：只能使用净化类卡牌');
+    }
+    if (state.player.debuffs.entangle && card.type === 'attack') {
+      throw new Error('缠绕中：无法使用攻击类卡牌');
+    }
 
     const targetIndex = this.resolveTargetIndex(
       state,
@@ -410,6 +513,7 @@ export class BattleRepository {
       state.player.mp -= mpCost;
       state.selectedTarget = targetIndex;
       state.player.hand.splice(input.handIndex, 1);
+      state.player.discardPile.push(cardInstance);
       this.log(state, 'player', `使用「${card.name}」`);
       this.animation(state, {
         kind: 'card',
@@ -421,10 +525,17 @@ export class BattleRepository {
         cardInstanceId: cardInstance.instanceId,
         label: card.name,
       });
+      this.triggerBloodBurnAction(state, state.player, '打牌');
+      if (state.player.hp <= 0) {
+        await this.finishBattle(session, 'defeat');
+        return;
+      }
       this.applyCardEffects(state, card, targetIndex);
       this.updateClassResourcesAfterCard(state, card, cardInstance.cardId);
       this.recordBossMechanicCard(state, card.type);
-      state.player.discardPile.push(cardInstance);
+      if (card.type === 'attack' && state.player.buffs.cost_reduction) {
+        this.spendEffectCharge(state.player.buffs, 'cost_reduction');
+      }
       this.runWorkshopMechanisms(state, 'after_card', {
         cardId: cardInstance.cardId,
         cardName: card.name,
@@ -462,6 +573,11 @@ export class BattleRepository {
     state.player.discardPile.push(...state.player.hand.splice(0));
     this.drawCards(state, 3);
     this.log(state, 'player', `弃置 ${count} 张手牌，重新抽取 3 张`);
+    this.triggerBloodBurnAction(state, state.player, '弃牌');
+    if (state.player.hp <= 0) {
+      await this.finishBattle(session, 'defeat');
+      return;
+    }
     await this.save(session);
   }
 
@@ -603,6 +719,21 @@ export class BattleRepository {
     } else {
       for (const enemy of this.aliveEnemies(state)) {
         const monster = this.monsters?.[enemy.definitionId];
+        this.applyStartOfTurnEffects(state, enemy);
+        this.stabilizeWorkshopTest(state);
+        if (enemy.hp <= 0) continue;
+        if (enemy.debuffs.freeze) {
+          this.log(state, 'enemy', `${enemy.name} 被冰冻，跳过行动`);
+          this.animation(state, {
+            kind: 'status',
+            sourceSide: 'enemy',
+            sourceId: enemy.id,
+            targetSide: 'enemy',
+            targetId: enemy.id,
+            label: '冰冻',
+          });
+          continue;
+        }
         this.resolveEnemyAction(state, enemy, monster);
         this.stabilizeWorkshopTest(state);
         if (state.player.hp <= 0) {
@@ -613,8 +744,6 @@ export class BattleRepository {
     }
     this.runWorkshopMechanisms(state, 'after_enemy_turn');
 
-    this.applyDamageOverTime(state);
-    this.stabilizeWorkshopTest(state);
     this.tickEffects(state.player);
     for (const enemy of this.aliveEnemies(state)) this.tickEffects(enemy);
     if (state.player.hp <= 0) {
@@ -633,6 +762,12 @@ export class BattleRepository {
       (this.rules?.mpRegenBase ?? 3) +
       Math.floor(state.player.mpMax / (this.rules?.mpRegenDivisor ?? 30));
     state.player.mp = Math.min(state.player.mpMax, state.player.mp + mpRegen);
+    this.applyStartOfTurnEffects(state, state.player);
+    this.stabilizeWorkshopTest(state);
+    if (state.player.hp <= 0) {
+      await this.finishBattle(session, 'defeat');
+      return;
+    }
     this.applyTurnStartPassives(state, profileId);
     this.drawCards(state, state.player.drawPerTurn);
     this.runWorkshopMechanisms(state, 'turn_start');
@@ -1105,6 +1240,7 @@ export class BattleRepository {
     packScale: number,
     instanceIndex: number,
   ): BattleEnemyState {
+    const affix = this.pickEnemyAffix(monster, packScale);
     const intrinsic =
       MONSTER_SCALE[String(monster.difficulty ?? 'normal')] ??
       MONSTER_SCALE.normal!;
@@ -1156,7 +1292,8 @@ export class BattleRepository {
           regionScale.hp *
           powerScale *
           packScale *
-          variance,
+          variance *
+          (affix?.hp ?? 1),
       ),
     );
     const gold = Array.isArray(monster.gold)
@@ -1165,13 +1302,12 @@ export class BattleRepository {
           this.number(monster.gold[1], this.number(monster.gold[0])),
         ]
       : [this.number(monster.gold), this.number(monster.gold)];
-    return {
+    const enemy: BattleEnemyState = {
       id: `${definitionId}:${instanceIndex}:${Math.floor(this.random() * 1_000_000)}`,
       definitionId,
-      name:
-        instanceIndex > 0
-          ? `${monster.name} ${instanceIndex + 1}`
-          : monster.name,
+      name: `${affix?.name ?? ''}${monster.name}${
+        instanceIndex > 0 ? ` ${instanceIndex + 1}` : ''
+      }`,
       hp: hpMax,
       hpMax,
       shield: 0,
@@ -1185,7 +1321,8 @@ export class BattleRepository {
             regionScale.attack *
             powerScale *
             packScale *
-            variance,
+            variance *
+            (affix?.attack ?? 1),
         ),
       ),
       defense: Math.max(
@@ -1198,7 +1335,8 @@ export class BattleRepository {
             regionScale.defense *
             Math.sqrt(powerScale) *
             packScale *
-            variance,
+            variance *
+            (affix?.defense ?? 1),
         ),
       ),
       speed: Math.max(
@@ -1207,7 +1345,8 @@ export class BattleRepository {
           this.number(monster.speed) *
             Math.sqrt(userScale) *
             Math.sqrt(powerScale) *
-            variance,
+            variance *
+            (affix?.speed ?? 1),
         ),
       ),
       difficulty: String(monster.difficulty ?? 'normal'),
@@ -1218,7 +1357,8 @@ export class BattleRepository {
           this.number(monster.xp) *
             (1 + levelDelta * 0.05) *
             userScale *
-            packScale,
+            packScale *
+            (affix ? 1.12 : 1),
         ),
       ),
       gold: [
@@ -1228,7 +1368,8 @@ export class BattleRepository {
             Math.min(gold[0]!, gold[1]!) *
               (1 + levelDelta * 0.04) *
               userScale *
-              packScale,
+              packScale *
+              (affix ? 1.1 : 1),
           ),
         ),
         Math.max(
@@ -1237,7 +1378,8 @@ export class BattleRepository {
             Math.max(gold[0]!, gold[1]!) *
               (1 + levelDelta * 0.04) *
               userScale *
-              packScale,
+              packScale *
+              (affix ? 1.1 : 1),
           ),
         ),
       ],
@@ -1248,8 +1390,72 @@ export class BattleRepository {
       })),
       buffs: {},
       debuffs: {},
+      ...(affix
+        ? {
+            affix: affix.id,
+            affixName: affix.name,
+            ...(affix.onHitDebuff ? { onHitDebuff: affix.onHitDebuff } : {}),
+          }
+        : {}),
       intent: null,
     };
+    this.applyEnemyInitialStatuses(enemy, monster, affix);
+    return enemy;
+  }
+
+  private pickEnemyAffix(
+    monster: MonsterDefinition,
+    packScale: number,
+  ): EnemyInstanceAffix | undefined {
+    if (this.isBossMonster(monster)) return undefined;
+    const difficulty = String(monster.difficulty ?? 'normal');
+    const baseChance =
+      (packScale < 1 ? 0.34 : 0.24) +
+      (difficulty === 'nightmare' ? 0.12 : difficulty === 'hard' ? 0.07 : 0);
+    if (this.random() > baseChance) return undefined;
+    return this.weightedChoice(ENEMY_INSTANCE_AFFIXES, (entry) =>
+      Math.max(1, entry.chance),
+    );
+  }
+
+  private applyEnemyInitialStatuses(
+    enemy: BattleEnemyState,
+    monster: MonsterDefinition,
+    affix?: EnemyInstanceAffix,
+  ): void {
+    for (const buff of monster.battle_start_buffs ?? []) {
+      this.addTimedEffect(
+        enemy.buffs,
+        String(buff.buff ?? buff.key ?? 'strength'),
+        this.number(buff.value),
+        this.number(buff.turns, 1),
+        {
+          charges: this.optionalPositiveNumber(buff.charges),
+          undispellable: buff.undispellable === true,
+        },
+      );
+    }
+    for (const debuff of monster.battle_start_debuffs ?? []) {
+      this.addTimedEffect(
+        enemy.debuffs,
+        String(debuff.debuff ?? debuff.key ?? 'weak'),
+        this.number(debuff.value),
+        this.number(debuff.turns, 1),
+        {
+          charges: this.optionalPositiveNumber(debuff.charges),
+          uncleanseable: debuff.uncleanseable === true,
+        },
+      );
+    }
+    if (affix?.buff) {
+      this.addTimedEffect(
+        enemy.buffs,
+        affix.buff.key,
+        affix.buff.value,
+        affix.buff.turns,
+        { undispellable: affix.buff.undispellable === true },
+      );
+    }
   }
 
   private chooseIntent(
@@ -1287,6 +1493,7 @@ export class BattleRepository {
       ? monster?.skills?.[enemy.intent.skillId]
       : undefined;
     if (!skill) {
+      if (this.triggerTrap(state, enemy)) return;
       const amount = Math.max(
         1,
         Math.round(enemy.attack * (this.rules?.enemyAttackScale ?? 0.48)),
@@ -1300,6 +1507,7 @@ export class BattleRepository {
         label: enemy.name,
       });
       this.damage(state, enemy, state.player, amount, 'enemy', enemy.name);
+      this.applyOnHitResponses(state, enemy);
       return;
     }
     this.log(state, 'enemy', `${enemy.name} 使用「${skill.name}」`);
@@ -1313,6 +1521,7 @@ export class BattleRepository {
     });
     for (const effect of skill.effects ?? []) {
       if (effect.type === 'damage') {
+        if (this.triggerTrap(state, enemy)) break;
         const hits = Math.max(1, this.number(effect.hits, 1));
         for (let hit = 0; hit < hits; hit += 1) {
           const amount = Math.max(
@@ -1322,19 +1531,20 @@ export class BattleRepository {
           this.damage(state, enemy, state.player, amount, 'enemy', enemy.name);
           if (state.player.hp <= 0) break;
         }
+        this.applyOnHitResponses(state, enemy);
       } else if (effect.type === 'true_damage') {
+        if (this.triggerTrap(state, enemy)) break;
         const hits = Math.max(1, this.number(effect.hits, 1));
         for (let hit = 0; hit < hits; hit += 1) {
-          this.damage(
+          this.directHpLoss(
             state,
-            enemy,
             state.player,
             this.enemyEffectAmount(enemy, effect),
-            'enemy',
             skill.name,
-            true,
           );
+          if (state.player.hp <= 0) break;
         }
+        this.applyOnHitResponses(state, enemy);
       } else if (effect.type === 'strip_player_shield') {
         const removed =
           effect.amount === 'all'
@@ -1385,6 +1595,10 @@ export class BattleRepository {
           effectName,
           this.number(effect.value),
           this.number(effect.turns, 1),
+          {
+            charges: this.optionalPositiveNumber(effect.charges),
+            undispellable: effect.undispellable === true,
+          },
         );
         this.animation(state, {
           kind: 'status',
@@ -1402,6 +1616,10 @@ export class BattleRepository {
           effectName,
           this.number(effect.value, 1),
           this.number(effect.turns, 1),
+          {
+            charges: this.optionalPositiveNumber(effect.charges),
+            uncleanseable: effect.uncleanseable === true,
+          },
         );
         this.animation(state, {
           kind: 'status',
@@ -1428,6 +1646,16 @@ export class BattleRepository {
     for (const effect of card.effects ?? []) {
       this.applyCardEffect(state, card, effect, targetIndex, bonus, multiplier);
       if (this.aliveEnemies(state).length === 0) break;
+    }
+    if (card.effects?.some((effect) => effect.type === 'damage')) {
+      for (const key of [
+        'empower',
+        'next_attack_bonus',
+        'spell_double',
+        'poison_coat',
+      ]) {
+        this.spendEffectCharge(state.player.buffs, key);
+      }
     }
   }
 
@@ -1472,6 +1700,14 @@ export class BattleRepository {
               Math.max(0, Math.round(base * multiplier)),
               'player',
               card.name,
+            );
+          }
+          if (state.player.buffs.poison_coat && enemy.hp > 0) {
+            this.addTimedEffect(
+              enemy.debuffs,
+              'poison',
+              this.effectValue(state.player.buffs.poison_coat),
+              2,
             );
           }
         }
@@ -1681,6 +1917,10 @@ export class BattleRepository {
             effectName,
             this.number(effect.value, 1),
             this.number(effect.turns, 1),
+            {
+              charges: this.optionalPositiveNumber(effect.charges),
+              undispellable: effect.undispellable === true,
+            },
           );
           const identity = this.combatantIdentity(state, recipient);
           this.animation(state, {
@@ -1694,8 +1934,7 @@ export class BattleRepository {
         }
         break;
       }
-      case 'apply_debuff':
-      case 'thorns_debuff': {
+      case 'apply_debuff': {
         const recipients =
           effect.target === 'self' ? [state.player] : targets;
         for (const recipient of recipients) {
@@ -1705,6 +1944,10 @@ export class BattleRepository {
             effectName,
             this.number(effect.value, 1),
             this.number(effect.turns, 1),
+            {
+              charges: this.optionalPositiveNumber(effect.charges),
+              uncleanseable: effect.uncleanseable === true,
+            },
           );
           const identity = this.combatantIdentity(state, recipient);
           this.animation(state, {
@@ -1716,6 +1959,16 @@ export class BattleRepository {
             label: effectName,
           });
         }
+        break;
+      }
+      case 'thorns_debuff': {
+        this.addTimedEffect(
+          state.player.buffs,
+          'thorns_debuff',
+          this.number(effect.value),
+          this.number(effect.turns, 1),
+          { debuff: String(effect.debuff ?? 'freeze') },
+        );
         break;
       }
       case 'apply_random_debuff': {
@@ -1840,15 +2093,23 @@ export class BattleRepository {
         break;
       case 'trap':
         for (const enemy of targets) {
-          this.damage(
-            state,
-            state.player,
-            enemy,
+          this.addTimedEffect(
+            enemy.debuffs,
+            'trap',
             this.number(effect.value),
-            'player',
-            `${card.name}的陷阱`,
+            99,
           );
         }
+        this.log(state, 'player', `${card.name}设置了陷阱`);
+        break;
+      case 'on_hit_draw':
+        this.addTimedEffect(
+          state.player.buffs,
+          'on_hit_draw',
+          this.number(effect.value, 1),
+          1,
+          { charges: this.optionalPositiveNumber(effect.charges) },
+        );
         break;
       case 'damage_from_enemy_shield':
         this.damage(
@@ -2268,16 +2529,84 @@ export class BattleRepository {
     if (typeof beforeDamage.ignoreDefense === 'boolean') {
       ignoreDefense = beforeDamage.ignoreDefense;
     }
-    let amount = Math.max(0, rawAmount);
+    let amount = Math.max(0, Math.round(rawAmount));
+    if (amount > 0) {
+      const statusDodge = this.effectValue(target.buffs.agility);
+      const speedDodge = Math.min(
+        this.rules?.maxSpeedDodge ?? 25,
+        Math.floor(
+          Math.max(0, target.speed) *
+            (this.rules?.speedDodgePerPoint ?? 0.25),
+        ),
+      );
+      const dodgeChance = this.clamp(statusDodge + speedDodge, 0, 95);
+      if (dodgeChance > 0 && this.random() * 100 < dodgeChance) {
+        this.log(
+          state,
+          kind,
+          `${target.name ?? (target === state.player ? state.player.name : '目标')} 凭借敏捷/速度闪避了${label}（${dodgeChance}%）`,
+        );
+        this.animation(state, {
+          kind: 'status',
+          sourceSide: targetIdentity.side,
+          sourceId: targetIdentity.id,
+          targetSide: targetIdentity.side,
+          targetId: targetIdentity.id,
+          amount: dodgeChance,
+          label: '闪避',
+        });
+        this.spendEffectCharge(target.buffs, 'agility');
+        return 0;
+      }
+    }
+    if (amount > 0 && target.buffs.damage_immune) {
+      this.log(state, kind, `${target.name ?? '目标'} 的伤害免疫抵消了${label}`);
+      this.spendEffectCharge(target.buffs, 'damage_immune');
+      return 0;
+    }
+    if (source.buffs.blood_burn) {
+      amount = Math.ceil(
+        amount * (1 + Math.max(0, this.effectValue(source.buffs.blood_burn)) / 100),
+      );
+    }
+    if (source.debuffs.weak) amount = Math.floor(amount * 0.75);
     amount += this.effectValue(source.buffs.strength);
-    if (source.debuffs.weak) amount *= 0.75;
-    if (target.debuffs.vulnerable) amount *= 1.5;
+    if (source.buffs.monster_frenzy) {
+      amount = Math.ceil(
+        amount *
+          (1 + Math.max(0, this.effectValue(source.buffs.monster_frenzy)) / 100),
+      );
+    }
+    if (target.debuffs.vulnerable) amount = Math.ceil(amount * 1.5);
+    if (target.debuffs.curse_mark) {
+      amount += Math.max(1, this.effectValue(target.debuffs.curse_mark));
+    }
+    if (target.debuffs.abyss_mark) {
+      amount += Math.max(
+        1,
+        this.effectValue(target.debuffs.abyss_mark) + Math.floor(amount * 0.08),
+      );
+    }
+    const damageResist = this.clamp(
+      this.effectValue(target.buffs.damage_resist),
+      0,
+      95,
+    );
+    if (damageResist > 0) {
+      amount = Math.ceil((amount * (100 - damageResist)) / 100);
+    }
+    if (target.buffs.damage_halve) {
+      amount = Math.ceil(amount * 0.5);
+      this.spendEffectCharge(target.buffs, 'damage_halve');
+    }
     if (!ignoreDefense) {
       const defenseScale =
         target === state.player
           ? this.rules?.playerDefenseScale ?? 0.28
           : this.rules?.enemyDefenseScale ?? 0.26;
-      amount -= Math.floor(target.defense * defenseScale);
+      amount -=
+        Math.floor(target.defense * defenseScale) +
+        this.effectValue(target.buffs.fortitude);
     }
     if (target !== state.player && target.buffs.evidence_barrier) {
       amount *= Math.max(
@@ -2289,8 +2618,6 @@ export class BattleRepository {
       amount -=
         this.passiveEffectValue(state, 'damage_reduction') +
         this.effectValue(state.player.buffs.damage_reduce);
-    } else {
-      amount += this.effectValue(state.player.buffs.damage_bonus);
     }
     amount = Math.max(rawAmount > 0 ? 1 : 0, Math.round(amount));
     const absorbed = Math.min(target.shield, amount);
@@ -2305,7 +2632,17 @@ export class BattleRepository {
         : state.workshopTest?.dummyInvincible
           ? 1
           : 0;
-    target.hp = Math.max(hpFloor, target.hp - calculatedHpDamage);
+    if (
+      calculatedHpDamage > 0 &&
+      target.buffs.death_save &&
+      target.hp - calculatedHpDamage <= hpFloor
+    ) {
+      target.hp = Math.max(1, hpFloor);
+      this.spendEffectCharge(target.buffs, 'death_save');
+      this.log(state, kind, `${target.name ?? '目标'} 的守护效果抵挡了致命伤`);
+    } else {
+      target.hp = Math.max(hpFloor, target.hp - calculatedHpDamage);
+    }
     const hpDamage = beforeHp - target.hp;
     if (target === state.player && hpDamage > 0) {
       state.player.abyssEcho = (state.player.abyssEcho ?? 0) + 1;
@@ -2326,7 +2663,7 @@ export class BattleRepository {
     this.log(
       state,
       kind,
-      `${label}造成 ${hpDamage} 点伤害${absorbed ? `（护盾吸收 ${absorbed}）` : ''}`,
+      `${label}造成 ${amount} 点伤害${absorbed ? `（护盾吸收 ${absorbed}）` : ''}`,
     );
     if (
       target === state.player &&
@@ -2356,6 +2693,17 @@ export class BattleRepository {
       );
       if (lifesteal > 0) this.heal(state, state.player, lifesteal, '吸血');
     }
+    if (
+      source !== state.player &&
+      target === state.player &&
+      hpDamage > 0 &&
+      source.onHitDebuff
+    ) {
+      this.addTimedEffect(state.player.debuffs, source.onHitDebuff, 1, 2, {
+        uncleanseable: true,
+      });
+      this.log(state, 'enemy', `${source.name ?? '敌人'} 的词缀追加了诅咒印记`);
+    }
     if (hpDamage > 0) {
       this.runWorkshopMechanisms(
         state,
@@ -2381,7 +2729,15 @@ export class BattleRepository {
     rawAmount: number,
     label: string,
   ): number {
-    const amount = Math.max(0, Math.round(rawAmount));
+    const healBlock = this.clamp(
+      this.effectValue(target.debuffs.heal_block),
+      0,
+      100,
+    );
+    const amount = Math.max(
+      0,
+      Math.floor((Math.round(rawAmount) * (100 - healBlock)) / 100),
+    );
     const before = target.hp;
     target.hp = Math.min(target.hpMax, target.hp + amount);
     const restored = target.hp - before;
@@ -2526,34 +2882,74 @@ export class BattleRepository {
     }
   }
 
-  private applyDamageOverTime(state: LocalBattleState): void {
-    const playerDot =
-      this.effectValue(state.player.debuffs.burn) +
-      this.effectValue(state.player.debuffs.poison);
-    if (playerDot > 0) {
-      this.damage(
-        state,
-        state.player,
-        state.player,
-        playerDot,
-        'enemy',
-        '持续伤害',
-        true,
-      );
+  private applyStartOfTurnEffects(
+    state: LocalBattleState,
+    target: Combatant,
+  ): void {
+    if (target.buffs.regen) {
+      this.heal(state, target, this.effectValue(target.buffs.regen), '再生');
     }
-    for (const enemy of this.aliveEnemies(state)) {
-      const dot =
-        this.effectValue(enemy.debuffs.burn) +
-        this.effectValue(enemy.debuffs.poison);
-      if (dot > 0) {
-        this.damage(
+    if (target === state.player) {
+      if (target.buffs.heal_regen) {
+        this.heal(
           state,
-          state.player,
-          enemy,
-          dot,
-          'player',
-          '持续伤害',
-          true,
+          target,
+          this.effectValue(target.buffs.heal_regen),
+          '持续治疗',
+        );
+      }
+      if (target.buffs.shield_regen) {
+        target.shield += this.effectValue(target.buffs.shield_regen);
+      }
+      if (target.buffs.ap_regen) {
+        state.player.ap += this.effectValue(target.buffs.ap_regen);
+      }
+      if (target.buffs.mp_regen) {
+        this.restoreMp(
+          state,
+          this.effectValue(target.buffs.mp_regen),
+          '持续回魔',
+        );
+      }
+      if (target.buffs.draw_regen) {
+        this.drawCards(state, this.effectValue(target.buffs.draw_regen));
+      }
+    }
+    const opposingAttack =
+      target === state.player
+        ? Math.max(0, ...this.aliveEnemies(state).map((enemy) => enemy.attack))
+        : state.player.attack;
+    const dotScales: Record<string, number> = {
+      poison: 0.08,
+      burn: 0.1,
+      bleed: 0.06,
+      corrosion: 0.05,
+    };
+    for (const key of ['poison', 'burn', 'bleed']) {
+      const effect = target.debuffs[key];
+      if (!effect) continue;
+      const amount = Math.max(
+        0,
+        effect.value + Math.floor(opposingAttack * dotScales[key]!),
+      );
+      this.directHpLoss(state, target, amount, key);
+    }
+    const corrosion = target.debuffs.corrosion;
+    if (corrosion) {
+      const amount = Math.max(
+        1,
+        corrosion.value + Math.floor(opposingAttack * dotScales.corrosion!),
+      );
+      if (target.shield > 0) {
+        const removed = Math.min(target.shield, amount);
+        target.shield -= removed;
+        this.log(state, 'enemy', `${target.name ?? '目标'} 的护盾被腐蚀 ${removed}`);
+      } else {
+        this.directHpLoss(
+          state,
+          target,
+          Math.max(1, Math.floor(amount / 2)),
+          '腐蚀',
         );
       }
     }
@@ -2687,6 +3083,10 @@ export class BattleRepository {
   private tickEffects(target: Combatant): void {
     for (const effects of [target.buffs, target.debuffs]) {
       for (const [key, effect] of Object.entries(effects)) {
+        if (effect.fresh) {
+          effect.fresh = false;
+          continue;
+        }
         effect.turns -= 1;
         if (effect.turns <= 0) delete effects[key];
       }
@@ -2761,6 +3161,9 @@ export class BattleRepository {
     targetIndex: number,
   ): number {
     let cost = Math.max(0, this.number(card.cost));
+    if (card.type === 'attack' && state.player.buffs.cost_reduction) {
+      cost -= this.effectValue(state.player.buffs.cost_reduction);
+    }
     const target = state.enemies[targetIndex];
     for (const effect of card.effects ?? []) {
       if (
@@ -2780,8 +3183,14 @@ export class BattleRepository {
     target: BattleEnemyState,
   ): number {
     let bonus = 0;
+    bonus += this.effectValue(state.player.buffs.damage_bonus);
+    bonus += this.effectValue(state.player.buffs.empower);
     if (card.type === 'attack') {
       bonus += this.passiveEffectValue(state, 'attack_bonus');
+      bonus += this.effectValue(state.player.buffs.next_attack_bonus);
+    }
+    if (this.isSpellCard(card)) {
+      bonus += this.effectValue(state.player.buffs.spell_damage_bonus);
     }
     for (const rawEffect of state.player.passiveEffects ?? []) {
       if (typeof rawEffect !== 'object' || rawEffect === null) continue;
@@ -2817,13 +3226,33 @@ export class BattleRepository {
     state: LocalBattleState,
     target: BattleEnemyState,
   ): number {
-    return card.effects?.some(
+    let multiplier = card.effects?.some(
       (effect) =>
         effect.type === 'conditional_double' &&
         this.conditionMatches(effect, state, target),
     )
       ? 2
       : 1;
+    if (card.type === 'attack' && state.player.buffs.spell_double) {
+      multiplier *= 2;
+    }
+    return multiplier;
+  }
+
+  private isSpellCard(card: CardDefinition): boolean {
+    return (
+      card.type === 'spell' ||
+      /mage|magic|spell|法|术|奥术|元素|魔/.test(
+        `${String(card.cat ?? '')}${card.name}${card.description}`,
+      )
+    );
+  }
+
+  private isCleanseCard(card: CardDefinition): boolean {
+    return (
+      card.effects?.some((effect) => String(effect.type).includes('cleanse')) ||
+      /净化|解毒|万能解药|圣光/.test(`${card.name}${card.description}`)
+    );
   }
 
   private conditionMatches(
@@ -3857,12 +4286,132 @@ export class BattleRepository {
     key: string,
     value: number,
     turns: number,
+    options: Pick<
+      BattleTimedEffect,
+      'charges' | 'undispellable' | 'uncleanseable' | 'debuff'
+    > = {},
   ): void {
     const existing = target[key];
     target[key] = {
-      value: Math.max(value, existing?.value ?? 0),
+      value: Math.max(0, value) + (existing?.value ?? 0),
       turns: Math.max(turns, existing?.turns ?? 0),
+      ...((options.charges ?? existing?.charges) !== undefined
+        ? { charges: (options.charges ?? 0) + (existing?.charges ?? 0) }
+        : {}),
+      ...(options.undispellable || existing?.undispellable
+        ? { undispellable: true }
+        : {}),
+      ...(options.uncleanseable || existing?.uncleanseable
+        ? { uncleanseable: true }
+        : {}),
+      ...((options.debuff ?? existing?.debuff) !== undefined
+        ? { debuff: options.debuff ?? existing?.debuff }
+        : {}),
+      ...(key === 'blood_burn'
+        ? { stacks: (existing ? (existing.stacks ?? 1) : 0) + 1 }
+        : {}),
+      fresh: true,
     };
+  }
+
+  private spendEffectCharge(
+    effects: Record<string, BattleTimedEffect>,
+    key: string,
+  ): void {
+    const effect = effects[key];
+    if (!effect || effect.charges === undefined) return;
+    effect.charges -= 1;
+    if (effect.charges <= 0) delete effects[key];
+  }
+
+  private triggerBloodBurnAction(
+    state: LocalBattleState,
+    target: Combatant,
+    actionLabel: string,
+  ): void {
+    if (!target.buffs.blood_burn) return;
+    const amount = Math.max(1, Math.floor(target.hpMax * 0.02));
+    const stacks = Math.max(1, target.buffs.blood_burn.stacks ?? 1);
+    for (let stack = 1; stack <= stacks && target.hp > 0; stack += 1) {
+      this.directHpLoss(
+        state,
+        target,
+        amount,
+        `烧血·${actionLabel}（${stack}/${stacks}）`,
+      );
+    }
+  }
+
+  private triggerTrap(state: LocalBattleState, enemy: BattleEnemyState): boolean {
+    const trap = enemy.debuffs.trap;
+    if (!trap) return false;
+    const amount = Math.max(1, Math.round(this.effectValue(trap)));
+    delete enemy.debuffs.trap;
+    this.directHpLoss(state, enemy, amount, '陷阱');
+    return enemy.hp <= 0;
+  }
+
+  private applyOnHitResponses(
+    state: LocalBattleState,
+    enemy: BattleEnemyState,
+  ): void {
+    const onHitDraw = state.player.buffs.on_hit_draw;
+    if (onHitDraw) {
+      const requested = Math.max(1, Math.round(this.effectValue(onHitDraw)));
+      const before = state.player.hand.length;
+      this.drawCards(state, requested);
+      const drawn = state.player.hand.length - before;
+      if (drawn > 0) this.log(state, 'system', `受击抽牌：抽取 ${drawn} 张牌`);
+      this.spendEffectCharge(state.player.buffs, 'on_hit_draw');
+    }
+
+    const thornsDebuff = state.player.buffs.thorns_debuff;
+    if (!thornsDebuff || enemy.hp <= 0) return;
+    const key = thornsDebuff.debuff ?? 'weak';
+    const value = Math.max(1, this.effectValue(thornsDebuff));
+    this.addTimedEffect(
+      enemy.debuffs,
+      key,
+      value,
+      Math.max(1, thornsDebuff.turns),
+    );
+    this.log(state, 'player', `荆棘反制：${enemy.name} 获得 ${key} ${value}`);
+  }
+
+  private directHpLoss(
+    state: LocalBattleState,
+    target: Combatant,
+    rawAmount: number,
+    label: string,
+  ): number {
+    const amount = Math.max(0, Math.round(rawAmount));
+    if (amount <= 0 || target.hp <= 0) return 0;
+    const invincibleFloor =
+      state.workshopTest?.playerInvincible && target === state.player
+        ? 1
+        : state.workshopTest?.dummyInvincible && target !== state.player
+          ? 1
+          : 0;
+    const before = target.hp;
+    target.hp = Math.max(invincibleFloor, target.hp - amount);
+    const actual = before - target.hp;
+    if (actual <= 0) return 0;
+    const targetIdentity = this.combatantIdentity(state, target);
+    this.animation(state, {
+      kind: 'damage',
+      sourceSide: target === state.player ? 'enemy' : 'player',
+      sourceId: label,
+      targetSide: targetIdentity.side,
+      targetId: targetIdentity.id,
+      amount: actual,
+      label,
+    });
+    this.log(
+      state,
+      target === state.player ? 'enemy' : 'player',
+      `${target.name}因${label}失去 ${actual} 点生命`,
+    );
+    return actual;
   }
 
   private applyConsumableEffect(
@@ -3886,7 +4435,10 @@ export class BattleRepository {
         const buff = String(effect.buff ?? 'strength');
         const value = this.number(effect.value, 1);
         const turns = Math.max(1, this.number(effect.turns, 1));
-        this.addTimedEffect(state.player.buffs, buff, value, turns);
+        this.addTimedEffect(state.player.buffs, buff, value, turns, {
+          charges: this.optionalPositiveNumber(effect.charges),
+          undispellable: effect.undispellable === true,
+        });
         this.animation(state, {
           kind: 'status',
           sourceSide: 'player',
@@ -4008,7 +4560,9 @@ export class BattleRepository {
     effects: Record<string, BattleTimedEffect>,
     amount: unknown,
   ): number {
-    const keys = Object.keys(effects);
+    const keys = Object.keys(effects).filter(
+      (key) => !effects[key]?.undispellable && !effects[key]?.uncleanseable,
+    );
     const count =
       amount === 'all'
         ? keys.length
@@ -4090,6 +4644,11 @@ export class BattleRepository {
     return typeof value === 'number' && Number.isFinite(value)
       ? value
       : fallback;
+  }
+
+  private optionalPositiveNumber(value: unknown): number | undefined {
+    const parsed = this.number(value);
+    return parsed > 0 ? parsed : undefined;
   }
 
   private clamp(value: number, minimum: number, maximum: number): number {

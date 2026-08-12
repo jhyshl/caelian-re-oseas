@@ -193,10 +193,33 @@ const statusNames: Record<string, string> = {
   death_save: '不屈',
   fortitude: '坚韧',
   agility: '敏捷',
+  damage_resist: '减伤',
+  damage_immune: '伤害免疫',
+  damage_halve: '伤害减半',
+  monster_frenzy: '狂暴',
+  blood_burn: '燃血',
+  curse_mark: '诅咒印记',
+  abyss_mark: '深渊印记',
   regen: '再生',
+  heal_regen: '持续治疗',
+  shield_regen: '护盾再生',
+  ap_regen: '行动力再生',
+  mp_regen: '魔力再生',
+  draw_regen: '持续抽牌',
   damage_bonus: '伤害强化',
   spell_damage_bonus: '法术强化',
   damage_reduce: '减伤',
+  empower: '强化',
+  cost_reduction: '减费',
+  poison_coat: '淬毒',
+  spell_double: '法术双倍',
+  on_hit_draw: '受击抽牌',
+  thorns_debuff: '反制荆棘',
+  entangle: '缠绕',
+  bleed: '流血',
+  corrosion: '腐蚀',
+  heal_block: '禁疗',
+  trap: '陷阱',
 };
 const typeNames: Record<string, string> = {
   attack: '攻击',
@@ -1136,6 +1159,14 @@ onUnmounted(() => {
               :max="state.player.mpMax"
               color="var(--ca-blue)"
             />
+            <div
+              class="player-shield-meter"
+              :class="{ active: state.player.shield > 0 }"
+              :aria-label="`玩家护盾 ${state.player.shield}`"
+            >
+              <span>玩家护盾</span>
+              <strong>🛡 {{ state.player.shield }}</strong>
+            </div>
           </div>
           <div class="battle-float-layer player-floats" aria-hidden="true">
             <span
@@ -1678,9 +1709,36 @@ onUnmounted(() => {
 
 .player-bars {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr minmax(78px, auto);
   gap: 5px;
   min-height: 0;
+}
+
+.player-shield-meter {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  padding: 3px 8px;
+  border: 1px solid rgba(132, 198, 255, 0.28);
+  border-radius: 8px;
+  color: rgba(220, 238, 255, 0.68);
+  background: rgba(40, 102, 151, 0.12);
+}
+
+.player-shield-meter span {
+  font-size: 7px;
+}
+
+.player-shield-meter strong {
+  color: #b9ddff;
+  font-size: 11px;
+}
+
+.player-shield-meter.active {
+  border-color: rgba(120, 195, 255, 0.72);
+  background: linear-gradient(180deg, rgba(52, 137, 204, 0.34), rgba(26, 78, 121, 0.2));
+  box-shadow: inset 0 0 12px rgba(102, 184, 255, 0.16);
 }
 
 .status-row {
@@ -2410,6 +2468,11 @@ onUnmounted(() => {
 
 .battle-result {
   text-align: center;
+  max-height: calc(100% - max(24px, 8vh));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
 }
 
 .reward-items {
@@ -2576,7 +2639,7 @@ onUnmounted(() => {
   }
 
   .player-bars {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr minmax(68px, auto);
     gap: 2px;
   }
 
@@ -2684,6 +2747,7 @@ onUnmounted(() => {
   .exploration-ready,
   .battle-result {
     margin: 5px auto;
+    max-height: calc(100% - 10px);
     padding: 16px;
     border-radius: 13px;
   }
@@ -2700,8 +2764,14 @@ onUnmounted(() => {
     grid-template-rows: auto minmax(94px, 0.85fr) minmax(100px, 0.8fr) minmax(178px, 1fr);
   }
 
-  .hand-actions .discard {
-    display: none;
+  .hand-actions {
+    gap: 2px;
+    max-width: calc(100% - 110px);
+  }
+
+  .hand-actions button {
+    padding-inline: 5px;
+    font-size: 8px;
   }
 
   .hand-actions .inventory-toggle {

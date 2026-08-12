@@ -425,6 +425,7 @@ async function validateCard(): Promise<void> {
 
 function addDeckCopy(cardId: string): void {
   if (editor.value.starterDeck.length >= 15) return;
+  if ((deckCounts.value[cardId] ?? 0) >= 3) return;
   if ((deckCounts.value[cardId] ?? 0) >= (poolCounts.value[cardId] ?? 0)) return;
   editor.value.starterDeck.push(cardId);
 }
@@ -457,6 +458,9 @@ async function publishProfession(): Promise<void> {
     }
     if (editor.value.starterDeck.length !== 15) {
       throw new Error('基础卡组构筑必须正好为 15 张。');
+    }
+    if (Object.values(deckCounts.value).some((count) => count > 3)) {
+      throw new Error('自制职业的基础构筑中，同名卡牌最多放入 3 张。');
     }
     if (
       Object.entries(deckCounts.value).some(
@@ -1197,7 +1201,7 @@ async function startWorkshopTest(): Promise<void> {
               <span>03</span>
               <div>
                 <h3>职业卡池与基础构筑</h3>
-                <p>8–16 种不同名卡牌组成 16–32 张职业卡池，再从中配置正好 15 张基础构筑。</p>
+                <p>8–16 种不同名卡牌组成 16–32 张职业卡池，再从中配置正好 15 张基础构筑；同名卡最多 3 张。</p>
               </div>
               <div class="pool-summary">
                 <output :class="{ over: editor.cards.length < 8 || editor.cards.length > 16 }">
@@ -1248,7 +1252,8 @@ async function startWorkshopTest(): Promise<void> {
                   <button
                     type="button"
                     :disabled="
-                      (deckCounts[card.id] ?? 0) >= (poolCounts[card.id] ?? 0) ||
+                      (deckCounts[card.id] ?? 0) >= 3 ||
+                        (deckCounts[card.id] ?? 0) >= (poolCounts[card.id] ?? 0) ||
                         editor.starterDeck.length >= 15
                     "
                     @click="addDeckCopy(card.id)"
