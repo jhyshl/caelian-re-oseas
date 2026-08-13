@@ -4,6 +4,8 @@ export interface StoryBattleRequest {
   monster: string;
   count: number;
   reason?: string;
+  userInvolved: true;
+  caelianPresent: boolean;
 }
 
 const BATTLE_START_PATTERN = /<BattleStart\b[^>]*>([\s\S]*?)<\/BattleStart>/i;
@@ -23,12 +25,31 @@ export function parseStoryBattleStart(text: string): StoryBattleRequest | null {
   if (!block) return null;
   const monster = field(block, ['monster', 'enemy', '怪物', '敌人']);
   if (!monster) return null;
+  const userInvolved = field(block, [
+    'user_involved',
+    'player_involved',
+    '用户参战',
+    '玩家参战',
+  ]).toLowerCase();
+  if (!['true', '1', 'yes', '是'].includes(userInvolved)) return null;
   const rawCount = Number(field(block, ['count', '数量']));
   const count = Number.isFinite(rawCount)
     ? Math.max(1, Math.min(12, Math.floor(rawCount)))
     : 1;
   const reason = field(block, ['reason', 'source', '原因', '来源']);
-  return { monster, count, reason: reason || undefined };
+  const caelianPresent = field(block, [
+    'caelian_present',
+    'caelian_nearby',
+    '凯利安在场',
+    '凯利安同行',
+  ]).toLowerCase();
+  return {
+    monster,
+    count,
+    reason: reason || undefined,
+    userInvolved: true,
+    caelianPresent: ['true', '1', 'yes', '是'].includes(caelianPresent),
+  };
 }
 
 export function formatStoryBattleResult(session: BattleSessionRecord): string {
@@ -41,6 +62,8 @@ export function formatStoryBattleResult(session: BattleSessionRecord): string {
   const loot = rewards?.items
     .map((item) => `${item.name}×${item.quantity}`)
     .join('、');
+  const companion = state.companion;
+  const trelio = companion?.summons.find((summon) => summon.id === 'trelio');
   return [
     '<BattleResult>',
     `status: ${state.status === 'surrendered' ? 'escaped' : state.status}`,
@@ -48,6 +71,9 @@ export function formatStoryBattleResult(session: BattleSessionRecord): string {
     `turns: ${state.turn}`,
     `hp: ${state.player.hp}/${state.player.hpMax}`,
     `mp: ${state.player.mp}/${state.player.mpMax}`,
+    `caelian: ${companion ? (companion.injured ? 'injured' : 'active') : 'absent'}`,
+    `caelian_hp: ${companion ? `${companion.hp}/${companion.hpMax}` : 'n/a'}`,
+    `trelio_hp: ${trelio ? `${trelio.hp}/${trelio.hpMax}` : 'n/a'}`,
     `rewards_xp: ${rewards?.experience ?? 0}`,
     `rewards_gold: ${rewards?.gold ?? 0}`,
     `rewards_guild_xp: ${rewards?.guildExperience ?? 0}`,

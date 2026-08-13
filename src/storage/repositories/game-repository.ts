@@ -343,6 +343,13 @@ export class GameRepository {
     return this.questProgress.applyLocalQuestTransition(profileId, input);
   }
 
+  ensurePartySupportCard(
+    profileId: string,
+    subclass: string,
+  ): Promise<void> {
+    return this.cards.ensurePartySupportCard(profileId, subclass);
+  }
+
   submitPendingQuestItem(profileId: string, questId: string) {
     return this.questProgress.submitPendingItem(profileId, questId);
   }

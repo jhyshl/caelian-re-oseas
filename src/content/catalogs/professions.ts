@@ -8,6 +8,10 @@ import type {
   ProfessionTalent,
 } from '@/content/types';
 import { readWorkshopPacks } from '@/workshop';
+import {
+  hasPartySupportCard,
+  partySupportCardId,
+} from '@/battle/party-support-cards';
 
 export const classNames = classNamesJson as Record<string, string>;
 export const subclassNames = subclassNamesJson as Record<string, string>;
@@ -96,7 +100,9 @@ export function getProfessionTalent(subclassId: string): ProfessionTalent {
 }
 
 export function getStarterDeck(subclassId: string): string[] {
-  return [...(starterDecks[subclassId] ?? [])];
+  const deck = [...(starterDecks[subclassId] ?? [])];
+  if (hasPartySupportCard(subclassId)) deck.push(partySupportCardId(subclassId));
+  return deck;
 }
 
 export function mainClassForSubclass(subclassId: string): string {

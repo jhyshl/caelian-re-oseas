@@ -24,6 +24,7 @@ import {
 import type {
   BattleAnimationEvent,
   BattleEnemyState,
+  BattleFriendlyTargetId,
   GameSnapshot,
   LocalBattleState,
 } from '@/domain/types';
@@ -49,6 +50,7 @@ const battleItems = ref<Record<string, BattleItemDefinition>>({});
 const equipmentRewards = ref<Record<string, EquipmentDefinition>>({});
 const relicRewards = ref<Record<string, RelicDefinition>>({});
 const selectedTarget = ref(0);
+const selectedAllyTarget = ref<BattleFriendlyTargetId>('player');
 const selectedHandIndex = ref<number | null>(null);
 const showBattleInfo = ref(false);
 const showBattleInventory = ref(false);
@@ -173,6 +175,43 @@ const selectedCard = computed(() => {
 });
 const selectedCardDefinition = computed(() =>
   selectedCard.value ? cards.value[selectedCard.value.cardId] : undefined,
+);
+const friendlyEffectTypes = new Set([
+  'shield',
+  'heal',
+  'heal_overflow_shield',
+  'spend_mp_shield',
+  'apply_buff',
+  'thorns',
+  'thorns_debuff',
+  'cleanse',
+  'cleanse_heal_per',
+  'cleanse_specific',
+  'shield_from_shield',
+]);
+
+function cardFriendlyTargetMode(definition?: CardDefinition) {
+  let mode: 'none' | 'single' | 'all' = 'none';
+  const visit = (effects: CardDefinition['effects']) => {
+    for (const effect of effects ?? []) {
+      if (
+        friendlyEffectTypes.has(effect.type) &&
+        effect.target !== 'enemy' &&
+        effect.target !== 'all_enemies'
+      ) {
+        mode = effect.target === 'all_allies' ? 'all' : mode === 'all' ? 'all' : 'single';
+      }
+      for (const key of ['effects', 'then_effects', 'else_effects']) {
+        if (Array.isArray(effect[key])) visit(effect[key] as CardDefinition['effects']);
+      }
+    }
+  };
+  visit(definition?.effects ?? []);
+  return mode;
+}
+
+const selectedCardFriendlyMode = computed(() =>
+  cardFriendlyTargetMode(selectedCardDefinition.value),
 );
 const resultTitle = computed(() => {
   if (state.value?.workshopTest) return '测试结束';
@@ -362,17 +401,17 @@ function pause(milliseconds: number) {
 }
 
 function targetKey(event: BattleAnimationEvent) {
-  return event.targetSide === 'enemy' && event.targetId
-    ? `enemy:${event.targetId}`
-    : 'player';
+  if (event.targetSide === 'enemy' && event.targetId) return `enemy:${event.targetId}`;
+  if (event.targetSide === 'companion') return 'companion:caelian';
+  if (event.targetSide === 'summon' && event.targetId) return `summon:${event.targetId}`;
+  return 'player';
 }
 
 function actorKey(event: BattleAnimationEvent) {
-  return event.sourceSide === 'enemy' && event.sourceId
-    ? `enemy:${event.sourceId}`
-    : event.sourceSide === 'player'
-      ? 'player'
-      : '';
+  if (event.sourceSide === 'enemy' && event.sourceId) return `enemy:${event.sourceId}`;
+  if (event.sourceSide === 'companion') return 'companion:caelian';
+  if (event.sourceSide === 'summon' && event.sourceId) return `summon:${event.sourceId}`;
+  return event.sourceSide === 'player' ? 'player' : '';
 }
 
 function visibleTarget(event: BattleAnimationEvent) {
@@ -380,6 +419,10 @@ function visibleTarget(event: BattleAnimationEvent) {
   if (!current) return null;
   if (event.targetSide === 'enemy') {
     return current.enemies.find((enemy) => enemy.id === event.targetId) ?? null;
+  }
+  if (event.targetSide === 'companion') return current.companion ?? null;
+  if (event.targetSide === 'summon') {
+    return current.companion?.summons.find((summon) => summon.id === event.targetId) ?? null;
   }
   return current.player;
 }
@@ -427,8 +470,9 @@ async function playAnimation(event: BattleAnimationEvent) {
     return;
   }
 
-  if (event.kind === 'enemy-action') {
+  if (event.kind === 'enemy-action' || event.kind === 'companion-action') {
     activeActorKey.value = actorKey(event);
+    if (event.apAfter !== undefined) current.player.ap = event.apAfter;
     await pause(210);
     return;
   }
@@ -437,6 +481,7 @@ async function playAnimation(event: BattleAnimationEvent) {
     if (event.phaseAfter) current.phase = event.phaseAfter;
     if (event.turnAfter !== undefined) current.turn = event.turnAfter;
     if (event.mpAfter !== undefined) current.player.mp = event.mpAfter;
+    if (event.apAfter !== undefined) current.player.ap = event.apAfter;
     const floatId =
       event.targetSide === 'player' && event.mpAfter !== undefined
         ? addFloat(event, 'mp', 'MP 回复')
@@ -773,6 +818,7 @@ async function playCardAt(handIndex: number, targetIndex: number) {
       battleId: battle.value.id,
       handIndex,
       targetIndex,
+      allyTargetId: selectedAllyTarget.value,
     },
   });
 }
@@ -873,6 +919,7 @@ onMounted(async () => {
     loadRelics(),
   ]);
   selectedTarget.value = state.value?.selectedTarget ?? 0;
+  selectedAllyTarget.value = 'player';
   disposeStateListener = props.context.api.on('state.changed', refresh);
 });
 
@@ -1005,7 +1052,13 @@ onUnmounted(() => {
                 创意工坊测试 · 木桩复活 {{ state.workshopTest.respawns }} 次 ·
               </template>
               第 {{ state.turn }} 回合 ·
-              {{ state.phase === 'player' ? '玩家行动' : '敌方行动' }}
+              {{
+                state.phase === 'player'
+                  ? '玩家行动'
+                  : state.phase === 'companion'
+                    ? '凯利安行动'
+                    : '敌方行动'
+              }}
               <em v-if="animationPlaying"> · 动画结算中</em>
             </strong>
             <span>{{ battle.source }}</span>
@@ -1098,6 +1151,88 @@ onUnmounted(() => {
             glow: glowTargetKey === 'player',
           }"
         >
+          <div v-if="state.companion" class="companion-party">
+            <button
+              type="button"
+              class="companion-unit"
+              :class="{
+                selected: selectedAllyTarget === 'caelian',
+                injured: state.companion.injured,
+                acting: activeActorKey === 'companion:caelian',
+                hit: hitTargetKey === 'companion:caelian',
+                glow: glowTargetKey === 'companion:caelian',
+              }"
+              @click="selectedAllyTarget = 'caelian'"
+            >
+              <span>圣辉龙骑</span>
+              <strong>{{ state.companion.name }}</strong>
+              <small v-if="state.companion.injured">重伤 · 无法行动/治疗/获得护盾</small>
+              <small v-else>
+                HP {{ state.companion.hp }}/{{ state.companion.hpMax }} · 盾 {{ state.companion.shield }}
+              </small>
+              <MeterBar
+                label="凯利安生命"
+                :value="state.companion.hp"
+                :max="state.companion.hpMax"
+                color="#f6d36a"
+              />
+              <div class="battle-float-layer" aria-hidden="true">
+                <span
+                  v-for="effect in floatsFor('companion:caelian')"
+                  :key="effect.id"
+                  :data-kind="effect.kind"
+                >
+                  {{ effect.text }}
+                </span>
+              </div>
+            </button>
+
+            <article
+              v-for="summon in state.companion.summons"
+              :key="summon.id"
+              class="companion-summon"
+              :class="{
+                defeated: summon.hp <= 0,
+                acting: activeActorKey === `summon:${summon.id}`,
+                hit: hitTargetKey === `summon:${summon.id}`,
+                glow: glowTargetKey === `summon:${summon.id}`,
+              }"
+            >
+              <span>纯血光明圣龙 · 召唤物</span>
+              <strong>{{ summon.name }}</strong>
+              <small>HP {{ summon.hp }}/{{ summon.hpMax }} · 盾 {{ summon.shield }}</small>
+              <MeterBar
+                label="特莱奥生命"
+                :value="summon.hp"
+                :max="summon.hpMax"
+                color="#fff0a4"
+              />
+              <div class="battle-float-layer" aria-hidden="true">
+                <span
+                  v-for="effect in floatsFor(`summon:${summon.id}`)"
+                  :key="effect.id"
+                  :data-kind="effect.kind"
+                >
+                  {{ effect.text }}
+                </span>
+              </div>
+            </article>
+
+            <div class="companion-sequence">
+              <span>本场固定行动序列</span>
+              <ol>
+                <li
+                  v-for="(skill, index) in state.companion.actionSequence"
+                  :key="skill.id"
+                  :class="{ current: index === state.companion.actionIndex }"
+                  :title="skill.description"
+                >
+                  {{ skill.name }} · {{ skill.apCost }}AP
+                </li>
+              </ol>
+            </div>
+          </div>
+
           <div class="summon-strip">
             <template v-if="state.player.summons.length">
               <article
@@ -1178,6 +1313,33 @@ onUnmounted(() => {
             </span>
           </div>
         </section>
+
+        <div
+          v-if="state.companion && selectedCardFriendlyMode !== 'none'"
+          class="friendly-target-picker"
+        >
+          <template v-if="selectedCardFriendlyMode === 'all'">
+            <strong>己方全体</strong>
+            <span>玩家 + 凯利安（重伤时跳过治疗与护盾）</span>
+          </template>
+          <template v-else>
+            <strong>选择己方目标</strong>
+            <button
+              type="button"
+              :class="{ selected: selectedAllyTarget === 'player' }"
+              @click="selectedAllyTarget = 'player'"
+            >
+              玩家
+            </button>
+            <button
+              type="button"
+              :class="{ selected: selectedAllyTarget === 'caelian' }"
+              @click="selectedAllyTarget = 'caelian'"
+            >
+              凯利安
+            </button>
+          </template>
+        </div>
 
         <section
           class="hand-zone"
@@ -1602,8 +1764,145 @@ onUnmounted(() => {
   position: relative;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(38px, 0.7fr) auto minmax(34px, auto);
+  grid-template-rows: auto minmax(32px, 0.7fr) auto minmax(34px, auto);
   gap: 3px;
+}
+
+.companion-party {
+  min-height: 56px;
+  display: grid;
+  grid-template-columns: minmax(132px, 0.8fr) minmax(132px, 0.8fr) minmax(220px, 1.7fr);
+  gap: 4px;
+}
+
+.companion-unit,
+.companion-summon,
+.companion-sequence {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  padding: 5px 7px;
+  border: 1px solid rgba(250, 219, 117, 0.42);
+  border-radius: 10px;
+  color: #fff2bd;
+  background: linear-gradient(135deg, rgba(91, 67, 24, 0.92), rgba(25, 35, 52, 0.96));
+  text-align: left;
+}
+
+.companion-unit {
+  font: inherit;
+  cursor: pointer;
+}
+
+.companion-unit.selected {
+  border-color: #fff2a5;
+  box-shadow: 0 0 0 2px rgba(255, 235, 133, 0.18);
+}
+
+.companion-unit.injured,
+.companion-summon.defeated {
+  filter: grayscale(0.75);
+  opacity: 0.68;
+}
+
+.companion-unit.acting,
+.companion-summon.acting {
+  animation: player-action 0.46s cubic-bezier(.2, .75, .24, 1);
+}
+
+.companion-unit.hit,
+.companion-summon.hit {
+  animation: battle-hit 0.42s ease;
+}
+
+.companion-unit.glow,
+.companion-summon.glow {
+  animation: battle-glow 0.48s ease;
+}
+
+.companion-unit > span,
+.companion-summon > span,
+.companion-sequence > span {
+  display: block;
+  color: rgba(255, 239, 177, 0.7);
+  font-size: 7px;
+}
+
+.companion-unit > strong,
+.companion-summon > strong {
+  display: block;
+  font: 900 11px var(--ca-serif);
+}
+
+.companion-unit > small,
+.companion-summon > small {
+  display: block;
+  overflow: hidden;
+  font-size: 7px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.companion-sequence ol {
+  display: flex;
+  gap: 3px;
+  margin: 4px 0 0;
+  padding: 0;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.companion-sequence li {
+  flex: 0 0 auto;
+  padding: 3px 5px;
+  border: 1px solid rgba(255, 239, 177, 0.18);
+  border-radius: 999px;
+  color: rgba(255, 244, 206, 0.65);
+  font-size: 7px;
+}
+
+.companion-sequence li.current {
+  border-color: #ffe675;
+  color: #241603;
+  background: #ffe675;
+  font-weight: 900;
+}
+
+.friendly-target-picker {
+  position: absolute;
+  z-index: 170;
+  right: 12px;
+  bottom: 218px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: calc(100% - 24px);
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 232, 125, 0.45);
+  border-radius: 11px;
+  color: #fff0b2;
+  background: rgba(12, 18, 28, 0.94);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.34);
+}
+
+.friendly-target-picker strong,
+.friendly-target-picker span,
+.friendly-target-picker button {
+  font-size: 8px;
+}
+
+.friendly-target-picker button {
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 232, 125, 0.35);
+  border-radius: 999px;
+  color: #fff0b2;
+  background: transparent;
+  cursor: pointer;
+}
+
+.friendly-target-picker button.selected {
+  color: #271902;
+  background: #ffe675;
 }
 
 .battle-mid.acting {

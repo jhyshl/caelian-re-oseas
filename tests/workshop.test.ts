@@ -2,12 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   WORKSHOP_STORAGE_KEY,
   cardLimit,
+  cardScore,
   exportWorkshopPack,
   normalizeWorkshopCard,
   normalizeWorkshopPack,
   readWorkshopPacks,
   saveWorkshopPack,
 } from '@/workshop';
+import { PARTY_SUPPORT_CARDS } from '@/battle/party-support-cards';
 import { readWorkshopMechanisms } from '@/workshop-mechanisms';
 
 afterEach(() => {
@@ -15,6 +17,15 @@ afterEach(() => {
 });
 
 describe('旧版创意工坊规则', () => {
+  it('全部职业群体支援牌都不超过旧版强度控制器', () => {
+    expect(Object.keys(PARTY_SUPPORT_CARDS)).toHaveLength(24);
+    for (const card of Object.values(PARTY_SUPPORT_CARDS)) {
+      expect(cardScore(card), card.name).toBeLessThanOrEqual(
+        cardLimit(card.cost),
+      );
+    }
+  });
+
   it('使用旧版 AP 强度上限并自动判定稀有度', () => {
     expect(cardLimit(0)).toBe(10);
     expect(cardLimit(10)).toBe(206);

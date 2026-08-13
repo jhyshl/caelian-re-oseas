@@ -283,7 +283,7 @@ describe('本地战斗仓库', () => {
       (snapshot.battle?.state.player.hand.length ?? 0) +
         (snapshot.battle?.state.player.drawPile.length ?? 0) +
         (snapshot.battle?.state.player.discardPile.length ?? 0),
-    ).toBe(15);
+    ).toBe(16);
 
     const battleId = snapshot.battle!.id;
     const endedTurn = await repository.execute(profile.id, {
@@ -798,5 +798,240 @@ describe('本地战斗仓库', () => {
     expect(hellLevelTen.hpMax).toBeGreaterThan(normalLevelOne.hpMax);
     expect(hellLevelTen.attack).toBeGreaterThan(normalLevelOne.attack);
     expect(hellLevelTen.defense).toBeGreaterThan(normalLevelOne.defense);
+  });
+
+  it('让凯利安按本场固定序列消耗剩余AP并逐个生成行动动画', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-companion-sequence-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:companion-sequence');
+    await game.execute(profile.id, {
+      id: 'companion-sequence-player-create',
+      type: 'player.create',
+      payload: {
+        name: '同行测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    await game.execute(profile.id, {
+      id: 'companion-sequence-player-level',
+      type: 'player.update',
+      payload: { level: 6 },
+    });
+    let roll = 0.24;
+    const battles = new BattleRepository(database, () => roll);
+    await battles.prepare();
+    await battles.start(profile.id, {
+      monsterId: 'mon_slime',
+      companionPresent: true,
+      storyTriggered: true,
+    });
+
+    let session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    const companion = session.state.companion!;
+    expect(companion).toMatchObject({
+      level: 6,
+      hp: companion.hpMax,
+      injured: false,
+    });
+    expect(companion.summons[0]).toMatchObject({
+      id: 'trelio',
+      hp: companion.summons[0]!.hpMax,
+    });
+    const originalSequence = companion.actionSequence.map((skill) => skill.id);
+    const startingIndex = companion.actionIndex;
+    session.state.player.ap = 5;
+    session.state.enemies[0]!.hp = 100_000;
+    session.state.enemies[0]!.hpMax = 100_000;
+    session.state.enemies[0]!.attack = 0;
+    session.state.enemies[0]!.intent = null;
+    companion.attack = 0;
+    companion.summons[0]!.attack = 0;
+    const previousAnimationCount = session.state.animations?.length ?? 0;
+    await database.battleSessions.put(session);
+
+    let remaining = 5;
+    const expectedSkills = [] as typeof companion.actionSequence;
+    while (expectedSkills.length < companion.actionSequence.length) {
+      const skill = companion.actionSequence[
+        (startingIndex + expectedSkills.length) % companion.actionSequence.length
+      ]!;
+      if (skill.apCost > remaining) break;
+      remaining -= skill.apCost;
+      expectedSkills.push(skill);
+    }
+    roll = 0.24;
+    await battles.endTurn(profile.id, session.id);
+    session = (await database.battleSessions.get(session.id))!;
+    const newAnimations = (session.state.animations ?? []).slice(
+      previousAnimationCount,
+    );
+    const caelianActions = newAnimations.filter(
+      (event) =>
+        event.kind === 'companion-action' &&
+        event.sourceSide === 'companion',
+    );
+    expect(caelianActions.map((event) => event.label)).toEqual(
+      expectedSkills.map((skill) => skill.name),
+    );
+    expect(caelianActions.map((event) => event.apAfter)).toEqual(
+      expectedSkills.map((_, index) =>
+        5 - expectedSkills
+          .slice(0, index + 1)
+          .reduce((total, skill) => total + skill.apCost, 0),
+      ),
+    );
+    expect(session.state.companion?.actionSequence.map((skill) => skill.id)).toEqual(
+      originalSequence,
+    );
+    expect(session.state.companion?.actionIndex).toBe(
+      (startingIndex + expectedSkills.length) % originalSequence.length,
+    );
+    const lastCompanionAnimation = Math.max(
+      ...newAnimations
+        .map((event, index) =>
+          ['companion', 'summon'].includes(event.sourceSide ?? '') ? index : -1,
+        ),
+    );
+    const firstEnemyAnimation = newAnimations.findIndex(
+      (event) => event.kind === 'enemy-action',
+    );
+    expect(lastCompanionAnimation).toBeLessThan(firstEnemyAnimation);
+
+    const retainedIndex = session.state.companion!.actionIndex;
+    session.state.player.ap = 0;
+    const beforeNoAp = session.state.animations?.length ?? 0;
+    await database.battleSessions.put(session);
+    await battles.endTurn(profile.id, session.id);
+    session = (await database.battleSessions.get(session.id))!;
+    expect(session.state.companion?.actionIndex).toBe(retainedIndex);
+    expect(
+      (session.state.animations ?? [])
+        .slice(beforeNoAp)
+        .filter((event) => event.sourceSide === 'companion'),
+    ).toHaveLength(0);
+  });
+
+  it('允许治疗牌选择凯利安且不会误治疗玩家', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-friendly-target-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:friendly-target');
+    await game.execute(profile.id, {
+      id: 'friendly-target-player-create',
+      type: 'player.create',
+      payload: {
+        name: '治疗目标测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const battles = new BattleRepository(database, () => 0.4);
+    await battles.prepare();
+    await battles.start(profile.id, {
+      monsterId: 'mon_slime',
+      companionPresent: true,
+    });
+    let session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    const playerHp = session.state.player.hpMax - 12;
+    const companionHp = session.state.companion!.hpMax - 20;
+    session.state.player.hp = playerHp;
+    session.state.companion!.hp = companionHp;
+    session.state.player.ap = 10;
+    session.state.player.hand.unshift({
+      instanceId: 'test:caelian-heal',
+      cardId: 'hk_holy_heal',
+    });
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      allyTargetId: 'caelian',
+    });
+    session = (await database.battleSessions.get(session.id))!;
+    expect(session.state.player.hp).toBe(playerHp);
+    expect(session.state.companion!.hp).toBeGreaterThan(companionHp);
+  });
+
+  it('敌人可以击伤凯利安，重伤后凯利安停止行动且无法被治疗', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-injury-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:caelian-injury');
+    await game.execute(profile.id, {
+      id: 'caelian-injury-player-create',
+      type: 'player.create',
+      payload: {
+        name: '重伤测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    let roll = 0;
+    const battles = new BattleRepository(database, () => roll);
+    await battles.prepare();
+    await battles.start(profile.id, {
+      monsterId: 'mon_slime',
+      companionPresent: true,
+    });
+    let session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    session.state.player.ap = 0;
+    session.state.companion!.hp = 1;
+    session.state.companion!.defense = 0;
+    session.state.companion!.speed = 0;
+    session.state.companion!.summons[0]!.attack = 0;
+    session.state.enemies[0]!.hp = 100_000;
+    session.state.enemies[0]!.hpMax = 100_000;
+    session.state.enemies[0]!.attack = 1_000;
+    session.state.enemies[0]!.intent = null;
+    await database.battleSessions.put(session);
+    roll = 0.5;
+    await battles.endTurn(profile.id, session.id);
+    session = (await database.battleSessions.get(session.id))!;
+    expect(session.state.companion).toMatchObject({
+      hp: 0,
+      shield: 0,
+      injured: true,
+    });
+
+    const retainedIndex = session.state.companion!.actionIndex;
+    session.state.player.ap = 10;
+    session.state.player.hand.unshift({
+      instanceId: 'test:injured-heal',
+      cardId: 'hk_holy_heal',
+    });
+    await database.battleSessions.put(session);
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      allyTargetId: 'caelian',
+    });
+    session = (await database.battleSessions.get(session.id))!;
+    expect(session.state.companion).toMatchObject({
+      hp: 0,
+      shield: 0,
+      injured: true,
+      actionIndex: retainedIndex,
+    });
   });
 });

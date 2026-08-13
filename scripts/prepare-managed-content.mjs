@@ -66,6 +66,15 @@ const retainedEntries = entries.filter(
   (entry) => !legacyQuestWorldbookIds.has(entry.uid ?? entry.id),
 );
 entries.splice(0, entries.length, ...retainedEntries);
+const battleEntryAliases = [
+  'DLC｜Combat｜战斗判定 [AUTO_GLOBAL]',
+  'DLC|Combat|战斗判定 [AUTO_GLOBAL]',
+];
+const battleEntry = entries.find((entry) =>
+  battleEntryAliases.includes(String(entry.comment ?? entry.name ?? '')),
+);
+if (!battleEntry) throw new Error('The managed story battle rule was not found.');
+battleEntry.content = updateStoryBattleRules(String(battleEntry.content ?? ''));
 
 const canonicalEntries = [
   normalizeEntry({
@@ -160,6 +169,14 @@ const operations = [
     target: { kind: 'worldbook-upsert-entry', entryNames: aliases },
     entry: toManagedEntry(entry),
   })),
+  {
+    id: '2026-08-13.story-battle.user-and-caelian-party',
+    target: {
+      kind: 'worldbook-upsert-entry',
+      entryNames: battleEntryAliases,
+    },
+    entry: toManagedEntry(battleEntry),
+  },
 ];
 
 const cardJson = `${JSON.stringify(card, null, 2)}\n`;
@@ -167,7 +184,7 @@ const cardSha256 = createHash('sha256').update(cardJson).digest('hex');
 const manifest = {
   schemaVersion: 1,
   channel: 'alpha',
-  revision: '2026-08-07.3',
+  revision: '2026-08-13.1',
   target: {
     characterName,
     worldbookNames: [
@@ -268,6 +285,55 @@ function normalizeEntry(config) {
     role: 0,
   };
   return { aliases: config.aliases, entry };
+}
+
+function updateStoryBattleRules(content) {
+  let result = content;
+  if (!result.includes('user_involved: true')) {
+    result = result.replace(
+      'reason: 郊外遭遇\n</BattleStart>',
+      'reason: 郊外遭遇\nuser_involved: true\ncaelian_present: true\n</BattleStart>',
+    );
+  }
+  if (!result.includes('- user_involved：必填')) {
+    result = result.replace(
+      '- reason：可选，简短写明触发原因或地点，例如“郊外遭遇”“任务目标出现”“下水道伏击”。',
+      [
+        '- reason：可选，简短写明触发原因或地点，例如“郊外遭遇”“任务目标出现”“下水道伏击”。',
+        '- user_involved：必填。只有user本人实际处于这场战斗中时填写 true；其他情况不得输出 BattleStart。',
+        '- caelian_present：必填。凯利安与user在同一现场并会并肩作战时填写 true，否则填写 false。',
+      ].join('\n'),
+    );
+  }
+  result = result.replace(
+    '- 只有当怪物已经实际现身、袭击、拦路、伏击、玩家主动挑战/讨伐、任务目标进入战斗时，才输出 BattleStart。',
+    '- 只有当怪物已经对user实际现身、袭击、拦路、伏击，或user主动挑战/讨伐、user本人进入任务战斗时，才输出 BattleStart。',
+  );
+  if (!result.includes('【v3.8玩家参战与凯利安同行规则】')) {
+    result = result.replace(
+      '</本地战斗触发规则>',
+      [
+        '【v3.8玩家参战与凯利安同行规则】',
+        '- BattleStart只代表user本人即将进入的战斗。若仅凯利安、特莱奥、其他NPC或远处角色遭遇/参加战斗，而user不在战斗现场，严禁输出BattleStart。',
+        '- 不能因为叙事主角凯利安受袭、凯利安单独迎敌、凯利安在别处作战，就把user_involved写为true。',
+        '- 当user本人参战时，user_involved必须写true；缺少该字段、写false或语义不确定时，本地脚本都不会触发战斗。',
+        '- 仅当凯利安就在user身边且会共同进入本场战斗时，caelian_present写true。凯利安离场、分头行动、失联或只在远处时写false。',
+        '- caelian_present为true时，本地战斗会让凯利安以圣辉龙骑职业参战，并将纯血光明圣龙特莱奥作为可受击召唤物加入。战斗数值、AP消耗、行动序列与结算均由本地脚本负责，AI不得代算。',
+        '- BattleResult中的caelian、caelian_hp与trelio_hp是本地真实结算；caelian为injured时必须按凯利安重伤、无法继续战斗处理，不得擅自治愈或改写。',
+        '',
+        '</本地战斗触发规则>',
+      ].join('\n'),
+    );
+  }
+  const resultFieldsRule =
+    '- BattleResult中的caelian、caelian_hp与trelio_hp是本地真实结算；caelian为injured时必须按凯利安重伤、无法继续战斗处理，不得擅自治愈或改写。';
+  if (!result.includes(resultFieldsRule)) {
+    result = result.replace(
+      '</本地战斗触发规则>',
+      `${resultFieldsRule}\n\n</本地战斗触发规则>`,
+    );
+  }
+  return result;
 }
 
 function createEntry(id) {

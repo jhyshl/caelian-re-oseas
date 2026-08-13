@@ -315,6 +315,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       count: z.number().int().min(1).max(12).optional(),
       source: z.string().trim().min(1).max(180).optional(),
       storyTriggered: z.boolean().optional().default(false),
+      companionPresent: z.boolean().optional().default(false),
       relatedQuestId: z.string().trim().max(220).optional(),
       workshopTest: z
         .object({
@@ -357,6 +358,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       battleId: z.string().trim().min(1).max(220),
       handIndex: z.number().int().min(0).max(99),
       targetIndex: z.number().int().min(0).max(20).optional(),
+      allyTargetId: z.enum(['player', 'caelian']).optional().default('player'),
     }),
   }),
   z.object({

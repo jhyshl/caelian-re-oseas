@@ -141,6 +141,12 @@ describe('ManagedContentUpdater', () => {
         String(entry.name).includes('[AUTO_GLOBAL]'),
       ),
     ).toHaveLength(4);
+    const battleRules = normalized.find((entry) =>
+      String(entry.name).includes('战斗判定 [AUTO_GLOBAL]'),
+    )?.content;
+    expect(battleRules).toContain('user_involved: true');
+    expect(battleRules).toContain('caelian_present: true');
+    expect(battleRules).toContain('若仅凯利安、特莱奥、其他NPC或远处角色遭遇/参加战斗');
 
     const schema = card.data.extensions.tavern_helper.scripts.find(
       (script: Record<string, unknown>) =>
@@ -206,14 +212,14 @@ describe('ManagedContentUpdater', () => {
         mutation?: { action: string };
       }>;
     };
-    expect(manifest.revision).toBe('2026-08-07.3');
+    expect(manifest.revision).toBe('2026-08-13.1');
     expect(manifest.target.worldbookNames).toEqual(
       expect.arrayContaining([
         '孔雀开屏你说你看不见alpha',
         '孔雀开屏你说你看不见beta',
       ]),
     );
-    expect(manifest.operations).toHaveLength(6);
+    expect(manifest.operations).toHaveLength(7);
     expect(
       manifest.operations.filter(
         (operation) => operation.target.kind === 'character-script',
@@ -227,7 +233,7 @@ describe('ManagedContentUpdater', () => {
       manifest.operations.filter(
         (operation) => operation.target.kind === 'worldbook-upsert-entry',
       ),
-    ).toHaveLength(5);
+    ).toHaveLength(6);
   });
 
   it('发布清单可在最新版角色卡上幂等执行且不产生额外改动', async () => {

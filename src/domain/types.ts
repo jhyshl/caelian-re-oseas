@@ -422,6 +422,47 @@ export interface BattleEnemyState {
   intent: BattleIntent | null;
 }
 
+export type BattleFriendlyTargetId = 'player' | 'caelian';
+
+export interface BattleCompanionSkillState {
+  id: string;
+  name: string;
+  apCost: number;
+  description: string;
+}
+
+export interface BattleCompanionSummonState {
+  id: 'trelio';
+  name: string;
+  hp: number;
+  hpMax: number;
+  shield: number;
+  attack: number;
+  defense: number;
+  speed: number;
+  buffs: Record<string, BattleTimedEffect>;
+  debuffs: Record<string, BattleTimedEffect>;
+}
+
+export interface BattleCompanionState {
+  id: 'caelian';
+  name: string;
+  profession: '圣辉龙骑';
+  level: number;
+  hp: number;
+  hpMax: number;
+  shield: number;
+  attack: number;
+  defense: number;
+  speed: number;
+  buffs: Record<string, BattleTimedEffect>;
+  debuffs: Record<string, BattleTimedEffect>;
+  injured: boolean;
+  actionSequence: BattleCompanionSkillState[];
+  actionIndex: number;
+  summons: BattleCompanionSummonState[];
+}
+
 export interface BattleLogEntry {
   id: string;
   turn: number;
@@ -442,6 +483,7 @@ export interface BattleRewards {
 
 export type BattleAnimationKind =
   | 'card'
+  | 'companion-action'
   | 'enemy-action'
   | 'damage'
   | 'heal'
@@ -456,16 +498,16 @@ export interface BattleAnimationEvent {
   id: string;
   turn: number;
   kind: BattleAnimationKind;
-  sourceSide?: 'player' | 'enemy' | 'system';
+  sourceSide?: 'player' | 'companion' | 'summon' | 'enemy' | 'system';
   sourceId?: string;
-  targetSide?: 'player' | 'enemy' | 'system';
+  targetSide?: 'player' | 'companion' | 'summon' | 'enemy' | 'system';
   targetId?: string;
   amount?: number;
   hpAfter?: number;
   shieldAfter?: number;
   mpAfter?: number;
   apAfter?: number;
-  phaseAfter?: 'player' | 'enemy' | 'ended';
+  phaseAfter?: 'player' | 'companion' | 'enemy' | 'ended';
   turnAfter?: number;
   cardInstanceId?: string;
   label: string;
@@ -475,10 +517,11 @@ export interface LocalBattleState {
   schemaVersion: 1;
   difficulty?: 'easy' | 'normal' | 'hard' | 'hell';
   status: BattleStatus;
-  phase: 'player' | 'enemy' | 'ended';
+  phase: 'player' | 'companion' | 'enemy' | 'ended';
   turn: number;
   selectedTarget: number;
   player: BattlePlayerState;
+  companion?: BattleCompanionState;
   enemies: BattleEnemyState[];
   rewards: BattleRewards | null;
   bossMechanic?: {

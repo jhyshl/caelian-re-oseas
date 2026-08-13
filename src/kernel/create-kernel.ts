@@ -865,6 +865,7 @@ export class CaelianKernel {
         count: request.count,
         source: request.reason || '剧情自动触发',
         storyTriggered: true,
+        companionPresent: request.caelianPresent,
         relatedQuestId: tracked?.questId || undefined,
       },
     });
@@ -1413,6 +1414,13 @@ export class CaelianKernel {
       },
     );
     this.profileId = profile.id;
+    const snapshot = await this.repository.snapshot(profile.id);
+    if (snapshot.player.created) {
+      await this.repository.ensurePartySupportCard(
+        profile.id,
+        snapshot.player.subclass,
+      );
+    }
     await this.repository.importLegacyAchievements(
       profile.id,
       this.adapter.legacyAchievementPayload(),

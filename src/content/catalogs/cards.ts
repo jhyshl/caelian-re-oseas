@@ -1,5 +1,6 @@
 import type { CardDefinition } from '@/content/types';
 import { readWorkshopPacks } from '@/workshop';
+import { PARTY_SUPPORT_CARDS } from '@/battle/party-support-cards';
 
 let cardCache: Record<string, CardDefinition> | undefined;
 let commonMarketCache: Record<string, CardDefinition> | undefined;
@@ -42,6 +43,7 @@ export async function loadCardCatalog(): Promise<
     cardCache = {
       ...(module.default as Record<string, CardDefinition>),
       ...commonMarket,
+      ...PARTY_SUPPORT_CARDS,
     };
   }
   refreshWorkshopCardCatalog();

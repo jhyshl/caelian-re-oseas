@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "channel": "alpha",
-  "revision": "2026-08-07.3",
+  "revision": "2026-08-13.1",
   "target": {
     "characterName": "凯利安",
     "worldbookNames": [
@@ -16,7 +16,7 @@
   },
   "sourceCard": {
     "url": "https://jhyshl.github.io/caelian-re-oseas/managed-content/cards/caelian-alpha-mvu-v3.json",
-    "sha256": "93a40c23ce6ad53953bb2b1a6fd911f158df5998ddcfe3f72cbde38060fe0314"
+    "sha256": "e06ed02bfc65b54a5a810c2b421668d7b98e197b0cb8e002dbfaf42ed81bf14d"
   },
   "operations": [
     {
@@ -286,6 +286,62 @@
           "group_override": false,
           "group_weight": 100,
           "prevent_recursion": false,
+          "delay_until_recursion": false,
+          "scan_depth": null,
+          "match_whole_words": null,
+          "use_group_scoring": false,
+          "case_sensitive": null,
+          "automation_id": "",
+          "role": 0,
+          "vectorized": false,
+          "sticky": null,
+          "cooldown": null,
+          "delay": null,
+          "match_persona_description": false,
+          "match_character_description": false,
+          "match_character_personality": false,
+          "match_character_depth_prompt": false,
+          "match_scenario": false,
+          "match_creator_notes": false,
+          "triggers": [],
+          "ignore_budget": false
+        }
+      }
+    },
+    {
+      "id": "2026-08-13.story-battle.user-and-caelian-party",
+      "target": {
+        "kind": "worldbook-upsert-entry",
+        "entryNames": [
+          "DLC｜Combat｜战斗判定 [AUTO_GLOBAL]",
+          "DLC|Combat|战斗判定 [AUTO_GLOBAL]"
+        ]
+      },
+      "entry": {
+        "uid": 0,
+        "name": "DLC｜Combat｜战斗判定 [AUTO_GLOBAL]",
+        "content": "<本地战斗触发规则>\n当剧情中“确实需要进入战斗”时，必须在回复末尾额外输出一个隐藏 HTML 注释战斗标签，让本地脚本读取并打开本地战斗界面。\n\n【固定输出格式】\n必须完整保留标签名，不要改成其他名称：\n\n<!--\n<BattleStart>\nmonster: mon_slime\ncount: 1\nreason: 郊外遭遇\nuser_involved: true\ncaelian_present: true\n</BattleStart>\n-->\n\n【字段规则】\n- monster：必填。只能填写下方 monster ID，不能自己编新 ID。\n- count：可选，默认为 1。若是“一群/多只/小队/狼群/怪物群”，填写 2-12 之间的数字。\n- reason：可选，简短写明触发原因或地点，例如“郊外遭遇”“任务目标出现”“下水道伏击”。\n- user_involved：必填。只有user本人实际处于这场战斗中时填写 true；其他情况不得输出 BattleStart。\n- caelian_present：必填。凯利安与user在同一现场并会并肩作战时填写 true，否则填写 false。\n- 不要在 BattleStart 内写剧情、胜负、奖励、伤害、回合过程、物品消耗。\n- 不要替玩家进行战斗判定；战斗过程完全由本地脚本完成。\n- 同一回复最多输出一个 BattleStart；如果同时出现多个敌人，选择最主要的战斗目标，并用 count 表示数量。\n- 如果剧情只是传闻、回忆、资料介绍、NPC提到、远处听见怪物、看到怪物痕迹，不要输出 BattleStart。\n- 只有当怪物已经对user实际现身、袭击、拦路、伏击，或user主动挑战/讨伐、user本人进入任务战斗时，才输出 BattleStart。\n- 如果玩家明确发送“开始战斗：怪物名”“挑战某怪物”“讨伐某怪物”，可以输出 BattleStart。\n- 如果玩家明确表示“不战斗/撤退/绕开/不要触发战斗”，不要输出 BattleStart。\n\n【可用 monster ID 表】\n  - mon_slime：史莱姆（难度：easy；别名：史莱姆、Slime、史莱姆群）\n  - mon_goblin：哥布林（难度：easy；别名：哥布林、Goblin、哥布林群、哥布林营地）\n  - mon_giant_rat：巨鼠（难度：easy；别名：巨鼠、Giant Rat、老鼠、下水道巨鼠）\n  - mon_skeleton：骷髅兵（难度：easy；别名：骷髅兵、Skeleton、骷髅、不死骷髅）\n  - mon_dire_wolf：血狼（难度：normal；别名：血狼、Dire Wolf、狼群、血狼群）\n  - mon_rafflesia：大王花妖（难度：normal；别名：大王花妖、Giant Rafflesia、食人花、花妖）\n  - mon_kobold：狗头人（难度：normal；别名：狗头人、Kobold、狗头人群、矿洞狗头人）\n  - mon_zombie：僵尸（难度：normal；别名：僵尸、Zombie、僵尸群、腐尸）\n  - mon_giant_spider：巨型蜘蛛（难度：normal；别名：巨型蜘蛛、Giant Spider、蜘蛛、巨蛛）\n  - mon_bandit：流寇（难度：normal；别名：流寇、Bandit、强盗、土匪、流寇团）\n  - mon_giant_bat：巨型蝙蝠（难度：normal；别名：巨型蝙蝠、Giant Bat、蝙蝠、巨蝠）\n  - mon_orc：半兽人（难度：hard；别名：半兽人、Orc、兽人、兽人战士）\n  - mon_mimic：宝箱怪（难度：hard；别名：宝箱怪、Mimic、拟态宝箱）\n  - mon_ghost：幽灵（难度：hard；别名：幽灵、Ghost、鬼魂、灵体）\n  - mon_stone_golem：岩石傀儡（难度：hard；别名：岩石傀儡、Stone Golem、石傀儡、傀儡）\n  - mon_gargoyle：石像鬼（难度：hard；别名：石像鬼、Gargoyle）\n  - mon_ogre：食人魔（难度：hard；别名：食人魔、Ogre）\n  - mon_shadow_horror：影魔（难度：hard；别名：影魔、Shadow Horror、暗影魔物）\n  - mon_living_armor：活体铠甲（难度：hard；别名：活体铠甲、Living Armor、铠甲怪）\n  - mon_werewolf：狼人（难度：hard；别名：狼人、Werewolf）\n  - mon_basilisk：石化蜥蜴（难度：hard；别名：石化蜥蜴、Basilisk、石化蜥）\n  - mon_troll：巨魔（难度：nightmare；别名：巨魔、Troll）\n  - mon_wyvern：双足飞龙（难度：nightmare；别名：双足飞龙、Wyvern、飞龙）\n  - mon_chimera：奇美拉（难度：nightmare；别名：奇美拉、Chimera）\n  - mon_evil_eye：眼魔（难度：nightmare；别名：眼魔、Evil Eye、邪眼）\n  - mon_tumble_crab：滚石蟹（难度：easy；别名：滚石蟹、Tumbling Crab、螃蟹）\n  - mon_murloc：鱼人（难度：normal；别名：鱼人、Murloc、鱼人群）\n  - mon_water_sprite：水灵（难度：hard；别名：水灵、水元素）\n  - mon_siren：海妖塞壬（难度：hard；别名：海妖塞壬、Siren、海妖、塞壬）\n  - mon_kraken_baby：克拉肯幼体（难度：nightmare；别名：克拉肯幼体、Giant Octopus、克拉肯、章鱼怪）\n  - mon_wraith：怨灵（难度：normal；别名：怨灵、怨魂、亡灵）\n  - mon_dark_knight：堕落骑士（难度：hard；别名：堕落骑士、黑骑士）\n  - mon_abyss_spawn：深渊造物（难度：nightmare；别名：深渊造物、深渊怪物、深渊暗影）\n\n【选择怪物 ID 的例子】\n- 剧情出现“史莱姆/一群史莱姆/黏液怪” → monster: mon_slime\n- 剧情出现“哥布林/哥布林群/哥布林营地伏击” → monster: mon_goblin\n- 剧情出现“幽灵/鬼魂/灵体” → monster: mon_ghost\n- 剧情出现“怨灵/怨魂” → monster: mon_wraith\n- 剧情出现“半兽人/兽人/兽人战士” → monster: mon_orc\n- 剧情出现“海妖/塞壬/海妖塞壬” → monster: mon_siren\n- 剧情出现“克拉肯/克拉肯幼体/巨大章鱼怪” → monster: mon_kraken_baby\n\n【收到 BattleResult 时】\n当收到玩家发送的 <BattleResult> 结算块时：\n- 承认这是本地脚本已经完成的战斗结果，不要重新判定胜负。\n- 只根据其中的胜负、玩家血量消耗、使用物品、战利品、金币、经验进行剧情描写与变量更新。\n- 不要补写额外奖励，不要擅自增加未列出的掉落物。\n- 不要回滚或重算战斗过程。\n\n\n【v3.7补充规则】\n- 本地脚本已经内置全部怪物数值与权重出招逻辑，AI只负责在需要战斗时输出 BattleStart。\n- 不要输出“随机怪物”“未知怪物”“自定义怪物”等脚本无法识别的 monster 值；必须从上方 ID 表中选择。\n- 如果剧情中出现多个同类敌人，用 count 表示数量；如果出现多个不同敌人，优先选择最主要、最先攻击、或最符合当前任务目标的一个。\n- 玩家完成战斗后会发送 BattleResult；其中不会包含卡牌使用记录，也不需要 AI 发放卡牌、藏品或装备，这些由本地脚本处理。\n- AI收到 BattleResult 后只做剧情收尾和变量更新，不要额外追加卡牌、藏品、装备或未列出的战利品。\n\n【v3.8玩家参战与凯利安同行规则】\n- BattleStart只代表user本人即将进入的战斗。若仅凯利安、特莱奥、其他NPC或远处角色遭遇/参加战斗，而user不在战斗现场，严禁输出BattleStart。\n- 不能因为叙事主角凯利安受袭、凯利安单独迎敌、凯利安在别处作战，就把user_involved写为true。\n- 当user本人参战时，user_involved必须写true；缺少该字段、写false或语义不确定时，本地脚本都不会触发战斗。\n- 仅当凯利安就在user身边且会共同进入本场战斗时，caelian_present写true。凯利安离场、分头行动、失联或只在远处时写false。\n- caelian_present为true时，本地战斗会让凯利安以圣辉龙骑职业参战，并将纯血光明圣龙特莱奥作为可受击召唤物加入。战斗数值、AP消耗、行动序列与结算均由本地脚本负责，AI不得代算。\n\n- BattleResult中的caelian、caelian_hp与trelio_hp是本地真实结算；caelian为injured时必须按凯利安重伤、无法继续战斗处理，不得擅自治愈或改写。\n\n</本地战斗触发规则>",
+        "keys": [],
+        "secondary_keys": [],
+        "constant": true,
+        "selective": false,
+        "insertion_order": 100,
+        "enabled": true,
+        "position": "after_char",
+        "use_regex": true,
+        "extra": {
+          "position": 4,
+          "exclude_recursion": true,
+          "display_index": 9,
+          "probability": 100,
+          "useProbability": true,
+          "depth": 2,
+          "selectiveLogic": 0,
+          "outlet_name": "",
+          "group": "",
+          "group_override": false,
+          "group_weight": 100,
+          "prevent_recursion": true,
           "delay_until_recursion": false,
           "scan_depth": null,
           "match_whole_words": null,

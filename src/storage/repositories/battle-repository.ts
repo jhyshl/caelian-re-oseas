@@ -25,9 +25,12 @@ import {
   childEffects,
   isBattleUsableEffect,
 } from '@/battle/consumables';
+import { createCaelianCompanion } from '@/battle/caelian-companion';
 import type {
   BattleAnimationEvent,
+  BattleCompanionState,
   BattleEnemyState,
+  BattleFriendlyTargetId,
   BattleIntent,
   BattleLogEntry,
   BattlePlayerState,
@@ -291,6 +294,7 @@ export class BattleRepository {
       count?: number;
       source?: string;
       storyTriggered?: boolean;
+      companionPresent?: boolean;
       relatedQuestId?: string;
       workshopTest?: WorkshopTestInput;
     },
@@ -395,6 +399,9 @@ export class BattleRepository {
       turn: 1,
       selectedTarget: 0,
       player: battlePlayer,
+      companion: input.companionPresent
+        ? createCaelianCompanion(player.level, this.random)
+        : undefined,
       enemies,
       rewards: null,
       bossMechanic: this.createBossMechanic(monster),
@@ -430,6 +437,13 @@ export class BattleRepository {
       'system',
       `在${region}遭遇 ${enemyCount > 1 ? `${enemyCount} 只` : ''}${monster.name}。抽取 ${battlePlayer.hand.length} 张起始手牌。`,
     );
+    if (state.companion) {
+      this.log(
+        state,
+        'system',
+        '凯利安以圣辉龙骑身份加入战斗，并召唤特莱奥协同作战。',
+      );
+    }
     const now = Date.now();
     const session: BattleSessionRecord = {
       id: battleId,
@@ -465,6 +479,7 @@ export class BattleRepository {
       battleId: string;
       handIndex: number;
       targetIndex?: number;
+      allyTargetId?: BattleFriendlyTargetId;
     },
   ): Promise<void> {
     this.assertPrepared();
@@ -515,11 +530,18 @@ export class BattleRepository {
       state.player.hand.splice(input.handIndex, 1);
       state.player.discardPile.push(cardInstance);
       this.log(state, 'player', `使用「${card.name}」`);
+      const allyTargetId = input.allyTargetId ?? 'player';
+      const cardTarget = this.cardUsesFriendlyTarget(card)
+        ? this.cardFriendlyTargets(state, 'ally', allyTargetId)[0]
+        : undefined;
+      const cardTargetIdentity = cardTarget
+        ? this.combatantIdentity(state, cardTarget)
+        : undefined;
       this.animation(state, {
         kind: 'card',
         sourceSide: 'player',
-        targetSide: 'enemy',
-        targetId: state.enemies[targetIndex]?.id,
+        targetSide: cardTargetIdentity?.side ?? 'enemy',
+        targetId: cardTargetIdentity?.id ?? state.enemies[targetIndex]?.id,
         apAfter: state.player.ap,
         mpAfter: state.player.mp,
         cardInstanceId: cardInstance.instanceId,
@@ -530,7 +552,12 @@ export class BattleRepository {
         await this.finishBattle(session, 'defeat');
         return;
       }
-      this.applyCardEffects(state, card, targetIndex);
+      this.applyCardEffects(
+        state,
+        card,
+        targetIndex,
+        allyTargetId,
+      );
       this.updateClassResourcesAfterCard(state, card, cardInstance.cardId);
       this.recordBossMechanicCard(state, card.type);
       if (card.type === 'attack' && state.player.buffs.cost_reduction) {
@@ -694,9 +721,29 @@ export class BattleRepository {
     const session = await this.getOngoing(profileId, battleId);
     const state = session.state;
     this.assertPlayerPhase(state);
-    state.phase = 'enemy';
     this.runWorkshopMechanisms(state, 'turn_end');
     this.log(state, 'system', '结束玩家回合');
+
+    this.resolveChants(state);
+    this.resolveSummons(state);
+    if (state.companion) {
+      state.phase = 'companion';
+      this.applyStartOfTurnEffects(state, state.companion);
+      for (const summon of state.companion.summons) {
+        if (summon.hp > 0) this.applyStartOfTurnEffects(state, summon);
+      }
+      this.stabilizeCompanion(state);
+      this.animation(state, {
+        kind: 'turn',
+        sourceSide: 'system',
+        phaseAfter: 'companion',
+        turnAfter: state.turn,
+        label: state.companion.injured ? '凯利安重伤' : '凯利安行动',
+      });
+      this.resolveCaelianActions(state);
+      this.resolveTrelioSummon(state);
+    }
+    state.phase = 'enemy';
     this.animation(state, {
       kind: 'turn',
       sourceSide: 'system',
@@ -704,9 +751,6 @@ export class BattleRepository {
       turnAfter: state.turn,
       label: '敌方行动',
     });
-
-    this.resolveChants(state);
-    this.resolveSummons(state);
     this.resolveBossMechanicTurn(state);
     this.runWorkshopMechanisms(state, 'before_enemy_turn');
     if (this.aliveEnemies(state).length === 0) {
@@ -745,6 +789,11 @@ export class BattleRepository {
     this.runWorkshopMechanisms(state, 'after_enemy_turn');
 
     this.tickEffects(state.player);
+    if (state.companion) {
+      this.tickEffects(state.companion);
+      for (const summon of state.companion.summons) this.tickEffects(summon);
+      this.stabilizeCompanion(state);
+    }
     for (const enemy of this.aliveEnemies(state)) this.tickEffects(enemy);
     if (state.player.hp <= 0) {
       await this.finishBattle(session, 'defeat');
@@ -785,6 +834,7 @@ export class BattleRepository {
       sourceSide: 'system',
       targetSide: 'player',
       targetId: 'player',
+      apAfter: state.player.ap,
       mpAfter: state.player.mp,
       phaseAfter: 'player',
       turnAfter: state.turn,
@@ -1489,6 +1539,8 @@ export class BattleRepository {
     enemy: BattleEnemyState,
     monster?: MonsterDefinition,
   ): void {
+    const friendlyTarget = this.chooseEnemyFriendlyTarget(state);
+    const friendlyIdentity = this.combatantIdentity(state, friendlyTarget);
     const skill = enemy.intent
       ? monster?.skills?.[enemy.intent.skillId]
       : undefined;
@@ -1502,12 +1554,13 @@ export class BattleRepository {
         kind: 'enemy-action',
         sourceSide: 'enemy',
         sourceId: enemy.id,
-        targetSide: 'player',
-        targetId: 'player',
+        targetSide: friendlyIdentity.side,
+        targetId: friendlyIdentity.id,
         label: enemy.name,
       });
-      this.damage(state, enemy, state.player, amount, 'enemy', enemy.name);
-      this.applyOnHitResponses(state, enemy);
+      this.damage(state, enemy, friendlyTarget, amount, 'enemy', enemy.name);
+      this.applyOnHitResponses(state, enemy, friendlyTarget);
+      this.stabilizeCompanion(state);
       return;
     }
     this.log(state, 'enemy', `${enemy.name} 使用「${skill.name}」`);
@@ -1515,8 +1568,8 @@ export class BattleRepository {
       kind: 'enemy-action',
       sourceSide: 'enemy',
       sourceId: enemy.id,
-      targetSide: 'player',
-      targetId: 'player',
+      targetSide: friendlyIdentity.side,
+      targetId: friendlyIdentity.id,
       label: skill.name,
     });
     for (const effect of skill.effects ?? []) {
@@ -1528,42 +1581,42 @@ export class BattleRepository {
             1,
             Math.round(this.enemyEffectAmount(enemy, effect) * (0.9 + this.random() * 0.24)),
           );
-          this.damage(state, enemy, state.player, amount, 'enemy', enemy.name);
-          if (state.player.hp <= 0) break;
+          this.damage(state, enemy, friendlyTarget, amount, 'enemy', enemy.name);
+          if (friendlyTarget.hp <= 0) break;
         }
-        this.applyOnHitResponses(state, enemy);
+        this.applyOnHitResponses(state, enemy, friendlyTarget);
       } else if (effect.type === 'true_damage') {
         if (this.triggerTrap(state, enemy)) break;
         const hits = Math.max(1, this.number(effect.hits, 1));
         for (let hit = 0; hit < hits; hit += 1) {
           this.directHpLoss(
             state,
-            state.player,
+            friendlyTarget,
             this.enemyEffectAmount(enemy, effect),
             skill.name,
           );
-          if (state.player.hp <= 0) break;
+          if (friendlyTarget.hp <= 0) break;
         }
-        this.applyOnHitResponses(state, enemy);
+        this.applyOnHitResponses(state, enemy, friendlyTarget);
       } else if (effect.type === 'strip_player_shield') {
         const removed =
           effect.amount === 'all'
-            ? state.player.shield
+            ? friendlyTarget.shield
             : Math.min(
-                state.player.shield,
+                friendlyTarget.shield,
                 Math.max(0, this.number(effect.value ?? effect.amount)),
               );
-        state.player.shield -= removed;
+        friendlyTarget.shield -= removed;
         if (removed > 0) {
           this.log(state, 'enemy', `${enemy.name}击碎了 ${removed} 点玩家护盾`);
           this.animation(state, {
             kind: 'shield',
             sourceSide: 'enemy',
             sourceId: enemy.id,
-            targetSide: 'player',
-            targetId: 'player',
+            targetSide: friendlyIdentity.side,
+            targetId: friendlyIdentity.id,
             amount: -removed,
-            shieldAfter: state.player.shield,
+            shieldAfter: friendlyTarget.shield,
             label: skill.name,
           });
         }
@@ -1612,7 +1665,7 @@ export class BattleRepository {
       } else if (effect.type === 'debuff' || effect.type === 'apply_debuff') {
         const effectName = String(effect.debuff ?? 'weak');
         this.addTimedEffect(
-          state.player.debuffs,
+          friendlyTarget.debuffs,
           effectName,
           this.number(effect.value, 1),
           this.number(effect.turns, 1),
@@ -1625,8 +1678,8 @@ export class BattleRepository {
           kind: 'status',
           sourceSide: 'enemy',
           sourceId: enemy.id,
-          targetSide: 'player',
-          targetId: 'player',
+          targetSide: friendlyIdentity.side,
+          targetId: friendlyIdentity.id,
           amount: this.number(effect.value, 1),
           label: effectName,
         });
@@ -1634,17 +1687,58 @@ export class BattleRepository {
     }
   }
 
+  private cardUsesFriendlyTarget(card: CardDefinition): boolean {
+    const friendlyTypes = new Set([
+      'shield',
+      'heal',
+      'heal_overflow_shield',
+      'spend_mp_shield',
+      'apply_buff',
+      'thorns',
+      'thorns_debuff',
+      'cleanse',
+      'cleanse_heal_per',
+      'cleanse_specific',
+      'shield_from_shield',
+    ]);
+    const hasFriendly = (effects: CardEffect[]): boolean =>
+      effects.some((effect) => {
+        if (
+          friendlyTypes.has(effect.type) &&
+          effect.target !== 'enemy' &&
+          effect.target !== 'all_enemies'
+        ) {
+          return true;
+        }
+        return ['effects', 'then_effects', 'else_effects'].some((key) =>
+          Array.isArray(effect[key])
+            ? hasFriendly(effect[key] as CardEffect[])
+            : false,
+        );
+      });
+    return hasFriendly(card.effects ?? []);
+  }
+
   private applyCardEffects(
     state: LocalBattleState,
     card: CardDefinition,
     targetIndex: number,
+    allyTargetId: BattleFriendlyTargetId,
   ): void {
     const target = state.enemies[targetIndex];
     if (!target) return;
     const bonus = this.cardDamageBonus(card, state, target);
     const multiplier = this.cardDamageMultiplier(card, state, target);
     for (const effect of card.effects ?? []) {
-      this.applyCardEffect(state, card, effect, targetIndex, bonus, multiplier);
+      this.applyCardEffect(
+        state,
+        card,
+        effect,
+        targetIndex,
+        bonus,
+        multiplier,
+        allyTargetId,
+      );
       if (this.aliveEnemies(state).length === 0) break;
     }
     if (card.effects?.some((effect) => effect.type === 'damage')) {
@@ -1666,6 +1760,7 @@ export class BattleRepository {
     targetIndex: number,
     bonus = 0,
     multiplier = 1,
+    allyTargetId: BattleFriendlyTargetId = 'player',
   ): void {
     const target = state.enemies[targetIndex];
     if (!target) return;
@@ -1726,40 +1821,42 @@ export class BattleRepository {
           0,
           Math.round(this.number(effect.value) * (1 + shieldBonus)),
         );
-        state.player.shield += amount;
-        this.log(state, 'player', `获得 ${amount} 点护盾`);
-        this.animation(state, {
-          kind: 'shield',
-          sourceSide: 'player',
-          targetSide: 'player',
-          targetId: 'player',
-          amount,
-          shieldAfter: state.player.shield,
-          label: card.name,
-        });
+        for (const recipient of this.cardFriendlyTargets(
+          state,
+          effect.target,
+          allyTargetId,
+        )) {
+          this.grantFriendlyShield(state, recipient, amount, card.name);
+        }
         break;
       }
       case 'heal': {
-        this.heal(state, state.player, this.number(effect.value), card.name);
+        for (const recipient of this.cardFriendlyTargets(
+          state,
+          effect.target,
+          allyTargetId,
+        )) {
+          this.heal(state, recipient, this.number(effect.value), card.name);
+        }
         break;
       }
       case 'heal_overflow_shield': {
         const amount = this.number(effect.value);
-        const missing = state.player.hpMax - state.player.hp;
-        this.heal(state, state.player, amount, card.name);
-        const overflow = Math.max(0, amount - missing);
-        const shield = Math.round(overflow * this.number(effect.ratio, 1));
-        state.player.shield += shield;
-        if (shield > 0) {
-          this.animation(state, {
-            kind: 'shield',
-            sourceSide: 'player',
-            targetSide: 'player',
-            targetId: 'player',
-            amount: shield,
-            shieldAfter: state.player.shield,
-            label: card.name,
-          });
+        for (const recipient of this.cardFriendlyTargets(
+          state,
+          effect.target,
+          allyTargetId,
+        )) {
+          if (this.isInjuredCompanion(state, recipient)) continue;
+          const missing = recipient.hpMax - recipient.hp;
+          this.heal(state, recipient, amount, card.name);
+          const overflow = Math.max(0, amount - missing);
+          this.grantFriendlyShield(
+            state,
+            recipient,
+            Math.round(overflow * this.number(effect.ratio, 1)),
+            card.name,
+          );
         }
         break;
       }
@@ -1861,16 +1958,13 @@ export class BattleRepository {
               (1 + this.passiveEffectValue(state, 'shield_bonus')),
           ),
         );
-        state.player.shield += shield;
-        this.animation(state, {
-          kind: 'shield',
-          sourceSide: 'player',
-          targetSide: 'player',
-          targetId: 'player',
-          amount: shield,
-          shieldAfter: state.player.shield,
-          label: card.name,
-        });
+        for (const recipient of this.cardFriendlyTargets(
+          state,
+          effect.target,
+          allyTargetId,
+        )) {
+          this.grantFriendlyShield(state, recipient, shield, card.name);
+        }
         break;
       }
       case 'mp_to_ap': {
@@ -1909,7 +2003,7 @@ export class BattleRepository {
         const recipients =
           effect.target === 'enemy' || effect.target === 'all_enemies'
             ? targets
-            : [state.player];
+            : this.cardFriendlyTargets(state, effect.target, allyTargetId);
         for (const recipient of recipients) {
           const effectName = String(effect.buff ?? effect.type);
           this.addTimedEffect(
@@ -1962,13 +2056,19 @@ export class BattleRepository {
         break;
       }
       case 'thorns_debuff': {
-        this.addTimedEffect(
-          state.player.buffs,
-          'thorns_debuff',
-          this.number(effect.value),
-          this.number(effect.turns, 1),
-          { debuff: String(effect.debuff ?? 'freeze') },
-        );
+        for (const recipient of this.cardFriendlyTargets(
+          state,
+          effect.target,
+          allyTargetId,
+        )) {
+          this.addTimedEffect(
+            recipient.buffs,
+            'thorns_debuff',
+            this.number(effect.value),
+            this.number(effect.turns, 1),
+            { debuff: String(effect.debuff ?? 'freeze') },
+          );
+        }
         break;
       }
       case 'apply_random_debuff': {
@@ -1994,19 +2094,31 @@ export class BattleRepository {
       }
       case 'cleanse':
       case 'cleanse_heal_per': {
-        const removed = this.removeEffects(state.player.debuffs, effect.amount);
-        if (effect.type === 'cleanse_heal_per') {
-          this.heal(
-            state,
-            state.player,
-            removed * this.number(effect.value),
-            card.name,
-          );
+        for (const recipient of this.cardFriendlyTargets(
+          state,
+          effect.target,
+          allyTargetId,
+        )) {
+          const removed = this.removeEffects(recipient.debuffs, effect.amount);
+          if (effect.type === 'cleanse_heal_per') {
+            this.heal(
+              state,
+              recipient,
+              removed * this.number(effect.value),
+              card.name,
+            );
+          }
         }
         break;
       }
       case 'cleanse_specific':
-        delete state.player.debuffs[String(effect.debuff)];
+        for (const recipient of this.cardFriendlyTargets(
+          state,
+          effect.target,
+          allyTargetId,
+        )) {
+          delete recipient.debuffs[String(effect.debuff)];
+        }
         break;
       case 'cleanse_buff':
         delete state.player.buffs[String(effect.buff)];
@@ -2122,20 +2234,17 @@ export class BattleRepository {
         );
         break;
       case 'shield_from_shield': {
-        const amount = Math.round(
-          state.player.shield * this.number(effect.ratio),
-        );
-        state.player.shield += amount;
-        if (amount > 0) {
-          this.animation(state, {
-            kind: 'shield',
-            sourceSide: 'player',
-            targetSide: 'player',
-            targetId: 'player',
-            amount,
-            shieldAfter: state.player.shield,
-            label: card.name,
-          });
+        for (const recipient of this.cardFriendlyTargets(
+          state,
+          effect.target,
+          allyTargetId,
+        )) {
+          this.grantFriendlyShield(
+            state,
+            recipient,
+            Math.round(recipient.shield * this.number(effect.ratio)),
+            card.name,
+          );
         }
         break;
       }
@@ -2447,7 +2556,15 @@ export class BattleRepository {
             ? (effect.else_effects as CardEffect[])
             : [];
         for (const child of children) {
-          this.applyCardEffect(state, card, child, targetIndex);
+          this.applyCardEffect(
+            state,
+            card,
+            child,
+            targetIndex,
+            0,
+            1,
+            allyTargetId,
+          );
         }
         break;
       }
@@ -2601,14 +2718,14 @@ export class BattleRepository {
     }
     if (!ignoreDefense) {
       const defenseScale =
-        target === state.player
+        targetIdentity.side !== 'enemy'
           ? this.rules?.playerDefenseScale ?? 0.28
           : this.rules?.enemyDefenseScale ?? 0.26;
       amount -=
         Math.floor(target.defense * defenseScale) +
         this.effectValue(target.buffs.fortitude);
     }
-    if (target !== state.player && target.buffs.evidence_barrier) {
+    if (targetIdentity.side === 'enemy' && target.buffs.evidence_barrier) {
       amount *= Math.max(
         0,
         1 - this.effectValue(target.buffs.evidence_barrier) / 100,
@@ -2629,7 +2746,7 @@ export class BattleRepository {
         ? state.workshopTest?.playerInvincible
           ? 1
           : 0
-        : state.workshopTest?.dummyInvincible
+        : targetIdentity.side === 'enemy' && state.workshopTest?.dummyInvincible
           ? 1
           : 0;
     if (
@@ -2694,17 +2811,20 @@ export class BattleRepository {
       if (lifesteal > 0) this.heal(state, state.player, lifesteal, '吸血');
     }
     if (
-      source !== state.player &&
-      target === state.player &&
+      sourceIdentity.side === 'enemy' &&
+      targetIdentity.side !== 'enemy' &&
       hpDamage > 0 &&
       source.onHitDebuff
     ) {
-      this.addTimedEffect(state.player.debuffs, source.onHitDebuff, 1, 2, {
+      this.addTimedEffect(target.debuffs, source.onHitDebuff, 1, 2, {
         uncleanseable: true,
       });
       this.log(state, 'enemy', `${source.name ?? '敌人'} 的词缀追加了诅咒印记`);
     }
-    if (hpDamage > 0) {
+    if (
+      hpDamage > 0 &&
+      (target === state.player || targetIdentity.side === 'enemy')
+    ) {
       this.runWorkshopMechanisms(
         state,
         target === state.player ? 'player_damaged' : 'enemy_damaged',
@@ -2720,6 +2840,7 @@ export class BattleRepository {
       );
     }
     this.stabilizeWorkshopTest(state);
+    this.stabilizeCompanion(state);
     return hpDamage;
   }
 
@@ -2729,6 +2850,7 @@ export class BattleRepository {
     rawAmount: number,
     label: string,
   ): number {
+    if (this.isInjuredCompanion(state, target)) return 0;
     const healBlock = this.clamp(
       this.effectValue(target.debuffs.heal_block),
       0,
@@ -2758,6 +2880,87 @@ export class BattleRepository {
     return restored;
   }
 
+  private cardFriendlyTargets(
+    state: LocalBattleState,
+    effectTarget: unknown,
+    allyTargetId: BattleFriendlyTargetId,
+  ): Combatant[] {
+    const companion = state.companion;
+    if (effectTarget === 'all_allies') {
+      return companion ? [state.player, companion] : [state.player];
+    }
+    return allyTargetId === 'caelian' && companion
+      ? [companion]
+      : [state.player];
+  }
+
+  private isInjuredCompanion(
+    state: LocalBattleState,
+    target: Combatant,
+  ): boolean {
+    return target === state.companion && state.companion.injured;
+  }
+
+  private grantFriendlyShield(
+    state: LocalBattleState,
+    target: Combatant,
+    rawAmount: number,
+    label: string,
+    sourceSide: 'player' | 'companion' = 'player',
+  ): number {
+    if (this.isInjuredCompanion(state, target)) return 0;
+    const amount = Math.max(0, Math.round(rawAmount));
+    if (amount <= 0) return 0;
+    target.shield += amount;
+    const identity = this.combatantIdentity(state, target);
+    this.animation(state, {
+      kind: 'shield',
+      sourceSide,
+      sourceId: sourceSide === 'companion' ? 'caelian' : 'player',
+      targetSide: identity.side,
+      targetId: identity.id,
+      amount,
+      shieldAfter: target.shield,
+      label,
+    });
+    this.log(state, 'player', `${target.name ?? '友方'}获得 ${amount} 点护盾`);
+    return amount;
+  }
+
+  private enemyFriendlyTargets(state: LocalBattleState): Combatant[] {
+    const targets: Combatant[] = [state.player];
+    if (state.companion && !state.companion.injured && state.companion.hp > 0) {
+      targets.push(state.companion);
+    }
+    for (const summon of state.companion?.summons ?? []) {
+      if (summon.hp > 0) targets.push(summon);
+    }
+    return targets;
+  }
+
+  private chooseEnemyFriendlyTarget(state: LocalBattleState): Combatant {
+    const targets = this.enemyFriendlyTargets(state);
+    return targets[Math.floor(this.random() * targets.length)] ?? state.player;
+  }
+
+  private stabilizeCompanion(state: LocalBattleState): void {
+    const companion = state.companion;
+    if (!companion) return;
+    companion.hp = Math.max(0, companion.hp);
+    for (const summon of companion.summons) summon.hp = Math.max(0, summon.hp);
+    if (companion.hp > 0 || companion.injured) return;
+    companion.injured = true;
+    companion.shield = 0;
+    this.log(state, 'system', '凯利安生命归零，进入重伤状态并停止行动。');
+    this.animation(state, {
+      kind: 'status',
+      sourceSide: 'system',
+      targetSide: 'companion',
+      targetId: companion.id,
+      label: '重伤',
+    });
+  }
+
   private drawCards(state: LocalBattleState, requested: number): void {
     let drawn = 0;
     while (
@@ -2784,6 +2987,179 @@ export class BattleRepository {
         label: `抽取 ${drawn} 张牌`,
       });
     }
+  }
+
+  private resolveCaelianActions(state: LocalBattleState): void {
+    const companion = state.companion;
+    if (!companion || companion.injured || companion.hp <= 0) return;
+    if (companion.debuffs.freeze) {
+      this.log(state, 'system', '凯利安被冰冻，本轮无法行动，技能序列保持不变。');
+      this.animation(state, {
+        kind: 'status',
+        sourceSide: 'companion',
+        sourceId: companion.id,
+        targetSide: 'companion',
+        targetId: companion.id,
+        label: '冰冻',
+      });
+      return;
+    }
+    const sequence = companion.actionSequence;
+    if (sequence.length === 0) return;
+    let resolved = 0;
+    while (resolved < sequence.length && this.aliveEnemies(state).length > 0) {
+      const skill = sequence[companion.actionIndex % sequence.length];
+      if (!skill || state.player.ap < skill.apCost) break;
+      state.player.ap -= skill.apCost;
+      this.log(
+        state,
+        'player',
+        `凯利安消耗 ${skill.apCost} AP，施放「${skill.name}」`,
+      );
+      this.animation(state, {
+        kind: 'companion-action',
+        sourceSide: 'companion',
+        sourceId: companion.id,
+        targetSide: 'enemy',
+        targetId: state.enemies[this.resolveTargetIndex(state, state.selectedTarget)]?.id,
+        apAfter: state.player.ap,
+        label: skill.name,
+      });
+      this.resolveCaelianSkill(state, companion, skill.id, skill.name);
+      companion.actionIndex = (companion.actionIndex + 1) % sequence.length;
+      resolved += 1;
+      this.stabilizeCompanion(state);
+    }
+    if (resolved === 0) {
+      const pending = sequence[companion.actionIndex % sequence.length];
+      if (pending) {
+        this.log(
+          state,
+          'system',
+          `剩余 AP 不足，凯利安保留下一行动「${pending.name}」（需要 ${pending.apCost} AP）`,
+        );
+      }
+    }
+    this.stabilizeCompanion(state);
+  }
+
+  private resolveCaelianSkill(
+    state: LocalBattleState,
+    companion: BattleCompanionState,
+    skillId: string,
+    label: string,
+  ): void {
+    const target = state.enemies[this.resolveTargetIndex(state, state.selectedTarget)];
+    if (!target) return;
+    const level = companion.level;
+    switch (skillId) {
+      case 'radiant_lance':
+        this.damage(
+          state,
+          companion,
+          target,
+          Math.round(companion.attack * 0.42 + 5 + level * 0.8),
+          'player',
+          label,
+        );
+        break;
+      case 'aegis_procession':
+        for (const ally of this.cardFriendlyTargets(state, 'all_allies', 'player')) {
+          this.grantFriendlyShield(state, ally, 6 + Math.floor(level * 0.8), label, 'companion');
+        }
+        break;
+      case 'dawn_mend': {
+        const allies = this.cardFriendlyTargets(state, 'all_allies', 'player')
+          .filter((ally) => ally.hp > 0)
+          .sort((left, right) => left.hp / left.hpMax - right.hp / right.hpMax);
+        if (allies[0]) this.heal(state, allies[0], 8 + Math.floor(level * 1.1), label);
+        break;
+      }
+      case 'trelio_convergence': {
+        this.damage(
+          state,
+          companion,
+          target,
+          Math.round(companion.attack * 0.34 + level),
+          'player',
+          label,
+        );
+        const trelio = companion.summons.find((summon) => summon.id === 'trelio' && summon.hp > 0);
+        const nextTarget = state.enemies[this.resolveTargetIndex(state, state.selectedTarget)];
+        if (trelio && nextTarget?.hp) {
+          this.animation(state, {
+            kind: 'companion-action',
+            sourceSide: 'summon',
+            sourceId: trelio.id,
+            targetSide: 'enemy',
+            targetId: nextTarget.id,
+            label: '特莱奥·圣龙吐息',
+          });
+          this.damage(
+            state,
+            trelio,
+            nextTarget,
+            Math.round(trelio.attack * 0.32 + level),
+            'player',
+            '圣龙吐息',
+          );
+        }
+        break;
+      }
+      case 'purifying_standard':
+        for (const ally of this.cardFriendlyTargets(state, 'all_allies', 'player')) {
+          const removed = this.removeEffects(ally.debuffs, 1);
+          this.addTimedEffect(ally.buffs, 'fortitude', 1, 2);
+          const identity = this.combatantIdentity(state, ally);
+          this.animation(state, {
+            kind: 'status',
+            sourceSide: 'companion',
+            sourceId: companion.id,
+            targetSide: identity.side,
+            targetId: identity.id,
+            amount: removed,
+            label: '净化·坚韧',
+          });
+        }
+        break;
+      case 'sunlit_judgement':
+        for (const enemy of this.aliveEnemies(state)) {
+          this.damage(
+            state,
+            companion,
+            enemy,
+            Math.round(companion.attack * 0.24 + 4 + level * 0.6),
+            'player',
+            label,
+          );
+        }
+        break;
+    }
+  }
+
+  private resolveTrelioSummon(state: LocalBattleState): void {
+    const companion = state.companion;
+    const trelio = companion?.summons.find(
+      (summon) => summon.id === 'trelio' && summon.hp > 0,
+    );
+    const target = state.enemies[this.resolveTargetIndex(state, state.selectedTarget)];
+    if (!trelio || trelio.debuffs.freeze || !target?.hp) return;
+    this.animation(state, {
+      kind: 'companion-action',
+      sourceSide: 'summon',
+      sourceId: trelio.id,
+      targetSide: 'enemy',
+      targetId: target.id,
+      label: '特莱奥·圣光爪击',
+    });
+    this.damage(
+      state,
+      trelio,
+      target,
+      Math.round(trelio.attack * 0.2 + companion!.level * 0.35),
+      'player',
+      '圣光爪击',
+    );
   }
 
   private resolveSummons(state: LocalBattleState): void {
@@ -2916,9 +3292,9 @@ export class BattleRepository {
       }
     }
     const opposingAttack =
-      target === state.player
-        ? Math.max(0, ...this.aliveEnemies(state).map((enemy) => enemy.attack))
-        : state.player.attack;
+      this.combatantIdentity(state, target).side === 'enemy'
+        ? state.player.attack
+        : Math.max(0, ...this.aliveEnemies(state).map((enemy) => enemy.attack));
     const dotScales: Record<string, number> = {
       poison: 0.08,
       burn: 0.1,
@@ -4354,8 +4730,9 @@ export class BattleRepository {
   private applyOnHitResponses(
     state: LocalBattleState,
     enemy: BattleEnemyState,
+    target: Combatant,
   ): void {
-    const onHitDraw = state.player.buffs.on_hit_draw;
+    const onHitDraw = target === state.player ? state.player.buffs.on_hit_draw : undefined;
     if (onHitDraw) {
       const requested = Math.max(1, Math.round(this.effectValue(onHitDraw)));
       const before = state.player.hand.length;
@@ -4365,7 +4742,7 @@ export class BattleRepository {
       this.spendEffectCharge(state.player.buffs, 'on_hit_draw');
     }
 
-    const thornsDebuff = state.player.buffs.thorns_debuff;
+    const thornsDebuff = target.buffs.thorns_debuff;
     if (!thornsDebuff || enemy.hp <= 0) return;
     const key = thornsDebuff.debuff ?? 'weak';
     const value = Math.max(1, this.effectValue(thornsDebuff));
@@ -4397,18 +4774,21 @@ export class BattleRepository {
     const actual = before - target.hp;
     if (actual <= 0) return 0;
     const targetIdentity = this.combatantIdentity(state, target);
+    const targetIsFriendly = targetIdentity.side !== 'enemy';
     this.animation(state, {
       kind: 'damage',
-      sourceSide: target === state.player ? 'enemy' : 'player',
+      sourceSide: targetIsFriendly ? 'enemy' : 'player',
       sourceId: label,
       targetSide: targetIdentity.side,
       targetId: targetIdentity.id,
       amount: actual,
+      hpAfter: target.hp,
+      shieldAfter: target.shield,
       label,
     });
     this.log(
       state,
-      target === state.player ? 'enemy' : 'player',
+      targetIsFriendly ? 'enemy' : 'player',
       `${target.name}因${label}失去 ${actual} 点生命`,
     );
     return actual;
@@ -4578,10 +4958,17 @@ export class BattleRepository {
   private combatantIdentity(
     state: LocalBattleState,
     combatant: Combatant,
-  ): { side: 'player' | 'enemy'; id: string } {
+  ): { side: 'player' | 'companion' | 'summon' | 'enemy'; id: string } {
     if (combatant === state.player) {
       return { side: 'player', id: 'player' };
     }
+    if (combatant === state.companion) {
+      return { side: 'companion', id: 'caelian' };
+    }
+    const summon = state.companion?.summons.find(
+      (entry) => entry === combatant,
+    );
+    if (summon) return { side: 'summon', id: summon.id };
     const enemy = state.enemies.find((entry) => entry === combatant);
     return {
       side: 'enemy',
