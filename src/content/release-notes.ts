@@ -9,6 +9,16 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.41',
+    label: 'Alpha 41',
+    releasedAt: '2026-08-13',
+    changes: [
+      '战斗手牌实装旧版完整类型牌面：攻击、防御、法术、技能与召唤卡会分别使用对应的红、绿、蓝、紫色卡框。',
+      '按照原牌面的安全区域重新排布 AP、MP、卡名、类型、稀有度与效果文字，同时保留现有扇形排列、拖拽出牌、选中抬升和抽弃牌动画。',
+      '牌面恢复为原始 9:16 比例并适配桌面与手机；技能牌和召唤牌即使共用紫色底图，也会持续显示明确的类型标签。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.40',
     label: 'Alpha 40',
     releasedAt: '2026-08-13',

@@ -41,6 +41,10 @@ import {
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import MeterBar from '@/ui/adventurer/MeterBar.vue';
 import { readWorkshopMechanisms } from '@/workshop-mechanisms';
+import {
+  battleCardFaceType,
+  battleCardFaceUrl,
+} from '@/modules/battle/card-face';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -313,14 +317,16 @@ function handleCardClick(index: number, cardId: string) {
   selectCard(index, cardId);
 }
 
-function cardStyle(index: number, total: number) {
+function cardStyle(index: number, total: number, cardId: string) {
   const offset = index - (total - 1) / 2;
+  const definition = cardDefinition(cardId);
   return {
     '--card-x': `${offset * 54}px`,
     '--card-x-mobile': `${offset * 35}px`,
     '--card-rot': `${offset * 1.8}deg`,
     '--card-rot-mobile': `${offset * 2.1}deg`,
     '--card-z': String(20 + index),
+    '--card-face': `url("${battleCardFaceUrl(definition?.type)}")`,
   };
 }
 
@@ -1397,20 +1403,31 @@ onUnmounted(() => {
                 unavailable: cardUnavailable(card.cardId),
               }"
               :data-rarity="cardDefinition(card.cardId)?.rarity"
-              :style="cardStyle(index, state.player.hand.length)"
+              :data-card-type="battleCardFaceType(cardDefinition(card.cardId)?.type)"
+              :style="cardStyle(index, state.player.hand.length, card.cardId)"
               @pointerdown="beginCardPointer($event, index, card.cardId)"
               @click="handleCardClick(index, card.cardId)"
             >
               <div class="fan-cost">
-                <span>AP <b>{{ cardDefinition(card.cardId)?.cost ?? 0 }}</b></span>
-                <span>MP <b>{{ cardDefinition(card.cardId)?.mpCost ?? 0 }}</b></span>
+                <span class="ap">
+                  <small>AP</small>
+                  <b>{{ cardDefinition(card.cardId)?.cost ?? 0 }}</b>
+                </span>
+                <span class="mp">
+                  <small>MP</small>
+                  <b>{{ cardDefinition(card.cardId)?.mpCost ?? 0 }}</b>
+                </span>
               </div>
-              <strong>{{ cardDefinition(card.cardId)?.name ?? card.cardId }}</strong>
-              <small>
+              <strong class="fan-card-name">
+                {{ cardDefinition(card.cardId)?.name ?? card.cardId }}
+              </strong>
+              <small class="fan-card-meta">
                 {{ typeNames[cardDefinition(card.cardId)?.type ?? ''] ?? '卡牌' }}
                 · {{ cardDefinition(card.cardId)?.rarity ?? 'common' }}
               </small>
-              <p>{{ cardDefinition(card.cardId)?.description ?? '卡牌数据缺失' }}</p>
+              <p class="fan-card-effect">
+                {{ cardDefinition(card.cardId)?.description ?? '卡牌数据缺失' }}
+              </p>
             </button>
           </div>
         </section>
@@ -2182,16 +2199,15 @@ onUnmounted(() => {
   left: 50%;
   bottom: 5px;
   width: clamp(102px, 15.5vw, 142px);
-  aspect-ratio: 0.66;
-  display: flex;
-  flex-direction: column;
-  padding: 10px 9px 8px;
+  aspect-ratio: 9 / 16;
+  padding: 0;
   overflow: hidden;
+  container-type: inline-size;
   border: 3px solid #a08d72;
   border-radius: 12px;
   color: #2b2118;
   background:
-    radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.55), transparent 24%),
+    var(--card-face) center / 100% 100% no-repeat,
     linear-gradient(160deg, #f5e7c8, #d6bc8c);
   font: inherit;
   text-align: center;
@@ -2204,6 +2220,15 @@ onUnmounted(() => {
     rotate(var(--card-rot));
   transform-origin: 50% 100%;
   transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+.fan-card::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  content: '';
+  pointer-events: none;
 }
 
 .fan-card[data-rarity="uncommon"] { border-color: #4fa36d; }
@@ -2228,7 +2253,7 @@ onUnmounted(() => {
     0 0 0 4px rgba(255, 232, 122, 0.3);
   transform:
     translateX(-50%)
-    translateY(-55%)
+    translateY(-48%)
     scale(1.2)
     rotate(0);
 }
@@ -2393,43 +2418,97 @@ onUnmounted(() => {
 }
 
 .fan-cost {
-  display: flex;
-  justify-content: space-between;
-  gap: 4px;
-  margin-bottom: 9px;
+  position: absolute;
+  z-index: 2;
+  left: 6.8%;
+  top: 5.1%;
+  width: 15%;
+  display: grid;
+  gap: 3px;
+  line-height: 1;
+  pointer-events: none;
 }
 
 .fan-cost span {
-  padding: 3px 5px;
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   border: 1px solid rgba(55, 42, 28, 0.46);
-  border-radius: 999px;
-  background: rgba(246, 237, 206, 0.9);
-  font-size: 7px;
+  border-radius: 50%;
+  background: rgba(246, 237, 206, 0.94);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.18), inset 0 1px rgba(255, 255, 255, 0.55);
   font-weight: 900;
+  text-shadow: 0 1px rgba(255, 255, 255, 0.55);
+}
+
+.fan-cost small {
+  font-size: clamp(4px, 5.2cqw, 7px);
+  font-weight: 900;
+  line-height: 0.9;
+  opacity: 0.72;
 }
 
 .fan-cost b {
-  font-size: 10px;
+  font-size: clamp(8px, 12cqw, 14px);
+  line-height: 0.92;
 }
 
-.fan-card > strong {
-  font: 900 12px/1.1 var(--ca-serif);
-}
+.fan-cost .ap { color: #5b4117; }
+.fan-cost .mp { color: #15415c; }
 
-.fan-card > small {
-  margin-top: 4px;
-  color: #6f5a43;
-  font-size: 7px;
-  font-weight: 800;
-}
-
-.fan-card > p {
-  flex: 1;
-  margin: 10px 0 0;
+.fan-card-name {
+  position: absolute;
+  left: 20%;
+  right: 12%;
+  top: 30.5%;
+  height: 10.5%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   overflow: hidden;
-  font-size: 8px;
-  font-weight: 700;
-  line-height: 1.35;
+  color: #201409;
+  font: 900 clamp(9px, 11.2cqw, 15px)/1.08 var(--ca-serif);
+  text-align: center;
+  text-shadow: 0 1px rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+.fan-card-meta {
+  position: absolute;
+  left: 20.5%;
+  right: 12.5%;
+  top: 41.5%;
+  overflow: hidden;
+  color: #6f5135;
+  font-size: clamp(5px, 6.2cqw, 8px);
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.fan-card-effect {
+  position: absolute;
+  left: 20.5%;
+  right: 12.5%;
+  top: 47.5%;
+  bottom: 17%;
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: #2b2118;
+  font-size: clamp(6.5px, 8.2cqw, 10px);
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  pointer-events: none;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
 }
 
 .battle-info {
@@ -2989,7 +3068,6 @@ onUnmounted(() => {
 
   .fan-card {
     width: clamp(84px, 25vw, 110px);
-    padding: 7px 6px;
     border-width: 2px;
     transform:
       translateX(calc(-50% + var(--card-x-mobile)))
@@ -3007,7 +3085,7 @@ onUnmounted(() => {
   .fan-card.selected {
     transform:
       translateX(-50%)
-      translateY(-56%)
+      translateY(-48%)
       scale(1.16)
       rotate(0);
   }
@@ -3021,22 +3099,21 @@ onUnmounted(() => {
     border-radius: 11px;
   }
 
-  .fan-card > strong {
-    font-size: 10px;
+  .fan-card-name {
+    font-size: clamp(8px, 10.5cqw, 12px);
   }
 
-  .fan-card > p {
-    margin-top: 7px;
-    font-size: 7px;
+  .fan-card-effect {
+    font-size: clamp(6px, 7.8cqw, 8px);
+    line-height: 1.16;
   }
 
   .fan-cost {
-    margin-bottom: 5px;
+    gap: 2px;
   }
 
-  .fan-cost span {
-    padding: 2px 3px;
-    font-size: 6px;
+  .fan-cost small {
+    font-size: 4px;
   }
 
   .battle-info {
