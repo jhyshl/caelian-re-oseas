@@ -463,6 +463,18 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.3.0-beta.1',
+    label: 'Beta 1.3',
+    releasedAt: '2026-08-13',
+    changes: [
+      '同步 Alpha 40 的剧情战斗触发规则：只有 user 本人参战才会打开战斗；凯利安或其他 NPC 单独遇敌不再误触发，对应世界书输出也会明确标记玩家参战与凯利安是否加入。',
+      '凯利安在 user 身边时会以圣辉龙骑身份携特莱奥满血加入剧情战斗；两者可被怪物攻击，凯利安重伤后停止行动且无法再被治疗或获得护盾。',
+      '新增凯利安独立技能组、本场固定随机行动序列与顺序动画：玩家结束回合后按剩余 AP 连续执行，AP 不足时保留当前技能至下一轮。',
+      '治疗、护盾、正面增益与净化卡牌可选择玩家或凯利安，并为全部正式职业补充通过强度控制器的群体支援牌。',
+      '同步 Alpha 41 的完整战斗卡牌牌面与移动端适配；背包新增独立“消耗品”分类，血瓶、魔药瓶与纯恢复药剂可在非战斗状态直接使用。',
+    ],
+  },
+  {
     version: '1.2.0-beta.1',
     label: 'Beta 1.2',
     releasedAt: '2026-08-12',
