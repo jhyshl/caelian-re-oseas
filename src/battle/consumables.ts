@@ -1,5 +1,5 @@
 import type { BattleItemDefinition, CardEffect } from '@/content/types';
-import type { BattlePlayerState } from '@/domain/types';
+import type { BattlePlayerState, PlayerRecord } from '@/domain/types';
 
 const IMMEDIATE_EFFECT_TYPES = new Set([
   'heal',
@@ -10,6 +10,12 @@ const IMMEDIATE_EFFECT_TYPES = new Set([
   'cleanse_specific',
   'shield',
   'damage',
+]);
+
+const INVENTORY_RESTORE_EFFECT_TYPES = new Set([
+  'heal',
+  'gain_mp',
+  'heal_mp',
 ]);
 
 export interface BattleConsumableContext {
@@ -32,6 +38,37 @@ export function isBattleUsableEffect(effect: CardEffect): boolean {
     return effects.length > 0 && effects.every(isBattleUsableEffect);
   }
   return IMMEDIATE_EFFECT_TYPES.has(effect.type);
+}
+
+export function isInventoryUsableEffect(effect: CardEffect): boolean {
+  if (effect.type === 'multi') {
+    const effects = childEffects(effect);
+    return effects.length > 0 && effects.every(isInventoryUsableEffect);
+  }
+  return INVENTORY_RESTORE_EFFECT_TYPES.has(effect.type);
+}
+
+export function canApplyInventoryConsumable(
+  effect: CardEffect,
+  player: Pick<PlayerRecord, 'hp' | 'hpMax' | 'mp' | 'mpMax'>,
+): boolean {
+  switch (effect.type) {
+    case 'heal':
+      return player.hp < player.hpMax && positive(effect.value);
+    case 'gain_mp':
+      return player.mp < player.mpMax && positive(effect.value);
+    case 'heal_mp':
+      return (
+        (player.hp < player.hpMax && positive(effect.heal)) ||
+        (player.mp < player.mpMax && positive(effect.mp))
+      );
+    case 'multi':
+      return childEffects(effect).some((child) =>
+        canApplyInventoryConsumable(child, player),
+      );
+    default:
+      return false;
+  }
 }
 
 export function canApplyBattleConsumable(

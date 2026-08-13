@@ -200,6 +200,9 @@ export class GameRepository {
     if (command.type.startsWith('craft.')) {
       await this.crafting.prepare();
     }
+    if (command.type === 'inventory.use-consumable') {
+      await this.inventory.prepare();
+    }
     if (command.type === 'achievement.claim-daily-gift') {
       await this.achievements.prepareDailyGiftPool();
     }
@@ -442,6 +445,11 @@ export class GameRepository {
         );
       case 'inventory.adjust':
         return this.inventory.adjust(profileId, command.payload);
+      case 'inventory.use-consumable':
+        return this.inventory.useConsumable(
+          profileId,
+          command.payload.itemId,
+        );
       case 'craft.item':
         return this.crafting.craftItem(
           profileId,

@@ -5,18 +5,39 @@ import type {
   BattleItemDefinition,
   RelicDefinition,
 } from '@/content/types';
-import type { EquipmentSlot, GameSnapshot } from '@/domain/types';
+import type {
+  EquipmentSlot,
+  GameSnapshot,
+  InventoryStackRecord,
+} from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
-import { childEffects } from '@/battle/consumables';
+import {
+  canApplyInventoryConsumable,
+  childEffects,
+  isBattleUsableEffect,
+  isInventoryUsableEffect,
+} from '@/battle/consumables';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
 const items = ref<Record<string, BattleItemDefinition>>({});
 const relics = ref<Record<string, RelicDefinition>>({});
-const tab = ref<'items' | 'equipment' | 'relics'>('items');
+const tab = ref<'items' | 'consumables' | 'equipment' | 'relics'>('items');
 const notice = ref('');
+const noticeTone = ref<'error' | 'success'>('error');
+
+const itemInventory = computed(() =>
+  (snapshot.value?.inventory ?? []).filter(
+    (stack) => !itemDefinition(stack.itemId, stack.name)?.effect,
+  ),
+);
+const consumableInventory = computed(() =>
+  (snapshot.value?.inventory ?? []).filter((stack) =>
+    Boolean(itemDefinition(stack.itemId, stack.name)?.effect),
+  ),
+);
 
 const carriedCount = computed(
   () => snapshot.value?.relics.filter((entry) => entry.carried).length ?? 0,
@@ -47,14 +68,16 @@ function isEquipped(instanceId: string) {
   );
 }
 
-async function execute(command: unknown) {
+async function execute(command: unknown): Promise<boolean> {
   notice.value = '';
+  noticeTone.value = 'error';
   const result = await props.context.api.execute(command);
   if (result.status === 'rejected') {
     notice.value = result.message ?? '操作失败';
-    return;
+    return false;
   }
   snapshot.value = await props.context.api.query('state');
+  return true;
 }
 
 function equip(instanceId: string) {
@@ -96,12 +119,77 @@ function isBattlePreparationItem(itemId: string, name: string) {
   );
 }
 
-function prepareBattleItem(itemId: string) {
-  return execute({
+function consumableAction(stack: InventoryStackRecord) {
+  const effect = itemDefinition(stack.itemId, stack.name)?.effect;
+  if (!effect) return 'unavailable';
+  if (isInventoryUsableEffect(effect)) return 'restore';
+  if (isBattlePreparationItem(stack.itemId, stack.name)) return 'prepare';
+  if (isBattleUsableEffect(effect)) return 'battle';
+  return 'unavailable';
+}
+
+function canUseRestorative(stack: InventoryStackRecord) {
+  const state = snapshot.value;
+  const effect = itemDefinition(stack.itemId, stack.name)?.effect;
+  return Boolean(
+    state &&
+      !state.battle &&
+      effect &&
+      canApplyInventoryConsumable(effect, state.player),
+  );
+}
+
+function restorativeButtonLabel(stack: InventoryStackRecord) {
+  const state = snapshot.value;
+  if (state?.battle) return '战斗中请使用战斗背包';
+  if (canUseRestorative(stack)) return '使用';
+  const effect = itemDefinition(stack.itemId, stack.name)?.effect;
+  const effects =
+    effect?.type === 'multi' ? childEffects(effect) : effect ? [effect] : [];
+  const restoresHp = effects.some((child) =>
+    ['heal', 'heal_mp'].includes(child.type),
+  );
+  const restoresMp = effects.some((child) =>
+    ['gain_mp', 'heal_mp'].includes(child.type),
+  );
+  if (restoresHp && !restoresMp) return '生命已满';
+  if (restoresMp && !restoresHp) return '魔力已满';
+  return '生命与魔力已满';
+}
+
+async function useConsumable(stack: InventoryStackRecord) {
+  const beforeHp = snapshot.value?.player.hp;
+  const beforeMp = snapshot.value?.player.mp;
+  const applied = await execute({
+    id: commandId('inventory.use-consumable'),
+    type: 'inventory.use-consumable',
+    payload: { itemId: stack.itemId },
+  });
+  if (
+    !applied ||
+    beforeHp === undefined ||
+    beforeMp === undefined ||
+    !snapshot.value
+  ) return;
+  const after = snapshot.value.player;
+  const restored = [
+    after.hp > beforeHp ? `生命 +${after.hp - beforeHp}` : '',
+    after.mp > beforeMp ? `魔力 +${after.mp - beforeMp}` : '',
+  ].filter(Boolean);
+  noticeTone.value = 'success';
+  notice.value = `已使用「${stack.name}」${restored.length ? `：${restored.join('，')}` : ''}`;
+}
+
+async function prepareBattleItem(stack: InventoryStackRecord) {
+  const applied = await execute({
     id: commandId('battle.prepare-item'),
     type: 'battle.prepare-item',
-    payload: { itemId },
+    payload: { itemId: stack.itemId },
   });
+  if (applied) {
+    noticeTone.value = 'success';
+    notice.value = `已使用「${stack.name}」，效果将在下场战斗生效。`;
+  }
 }
 
 onMounted(async () => {
@@ -135,7 +223,13 @@ onMounted(async () => {
 
       <nav class="inventory-tabs">
         <button :class="{ active: tab === 'items' }" @click="tab = 'items'">
-          物品
+          物品 {{ itemInventory.length }}
+        </button>
+        <button
+          :class="{ active: tab === 'consumables' }"
+          @click="tab = 'consumables'"
+        >
+          消耗品 {{ consumableInventory.length }}
         </button>
         <button
           :class="{ active: tab === 'equipment' }"
@@ -148,13 +242,21 @@ onMounted(async () => {
         </button>
       </nav>
 
+      <p
+        v-if="notice"
+        class="inventory-notice"
+        :class="{ success: noticeTone === 'success' }"
+      >
+        {{ notice }}
+      </p>
+
       <section v-if="tab === 'items'" class="ca-section">
         <h2 class="ca-section-title">物品背包</h2>
-        <div v-if="snapshot.inventory.length === 0" class="ca-empty">
+        <div v-if="itemInventory.length === 0" class="ca-empty">
           背包中暂时没有物品
         </div>
         <div v-else class="item-grid">
-          <article v-for="stack in snapshot.inventory" :key="stack.id">
+          <article v-for="stack in itemInventory" :key="stack.id">
             <i>◆</i>
             <div>
               <strong>{{ stack.name }}</strong>
@@ -163,15 +265,58 @@ onMounted(async () => {
               </span>
             </div>
             <b>×{{ stack.quantity }}</b>
+          </article>
+        </div>
+      </section>
+
+      <section v-else-if="tab === 'consumables'" class="ca-section">
+        <div class="consumable-heading">
+          <div>
+            <h2 class="ca-section-title">消耗品</h2>
+            <p>恢复药剂可直接使用；战前与战斗道具会保留各自的使用时机。</p>
+          </div>
+          <div class="resource-status" aria-label="当前生命与魔力">
+            <span>HP <b>{{ snapshot.player.hp }}/{{ snapshot.player.hpMax }}</b></span>
+            <span>MP <b>{{ snapshot.player.mp }}/{{ snapshot.player.mpMax }}</b></span>
+          </div>
+        </div>
+        <div v-if="consumableInventory.length === 0" class="ca-empty">
+          背包中暂时没有消耗品
+        </div>
+        <div v-else class="consumable-grid">
+          <article
+            v-for="stack in consumableInventory"
+            :key="stack.id"
+            class="consumable-card"
+          >
+            <i>✚</i>
+            <div>
+              <strong>{{ stack.name }}</strong>
+              <span>{{ itemDefinition(stack.itemId, stack.name)?.desc }}</span>
+            </div>
+            <b>×{{ stack.quantity }}</b>
             <button
-              v-if="isBattlePreparationItem(stack.itemId, stack.name)"
+              v-if="consumableAction(stack) === 'restore'"
+              type="button"
+              class="ca-button primary"
+              :disabled="!canUseRestorative(stack)"
+              @click="useConsumable(stack)"
+            >
+              {{ restorativeButtonLabel(stack) }}
+            </button>
+            <button
+              v-else-if="consumableAction(stack) === 'prepare'"
               type="button"
               class="ca-button primary"
               :disabled="Boolean(snapshot.battle)"
-              @click="prepareBattleItem(stack.itemId)"
+              @click="prepareBattleItem(stack)"
             >
               {{ snapshot.battle ? '战斗中不可用' : '用于下场战斗' }}
             </button>
+            <small v-else-if="consumableAction(stack) === 'battle'">
+              战斗中从战斗背包使用
+            </small>
+            <small v-else>暂不支持直接使用</small>
           </article>
         </div>
       </section>
@@ -282,7 +427,6 @@ onMounted(async () => {
           </article>
         </div>
       </section>
-      <p v-if="notice" class="inventory-notice">{{ notice }}</p>
     </template>
   </AdventurerFrame>
 </template>
@@ -357,6 +501,103 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.consumable-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.consumable-heading p {
+  margin: -3px 0 0;
+  color: var(--ca-muted);
+  font-size: 10px;
+}
+
+.resource-status {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.resource-status span {
+  padding: 6px 8px;
+  border: 1px solid var(--ca-border);
+  border-radius: 8px;
+  color: var(--ca-muted);
+  background: rgba(255, 255, 255, 0.025);
+  font-size: 9px;
+}
+
+.resource-status b {
+  margin-left: 3px;
+  color: var(--ca-text-bright);
+}
+
+.consumable-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.consumable-card {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px 10px;
+  padding: 10px;
+  border: 1px solid var(--ca-border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.consumable-card > i {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  grid-row: 1 / span 2;
+  place-items: center;
+  border-radius: 8px;
+  color: #ffb5ab;
+  background: rgba(203, 76, 65, 0.12);
+  font-style: normal;
+}
+
+.consumable-card > div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.consumable-card strong {
+  color: var(--ca-text-bright);
+  font-size: 12px;
+}
+
+.consumable-card span {
+  overflow: hidden;
+  color: var(--ca-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.consumable-card > b {
+  color: var(--ca-gold-light);
+}
+
+.consumable-card > button,
+.consumable-card > small {
+  grid-column: 2 / -1;
+  justify-self: end;
+}
+
+.consumable-card > small {
+  color: var(--ca-muted);
+  font-size: 9px;
 }
 
 .item-grid article,
@@ -454,15 +695,36 @@ onMounted(async () => {
 }
 
 .inventory-notice {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px solid rgba(201, 74, 67, 0.4);
+  border-radius: 9px;
   color: #ffaaa5;
+  background: rgba(201, 74, 67, 0.08);
   font-size: 11px;
   text-align: center;
 }
 
+.inventory-notice.success {
+  border-color: rgba(56, 169, 107, 0.4);
+  color: #a9ddb5;
+  background: rgba(56, 169, 107, 0.08);
+}
+
 @media (max-width: 600px) {
   .item-grid,
+  .consumable-grid,
   .loadout-grid {
     grid-template-columns: 1fr;
+  }
+
+  .inventory-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .consumable-heading {
+    display: grid;
   }
 }
 </style>

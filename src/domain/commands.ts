@@ -214,6 +214,13 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...commandBase,
+    type: z.literal('inventory.use-consumable'),
+    payload: z.object({
+      itemId: z.string().trim().min(1).max(180),
+    }),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal('craft.item'),
     payload: z.object({
       recipeId: z.string().trim().min(1).max(180),

@@ -40,6 +40,7 @@ type AchievementRecordPayload = Extract<
 
 export interface AchievementCommandCapture {
   playerGold?: number;
+  persistentPlayerHp?: number;
   battle?: {
     id: string;
     status: LocalBattleState['status'];
@@ -283,6 +284,11 @@ export class AchievementRepository {
     ) {
       capture.playerGold = (await this.db.playerStates.get(profileId))?.gold;
     }
+    if (command.type === 'inventory.use-consumable') {
+      capture.persistentPlayerHp = (
+        await this.db.playerStates.get(profileId)
+      )?.hp;
+    }
     if (
       command.type === 'battle.play-card' ||
       command.type === 'battle.use-item' ||
@@ -367,6 +373,16 @@ export class AchievementRepository {
     if (command.type === 'battle.use-item' && before.battle) {
       const session = await this.db.battleSessions.get(before.battle.id);
       if ((session?.state.player.hp ?? 0) > before.battle.playerHp) {
+        await this.unlock('ach_consumable_heal_hp');
+      }
+    }
+
+    if (
+      command.type === 'inventory.use-consumable' &&
+      before.persistentPlayerHp !== undefined
+    ) {
+      const player = await this.db.playerStates.get(profileId);
+      if ((player?.hp ?? 0) > before.persistentPlayerHp) {
         await this.unlock('ach_consumable_heal_hp');
       }
     }

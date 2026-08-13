@@ -75,6 +75,123 @@ describe('GameRepository', () => {
     expect(snapshot.inventory[0]?.quantity).toBe(2);
   });
 
+  it('从背包直接使用恢复消耗品并原子更新角色数值与剩余数量', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-inventory-consumable-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:inventory-consumable');
+    await repository.execute(profile.id, {
+      id: 'consumable-player-create',
+      type: 'player.create',
+      payload: {
+        name: '药剂测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    await database.playerStates.update(profile.id, { hp: 30, mp: 5 });
+    await repository.execute(profile.id, {
+      id: 'grant-small-health-potion',
+      type: 'inventory.adjust',
+      payload: { itemId: '小血瓶', name: '小血瓶', delta: 2 },
+    });
+    await repository.execute(profile.id, {
+      id: 'grant-small-mana-potion',
+      type: 'inventory.adjust',
+      payload: { itemId: '小魔药瓶', name: '小魔药瓶', delta: 1 },
+    });
+
+    await expect(
+      repository.execute(profile.id, {
+        id: 'use-small-health-potion',
+        type: 'inventory.use-consumable',
+        payload: { itemId: '小血瓶' },
+      }),
+    ).resolves.toMatchObject({ status: 'applied' });
+    await expect(
+      repository.execute(profile.id, {
+        id: 'use-small-mana-potion',
+        type: 'inventory.use-consumable',
+        payload: { itemId: '小魔药瓶' },
+      }),
+    ).resolves.toMatchObject({ status: 'applied' });
+
+    const snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.player).toMatchObject({ hp: 55, mp: 15 });
+    expect(snapshot.inventory).toEqual([
+      expect.objectContaining({ itemId: '小血瓶', quantity: 1 }),
+    ]);
+    await expect(
+      repository.execute(profile.id, {
+        id: 'use-small-health-potion',
+        type: 'inventory.use-consumable',
+        payload: { itemId: '小血瓶' },
+      }),
+    ).resolves.toMatchObject({ status: 'duplicate' });
+    expect((await repository.snapshot(profile.id)).player.hp).toBe(55);
+
+    await repository.execute(profile.id, {
+      id: 'grant-medium-health-potion',
+      type: 'inventory.adjust',
+      payload: { itemId: '中血瓶', name: '中血瓶', delta: 1 },
+    });
+    await repository.execute(profile.id, {
+      id: 'start-battle-before-inventory-use',
+      type: 'battle.start',
+      payload: { monsterId: 'mon_slime', count: 1 },
+    });
+    await expect(
+      repository.execute(profile.id, {
+        id: 'reject-inventory-use-during-battle',
+        type: 'inventory.use-consumable',
+        payload: { itemId: '中血瓶' },
+      }),
+    ).rejects.toThrow('战斗中请从战斗背包使用消耗品');
+    expect((await repository.snapshot(profile.id)).inventory).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ itemId: '中血瓶', quantity: 1 }),
+      ]),
+    );
+  });
+
+  it('恢复数值已满时拒绝消耗药剂且不扣除背包数量', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-inventory-full-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:inventory-full');
+    await repository.execute(profile.id, {
+      id: 'full-player-create',
+      type: 'player.create',
+      payload: {
+        name: '满状态测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    await repository.execute(profile.id, {
+      id: 'grant-full-health-potion',
+      type: 'inventory.adjust',
+      payload: { itemId: '小血瓶', name: '小血瓶', delta: 1 },
+    });
+
+    await expect(
+      repository.execute(profile.id, {
+        id: 'reject-full-health-potion',
+        type: 'inventory.use-consumable',
+        payload: { itemId: '小血瓶' },
+      }),
+    ).rejects.toThrow('当前生命与魔力均无需恢复');
+    expect((await repository.snapshot(profile.id)).inventory).toEqual([
+      expect.objectContaining({ itemId: '小血瓶', quantity: 1 }),
+    ]);
+  });
+
   it('在事务中拒绝会产生负数的背包命令', async () => {
     const database = new CaelianDatabase(
       'alpha',
