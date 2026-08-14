@@ -919,7 +919,7 @@ describe('本地战斗仓库', () => {
     ).toHaveLength(0);
   });
 
-  it('允许治疗牌选择凯利安且不会误治疗玩家', async () => {
+  it('允许治疗牌选择凯利安，未选择己方目标时则默认治疗玩家', async () => {
     const database = new CaelianDatabase(
       'alpha',
       `caelian-friendly-target-test-${crypto.randomUUID()}`,
@@ -965,6 +965,22 @@ describe('本地战斗仓库', () => {
     session = (await database.battleSessions.get(session.id))!;
     expect(session.state.player.hp).toBe(playerHp);
     expect(session.state.companion!.hp).toBeGreaterThan(companionHp);
+
+    const healedCompanionHp = session.state.companion!.hp;
+    session.state.player.ap = 10;
+    session.state.player.hand.unshift({
+      instanceId: 'test:default-player-heal',
+      cardId: 'hk_holy_heal',
+    });
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+    });
+    session = (await database.battleSessions.get(session.id))!;
+    expect(session.state.player.hp).toBeGreaterThan(playerHp);
+    expect(session.state.companion!.hp).toBe(healedCompanionHp);
   });
 
   it('敌人可以击伤凯利安，重伤后凯利安停止行动且无法被治疗', async () => {
@@ -1032,6 +1048,136 @@ describe('本地战斗仓库', () => {
       shield: 0,
       injured: true,
       actionIndex: retainedIndex,
+    });
+  });
+
+  it('按旧版把牧师对自己的过量治疗等量转化为当前目标伤害', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-priest-overheal-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:priest-overheal');
+    await game.execute(profile.id, {
+      id: 'priest-overheal-player-create',
+      type: 'player.create',
+      payload: {
+        name: '过量治疗测试员',
+        classMain: 'freelance',
+        subclass: 'priest',
+      },
+    });
+    const battles = new BattleRepository(database, () => 0);
+    await battles.prepare();
+    await battles.start(profile.id, { monsterId: 'mon_slime', count: 1 });
+
+    let session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    const target = session.state.enemies[0]!;
+    session.state.player.hp = session.state.player.hpMax;
+    session.state.player.ap = 10;
+    session.state.player.buffs.strength = { value: 200, turns: 2 };
+    session.state.player.debuffs.weak = { value: 1, turns: 2 };
+    session.state.player.hand.unshift({
+      instanceId: 'test:priest-overheal',
+      cardId: 'pr_heal',
+    });
+    target.hp = 1_000;
+    target.hpMax = 1_000;
+    target.defense = 1_000;
+    target.speed = 1_000;
+    target.buffs.damage_halve = { value: 1, turns: 2, charges: 1 };
+    target.debuffs.vulnerable = { value: 1, turns: 2 };
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      allyTargetId: 'player',
+    });
+    session = (await database.battleSessions.get(session.id))!;
+    expect(session.state.player.hp).toBe(session.state.player.hpMax);
+    expect(session.state.enemies[0]!.hp).toBe(986);
+    expect(session.state.enemies[0]!.buffs.damage_halve).toBeDefined();
+    expect(
+      session.state.animations?.some(
+        (event) =>
+          event.kind === 'damage' &&
+          event.amount === 14 &&
+          event.label === '过量治疗转化',
+      ),
+    ).toBe(true);
+  });
+
+  it('让攻击力同时进入攻击牌与中毒、灼烧、流血、腐蚀乘区', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-player-attack-scaling-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:player-attack-scaling');
+    await game.execute(profile.id, {
+      id: 'attack-scaling-player-create',
+      type: 'player.create',
+      payload: {
+        name: '攻击乘区测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const battles = new BattleRepository(database, () => 0.99);
+    await battles.prepare();
+    await battles.start(profile.id, { monsterId: 'mon_slime', count: 1 });
+
+    let session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    session.state.player.attack = 20;
+    session.state.player.ap = 10;
+    session.state.player.hand.unshift({
+      instanceId: 'test:attack-scaling',
+      cardId: 'hk_lumen_slash',
+    });
+    const target = session.state.enemies[0]!;
+    target.hp = 1_000;
+    target.hpMax = 1_000;
+    target.defense = 0;
+    target.speed = 0;
+    target.buffs = {};
+    target.debuffs = {};
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    session = (await database.battleSessions.get(session.id))!;
+    expect(session.state.enemies[0]!.hp).toBe(985);
+
+    const dottedTarget = session.state.enemies[0]!;
+    dottedTarget.attack = 0;
+    dottedTarget.intent = null;
+    dottedTarget.shield = 100;
+    dottedTarget.debuffs = {
+      poison: { value: 4, turns: 2 },
+      burn: { value: 2, turns: 2 },
+      bleed: { value: 3, turns: 2 },
+      corrosion: { value: 5, turns: 2 },
+      freeze: { value: 1, turns: 2 },
+    };
+    await database.battleSessions.put(session);
+
+    await battles.endTurn(profile.id, session.id);
+    session = (await database.battleSessions.get(session.id))!;
+    expect(session.state.enemies[0]).toMatchObject({
+      hp: 972,
+      shield: 94,
     });
   });
 });

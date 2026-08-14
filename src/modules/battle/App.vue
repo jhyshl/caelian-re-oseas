@@ -21,6 +21,7 @@ import {
   canApplyBattleConsumable,
   isBattleUsableItem,
 } from '@/battle/consumables';
+import { previewBattleCard } from '@/battle/card-preview';
 import type {
   BattleAnimationEvent,
   BattleEnemyState,
@@ -54,8 +55,11 @@ const battleItems = ref<Record<string, BattleItemDefinition>>({});
 const equipmentRewards = ref<Record<string, EquipmentDefinition>>({});
 const relicRewards = ref<Record<string, RelicDefinition>>({});
 const selectedTarget = ref(0);
-const selectedAllyTarget = ref<BattleFriendlyTargetId>('player');
+const selectedAllyTarget = ref<BattleFriendlyTargetId | null>(null);
 const selectedHandIndex = ref<number | null>(null);
+const previewHandIndex = ref<number | null>(null);
+const dragPreviewTargetIndex = ref<number | null>(null);
+const dragPreviewAllyTarget = ref<BattleFriendlyTargetId | null>(null);
 const showBattleInfo = ref(false);
 const showBattleInventory = ref(false);
 const notice = ref('');
@@ -180,6 +184,15 @@ const selectedCard = computed(() => {
 const selectedCardDefinition = computed(() =>
   selectedCard.value ? cards.value[selectedCard.value.cardId] : undefined,
 );
+const activePreviewHandIndex = computed(
+  () => previewHandIndex.value ?? selectedHandIndex.value,
+);
+const activePreviewCardDefinition = computed(() => {
+  const index = activePreviewHandIndex.value;
+  if (index === null) return undefined;
+  const card = state.value?.player.hand[index];
+  return card ? cards.value[card.cardId] : undefined;
+});
 const friendlyEffectTypes = new Set([
   'shield',
   'heal',
@@ -217,6 +230,24 @@ function cardFriendlyTargetMode(definition?: CardDefinition) {
 const selectedCardFriendlyMode = computed(() =>
   cardFriendlyTargetMode(selectedCardDefinition.value),
 );
+const activeCardPreview = computed(() => {
+  const current = state.value;
+  const definition = activePreviewCardDefinition.value;
+  if (!current || !definition) {
+    return {
+      enemyDamage: current?.enemies.map(() => 0) ?? [],
+      playerHp: 0,
+      companionHp: 0,
+      playerMp: 0,
+    };
+  }
+  return previewBattleCard(
+    current,
+    definition,
+    dragPreviewTargetIndex.value ?? selectedTarget.value,
+    dragPreviewAllyTarget.value ?? selectedAllyTarget.value ?? 'player',
+  );
+});
 const resultTitle = computed(() => {
   if (state.value?.workshopTest) return '测试结束';
   if (state.value?.status === 'victory') return '战斗胜利';
@@ -292,6 +323,12 @@ function selectEnemy(index: number, enemy: BattleEnemyState) {
   selectedTarget.value = index;
 }
 
+function toggleAllyTarget(target: BattleFriendlyTargetId) {
+  if (busy.value) return;
+  selectedAllyTarget.value =
+    target === 'player' || selectedAllyTarget.value === target ? null : target;
+}
+
 function selectCard(index: number, cardId: string) {
   if (busy.value) return;
   if (cardUnavailable(cardId)) {
@@ -306,6 +343,7 @@ function selectCard(index: number, cardId: string) {
   }
   selectedHandIndex.value =
     selectedHandIndex.value === index ? null : index;
+  previewHandIndex.value = null;
   notice.value = '';
 }
 
@@ -352,6 +390,7 @@ function canUseBattleItem(definition: BattleItemDefinition) {
 
 function normalizeSelection() {
   selectedHandIndex.value = null;
+  previewHandIndex.value = null;
   if (!state.value) return;
   selectedTarget.value =
     state.value.enemies[selectedTarget.value]?.hp &&
@@ -639,18 +678,36 @@ function createDragClone(session: CardDragSession) {
   session.clone = clone;
 }
 
-function enemyDropTarget(
+function battleDropTarget(
   document: Document,
   clientX: number,
   clientY: number,
+  cardId: string,
 ) {
   const element = document.elementFromPoint(clientX, clientY);
-  const target = element?.closest<HTMLElement>('[data-enemy-index]');
+  const target = element?.closest<HTMLElement>(
+    '[data-enemy-index], [data-ally-target]',
+  );
   if (!target || target.hasAttribute('disabled')) return null;
+  const allyTarget = target.dataset.allyTarget;
+  if (allyTarget) {
+    if (cardFriendlyTargetMode(cardDefinition(cardId)) === 'none') return null;
+    if (allyTarget === 'caelian' && !state.value?.companion) return null;
+    return target;
+  }
   const index = Number(target.dataset.enemyIndex);
   return state.value?.enemies[index]?.hp && state.value.enemies[index]!.hp > 0
     ? target
     : null;
+}
+
+function updateDragPreview(target: HTMLElement | null) {
+  const enemyIndex = target?.dataset.enemyIndex;
+  dragPreviewTargetIndex.value =
+    enemyIndex === undefined ? null : Number(enemyIndex);
+  const allyTarget = target?.dataset.allyTarget;
+  dragPreviewAllyTarget.value =
+    allyTarget === 'player' || allyTarget === 'caelian' ? allyTarget : null;
 }
 
 function handleDragMove(event: PointerEvent) {
@@ -669,10 +726,14 @@ function handleDragMove(event: PointerEvent) {
   if (!session.moved) return;
   event.preventDefault();
   scheduleClonePosition(session);
-  setDropTarget(
-    session,
-    enemyDropTarget(session.document, event.clientX, event.clientY),
+  const target = battleDropTarget(
+    session.document,
+    event.clientX,
+    event.clientY,
+    session.cardId,
   );
+  setDropTarget(session, target);
+  updateDragPreview(target);
 }
 
 function detachDragListeners(session: CardDragSession) {
@@ -692,6 +753,9 @@ function cleanupDrag(session: CardDragSession) {
   session.source.style.opacity = '';
   session.clone?.remove();
   session.document.body.classList.remove('caelian-card-dragging');
+  previewHandIndex.value = null;
+  dragPreviewTargetIndex.value = null;
+  dragPreviewAllyTarget.value = null;
   if (dragSession === session) dragSession = null;
 }
 
@@ -741,16 +805,25 @@ async function handleDragEnd(event: PointerEvent) {
   }
   event.preventDefault();
   const target =
-    enemyDropTarget(session.document, event.clientX, event.clientY) ??
+    battleDropTarget(
+      session.document,
+      event.clientX,
+      event.clientY,
+      session.cardId,
+    ) ??
     session.dropTarget;
   const targetIndex = target ? Number(target.dataset.enemyIndex) : -1;
+  const allyTarget = target?.dataset.allyTarget;
   await settleDragClone(session, target);
   cleanupDrag(session);
-  if (targetIndex >= 0) {
+  if (allyTarget === 'player' || allyTarget === 'caelian') {
+    selectedAllyTarget.value = allyTarget === 'caelian' ? 'caelian' : null;
+    await playCardAt(session.handIndex, selectedTarget.value, allyTarget);
+  } else if (targetIndex >= 0) {
     selectedTarget.value = targetIndex;
     await playCardAt(session.handIndex, targetIndex);
   } else {
-    notice.value = '把卡牌拖到仍存活的怪物身上即可打出。';
+    notice.value = '把卡牌拖到有效的敌方或己方目标身上即可打出。';
   }
 }
 
@@ -775,6 +848,7 @@ function beginCardPointer(
     return;
   }
   if (dragSession) cleanupDrag(dragSession);
+  previewHandIndex.value = handIndex;
   const source = event.currentTarget as HTMLElement;
   const document = source.ownerDocument;
   dragSession = {
@@ -815,18 +889,28 @@ async function playSelectedCard() {
   await playCardAt(selectedHandIndex.value, selectedTarget.value);
 }
 
-async function playCardAt(handIndex: number, targetIndex: number) {
+async function playCardAt(
+  handIndex: number,
+  targetIndex: number,
+  requestedAllyTarget = selectedAllyTarget.value ?? 'player',
+) {
   if (!battle.value) return;
-  await executeAnimated({
+  const allyTargetId: BattleFriendlyTargetId = requestedAllyTarget;
+  const card = state.value?.player.hand[handIndex];
+  const targetsCaelian =
+    allyTargetId === 'caelian' &&
+    cardFriendlyTargetMode(card ? cards.value[card.cardId] : undefined) !== 'none';
+  const applied = await executeAnimated({
     id: commandId('battle.play-card'),
     type: 'battle.play-card',
     payload: {
       battleId: battle.value.id,
       handIndex,
       targetIndex,
-      allyTargetId: selectedAllyTarget.value,
+      allyTargetId,
     },
   });
+  if (applied && targetsCaelian) selectedAllyTarget.value = null;
 }
 
 async function endTurn() {
@@ -925,7 +1009,7 @@ onMounted(async () => {
     loadRelics(),
   ]);
   selectedTarget.value = state.value?.selectedTarget ?? 0;
-  selectedAllyTarget.value = 'player';
+  selectedAllyTarget.value = null;
   disposeStateListener = props.context.api.on('state.changed', refresh);
 });
 
@@ -1095,6 +1179,7 @@ onUnmounted(() => {
                 acting: activeActorKey === `enemy:${enemy.id}`,
                 hit: hitTargetKey === `enemy:${enemy.id}`,
                 glow: glowTargetKey === `enemy:${enemy.id}`,
+                preview: (activeCardPreview.enemyDamage[index] ?? 0) > 0,
               }"
               :data-enemy-index="index"
               :disabled="enemy.hp <= 0"
@@ -1107,6 +1192,12 @@ onUnmounted(() => {
               <small>
                 攻 {{ enemy.attack }} · 防 {{ enemy.defense }} · 盾 {{ enemy.shield }}
               </small>
+              <b
+                v-if="(activeCardPreview.enemyDamage[index] ?? 0) > 0"
+                class="battle-target-preview damage"
+              >
+                预计 −{{ activeCardPreview.enemyDamage[index] }} HP
+              </b>
               <MeterBar
                 label="怪物生命"
                 :value="enemy.hp"
@@ -1155,20 +1246,27 @@ onUnmounted(() => {
             acting: activeActorKey === 'player',
             hit: hitTargetKey === 'player',
             glow: glowTargetKey === 'player',
+            'drag-over': dragPreviewAllyTarget === 'player',
+            preview:
+              activeCardPreview.playerHp > 0 ||
+              activeCardPreview.playerMp > 0,
           }"
         >
           <div v-if="state.companion" class="companion-party">
             <button
               type="button"
               class="companion-unit"
+              data-ally-target="caelian"
               :class="{
                 selected: selectedAllyTarget === 'caelian',
                 injured: state.companion.injured,
+                'drag-over': dragPreviewAllyTarget === 'caelian',
                 acting: activeActorKey === 'companion:caelian',
                 hit: hitTargetKey === 'companion:caelian',
                 glow: glowTargetKey === 'companion:caelian',
+                preview: activeCardPreview.companionHp > 0,
               }"
-              @click="selectedAllyTarget = 'caelian'"
+              @click="toggleAllyTarget('caelian')"
             >
               <span>圣辉龙骑</span>
               <strong>{{ state.companion.name }}</strong>
@@ -1176,6 +1274,12 @@ onUnmounted(() => {
               <small v-else>
                 HP {{ state.companion.hp }}/{{ state.companion.hpMax }} · 盾 {{ state.companion.shield }}
               </small>
+              <b
+                v-if="activeCardPreview.companionHp > 0"
+                class="battle-target-preview heal"
+              >
+                预计 +{{ activeCardPreview.companionHp }} HP
+              </b>
               <MeterBar
                 label="凯利安生命"
                 :value="state.companion.hp"
@@ -1287,7 +1391,7 @@ onUnmounted(() => {
             </small>
           </div>
 
-          <div class="player-bars">
+          <div class="player-bars" data-ally-target="player">
             <MeterBar
               label="玩家生命"
               :value="state.player.hp"
@@ -1308,6 +1412,17 @@ onUnmounted(() => {
               <span>玩家护盾</span>
               <strong>🛡 {{ state.player.shield }}</strong>
             </div>
+          </div>
+          <div
+            v-if="activeCardPreview.playerHp > 0 || activeCardPreview.playerMp > 0"
+            class="battle-resource-preview"
+          >
+            <b v-if="activeCardPreview.playerHp > 0">
+              预计 +{{ activeCardPreview.playerHp }} HP
+            </b>
+            <b v-if="activeCardPreview.playerMp > 0">
+              预计 +{{ activeCardPreview.playerMp }} MP
+            </b>
           </div>
           <div class="battle-float-layer player-floats" aria-hidden="true">
             <span
@@ -1332,15 +1447,15 @@ onUnmounted(() => {
             <strong>选择己方目标</strong>
             <button
               type="button"
-              :class="{ selected: selectedAllyTarget === 'player' }"
-              @click="selectedAllyTarget = 'player'"
+              :class="{ selected: selectedAllyTarget === null }"
+              @click="toggleAllyTarget('player')"
             >
-              玩家
+              玩家（默认）
             </button>
             <button
               type="button"
               :class="{ selected: selectedAllyTarget === 'caelian' }"
-              @click="selectedAllyTarget = 'caelian'"
+              @click="toggleAllyTarget('caelian')"
             >
               凯利安
             </button>
@@ -1712,6 +1827,37 @@ onUnmounted(() => {
   transform: translateY(-3px) scale(1.025);
 }
 
+.enemy-card.preview,
+.companion-unit.preview,
+.battle-mid.preview {
+  animation: battle-preview-pulse 0.74s ease-in-out infinite alternate;
+}
+
+.battle-target-preview {
+  position: absolute;
+  z-index: 120;
+  right: 6px;
+  bottom: 6px;
+  padding: 4px 7px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.38);
+}
+
+.battle-target-preview.damage {
+  color: #fff2e8;
+  background: rgba(178, 23, 20, 0.92);
+}
+
+.battle-target-preview.heal {
+  color: #eaffdf;
+  background: rgba(16, 112, 52, 0.94);
+}
+
 .enemy-card.acting {
   animation: enemy-attack 0.5s cubic-bezier(.2, .75, .24, 1);
 }
@@ -1783,6 +1929,13 @@ onUnmounted(() => {
   display: grid;
   grid-template-rows: auto minmax(32px, 0.7fr) auto minmax(34px, auto);
   gap: 3px;
+}
+
+.battle-mid.drag-over,
+.companion-unit.drag-over {
+  outline: 3px solid rgba(115, 255, 135, 0.66);
+  outline-offset: 2px;
+  box-shadow: 0 0 28px rgba(115, 255, 135, 0.34);
 }
 
 .companion-party {
@@ -2028,6 +2181,43 @@ onUnmounted(() => {
   grid-template-columns: 1fr 1fr minmax(78px, auto);
   gap: 5px;
   min-height: 0;
+}
+
+.battle-resource-preview {
+  position: absolute;
+  z-index: 150;
+  right: 7px;
+  bottom: 38px;
+  display: flex;
+  gap: 5px;
+  pointer-events: none;
+}
+
+.battle-resource-preview b {
+  padding: 4px 8px;
+  border: 1px solid rgba(141, 255, 178, 0.72);
+  border-radius: 999px;
+  color: #e9fff0;
+  background: rgba(14, 102, 53, 0.94);
+  font-size: 9px;
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.34);
+}
+
+.battle-resource-preview b + b {
+  border-color: rgba(117, 207, 255, 0.76);
+  color: #e8f8ff;
+  background: rgba(20, 92, 141, 0.94);
+}
+
+@keyframes battle-preview-pulse {
+  from {
+    filter: brightness(1);
+    box-shadow: 0 0 0 2px rgba(255, 239, 129, 0.12);
+  }
+  to {
+    filter: brightness(1.13);
+    box-shadow: 0 0 0 4px rgba(255, 239, 129, 0.42), 0 0 24px rgba(255, 225, 94, 0.28);
+  }
 }
 
 .player-shield-meter {

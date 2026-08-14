@@ -8,13 +8,13 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.41');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.42');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.41');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.42');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
-    expect(releases[0]?.changes.join('\n')).toContain('攻击、防御、法术、技能与召唤');
-    expect(releases[0]?.changes.join('\n')).toContain('消耗品');
+    expect(releases[0]?.changes.join('\n')).toContain('过量治疗');
+    expect(releases[0]?.changes.join('\n')).toContain('拖到凯利安');
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {

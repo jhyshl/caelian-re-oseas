@@ -209,6 +209,17 @@ type Combatant = {
   onHitDebuff?: string;
 };
 
+interface DamageOptions {
+  ignoreDefense?: boolean;
+  ignoreAgility?: boolean;
+  ignoreImmunity?: boolean;
+  ignoreWeak?: boolean;
+  ignoreStrength?: boolean;
+  ignoreVulnerable?: boolean;
+  ignoreResist?: boolean;
+  ignoreDamageHalve?: boolean;
+}
+
 interface WorkshopTestInput {
   professionId: string;
   mechanismIds: string[];
@@ -2625,8 +2636,13 @@ export class BattleRepository {
     rawAmount: number,
     kind: BattleLogEntry['kind'],
     label: string,
-    ignoreDefense = false,
+    damageOptions: boolean | DamageOptions = false,
   ): number {
+    const options =
+      typeof damageOptions === 'boolean'
+        ? { ignoreDefense: damageOptions }
+        : damageOptions;
+    let ignoreDefense = options.ignoreDefense === true;
     const sourceIdentity = this.combatantIdentity(state, source);
     const targetIdentity = this.combatantIdentity(state, target);
     const beforeDamage = this.runWorkshopMechanisms(state, 'before_damage', {
@@ -2647,7 +2663,7 @@ export class BattleRepository {
       ignoreDefense = beforeDamage.ignoreDefense;
     }
     let amount = Math.max(0, Math.round(rawAmount));
-    if (amount > 0) {
+    if (amount > 0 && !options.ignoreAgility) {
       const statusDodge = this.effectValue(target.buffs.agility);
       const speedDodge = Math.min(
         this.rules?.maxSpeedDodge ?? 25,
@@ -2676,7 +2692,7 @@ export class BattleRepository {
         return 0;
       }
     }
-    if (amount > 0 && target.buffs.damage_immune) {
+    if (amount > 0 && target.buffs.damage_immune && !options.ignoreImmunity) {
       this.log(state, kind, `${target.name ?? '目标'} 的伤害免疫抵消了${label}`);
       this.spendEffectCharge(target.buffs, 'damage_immune');
       return 0;
@@ -2686,15 +2702,17 @@ export class BattleRepository {
         amount * (1 + Math.max(0, this.effectValue(source.buffs.blood_burn)) / 100),
       );
     }
-    if (source.debuffs.weak) amount = Math.floor(amount * 0.75);
-    amount += this.effectValue(source.buffs.strength);
+    if (!options.ignoreWeak && source.debuffs.weak) amount = Math.floor(amount * 0.75);
+    if (!options.ignoreStrength) amount += this.effectValue(source.buffs.strength);
     if (source.buffs.monster_frenzy) {
       amount = Math.ceil(
         amount *
           (1 + Math.max(0, this.effectValue(source.buffs.monster_frenzy)) / 100),
       );
     }
-    if (target.debuffs.vulnerable) amount = Math.ceil(amount * 1.5);
+    if (!options.ignoreVulnerable && target.debuffs.vulnerable) {
+      amount = Math.ceil(amount * 1.5);
+    }
     if (target.debuffs.curse_mark) {
       amount += Math.max(1, this.effectValue(target.debuffs.curse_mark));
     }
@@ -2709,10 +2727,10 @@ export class BattleRepository {
       0,
       95,
     );
-    if (damageResist > 0) {
+    if (damageResist > 0 && !options.ignoreResist) {
       amount = Math.ceil((amount * (100 - damageResist)) / 100);
     }
-    if (target.buffs.damage_halve) {
+    if (target.buffs.damage_halve && !options.ignoreDamageHalve) {
       amount = Math.ceil(amount * 0.5);
       this.spendEffectCharge(target.buffs, 'damage_halve');
     }
@@ -2808,7 +2826,9 @@ export class BattleRepository {
       const lifesteal = Math.round(
         hpDamage * Math.max(0, this.passiveEffectValue(state, 'lifesteal_ratio')),
       );
-      if (lifesteal > 0) this.heal(state, state.player, lifesteal, '吸血');
+      if (lifesteal > 0) {
+        this.heal(state, state.player, lifesteal, '吸血', false);
+      }
     }
     if (
       sourceIdentity.side === 'enemy' &&
@@ -2849,6 +2869,7 @@ export class BattleRepository {
     target: Combatant,
     rawAmount: number,
     label: string,
+    convertPriestOverflow = true,
   ): number {
     if (this.isInjuredCompanion(state, target)) return 0;
     const healBlock = this.clamp(
@@ -2863,6 +2884,7 @@ export class BattleRepository {
     const before = target.hp;
     target.hp = Math.min(target.hpMax, target.hp + amount);
     const restored = target.hp - before;
+    const overflow = Math.max(0, before + amount - target.hpMax);
     if (restored > 0) {
       const identity = this.combatantIdentity(state, target);
       this.animation(state, {
@@ -2876,6 +2898,34 @@ export class BattleRepository {
         label,
       });
       this.log(state, 'player', `${label}恢复 ${restored} HP`);
+    }
+    if (
+      convertPriestOverflow &&
+      target === state.player &&
+      state.player.subclass === 'priest' &&
+      overflow > 0
+    ) {
+      const targetIndex = this.resolveTargetIndex(state, state.selectedTarget);
+      const enemy = state.enemies[targetIndex];
+      if (enemy?.hp && enemy.hp > 0) {
+        this.damage(
+          state,
+          state.player,
+          enemy,
+          overflow,
+          'player',
+          '过量治疗转化',
+          {
+            ignoreDefense: true,
+            ignoreAgility: true,
+            ignoreWeak: true,
+            ignoreStrength: true,
+            ignoreVulnerable: true,
+            ignoreDamageHalve: true,
+          },
+        );
+        this.log(state, 'player', `过量治疗 ${overflow} 转化为圣光伤害`);
+      }
     }
     return restored;
   }
