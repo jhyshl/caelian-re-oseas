@@ -8,6 +8,7 @@ import {
   normalizeWorkshopPack,
   readWorkshopPacks,
   saveWorkshopPack,
+  talentScore,
 } from '@/workshop';
 import { PARTY_SUPPORT_CARDS } from '@/battle/party-support-cards';
 import { readWorkshopMechanisms } from '@/workshop-mechanisms';
@@ -71,6 +72,30 @@ describe('旧版创意工坊规则', () => {
         'custom_class_test',
       ),
     ).toThrow('同类效果只能添加一次');
+  });
+
+  it('按官方公式校验空白牌生成、持续生成、揭晓伤害与手牌上限', () => {
+    expect(
+      cardScore({
+        effects: [{ type: 'generate_blank_to_draw', value: 2, target: 'self' }],
+      }),
+    ).toBe(12);
+    expect(
+      cardScore({
+        effects: [{ type: 'blank_regen', value: 1, turns: 3, target: 'self' }],
+      }),
+    ).toBe(13.5);
+    expect(
+      cardScore({
+        effects: [{ type: 'discard_blank_damage', value: 12, target: 'enemy' }],
+      }),
+    ).toBe(60);
+    expect(
+      talentScore([
+        { type: 'extra_draw', value: 1 },
+        { type: 'hand_limit_bonus', value: 5 },
+      ]),
+    ).toBe(24);
   });
 
   it('规范化召唤技能权重并要求召唤牌包含召唤物', () => {

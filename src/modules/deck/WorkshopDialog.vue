@@ -322,6 +322,7 @@ function addTalent(type: string): void {
     damage_reduction: 1,
     turn_start_cleanse: 1,
     turn_start_debuff_shield: 2,
+    hand_limit_bonus: 5,
   };
   const effect: EditableEffect = { type };
   if (type !== 'always_reveal_intent') effect.value = defaults[type] ?? 1;

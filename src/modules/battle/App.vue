@@ -46,6 +46,11 @@ import {
   battleCardFaceType,
   battleCardFaceUrl,
 } from '@/modules/battle/card-face';
+import {
+  MAGICIAN_BLANK_CARD_ID,
+  MAGICIAN_BLANK_LIMIT,
+  MAGICIAN_SUBCLASS_ID,
+} from '@/content/catalogs/magician';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -138,6 +143,19 @@ const battleInventory = computed<BattleInventoryRow[]>(() =>
 );
 const battleInventoryCount = computed(() =>
   battleInventory.value.reduce((total, item) => total + item.quantity, 0),
+);
+const magicianBlankCount = computed(() => {
+  const player = state.value?.player;
+  if (!player) return 0;
+  return [...player.hand, ...player.drawPile, ...player.discardPile].filter(
+    (instance) => instance.cardId === MAGICIAN_BLANK_CARD_ID,
+  ).length;
+});
+const discardableHandCount = computed(
+  () =>
+    state.value?.player.hand.filter(
+      (instance) => instance.cardId !== MAGICIAN_BLANK_CARD_ID,
+    ).length ?? 0,
 );
 const mechanismResources = computed(() => {
   const runtime = state.value?.workshopMechanisms;
@@ -308,14 +326,38 @@ function cardDefinition(cardId: string) {
   return cards.value[cardId];
 }
 
-function cardUnavailable(cardId: string) {
+function requiredDiscardCount(definition?: CardDefinition) {
+  return (definition?.effects ?? []).reduce((sum, effect) => {
+    if (effect.type !== 'discard' || effect.amount === 'all') return sum;
+    return sum + Math.max(0, Number(effect.amount ?? effect.value) || 0);
+  }, 0);
+}
+
+function cardUnavailableReason(cardId: string, handIndex?: number) {
   const definition = cardDefinition(cardId);
   const player = state.value?.player;
-  if (!definition || !player || state.value?.phase !== 'player') return true;
-  return (
-    player.ap < Math.max(0, Number(definition.cost) || 0) ||
-    player.mp < Math.max(0, Number(definition.mpCost) || 0)
-  );
+  if (!definition || !player) return '卡牌数据不存在。';
+  if (state.value?.phase !== 'player') return '当前不是玩家行动阶段。';
+  if (definition.unplayable === true) {
+    return '空白牌无法打出，只有「真相揭晓」可以将其揭晓。';
+  }
+  if (player.ap < Math.max(0, Number(definition.cost) || 0)) {
+    return '行动点不足。';
+  }
+  if (player.mp < Math.max(0, Number(definition.mpCost) || 0)) {
+    return '魔力不足。';
+  }
+  const required = requiredDiscardCount(definition);
+  const available = player.hand.filter(
+    (instance, index) =>
+      index !== handIndex && instance.cardId !== MAGICIAN_BLANK_CARD_ID,
+  ).length;
+  if (required > available) return `需要 ${required} 张可弃置的非空白手牌。`;
+  return '';
+}
+
+function cardUnavailable(cardId: string, handIndex?: number) {
+  return Boolean(cardUnavailableReason(cardId, handIndex));
 }
 
 function selectEnemy(index: number, enemy: BattleEnemyState) {
@@ -331,14 +373,8 @@ function toggleAllyTarget(target: BattleFriendlyTargetId) {
 
 function selectCard(index: number, cardId: string) {
   if (busy.value) return;
-  if (cardUnavailable(cardId)) {
-    const card = cardDefinition(cardId);
-    notice.value =
-      state.value?.phase !== 'player'
-        ? '当前不是玩家行动阶段。'
-        : (card?.mpCost ?? 0) > (state.value?.player.mp ?? 0)
-          ? '魔力不足。'
-          : '行动点不足。';
+  if (cardUnavailable(cardId, index)) {
+    notice.value = cardUnavailableReason(cardId, index);
     return;
   }
   selectedHandIndex.value =
@@ -843,7 +879,7 @@ function beginCardPointer(
     event.button !== 0 ||
     busy.value ||
     animationPlaying.value ||
-    cardUnavailable(cardId)
+    cardUnavailable(cardId, handIndex)
   ) {
     return;
   }
@@ -1366,6 +1402,18 @@ onUnmounted(() => {
             </span>
           </div>
 
+          <div
+            v-if="state.player.subclass === MAGICIAN_SUBCLASS_ID"
+            class="mechanism-resource-strip magician-resource-strip"
+          >
+            <span>
+              空白牌 <b>{{ magicianBlankCount }}/{{ MAGICIAN_BLANK_LIMIT }}</b>
+            </span>
+            <span>
+              不竭牌匣 <b>{{ state.player.blankGenerators?.length ?? 0 }}</b>
+            </span>
+          </div>
+
           <div class="battle-field-row">
             <b>场上状态</b>
             <div class="status-row">
@@ -1483,7 +1531,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="discard"
-              :disabled="busy || state.player.ap < 1 || state.player.hand.length === 0"
+              :disabled="busy || state.player.ap < 1 || discardableHandCount === 0"
               @click="discardHand"
             >
               弃牌 1AP
@@ -1515,7 +1563,8 @@ onUnmounted(() => {
               class="fan-card"
               :class="{
                 selected: selectedHandIndex === index,
-                unavailable: cardUnavailable(card.cardId),
+                unavailable: cardUnavailable(card.cardId, index),
+                'blank-card': card.cardId === MAGICIAN_BLANK_CARD_ID,
               }"
               :data-rarity="cardDefinition(card.cardId)?.rarity"
               :data-card-type="battleCardFaceType(cardDefinition(card.cardId)?.type)"
@@ -2149,6 +2198,16 @@ onUnmounted(() => {
   font-size: 9px;
 }
 
+.magician-resource-strip span {
+  border-color: rgba(236, 238, 246, 0.48);
+  color: #f7f3e9;
+  background: rgba(224, 227, 235, 0.1);
+}
+
+.magician-resource-strip b {
+  color: #fff;
+}
+
 .battle-field-row {
   min-height: 27px;
   display: flex;
@@ -2450,6 +2509,19 @@ onUnmounted(() => {
 
 .fan-card.unavailable {
   filter: saturate(0.55) brightness(0.78);
+}
+
+.fan-card.blank-card {
+  border-color: #d8d8d8;
+  border-style: dashed;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.9), rgba(226, 226, 226, 0.88)),
+    var(--card-face) center / 100% 100% no-repeat;
+  filter: saturate(0.12);
+}
+
+.fan-card.blank-card .fan-card-name {
+  color: #383838;
 }
 
 .battle-drag-clone {

@@ -129,6 +129,9 @@
 | `recover_discard` | 单张 `amount × 5`，`all=18` |
 | `destroy_summon` | 单个 `-amount × 14`，`all=-30` |
 | `discard_all_damage` | `value × 5 × M` |
+| `generate_blank_to_draw` | `value × 6` |
+| `blank_regen` | `value × 6 × turns × D` |
+| `discard_blank_damage` | `value × 5 × M` |
 | `reveal_intent` | `5` |
 
 `apply_debuff`：基础分依次为 `freeze=14`、`entangle=10`、`weak=7`、`vulnerable=8`、`burn=4`、`poison=4`；分数为 `基础分 × turns × M`。
@@ -153,6 +156,7 @@
 - `always_reveal_intent`：`8`
 - `turn_start_cleanse`：`value × 10`
 - `turn_start_debuff_shield`：`value × 1.2`
+- `hand_limit_bonus`：`value × 3`
 
 ### 3. 最终检查清单
 
@@ -224,6 +228,7 @@
 - `always_reveal_intent`：始终显示敌人意图，`value` 为 0。
 - `turn_start_cleanse`：回合开始净化，`value` 为 1。
 - `turn_start_debuff_shield`：有减益时获得护盾，`value` 0–8。
+- `hand_limit_bonus`：提高手牌上限，`value` 0–5；基础上限 10，因此最多提高到 15。
 
 卡牌格式：
 
@@ -253,6 +258,9 @@
 - `cleanse`、`dispel`、`discard`、`recover_discard`、`destroy_summon`：使用 `amount`。
 - `strip_shield`、`strip_buffs`、`reveal_intent`：无需数值。
 - `trap`、`damage_per_debuff`、`discard_all_damage`：使用 `value`。
+- `generate_blank_to_draw`：把 `value` 张空白牌洗入抽牌堆；空白牌在手牌、抽牌堆与弃牌堆中合计最多同时存在 8 张。
+- `blank_regen`：之后每个玩家回合开始、正常抽牌前把 `value` 张空白牌洗入抽牌堆，使用 `turns`；每次施加都会建立独立效果，允许叠加，达到 8 张上限时仍会消耗持续回合。
+- `discard_blank_damage`：只揭晓并移除手中的空白牌，每张造成 `value` 点伤害；这是唯一可以处理空白牌的弃牌效果。
 - `damage_from_shield`：使用 `ratio`。
 - `spend_mp_damage`、`spend_mp_shield`：`amount` 为消耗 MP，`value` 为每点倍率。
 - `mp_to_ap`：`amount` 为消耗 MP，`value` 为获得 AP。
@@ -260,6 +268,8 @@
 - `conditional_group`：使用 `logic`（`and`/`or`）、`conditions`、`then_effects`、`else_effects`。
 
 条件类型可用：`self_has_shield`、`self_no_shield`、`enemy_has_shield`、`enemy_no_shield`、`enemy_has_debuff`、`enemy_no_debuff`、`enemy_has_specific_debuff`、`enemy_no_specific_debuff`、`self_has_buff`、`self_no_buff`、`self_full_hp`、`self_not_full_hp`、`has_summon`、`no_summon`、`spend_mp`、`discard`、`destroy_summon`。
+
+空白牌没有可执行效果，不能直接打出，也不能被 1 AP 弃牌按钮、普通 `discard`、`discard_all_damage`、随机弃牌或敌方弃牌移走。普通弃牌作为费用时，必须有足够数量的非空白牌才可打出对应卡牌。空白牌仅存在于本场战斗，不进入职业 `cards`、`cardPool`、`starterDeck`、收藏、市场或战后奖励。
 
 ## 二、效果预设扩展
 

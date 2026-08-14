@@ -13,6 +13,10 @@ import {
   loadRelics,
 } from '@/content/catalogs/inventory';
 import { loadCardCatalog } from '@/content/catalogs/cards';
+import {
+  MAGICIAN_BLANK_CARD_ID,
+  MAGICIAN_BLANK_LIMIT,
+} from '@/content/catalogs/magician';
 import type {
   BattleItemDefinition,
   CardDefinition,
@@ -501,12 +505,16 @@ export class BattleRepository {
     if (!cardInstance) throw new Error('这张手牌已经不存在');
     const card = this.cards?.[cardInstance.cardId];
     if (!card) throw new Error('卡牌数据不存在');
+    if (card.unplayable === true) {
+      throw new Error('空白牌无法打出，只有「真相揭晓」可以将其揭晓');
+    }
     if (state.player.debuffs.freeze && !this.isCleanseCard(card)) {
       throw new Error('冰冻中：只能使用净化类卡牌');
     }
     if (state.player.debuffs.entangle && card.type === 'attack') {
       throw new Error('缠绕中：无法使用攻击类卡牌');
     }
+    this.assertCardDiscardCosts(state, card, cardInstance.instanceId);
 
     const targetIndex = this.resolveTargetIndex(
       state,
@@ -605,10 +613,14 @@ export class BattleRepository {
     const state = session.state;
     this.assertPlayerPhase(state);
     if (state.player.ap < 1) throw new Error('弃牌重抽需要 1 点行动点');
-    if (state.player.hand.length === 0) throw new Error('当前没有可弃置的手牌');
-    const count = state.player.hand.length;
+    const discarded = this.takeDiscardableCards(
+      state,
+      Number.POSITIVE_INFINITY,
+    );
+    if (discarded.length === 0) throw new Error('当前没有可弃置的非空白手牌');
+    const count = discarded.length;
     state.player.ap -= 1;
-    state.player.discardPile.push(...state.player.hand.splice(0));
+    state.player.discardPile.push(...discarded);
     this.drawCards(state, 3);
     this.log(state, 'player', `弃置 ${count} 张手牌，重新抽取 3 张`);
     this.triggerBloodBurnAction(state, state.player, '弃牌');
@@ -829,6 +841,7 @@ export class BattleRepository {
       return;
     }
     this.applyTurnStartPassives(state, profileId);
+    this.triggerBlankGenerators(state);
     this.drawCards(state, state.player.drawPerTurn);
     this.runWorkshopMechanisms(state, 'turn_start');
     for (const enemy of this.aliveEnemies(state)) {
@@ -1917,11 +1930,11 @@ export class BattleRepository {
         break;
       }
       case 'discard_last_drawn': {
-        const amount = Math.min(
-          state.player.hand.length,
+        const discarded = this.takeDiscardableCards(
+          state,
           Math.max(1, this.number(effect.amount, 1)),
+          'back',
         );
-        const discarded = state.player.hand.splice(-amount, amount);
         state.player.discardPile.push(...discarded);
         break;
       }
@@ -2274,15 +2287,18 @@ export class BattleRepository {
         this.addSummon(state, effect);
         break;
       case 'discard': {
-        const amount = Math.min(
-          state.player.hand.length,
+        const discarded = this.takeDiscardableCards(
+          state,
           Math.max(0, this.number(effect.amount, 1)),
         );
-        state.player.discardPile.push(...state.player.hand.splice(0, amount));
+        state.player.discardPile.push(...discarded);
         break;
       }
       case 'discard_all_damage': {
-        const discarded = state.player.hand.splice(0);
+        const discarded = this.takeDiscardableCards(
+          state,
+          Number.POSITIVE_INFINITY,
+        );
         state.player.discardPile.push(...discarded);
         const damage = discarded.length * this.number(effect.value);
         for (const enemy of targets) {
@@ -2295,6 +2311,49 @@ export class BattleRepository {
             card.name,
           );
         }
+        break;
+      }
+      case 'discard_blank_damage': {
+        const blanks = state.player.hand.filter((instance) =>
+          this.isBlankCard(instance.cardId),
+        );
+        const blankIds = new Set(blanks.map((instance) => instance.instanceId));
+        state.player.hand = state.player.hand.filter(
+          (instance) => !blankIds.has(instance.instanceId),
+        );
+        const damage = blanks.length * this.number(effect.value);
+        for (const enemy of targets) {
+          this.damage(
+            state,
+            state.player,
+            enemy,
+            damage,
+            'player',
+            card.name,
+          );
+        }
+        this.log(state, 'player', `揭晓并移除 ${blanks.length} 张空白牌`);
+        break;
+      }
+      case 'generate_blank_to_draw':
+        this.generateBlankCards(
+          state,
+          Math.max(0, this.number(effect.value, 1)),
+          card.name,
+        );
+        break;
+      case 'blank_regen': {
+        state.player.blankGenerators ??= [];
+        state.player.blankGenerators.push({
+          id: `blank-generator:${Date.now()}:${Math.floor(this.random() * 1_000_000)}`,
+          turns: Math.max(1, this.number(effect.turns, 3)),
+          amount: Math.max(1, this.number(effect.value, 1)),
+        });
+        this.log(
+          state,
+          'player',
+          `设置 1 个不竭牌匣，当前共 ${state.player.blankGenerators.length} 个`,
+        );
         break;
       }
       case 'destroy_summon': {
@@ -3039,6 +3098,122 @@ export class BattleRepository {
     }
   }
 
+  private isBlankCard(cardId: string): boolean {
+    return (
+      cardId === MAGICIAN_BLANK_CARD_ID ||
+      this.cards?.[cardId]?.protectedFromDiscard === true
+    );
+  }
+
+  private blankCardCount(state: LocalBattleState): number {
+    return [
+      ...state.player.hand,
+      ...state.player.drawPile,
+      ...state.player.discardPile,
+    ].filter((instance) => this.isBlankCard(instance.cardId)).length;
+  }
+
+  private discardableHandCount(
+    state: LocalBattleState,
+    excludedInstanceId?: string,
+  ): number {
+    return state.player.hand.filter(
+      (instance) =>
+        instance.instanceId !== excludedInstanceId &&
+        !this.isBlankCard(instance.cardId),
+    ).length;
+  }
+
+  private takeDiscardableCards(
+    state: LocalBattleState,
+    requested: number,
+    order: 'front' | 'back' | 'random' = 'front',
+  ) {
+    const eligible = state.player.hand.filter(
+      (instance) => !this.isBlankCard(instance.cardId),
+    );
+    const ordered =
+      order === 'random'
+        ? this.shuffle(eligible)
+        : order === 'back'
+          ? [...eligible].reverse()
+          : eligible;
+    const amount = Number.isFinite(requested)
+      ? Math.max(0, Math.floor(requested))
+      : ordered.length;
+    const discarded = ordered.slice(0, amount);
+    const discardedIds = new Set(
+      discarded.map((instance) => instance.instanceId),
+    );
+    state.player.hand = state.player.hand.filter(
+      (instance) => !discardedIds.has(instance.instanceId),
+    );
+    return discarded;
+  }
+
+  private assertCardDiscardCosts(
+    state: LocalBattleState,
+    card: CardDefinition,
+    cardInstanceId: string,
+  ): void {
+    const required = (card.effects ?? []).reduce((sum, effect) => {
+      if (effect.type !== 'discard' || effect.amount === 'all') return sum;
+      return sum + Math.max(0, this.number(effect.amount ?? effect.value, 1));
+    }, 0);
+    if (required > this.discardableHandCount(state, cardInstanceId)) {
+      throw new Error(`「${card.name}」需要 ${required} 张可弃置的非空白手牌`);
+    }
+  }
+
+  private generateBlankCards(
+    state: LocalBattleState,
+    requested: number,
+    source: string,
+  ): number {
+    const room = Math.max(0, MAGICIAN_BLANK_LIMIT - this.blankCardCount(state));
+    const created = Math.min(room, Math.max(0, Math.floor(requested)));
+    if (created > 0) {
+      const instances = Array.from({ length: created }, (_, index) => ({
+        instanceId: `${MAGICIAN_BLANK_CARD_ID}:${Date.now()}:${index}:${Math.floor(this.random() * 1_000_000)}`,
+        cardId: MAGICIAN_BLANK_CARD_ID,
+      }));
+      state.player.drawPile = this.shuffle([
+        ...state.player.drawPile,
+        ...instances,
+      ]);
+    }
+    this.log(
+      state,
+      'player',
+      created > 0
+        ? `${source}将 ${created} 张空白牌洗入抽牌堆（${this.blankCardCount(state)}/${MAGICIAN_BLANK_LIMIT}）`
+        : `${source}未生成空白牌：场上已达到 ${MAGICIAN_BLANK_LIMIT} 张上限`,
+    );
+    return created;
+  }
+
+  private triggerBlankGenerators(state: LocalBattleState): void {
+    const generators = state.player.blankGenerators ?? [];
+    if (generators.length === 0) return;
+    let created = 0;
+    for (const generator of generators) {
+      created += this.generateBlankCards(
+        state,
+        generator.amount,
+        '不竭牌匣',
+      );
+      generator.turns -= 1;
+    }
+    state.player.blankGenerators = generators.filter(
+      (generator) => generator.turns > 0,
+    );
+    this.log(
+      state,
+      'system',
+      `不竭牌匣本回合共洗入 ${created} 张空白牌，剩余 ${state.player.blankGenerators.length} 个持续效果`,
+    );
+  }
+
   private resolveCaelianActions(state: LocalBattleState): void {
     const companion = state.companion;
     if (!companion || companion.injured || companion.hp <= 0) return;
@@ -3543,6 +3718,8 @@ export class BattleRepository {
           );
         } else if (child.type === 'extra_draw') {
           state.player.drawPerTurn += this.number(child.value);
+        } else if (child.type === 'hand_limit_bonus') {
+          state.player.handLimit += this.number(child.value);
         } else if (child.type === 'first_turn_ap') {
           state.player.ap += this.number(child.value);
         }
@@ -3742,7 +3919,8 @@ export class BattleRepository {
         return state.player.mp >= this.number(detail.amount ?? detail.value, 1);
       case 'discard':
         return (
-          state.player.hand.length >= this.number(detail.amount ?? detail.value, 1)
+          this.discardableHandCount(state) >=
+          this.number(detail.amount ?? detail.value, 1)
         );
       case 'destroy_summon':
         return (
@@ -3832,7 +4010,7 @@ export class BattleRepository {
     if (condition.type === 'spend_mp') {
       state.player.mp = Math.max(0, state.player.mp - requested);
     } else if (condition.type === 'discard') {
-      const discarded = state.player.hand.splice(0, requested);
+      const discarded = this.takeDiscardableCards(state, requested);
       state.player.discardPile.push(...discarded);
     } else if (condition.type === 'destroy_summon') {
       const destroyed =
@@ -4167,6 +4345,7 @@ export class BattleRepository {
               .filter(
                 ([, card]) =>
                   card.rarity !== 'legendary' &&
+                  card.rewardable !== false &&
                   (card.cls === subclass || card.cat === 'common'),
               )
               .map(([id]) => id),
@@ -4624,7 +4803,7 @@ export class BattleRepository {
       return;
     }
     if (action.type === 'discard_random') {
-      const discarded = this.shuffle(state.player.hand).splice(0, Math.min(amount, state.player.hand.length));
+      const discarded = this.takeDiscardableCards(state, amount, 'random');
       state.player.discardPile.push(...discarded);
       this.log(state, 'player', `${label}弃置 ${discarded.length} 张牌。`);
       return;

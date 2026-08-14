@@ -34,4 +34,15 @@ describe('卡牌广场官方职业构筑规则', () => {
       normalizeDeckBuild(build(Array.from({ length: 21 }, () => 'same_card'))),
     ).toThrow();
   });
+
+  it('把新增的魔术师识别为官方职业', () => {
+    expect(
+      normalizeDeckBuild({
+        ...build(Array.from({ length: 15 }, () => 'mg_quick_cut')),
+        professionId: 'magician',
+        professionName: '魔术师',
+        mainClass: 'freelance',
+      }).professionId,
+    ).toBe('magician');
+  });
 });

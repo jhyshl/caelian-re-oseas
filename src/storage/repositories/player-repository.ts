@@ -1,5 +1,6 @@
 import {
   classSubclasses,
+  getProfessionCardPool,
   getStarterDeck,
 } from '@/content/catalogs/professions';
 import {
@@ -21,6 +22,10 @@ import type {
   StatAllocationRecord,
 } from '@/domain/types';
 import type { CaelianDatabase } from '@/storage/database';
+import {
+  MAGICIAN_PASSIVE_ID,
+  MAGICIAN_SUBCLASS_ID,
+} from '@/content/catalogs/magician';
 
 type AllocatableStat =
   | 'hpMax'
@@ -54,6 +59,7 @@ const STANDARD_PASSIVE_BY_SUBCLASS: Record<string, string> = {
   mechanic: 'pas_iron_skin',
   merchant: 'pas_gold_finder',
   dark_priest: 'pas_leech',
+  [MAGICIAN_SUBCLASS_ID]: MAGICIAN_PASSIVE_ID,
 };
 
 export class PlayerRepository {
@@ -366,7 +372,8 @@ export class PlayerRepository {
     const customProfession = readWorkshopPacks()
       .flatMap((pack) => pack.classes)
       .find((entry) => entry.id === subclass);
-    const grantedCards = customProfession?.cardPool ?? starterDeck;
+    const grantedCards =
+      customProfession?.cardPool ?? getProfessionCardPool(subclass) ?? starterDeck;
     const counts = grantedCards.reduce<Record<string, number>>((result, cardId) => {
       result[cardId] = (result[cardId] ?? 0) + 1;
       return result;

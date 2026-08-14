@@ -358,6 +358,12 @@ export interface BattleChantState {
   effects: unknown[];
 }
 
+export interface BattleBlankGeneratorState {
+  id: string;
+  turns: number;
+  amount: number;
+}
+
 export interface BattlePlayerState {
   name: string;
   subclass?: string;
@@ -393,6 +399,8 @@ export interface BattlePlayerState {
   lastCardId?: string;
   lastCardType?: string;
   summonsLost?: number;
+  /** Independently stacked Magician card cases that create blanks on future turns. */
+  blankGenerators?: BattleBlankGeneratorState[];
 }
 
 export interface BattleEnemyState {

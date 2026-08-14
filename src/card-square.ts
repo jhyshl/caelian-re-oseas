@@ -3,6 +3,7 @@ import type { RuntimeInfo } from '@/domain/types';
 import classSubclassesJson from '@/content/generated/professions/class-subclasses.json';
 import { normalizeWorkshopPack } from '@/workshop';
 import { normalizeWorkshopMechanism } from '@/workshop-mechanisms';
+import { MAGICIAN_SUBCLASS_ID } from '@/content/catalogs/magician';
 
 const SUPABASE_URL = 'https://tlsdyacdkbcjxbwvyeim.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY =
@@ -105,6 +106,7 @@ export interface CardSquareReceiptFile {
 const OFFICIAL_SUBCLASS_IDS = new Set(
   Object.values(classSubclassesJson as Record<string, string[]>).flat(),
 );
+OFFICIAL_SUBCLASS_IDS.add(MAGICIAN_SUBCLASS_ID);
 const identifier = z.string().min(1).max(100).regex(/^[\w.-]+$/);
 const deckBuildSchema = z.object({
   format: z.literal(DECK_BUILD_FORMAT),

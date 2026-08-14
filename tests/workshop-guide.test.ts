@@ -45,6 +45,11 @@ describe('创意工坊 AI 制作手册', () => {
     );
     expect(guide).toContain('| `draw` | `value × 6` |');
     expect(guide).toContain('| `gain_ap` | `value × 9` |');
+    expect(guide).toContain(
+      '| `blank_regen` | `value × 6 × turns × D` |',
+    );
+    expect(guide).toContain('`hand_limit_bonus`：`value × 3`');
+    expect(guide).toContain('空白牌仅存在于本场战斗');
 
     expect([29, 30, 58, 90, 130].map(rarityFromScore)).toEqual([
       'common',

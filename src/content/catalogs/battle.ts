@@ -1,5 +1,9 @@
 import type { CardEffect } from '@/content/types';
 import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
+import {
+  MAGICIAN_PASSIVE,
+  MAGICIAN_PASSIVE_ID,
+} from '@/content/catalogs/magician';
 
 export interface MonsterSkillDefinition {
   name: string;
@@ -129,6 +133,7 @@ export async function loadPassiveCatalog(): Promise<
   if (!passiveCache) {
     const module = await import('@/content/generated/battle/passives.json');
     passiveCache = module.default as Record<string, PassiveDefinition>;
+    passiveCache[MAGICIAN_PASSIVE_ID] = MAGICIAN_PASSIVE;
   }
   refreshWorkshopPassiveCatalog();
   return passiveCache;

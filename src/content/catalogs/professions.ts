@@ -12,6 +12,12 @@ import {
   hasPartySupportCard,
   partySupportCardId,
 } from '@/battle/party-support-cards';
+import {
+  MAGICIAN_CARD_POOL,
+  MAGICIAN_STARTER_DECK,
+  MAGICIAN_SUBCLASS_ID,
+  MAGICIAN_TALENT,
+} from '@/content/catalogs/magician';
 
 export const classNames = classNamesJson as Record<string, string>;
 export const subclassNames = subclassNamesJson as Record<string, string>;
@@ -21,6 +27,14 @@ export const professionTalents = talentsJson as Record<
   ProfessionTalent
 >;
 export const starterDecks = starterDecksJson as Record<string, string[]>;
+
+const freelanceSubclasses = (classSubclasses.freelance ??= []);
+if (!freelanceSubclasses.includes(MAGICIAN_SUBCLASS_ID)) {
+  freelanceSubclasses.push(MAGICIAN_SUBCLASS_ID);
+}
+subclassNames[MAGICIAN_SUBCLASS_ID] = MAGICIAN_TALENT.title;
+professionTalents[MAGICIAN_SUBCLASS_ID] = MAGICIAN_TALENT;
+starterDecks[MAGICIAN_SUBCLASS_ID] = [...MAGICIAN_STARTER_DECK];
 
 const presentation: Record<
   string,
@@ -103,6 +117,12 @@ export function getStarterDeck(subclassId: string): string[] {
   const deck = [...(starterDecks[subclassId] ?? [])];
   if (hasPartySupportCard(subclassId)) deck.push(partySupportCardId(subclassId));
   return deck;
+}
+
+export function getProfessionCardPool(subclassId: string): string[] | undefined {
+  return subclassId === MAGICIAN_SUBCLASS_ID
+    ? [...MAGICIAN_CARD_POOL]
+    : undefined;
 }
 
 export function mainClassForSubclass(subclassId: string): string {

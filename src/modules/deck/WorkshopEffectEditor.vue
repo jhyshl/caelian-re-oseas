@@ -28,6 +28,9 @@ const hasValue = computed(() =>
     'trap',
     'damage_per_debuff',
     'discard_all_damage',
+    'generate_blank_to_draw',
+    'blank_regen',
+    'discard_blank_damage',
     'spend_mp_damage',
     'spend_mp_shield',
     'mp_to_ap',
@@ -47,7 +50,9 @@ const hasAmount = computed(() =>
   ].includes(props.effect.type),
 );
 const hasTurns = computed(() =>
-  ['apply_buff', 'apply_debuff', 'thorns'].includes(props.effect.type),
+  ['apply_buff', 'apply_debuff', 'thorns', 'blank_regen'].includes(
+    props.effect.type,
+  ),
 );
 const hasTarget = computed(
   () =>
@@ -61,6 +66,8 @@ const hasTarget = computed(
       'recover_discard',
       'mp_to_ap',
       'reveal_intent',
+      'generate_blank_to_draw',
+      'blank_regen',
     ].includes(props.effect.type),
 );
 

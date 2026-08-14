@@ -6,6 +6,7 @@ import type {
   BattleTimedEffect,
   LocalBattleState,
 } from '@/domain/types';
+import { MAGICIAN_BLANK_CARD_ID } from '@/content/catalogs/magician';
 
 const battleRules = battleRulesJson as {
   playerAttackScale?: number;
@@ -397,7 +398,19 @@ export function previewBattleCard(
         }
       }
     } else if (effect.type === 'discard_all_damage') {
-      const discarded = Math.max(0, state.player.hand.length - 1);
+      const discarded = Math.max(
+        0,
+        state.player.hand.filter(
+          (instance) => instance.cardId !== MAGICIAN_BLANK_CARD_ID,
+        ).length - 1,
+      );
+      for (const index of indexes) {
+        addEnemyDamage(index, discarded * number(effect.value));
+      }
+    } else if (effect.type === 'discard_blank_damage') {
+      const discarded = state.player.hand.filter(
+        (instance) => instance.cardId === MAGICIAN_BLANK_CARD_ID,
+      ).length;
       for (const index of indexes) {
         addEnemyDamage(index, discarded * number(effect.value));
       }

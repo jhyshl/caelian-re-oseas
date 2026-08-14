@@ -154,6 +154,9 @@ const VALID_CARD_EFFECT_TYPES = new Set([
   'discard',
   'recover_discard',
   'discard_all_damage',
+  'generate_blank_to_draw',
+  'blank_regen',
+  'discard_blank_damage',
   'destroy_summon',
   'reveal_intent',
   'summon',
@@ -174,6 +177,7 @@ const TALENT_LIMITS: Record<
   always_reveal_intent: { min: 0, max: 0, defaultValue: 0 },
   turn_start_cleanse: { min: 1, max: 1, defaultValue: 1 },
   turn_start_debuff_shield: { min: 0, max: 8, defaultValue: 2 },
+  hand_limit_bonus: { min: 0, max: 5, defaultValue: 5 },
 };
 const CONDITION_DISCOUNTS: Record<string, number> = {
   self_has_shield: 0.86,
@@ -214,6 +218,9 @@ export const WORKSHOP_EFFECT_OPTIONS = [
   { type: 'discard', label: '弃牌', amount: 1, target: 'self' },
   { type: 'recover_discard', label: '回收弃牌', amount: 1, target: 'self' },
   { type: 'discard_all_damage', label: '弃尽手牌造成伤害', value: 4, target: 'enemy' },
+  { type: 'generate_blank_to_draw', label: '洗入空白牌', value: 1, target: 'self' },
+  { type: 'blank_regen', label: '持续洗入空白牌', value: 1, turns: 3, target: 'self' },
+  { type: 'discard_blank_damage', label: '揭晓空白牌造成伤害', value: 12, target: 'enemy' },
   { type: 'destroy_summon', label: '牺牲召唤物', amount: 1, target: 'random_summons' },
   { type: 'spend_mp_damage', label: '消耗 MP 造成伤害', value: 3, amount: 3, target: 'enemy' },
   { type: 'spend_mp_shield', label: '消耗 MP 获得护盾', value: 3, amount: 3, target: 'self' },
@@ -256,6 +263,7 @@ export const WORKSHOP_TALENT_OPTIONS = [
   ['always_reveal_intent', '始终显示敌人意图'],
   ['turn_start_cleanse', '回合开始净化'],
   ['turn_start_debuff_shield', '有减益时回合开始获得护盾'],
+  ['hand_limit_bonus', '手牌上限提高'],
 ] as const;
 
 function record(value: unknown): UnknownRecord {
@@ -326,6 +334,8 @@ function normalizeTarget(effect: UnknownRecord, type: string): string {
     'reveal_intent',
     'thorns',
     'spend_mp_shield',
+    'generate_blank_to_draw',
+    'blank_regen',
   ]);
   const target = String(
     effect.target ??
@@ -343,6 +353,7 @@ function normalizeTarget(effect: UnknownRecord, type: string): string {
     trap: enemyTargets,
     damage_from_shield: enemyTargets,
     damage_per_debuff: enemyTargets,
+    discard_blank_damage: enemyTargets,
     strip_shield: enemyTargets,
     strip_buffs: enemyTargets,
     dispel: enemyTargets,
@@ -771,6 +782,12 @@ function singleEffectScore(effect: CardEffect): number {
       return effect.amount === 'all' ? -30 : -number(effect.amount, 1) * 14;
     case 'discard_all_damage':
       return value * 5 * multiplier;
+    case 'generate_blank_to_draw':
+      return value * 6;
+    case 'blank_regen':
+      return value * 6 * turns * durationDiscount(turns);
+    case 'discard_blank_damage':
+      return value * 5 * multiplier;
     case 'reveal_intent':
       return 5;
     case 'summon': {
@@ -862,6 +879,7 @@ export function talentScore(effects: CardEffect[]): number {
     if (effect.type === 'turn_start_debuff_shield') {
       return score + value * 1.2;
     }
+    if (effect.type === 'hand_limit_bonus') return score + value * 3;
     return score + 6;
   }, 0);
 }

@@ -7,6 +7,7 @@ import type {
   BattlePlayerState,
   LocalBattleState,
 } from '@/domain/types';
+import { MAGICIAN_BLANK_CARD_ID } from '@/content/catalogs/magician';
 
 function player(overrides: Partial<BattlePlayerState> = {}): BattlePlayerState {
   return {
@@ -156,5 +157,40 @@ describe('战斗卡牌预览', () => {
       companionHp: 14,
     });
     expect(previewBattleCard(current, mana, 0).playerMp).toBe(3);
+  });
+
+  it('分别预览魔术师非空白牌终结和空白牌揭晓伤害', () => {
+    const current = state(
+      player({
+        subclass: 'magician',
+        hand: [
+          { instanceId: 'finisher', cardId: 'mg_flying_cards' },
+          { instanceId: 'normal:1', cardId: 'mg_quick_cut' },
+          { instanceId: 'normal:2', cardId: 'mg_card_knife' },
+          { instanceId: 'normal:3', cardId: 'mg_chain_cards' },
+          { instanceId: 'blank:1', cardId: MAGICIAN_BLANK_CARD_ID },
+          { instanceId: 'blank:2', cardId: MAGICIAN_BLANK_CARD_ID },
+        ],
+      }),
+    );
+    const flyingCards: CardDefinition = {
+      name: '漫天飞牌',
+      type: 'skill',
+      cost: 2,
+      rarity: 'common',
+      description: '',
+      effects: [{ type: 'discard_all_damage', value: 4, target: 'enemy' }],
+    };
+    const truthRevealed: CardDefinition = {
+      name: '真相揭晓',
+      type: 'skill',
+      cost: 4,
+      rarity: 'rare',
+      description: '',
+      effects: [{ type: 'discard_blank_damage', value: 12, target: 'enemy' }],
+    };
+
+    expect(previewBattleCard(current, flyingCards, 0).enemyDamage[0]).toBe(12);
+    expect(previewBattleCard(current, truthRevealed, 0).enemyDamage[0]).toBe(24);
   });
 });
