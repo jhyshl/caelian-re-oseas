@@ -503,6 +503,8 @@ export class GameRepository {
         return this.battles.start(profileId, command.payload);
       case 'battle.play-card':
         return this.battles.playCard(profileId, command.payload);
+      case 'battle.choose-astrology-card':
+        return this.battles.chooseAstrologyCard(profileId, command.payload);
       case 'battle.use-item':
         return this.battles.useItem(profileId, command.payload);
       case 'battle.prepare-item':

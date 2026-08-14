@@ -193,4 +193,27 @@ describe('战斗卡牌预览', () => {
     expect(previewBattleCard(current, flyingCards, 0).enemyDamage[0]).toBe(12);
     expect(previewBattleCard(current, truthRevealed, 0).enemyDamage[0]).toBe(24);
   });
+
+  it('把卡牌魔力消耗、自伤和回复合并为血条内的净变化', () => {
+    const current = state(player({ hp: 50, hpMax: 80, mp: 30, mpMax: 30 }));
+    const card: CardDefinition = {
+      name: '代价预览',
+      type: 'spell',
+      cost: 1,
+      mpCost: 5,
+      rarity: 'common',
+      description: '',
+      effects: [
+        { type: 'self_damage', value: 8 },
+        { type: 'gain_mp', value: 3 },
+      ],
+    };
+
+    expect(previewBattleCard(current, card, 0)).toMatchObject({
+      playerHp: 0,
+      playerHpCost: 8,
+      playerMp: 3,
+      playerMpCost: 5,
+    });
+  });
 });

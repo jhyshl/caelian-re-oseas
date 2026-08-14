@@ -364,6 +364,14 @@ export interface BattleBlankGeneratorState {
   amount: number;
 }
 
+export interface BattlePendingCardChoiceState {
+  type: 'astrology';
+  title: string;
+  choices: string[];
+  pick: number;
+  picked: number[];
+}
+
 export interface BattlePlayerState {
   name: string;
   subclass?: string;
@@ -401,6 +409,8 @@ export interface BattlePlayerState {
   summonsLost?: number;
   /** Independently stacked Magician card cases that create blanks on future turns. */
   blankGenerators?: BattleBlankGeneratorState[];
+  /** A blocking in-battle card choice, such as Astrologer's discover effect. */
+  pendingCardChoice?: BattlePendingCardChoiceState;
 }
 
 export interface BattleEnemyState {

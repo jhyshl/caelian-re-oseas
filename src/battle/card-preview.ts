@@ -16,8 +16,10 @@ const battleRules = battleRulesJson as {
 export interface BattleCardPreview {
   enemyDamage: number[];
   playerHp: number;
+  playerHpCost: number;
   companionHp: number;
   playerMp: number;
+  playerMpCost: number;
 }
 
 interface DamagePreviewOptions {
@@ -309,9 +311,15 @@ export function previewBattleCard(
   const preview: BattleCardPreview = {
     enemyDamage: state.enemies.map(() => 0),
     playerHp: 0,
+    playerHpCost: 0,
     companionHp: 0,
     playerMp: 0,
+    playerMpCost: Math.min(
+      state.player.mp,
+      Math.max(0, number(card.mpCost)),
+    ),
   };
+  let availableMp = Math.max(0, state.player.mp - preview.playerMpCost);
   const addEnemyDamage = (
     index: number,
     rawAmount: number,
@@ -392,11 +400,25 @@ export function previewBattleCard(
       }
     } else if (effect.type === 'spend_mp_damage') {
       const mpCost = Math.max(0, number(effect.amount));
-      if (state.player.mp >= mpCost) {
+      if (availableMp >= mpCost) {
+        preview.playerMpCost += mpCost;
+        availableMp -= mpCost;
         for (const index of indexes) {
           addEnemyDamage(index, number(effect.value) * Math.max(1, mpCost));
         }
       }
+    } else if (effect.type === 'spend_mp_shield' || effect.type === 'mp_to_ap') {
+      const mpCost = Math.max(0, number(effect.amount));
+      if (availableMp >= mpCost) {
+        preview.playerMpCost += mpCost;
+        availableMp -= mpCost;
+      }
+    } else if (effect.type === 'self_damage') {
+      const remainingHp = Math.max(0, state.player.hp - preview.playerHpCost);
+      preview.playerHpCost += Math.min(
+        remainingHp,
+        Math.max(0, number(effect.value ?? effect.amount)),
+      );
     } else if (effect.type === 'discard_all_damage') {
       const discarded = Math.max(
         0,
@@ -461,13 +483,17 @@ export function previewBattleCard(
         );
       }
     } else if (effect.type === 'gain_mp') {
-      const missing = Math.max(0, state.player.mpMax - state.player.mp);
-      preview.playerMp += Math.min(missing, Math.max(0, number(effect.value)));
+      const missing = Math.max(0, state.player.mpMax - availableMp);
+      const restored = Math.min(missing, Math.max(0, number(effect.value)));
+      preview.playerMp += restored;
+      availableMp += restored;
     } else if (effect.type === 'gain_mp_per_class_resource') {
       const resource = String(effect.resource ?? 'resource');
       const stored = state.player.classResources?.[resource] ?? 0;
-      const missing = Math.max(0, state.player.mpMax - state.player.mp);
-      preview.playerMp += Math.min(missing, stored * number(effect.value));
+      const missing = Math.max(0, state.player.mpMax - availableMp);
+      const restored = Math.min(missing, stored * number(effect.value));
+      preview.playerMp += restored;
+      availableMp += restored;
     }
   }
   return preview;

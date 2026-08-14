@@ -48,8 +48,6 @@ import {
 } from '@/modules/battle/card-face';
 import {
   MAGICIAN_BLANK_CARD_ID,
-  MAGICIAN_BLANK_LIMIT,
-  MAGICIAN_SUBCLASS_ID,
 } from '@/content/catalogs/magician';
 
 const props = defineProps<{ context: PanelContext }>();
@@ -67,6 +65,7 @@ const dragPreviewTargetIndex = ref<number | null>(null);
 const dragPreviewAllyTarget = ref<BattleFriendlyTargetId | null>(null);
 const showBattleInfo = ref(false);
 const showBattleInventory = ref(false);
+const showPileDetails = ref(false);
 const notice = ref('');
 const busy = ref(false);
 const animationPlaying = ref(false);
@@ -92,6 +91,12 @@ interface BattleInventoryRow {
   name: string;
   quantity: number;
   definition: BattleItemDefinition;
+}
+
+interface BattlePileRow {
+  cardId: string;
+  quantity: number;
+  definition?: CardDefinition;
 }
 
 interface CardDragSession {
@@ -144,13 +149,23 @@ const battleInventory = computed<BattleInventoryRow[]>(() =>
 const battleInventoryCount = computed(() =>
   battleInventory.value.reduce((total, item) => total + item.quantity, 0),
 );
-const magicianBlankCount = computed(() => {
-  const player = state.value?.player;
-  if (!player) return 0;
-  return [...player.hand, ...player.drawPile, ...player.discardPile].filter(
-    (instance) => instance.cardId === MAGICIAN_BLANK_CARD_ID,
-  ).length;
-});
+function pileRows(
+  instances: LocalBattleState['player']['drawPile'],
+): BattlePileRow[] {
+  const grouped = new Map<string, number>();
+  for (const instance of instances) {
+    grouped.set(instance.cardId, (grouped.get(instance.cardId) ?? 0) + 1);
+  }
+  return [...grouped.entries()].map(([cardId, quantity]) => ({
+    cardId,
+    quantity,
+    definition: cards.value[cardId],
+  }));
+}
+const drawPileRows = computed(() => pileRows(state.value?.player.drawPile ?? []));
+const discardPileRows = computed(() =>
+  pileRows(state.value?.player.discardPile ?? []),
+);
 const discardableHandCount = computed(
   () =>
     state.value?.player.hand.filter(
@@ -255,8 +270,10 @@ const activeCardPreview = computed(() => {
     return {
       enemyDamage: current?.enemies.map(() => 0) ?? [],
       playerHp: 0,
+      playerHpCost: 0,
       companionHp: 0,
       playerMp: 0,
+      playerMpCost: 0,
     };
   }
   return previewBattleCard(
@@ -266,6 +283,12 @@ const activeCardPreview = computed(() => {
     dragPreviewAllyTarget.value ?? selectedAllyTarget.value ?? 'player',
   );
 });
+const activePlayerHpDelta = computed(
+  () => activeCardPreview.value.playerHp - activeCardPreview.value.playerHpCost,
+);
+const activePlayerMpDelta = computed(
+  () => activeCardPreview.value.playerMp - activeCardPreview.value.playerMpCost,
+);
 const resultTitle = computed(() => {
   if (state.value?.workshopTest) return '测试结束';
   if (state.value?.status === 'victory') return '战斗胜利';
@@ -967,6 +990,15 @@ async function discardHand() {
   });
 }
 
+async function chooseAstrologyCard(choiceIndex: number) {
+  if (!battle.value) return;
+  await execute({
+    id: commandId('battle.choose-astrology-card'),
+    type: 'battle.choose-astrology-card',
+    payload: { battleId: battle.value.id, choiceIndex },
+  });
+}
+
 async function useBattleItem(item: BattleInventoryRow) {
   if (!battle.value) return;
   await executeAnimated(
@@ -1215,7 +1247,6 @@ onUnmounted(() => {
                 acting: activeActorKey === `enemy:${enemy.id}`,
                 hit: hitTargetKey === `enemy:${enemy.id}`,
                 glow: glowTargetKey === `enemy:${enemy.id}`,
-                preview: (activeCardPreview.enemyDamage[index] ?? 0) > 0,
               }"
               :data-enemy-index="index"
               :disabled="enemy.hp <= 0"
@@ -1228,16 +1259,11 @@ onUnmounted(() => {
               <small>
                 攻 {{ enemy.attack }} · 防 {{ enemy.defense }} · 盾 {{ enemy.shield }}
               </small>
-              <b
-                v-if="(activeCardPreview.enemyDamage[index] ?? 0) > 0"
-                class="battle-target-preview damage"
-              >
-                预计 −{{ activeCardPreview.enemyDamage[index] }} HP
-              </b>
               <MeterBar
                 label="怪物生命"
                 :value="enemy.hp"
                 :max="enemy.hpMax"
+                :preview-delta="-(activeCardPreview.enemyDamage[index] ?? 0)"
                 color="var(--ca-red)"
               />
               <div v-if="enemy.intent" class="intent">
@@ -1283,9 +1309,6 @@ onUnmounted(() => {
             hit: hitTargetKey === 'player',
             glow: glowTargetKey === 'player',
             'drag-over': dragPreviewAllyTarget === 'player',
-            preview:
-              activeCardPreview.playerHp > 0 ||
-              activeCardPreview.playerMp > 0,
           }"
         >
           <div v-if="state.companion" class="companion-party">
@@ -1300,7 +1323,6 @@ onUnmounted(() => {
                 acting: activeActorKey === 'companion:caelian',
                 hit: hitTargetKey === 'companion:caelian',
                 glow: glowTargetKey === 'companion:caelian',
-                preview: activeCardPreview.companionHp > 0,
               }"
               @click="toggleAllyTarget('caelian')"
             >
@@ -1310,16 +1332,11 @@ onUnmounted(() => {
               <small v-else>
                 HP {{ state.companion.hp }}/{{ state.companion.hpMax }} · 盾 {{ state.companion.shield }}
               </small>
-              <b
-                v-if="activeCardPreview.companionHp > 0"
-                class="battle-target-preview heal"
-              >
-                预计 +{{ activeCardPreview.companionHp }} HP
-              </b>
               <MeterBar
                 label="凯利安生命"
                 :value="state.companion.hp"
                 :max="state.companion.hpMax"
+                :preview-delta="activeCardPreview.companionHp"
                 color="#f6d36a"
               />
               <div class="battle-float-layer" aria-hidden="true">
@@ -1402,18 +1419,6 @@ onUnmounted(() => {
             </span>
           </div>
 
-          <div
-            v-if="state.player.subclass === MAGICIAN_SUBCLASS_ID"
-            class="mechanism-resource-strip magician-resource-strip"
-          >
-            <span>
-              空白牌 <b>{{ magicianBlankCount }}/{{ MAGICIAN_BLANK_LIMIT }}</b>
-            </span>
-            <span>
-              不竭牌匣 <b>{{ state.player.blankGenerators?.length ?? 0 }}</b>
-            </span>
-          </div>
-
           <div class="battle-field-row">
             <b>场上状态</b>
             <div class="status-row">
@@ -1430,7 +1435,21 @@ onUnmounted(() => {
               >
                 {{ statusNames[name] ?? name }} {{ effect.value }}·{{ effect.turns }}
               </span>
-              <span v-if="!Object.keys(state.player.buffs).length && !Object.keys(state.player.debuffs).length">
+              <span
+                v-for="generator in state.player.blankGenerators ?? []"
+                :key="generator.id"
+                class="special"
+                :title="'每回合将 ' + generator.amount + ' 张空白牌洗入抽牌堆'"
+              >
+                不竭牌匣 · {{ generator.turns }}回合
+              </span>
+              <span
+                v-if="
+                  !Object.keys(state.player.buffs).length &&
+                    !Object.keys(state.player.debuffs).length &&
+                    !(state.player.blankGenerators?.length ?? 0)
+                "
+              >
                 暂无状态
               </span>
             </div>
@@ -1444,12 +1463,14 @@ onUnmounted(() => {
               label="玩家生命"
               :value="state.player.hp"
               :max="state.player.hpMax"
+              :preview-delta="activePlayerHpDelta"
               color="var(--ca-red)"
             />
             <MeterBar
               label="玩家魔力"
               :value="state.player.mp"
               :max="state.player.mpMax"
+              :preview-delta="activePlayerMpDelta"
               color="var(--ca-blue)"
             />
             <div
@@ -1460,17 +1481,6 @@ onUnmounted(() => {
               <span>玩家护盾</span>
               <strong>🛡 {{ state.player.shield }}</strong>
             </div>
-          </div>
-          <div
-            v-if="activeCardPreview.playerHp > 0 || activeCardPreview.playerMp > 0"
-            class="battle-resource-preview"
-          >
-            <b v-if="activeCardPreview.playerHp > 0">
-              预计 +{{ activeCardPreview.playerHp }} HP
-            </b>
-            <b v-if="activeCardPreview.playerMp > 0">
-              预计 +{{ activeCardPreview.playerMp }} MP
-            </b>
           </div>
           <div class="battle-float-layer player-floats" aria-hidden="true">
             <span
@@ -1549,7 +1559,7 @@ onUnmounted(() => {
           <button
             type="button"
             class="pile-button"
-            @click="showBattleInfo = !showBattleInfo"
+            @click="showPileDetails = !showPileDetails"
           >
             手牌 {{ state.player.hand.length }}/{{ state.player.handLimit }}<br>
             牌堆 {{ state.player.drawPile.length }} · 弃牌 {{ state.player.discardPile.length }}
@@ -1630,6 +1640,60 @@ onUnmounted(() => {
           </ol>
         </aside>
 
+        <aside v-if="showPileDetails" class="battle-pile-details">
+          <header>
+            <div>
+              <strong>牌堆 / 弃牌堆</strong>
+              <span>
+                抽牌 {{ state.player.drawPile.length }} · 弃牌
+                {{ state.player.discardPile.length }}
+              </span>
+            </div>
+            <button
+              type="button"
+              aria-label="关闭牌堆详情"
+              @click="showPileDetails = false"
+            >
+              ×
+            </button>
+          </header>
+          <div class="pile-detail-columns">
+            <section>
+              <h3>抽牌堆（{{ state.player.drawPile.length }}）</h3>
+              <p v-if="!drawPileRows.length" class="pile-empty">空</p>
+              <article v-for="row in drawPileRows" :key="'draw:' + row.cardId">
+                <div>
+                  <strong>{{ row.definition?.name ?? row.cardId }}</strong>
+                  <span>
+                    {{ typeNames[row.definition?.type ?? ''] ?? '卡牌' }} ·
+                    {{ row.definition?.cost ?? 0 }}AP
+                  </span>
+                  <p>{{ row.definition?.description ?? '卡牌数据缺失' }}</p>
+                </div>
+                <b>×{{ row.quantity }}</b>
+              </article>
+            </section>
+            <section>
+              <h3>弃牌堆（{{ state.player.discardPile.length }}）</h3>
+              <p v-if="!discardPileRows.length" class="pile-empty">空</p>
+              <article
+                v-for="row in discardPileRows"
+                :key="'discard:' + row.cardId"
+              >
+                <div>
+                  <strong>{{ row.definition?.name ?? row.cardId }}</strong>
+                  <span>
+                    {{ typeNames[row.definition?.type ?? ''] ?? '卡牌' }} ·
+                    {{ row.definition?.cost ?? 0 }}AP
+                  </span>
+                  <p>{{ row.definition?.description ?? '卡牌数据缺失' }}</p>
+                </div>
+                <b>×{{ row.quantity }}</b>
+              </article>
+            </section>
+          </div>
+        </aside>
+
         <aside v-if="showBattleInventory" class="battle-inventory">
           <header>
             <div>
@@ -1673,6 +1737,56 @@ onUnmounted(() => {
             攻击道具会作用于当前锁定目标；标注“下一场战斗”的药剂不会显示在这里。
           </small>
         </aside>
+
+        <div
+          v-if="state.player.pendingCardChoice"
+          class="battle-choice-overlay"
+          role="dialog"
+          aria-modal="true"
+          :aria-label="state.player.pendingCardChoice.title"
+        >
+          <section class="battle-choice-panel">
+            <header>
+              <span>ASTRAL DISCOVERY</span>
+              <h2>✦ {{ state.player.pendingCardChoice.title }}</h2>
+              <p>
+                从 {{ state.player.pendingCardChoice.choices.length }} 张牌中选择
+                {{ state.player.pendingCardChoice.pick }} 张临时加入本场手牌 · 已选择
+                {{ state.player.pendingCardChoice.picked.length }} /
+                {{ state.player.pendingCardChoice.pick }}
+              </p>
+            </header>
+            <div class="battle-choice-list">
+              <button
+                v-for="(cardId, index) in state.player.pendingCardChoice.choices"
+                :key="'astrology:' + index + ':' + cardId"
+                type="button"
+                :class="{
+                  picked: state.player.pendingCardChoice.picked.includes(index),
+                }"
+                :disabled="
+                  busy || state.player.pendingCardChoice.picked.includes(index)
+                "
+                @click="chooseAstrologyCard(index)"
+              >
+                <strong>
+                  {{ cardDefinition(cardId)?.name ?? cardId }}
+                  <em
+                    v-if="state.player.pendingCardChoice.picked.includes(index)"
+                  >
+                    ✓
+                  </em>
+                </strong>
+                <span>
+                  {{ cardDefinition(cardId)?.cost ?? 0 }}AP ·
+                  {{ typeNames[cardDefinition(cardId)?.type ?? ''] ?? '卡牌' }} ·
+                  {{ cardDefinition(cardId)?.rarity ?? 'common' }}
+                </span>
+                <p>{{ cardDefinition(cardId)?.description ?? '卡牌数据缺失' }}</p>
+              </button>
+            </div>
+          </section>
+        </div>
 
         <div v-if="animationPlaying && animationCaption" class="animation-caption">
           {{ animationCaption }}
@@ -1874,37 +1988,6 @@ onUnmounted(() => {
     0 0 0 4px rgba(115, 255, 135, 0.24),
     0 0 32px rgba(115, 255, 135, 0.42);
   transform: translateY(-3px) scale(1.025);
-}
-
-.enemy-card.preview,
-.companion-unit.preview,
-.battle-mid.preview {
-  animation: battle-preview-pulse 0.74s ease-in-out infinite alternate;
-}
-
-.battle-target-preview {
-  position: absolute;
-  z-index: 120;
-  right: 6px;
-  bottom: 6px;
-  padding: 4px 7px;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  font-size: 9px;
-  font-weight: 950;
-  letter-spacing: 0.02em;
-  pointer-events: none;
-  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.38);
-}
-
-.battle-target-preview.damage {
-  color: #fff2e8;
-  background: rgba(178, 23, 20, 0.92);
-}
-
-.battle-target-preview.heal {
-  color: #eaffdf;
-  background: rgba(16, 112, 52, 0.94);
 }
 
 .enemy-card.acting {
@@ -2198,16 +2281,6 @@ onUnmounted(() => {
   font-size: 9px;
 }
 
-.magician-resource-strip span {
-  border-color: rgba(236, 238, 246, 0.48);
-  color: #f7f3e9;
-  background: rgba(224, 227, 235, 0.1);
-}
-
-.magician-resource-strip b {
-  color: #fff;
-}
-
 .battle-field-row {
   min-height: 27px;
   display: flex;
@@ -2240,43 +2313,6 @@ onUnmounted(() => {
   grid-template-columns: 1fr 1fr minmax(78px, auto);
   gap: 5px;
   min-height: 0;
-}
-
-.battle-resource-preview {
-  position: absolute;
-  z-index: 150;
-  right: 7px;
-  bottom: 38px;
-  display: flex;
-  gap: 5px;
-  pointer-events: none;
-}
-
-.battle-resource-preview b {
-  padding: 4px 8px;
-  border: 1px solid rgba(141, 255, 178, 0.72);
-  border-radius: 999px;
-  color: #e9fff0;
-  background: rgba(14, 102, 53, 0.94);
-  font-size: 9px;
-  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.34);
-}
-
-.battle-resource-preview b + b {
-  border-color: rgba(117, 207, 255, 0.76);
-  color: #e8f8ff;
-  background: rgba(20, 92, 141, 0.94);
-}
-
-@keyframes battle-preview-pulse {
-  from {
-    filter: brightness(1);
-    box-shadow: 0 0 0 2px rgba(255, 239, 129, 0.12);
-  }
-  to {
-    filter: brightness(1.13);
-    box-shadow: 0 0 0 4px rgba(255, 239, 129, 0.42), 0 0 24px rgba(255, 225, 94, 0.28);
-  }
 }
 
 .player-shield-meter {
@@ -2337,6 +2373,13 @@ onUnmounted(() => {
 
 .battle-field-row .status-row span.negative {
   color: #ffaaa5;
+}
+
+.status-row span.special {
+  border-color: rgba(226, 204, 255, 0.56);
+  color: #efe0ff;
+  background: rgba(130, 82, 184, 0.24);
+  box-shadow: inset 0 0 8px rgba(197, 151, 255, 0.12);
 }
 
 .hand-zone {
@@ -2982,6 +3025,237 @@ onUnmounted(() => {
 .battle-info li[data-kind="reward"] { color: #b8d9c3; }
 .battle-info li[data-kind="enemy"] { color: #e5a09b; }
 
+.battle-pile-details {
+  position: absolute;
+  z-index: 1250;
+  inset: 50% auto auto 50%;
+  width: min(680px, calc(100% - 18px));
+  max-height: min(78%, 560px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(217, 180, 98, 0.62);
+  border-radius: 15px;
+  color: #f7ead0;
+  background:
+    radial-gradient(circle at 0 0, rgba(217, 180, 98, 0.14), transparent 42%),
+    rgba(10, 15, 24, 0.98);
+  box-shadow: 0 22px 52px rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(14px);
+  transform: translate(-50%, -50%);
+}
+
+.battle-pile-details > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 13px;
+  border-bottom: 1px solid rgba(217, 180, 98, 0.25);
+}
+
+.battle-pile-details > header > div {
+  display: grid;
+  gap: 2px;
+}
+
+.battle-pile-details > header strong {
+  color: #fff2bf;
+  font: 900 14px var(--ca-serif);
+}
+
+.battle-pile-details > header span {
+  color: rgba(245, 231, 199, 0.68);
+  font-size: 9px;
+}
+
+.battle-pile-details > header button {
+  border: 0;
+  color: #f7ead0;
+  background: transparent;
+  font-size: 23px;
+  cursor: pointer;
+}
+
+.pile-detail-columns {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+}
+
+.pile-detail-columns > section {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  padding: 10px;
+  overflow: auto;
+}
+
+.pile-detail-columns > section + section {
+  border-left: 1px solid rgba(217, 180, 98, 0.2);
+}
+
+.pile-detail-columns h3 {
+  position: sticky;
+  z-index: 2;
+  top: -10px;
+  margin: -10px -10px 2px;
+  padding: 9px 10px 7px;
+  color: #e7c578;
+  background: rgba(10, 15, 24, 0.96);
+  font: 900 11px var(--ca-serif);
+}
+
+.pile-detail-columns article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid rgba(217, 180, 98, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 244, 212, 0.045);
+}
+
+.pile-detail-columns article > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.pile-detail-columns article strong {
+  color: #fff1c8;
+  font-size: 10px;
+}
+
+.pile-detail-columns article span,
+.pile-detail-columns article p,
+.pile-empty {
+  margin: 0;
+  color: rgba(245, 231, 199, 0.62);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.pile-detail-columns article > b {
+  color: #8edcff;
+  font-size: 10px;
+}
+
+.battle-choice-overlay {
+  position: absolute;
+  z-index: 1800;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgba(4, 7, 13, 0.82);
+  backdrop-filter: blur(9px);
+}
+
+.battle-choice-panel {
+  width: min(720px, 100%);
+  max-height: min(88%, 620px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(230, 199, 116, 0.72);
+  border-radius: 18px;
+  color: #f8edda;
+  background:
+    radial-gradient(circle at 50% 0, rgba(120, 86, 192, 0.3), transparent 45%),
+    linear-gradient(180deg, rgba(25, 22, 45, 0.99), rgba(11, 16, 27, 0.99));
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.72), inset 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.battle-choice-panel > header {
+  padding: 15px 17px 12px;
+  border-bottom: 1px solid rgba(230, 199, 116, 0.23);
+  text-align: center;
+}
+
+.battle-choice-panel > header span {
+  color: #c6a6ff;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.battle-choice-panel h2 {
+  margin: 3px 0 4px;
+  color: #ffe69a;
+  font: 950 20px var(--ca-serif);
+}
+
+.battle-choice-panel header p {
+  margin: 0;
+  color: rgba(245, 231, 199, 0.72);
+  font-size: 9px;
+}
+
+.battle-choice-list {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 9px;
+  padding: 13px;
+  overflow: auto;
+}
+
+.battle-choice-list button {
+  min-height: 142px;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid rgba(225, 194, 113, 0.46);
+  border-radius: 14px;
+  color: #f6ead3;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 38%),
+    rgba(42, 34, 61, 0.92);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.1), 0 8px 20px rgba(0, 0, 0, 0.24);
+}
+
+.battle-choice-list button:hover:not(:disabled) {
+  border-color: #ffe596;
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 3px rgba(255, 226, 135, 0.12), 0 12px 26px rgba(0, 0, 0, 0.34);
+}
+
+.battle-choice-list button.picked,
+.battle-choice-list button:disabled {
+  filter: grayscale(0.45);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.battle-choice-list strong {
+  color: #fff0b6;
+  font: 900 13px var(--ca-serif);
+}
+
+.battle-choice-list strong em {
+  color: #86f49e;
+  font-style: normal;
+}
+
+.battle-choice-list span {
+  color: #c8a8ff;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.battle-choice-list p {
+  margin: 0;
+  color: rgba(245, 231, 199, 0.72);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
 .exploration-ready,
 .battle-result {
   width: min(720px, 100%);
@@ -3315,6 +3589,46 @@ onUnmounted(() => {
     width: calc(100% - 10px);
     max-height: 78%;
     border-radius: 12px;
+  }
+
+  .battle-pile-details {
+    width: calc(100% - 10px);
+    max-height: 82%;
+    border-radius: 12px;
+  }
+
+  .pile-detail-columns {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .pile-detail-columns > section {
+    overflow: visible;
+  }
+
+  .pile-detail-columns > section + section {
+    border-top: 1px solid rgba(217, 180, 98, 0.2);
+    border-left: 0;
+  }
+
+  .battle-choice-overlay {
+    padding: 5px;
+  }
+
+  .battle-choice-panel {
+    max-height: 96%;
+    border-radius: 13px;
+  }
+
+  .battle-choice-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px;
+  }
+
+  .battle-choice-list button {
+    min-height: 118px;
+    padding: 8px;
   }
 
   .pile-button {

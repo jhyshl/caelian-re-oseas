@@ -501,6 +501,7 @@ export class BattleRepository {
     const session = await this.getOngoing(profileId, input.battleId);
     const state = session.state;
     this.assertPlayerPhase(state);
+    this.assertNoPendingCardChoice(state);
     const cardInstance = state.player.hand[input.handIndex];
     if (!cardInstance) throw new Error('这张手牌已经不存在');
     const card = this.cards?.[cardInstance.cardId];
@@ -608,10 +609,64 @@ export class BattleRepository {
     await this.save(session);
   }
 
+  async chooseAstrologyCard(
+    profileId: string,
+    input: { battleId: string; choiceIndex: number },
+  ): Promise<void> {
+    this.assertPrepared();
+    const session = await this.getOngoing(profileId, input.battleId);
+    const state = session.state;
+    this.assertPlayerPhase(state);
+    const pending = state.player.pendingCardChoice;
+    if (!pending || pending.type !== 'astrology') {
+      throw new Error('当前没有等待选择的占星牌');
+    }
+    if (
+      input.choiceIndex < 0 ||
+      input.choiceIndex >= pending.choices.length ||
+      pending.picked.includes(input.choiceIndex)
+    ) {
+      throw new Error('这张占星候选牌不可选择');
+    }
+    const cardId = pending.choices[input.choiceIndex];
+    if (!cardId) throw new Error('占星候选牌数据不存在');
+    const card = this.cards?.[cardId];
+    if (!card) throw new Error('占星候选牌数据不存在');
+
+    const instance = {
+      instanceId: `${cardId}:astrology:${Date.now()}:${this.animationSequence++}`,
+      cardId,
+    };
+    const addedToHand = state.player.hand.length < state.player.handLimit;
+    if (addedToHand) state.player.hand.push(instance);
+    else state.player.discardPile.push(instance);
+    pending.picked.push(input.choiceIndex);
+    this.log(
+      state,
+      'player',
+      addedToHand
+        ? `${pending.title}选择了「${card.name}」，临时加入本场手牌`
+        : `手牌已满，「${card.name}」已临时加入弃牌堆`,
+    );
+    this.animation(state, {
+      kind: 'draw',
+      sourceSide: 'system',
+      targetSide: 'player',
+      targetId: 'player',
+      amount: 1,
+      label: `${pending.title} · ${card.name}`,
+    });
+    if (pending.picked.length >= pending.pick) {
+      delete state.player.pendingCardChoice;
+    }
+    await this.save(session);
+  }
+
   async discardHand(profileId: string, battleId: string): Promise<void> {
     const session = await this.getOngoing(profileId, battleId);
     const state = session.state;
     this.assertPlayerPhase(state);
+    this.assertNoPendingCardChoice(state);
     if (state.player.ap < 1) throw new Error('弃牌重抽需要 1 点行动点');
     const discarded = this.takeDiscardableCards(
       state,
@@ -639,6 +694,7 @@ export class BattleRepository {
     const session = await this.getOngoing(profileId, input.battleId);
     const state = session.state;
     this.assertPlayerPhase(state);
+    this.assertNoPendingCardChoice(state);
     const stackId = `${profileId}:${input.itemId}`;
     const stack = await this.db.inventoryStacks.get(stackId);
     if (!stack || stack.quantity <= 0) throw new Error('背包中没有这个物品');
@@ -744,6 +800,7 @@ export class BattleRepository {
     const session = await this.getOngoing(profileId, battleId);
     const state = session.state;
     this.assertPlayerPhase(state);
+    this.assertNoPendingCardChoice(state);
     this.runWorkshopMechanisms(state, 'turn_end');
     this.log(state, 'system', '结束玩家回合');
 
@@ -2470,12 +2527,28 @@ export class BattleRepository {
         break;
       }
       case 'astrology_discover': {
-        const amount = Math.max(
+        const showCount = Math.max(1, this.number(effect.value, 3));
+        const pick = Math.max(
           1,
-          this.number(effect.pick, this.number(effect.value, 1)),
+          Math.min(showCount, this.number(effect.pick, 1)),
         );
-        this.drawCards(state, amount);
-        this.log(state, 'player', `星图发现并保留了 ${amount} 张牌`);
+        const choices = this.astrologyChoices(showCount);
+        if (choices.length === 0) {
+          this.log(state, 'system', '星盘中暂时没有可供选择的牌');
+          break;
+        }
+        state.player.pendingCardChoice = {
+          type: 'astrology',
+          title: pick > 1 ? '大占星术' : '占星术',
+          choices,
+          pick: Math.min(pick, choices.length),
+          picked: [],
+        };
+        this.log(
+          state,
+          'player',
+          `${state.player.pendingCardChoice.title}展开星盘：从 ${choices.length} 张牌中选择 ${state.player.pendingCardChoice.pick} 张临时加入本场手牌`,
+        );
         break;
       }
       case 'restore_mp_per_abyss_echo':
@@ -4840,6 +4913,41 @@ export class BattleRepository {
 
   private assertPlayerPhase(state: LocalBattleState): void {
     if (state.phase !== 'player') throw new Error('当前不是玩家行动阶段');
+  }
+
+  private assertNoPendingCardChoice(state: LocalBattleState): void {
+    if (state.player.pendingCardChoice) {
+      throw new Error('请先完成当前占星选牌');
+    }
+  }
+
+  private astrologyChoices(requested: number): string[] {
+    const pool = Object.entries(this.cards ?? {}).filter(
+      ([, card]) =>
+        card.cat !== 'sub_merchant' &&
+        card.rewardable !== false &&
+        card.unplayable !== true,
+    );
+    const choices: string[] = [];
+    const count = Math.min(Math.max(1, Math.floor(requested)), pool.length);
+    while (choices.length < count && pool.length > 0) {
+      const picked = this.weightedChoice(pool, ([, card]) => {
+        const rarity = String(card.rarity ?? 'common');
+        return (
+          {
+            common: 60,
+            uncommon: 32,
+            rare: 14,
+            epic: 5,
+            legendary: 1,
+          }[rarity] ?? 20
+        );
+      });
+      if (!picked) break;
+      choices.push(picked[0]);
+      pool.splice(pool.indexOf(picked), 1);
+    }
+    return choices;
   }
 
   private async save(session: BattleSessionRecord): Promise<void> {

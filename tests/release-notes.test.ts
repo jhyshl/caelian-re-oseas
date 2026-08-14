@@ -8,9 +8,9 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.43');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.44');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.43');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.44');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     expect(releases[0]?.changes.join('\n')).toContain('魔术师');

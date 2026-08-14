@@ -370,6 +370,14 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...commandBase,
+    type: z.literal('battle.choose-astrology-card'),
+    payload: z.object({
+      battleId: z.string().trim().min(1).max(220),
+      choiceIndex: z.number().int().min(0).max(20),
+    }),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal('battle.use-item'),
     payload: z.object({
       battleId: z.string().trim().min(1).max(220),

@@ -9,6 +9,17 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.44',
+    label: 'Alpha 44',
+    releasedAt: '2026-08-14',
+    changes: [
+      '调整魔术师战斗信息：空白牌不再单独显示；每个“不竭牌匣”改为在场上状态中按剩余回合独立显示并继续叠加生效。',
+      '修复点击牌堆与弃牌堆后误开战况的问题，恢复独立的牌堆详情与同名牌数量展示。',
+      '恢复占星术选牌：占星术从 3 张候选牌中选择 1 张，大占星术从 5 张候选牌中选择 2 张，选择完成前不会继续其他战斗操作。',
+      '按旧版恢复血条内直接闪烁的卡牌预览：怪物与己方生命条、玩家魔力条会直接标出预计扣除或回复后的区间，不再显示额外预览窗口。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.43',
     label: 'Alpha 43',
     releasedAt: '2026-08-14',
