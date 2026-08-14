@@ -18,18 +18,19 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.3.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.4.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.4',
       'Beta 1.3',
       'Beta 1.2',
       'Beta 1.1',
       'Beta 1.0',
     ]);
-    expect(releases[0]?.changes.join('\n')).toContain('user 本人参战');
-    expect(releases[0]?.changes.join('\n')).toContain('凯利安独立技能组');
-    expect(releases[0]?.changes.join('\n')).toContain('消耗品');
+    expect(releases[0]?.changes.join('\n')).toContain('魔术师');
+    expect(releases[0]?.changes.join('\n')).toContain('占星术');
+    expect(releases[0]?.changes.join('\n')).toContain('生命条');
     expect(releases.some((release) => release.label.startsWith('Alpha'))).toBe(
       false,
     );
