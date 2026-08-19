@@ -12,6 +12,7 @@ import {
   OpenAiCompatibleQuestJudgeClient,
   resolveChatEndpoint,
   type QuestJudgeClient,
+  type QuestJudgeEvaluation,
 } from '@/quests/judge-client';
 import {
   clearQuestJudgePreferences,
@@ -212,6 +213,12 @@ describe('任务定义与提示词', () => {
     expect(context).toContain('今天的花');
     expect(context).not.toContain('深渊暗潮');
     expect(judgeMessages[1]?.content).toContain('advance-flora-encounter');
+    expect(judgeMessages[0]?.content).toContain(
+      '主API正文中的明确描写就是有效证据',
+    );
+    expect(judgeMessages[0]?.content).toContain(
+      '不得仅以“这是主API叙述”为由否定',
+    );
     expect(judgeMessages[1]?.content).not.toContain(
       'inventory-has-eight-lilies',
     );
@@ -442,7 +449,7 @@ describe('副 API 与楼层编排', () => {
     ).toBe('https://api.example/openai/v1/responses');
   });
 
-  it('由本地背包推进、提交物品，并在楼层回退时返还物品后完成结算', async () => {
+  it('由本地背包推进、提交物品，并在楼层变化后保留结果再完成结算', async () => {
     const database = new CaelianDatabase(
       'alpha',
       `caelian-tracker-local-actions-${crypto.randomUUID()}`,
@@ -542,27 +549,13 @@ describe('副 API 与楼层编排', () => {
     });
     expect((await repository.snapshot(profile.id)).inventory).toEqual([]);
 
-    await repository.rollbackQuestProgressFromFloor(profile.id, 6);
+    await expect(
+      repository.rollbackQuestProgressFromFloor(profile.id, 6),
+    ).resolves.toEqual([]);
     expect(await repository.selectedQuestTracker(profile.id)).toMatchObject({
-      current: { currentNodeId: 'flora-await-offering', status: 'active' },
+      current: { currentNodeId: 'flora-offering-reaction', status: 'active' },
     });
-    expect((await repository.snapshot(profile.id)).inventory).toEqual([
-      expect.objectContaining({ itemId: '圣心百合', quantity: 8 }),
-    ]);
-
-    await repository.applyLocalQuestTransition(profile.id, {
-      questId: quest.id,
-      definition: flora,
-      transitionId: 'submit-eight-lilies',
-      floor: {
-        id: '8:submitted-again',
-        index: 8,
-        role: 'assistant',
-        fingerprint: 'submitted-again',
-        lineageHash: 'through-submitted-again',
-      },
-      mode: 'submit',
-    });
+    expect((await repository.snapshot(profile.id)).inventory).toEqual([]);
     const endingProgress = floraProgressAt('flora-ending-ready');
     const { summary: endingSummary, ...endingNext } = endingProgress;
     await repository.bindQuestFloor(profile.id, {
@@ -757,6 +750,40 @@ describe('副 API 与楼层编排', () => {
       temperature: 0,
       response_format: { type: 'json_object' },
     });
+  });
+
+  it('允许玩家主动终止正在进行的副 API 判定', async () => {
+    const fetchMock = vi.fn(
+      (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+        }),
+    );
+    const client = new OpenAiCompatibleQuestJudgeClient(
+      {
+        endpoint: 'https://judge.example/v1/chat/completions',
+        model: 'judge-model',
+      },
+      fetchMock as unknown as typeof fetch,
+    );
+
+    const evaluation = client.evaluate({
+      quest: flora,
+      progress: initialQuestProgress(flora),
+      currentLocation: '中央商业区',
+      recentMessages: [],
+    });
+    expect(client.isEvaluating()).toBe(true);
+    expect(client.cancel()).toBe(true);
+
+    await expect(evaluation).rejects.toMatchObject({
+      name: 'QuestJudgeCancelledError',
+      message: '玩家已终止副 API 判定',
+    });
+    expect(client.isEvaluating()).toBe(false);
+    expect(client.cancel()).toBe(false);
   });
 
   it('使用 Responses 端点时发送对应请求体并解析 output_text', async () => {
@@ -1110,8 +1137,87 @@ describe('副 API 与楼层编排', () => {
 
     expect(left).toMatchObject({
       status: 'evaluated',
-      tracker: { current: { trackerState: 'suspended' } },
+      tracker: { current: { trackerState: 'detour' } },
     });
     expect(judge.evaluate).toHaveBeenCalledOnce();
+  });
+
+  it('判定进行中取消追踪后丢弃迟到结果且不写入检查点', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-tracker-cancel-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const questRecord: QuestRecord = {
+      id: 'profile:side:side_flora_says',
+      profileId: 'profile',
+      definitionId: flora.id,
+      kind: 'side',
+      title: flora.name,
+      region: flora.region,
+      objective: flora.nodes[0]?.objective ?? '',
+      status: 'active',
+      currentStage: 1,
+      totalStages: 3,
+      rewardExperience: 120,
+      rewardGold: 240,
+      rewardGuildExperience: 45,
+      updatedAt: 1,
+    };
+    await database.questRecords.put(questRecord);
+    let finishJudge: (() => void) | undefined;
+    const judge: QuestJudgeClient = {
+      evaluate: vi.fn(
+        () =>
+          new Promise<QuestJudgeEvaluation>((resolve) => {
+            finishJudge = () =>
+              resolve({
+                result: {
+                  sceneState: 'in_scene',
+                  progress: 'transition',
+                  completionGateSatisfied: true,
+                  matchedTransitionId: 'advance-flora-encounter',
+                  suggestedNodeId: 'flora-selling-flowers',
+                  confidence: 0.96,
+                  evidence: ['当前节拍已经完成。'],
+                  summary: '玩家准备和芙萝拉继续行动。',
+                },
+                rawResponse: '{}',
+              });
+          }),
+      ),
+    };
+    const progress = new QuestProgressRepository(database);
+    await progress.selectQuest(
+      'profile',
+      questRecord.id,
+      initialQuestProgress(flora),
+    );
+    const service = new QuestTrackerService(progress, judge);
+    const evaluation = service.evaluateAssistantTurn({
+      profileId: 'profile',
+      questRecord,
+      quest: flora,
+      floor: {
+        id: '6:late-result',
+        index: 6,
+        role: 'assistant',
+        fingerprint: 'late-result',
+        lineageHash: 'lineage-through-6',
+      },
+      currentLocation: '伊拉亚城·中央商业区',
+      recentMessages: [],
+    });
+    await expect.poll(() => judge.evaluate).toHaveBeenCalledOnce();
+    await progress.setSelectedTrackerState('profile', 'manualPaused');
+    finishJudge?.();
+
+    await expect(evaluation).resolves.toEqual({
+      status: 'skipped',
+      reason: 'tracking-changed',
+    });
+    await expect(
+      progress.listCheckpoints('profile', questRecord.id),
+    ).resolves.toEqual([]);
   });
 });

@@ -37,7 +37,8 @@ export type EvaluateQuestTurnResult =
         | 'tracker-disabled'
         | 'outside-node-location'
         | 'not-assistant-floor'
-        | 'already-evaluated';
+        | 'already-evaluated'
+        | 'tracking-changed';
     }
   | {
       status: 'evaluated';
@@ -71,6 +72,9 @@ export class QuestTrackerService {
       input.questRecord.id,
     );
     const current = existing?.current ?? baseline;
+    if (existing && !existing.selected) {
+      return { status: 'skipped', reason: 'tracker-disabled' };
+    }
     if (current.pendingItemSubmission) {
       return { status: 'skipped', reason: 'tracker-disabled' };
     }
@@ -112,9 +116,26 @@ export class QuestTrackerService {
       recentMessages: input.recentMessages,
       legalItems: input.legalItems,
     });
+    const latest = existing
+      ? await this.progress.getTracker(
+          input.profileId,
+          input.questRecord.id,
+        )
+      : undefined;
+    if (
+      existing &&
+      (!latest?.selected ||
+        latest.current.status !== 'active' ||
+        ['idle', 'manualPaused', 'suspended', 'ended'].includes(
+          latest.current.trackerState,
+        ) ||
+        latest.current.currentNodeId !== current.currentNodeId)
+    ) {
+      return { status: 'skipped', reason: 'tracking-changed' };
+    }
     const judgedDecision = applyJudgeResult(
       input.quest,
-      current,
+      latest?.current ?? current,
       evaluation.result,
     );
     const legalItems = new Map(

@@ -39,6 +39,7 @@ import type {
 
 export interface QuestJudgeStatus {
   configured: boolean;
+  evaluating: boolean;
   endpoint?: string;
   modelsEndpoint?: string;
   model?: string;
@@ -181,6 +182,7 @@ export interface CaelianPublicApi {
     config: OpenAiCompatibleJudgeConfig | null,
   ): void;
   getQuestJudgeStatus(): QuestJudgeStatus;
+  cancelQuestJudge(): boolean;
   fetchQuestJudgeModels(
     config: QuestJudgeModelListConfig,
   ): Promise<QuestJudgeModel[]>;
@@ -226,6 +228,7 @@ export type PanelApi = Pick<
   | 'setManagedContentAutoUpdate'
   | 'configureQuestJudge'
   | 'getQuestJudgeStatus'
+  | 'cancelQuestJudge'
   | 'fetchQuestJudgeModels'
   | 'listAvailableQuests'
   | 'acceptManagedQuest'

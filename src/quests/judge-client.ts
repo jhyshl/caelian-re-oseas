@@ -14,6 +14,21 @@ export interface QuestJudgeEvaluation {
 
 export interface QuestJudgeClient {
   evaluate(input: QuestJudgePromptInput): Promise<QuestJudgeEvaluation>;
+  cancel?(): boolean;
+  isEvaluating?(): boolean;
+}
+
+export class QuestJudgeCancelledError extends Error {
+  constructor() {
+    super('玩家已终止副 API 判定');
+    this.name = 'QuestJudgeCancelledError';
+  }
+}
+
+export function isQuestJudgeCancelledError(
+  error: unknown,
+): error is QuestJudgeCancelledError {
+  return error instanceof QuestJudgeCancelledError;
 }
 
 export interface OpenAiCompatibleJudgeConfig {
@@ -128,10 +143,29 @@ export function resolveChatEndpoint(endpoint: string): string {
 export class OpenAiCompatibleQuestJudgeClient
   implements QuestJudgeClient
 {
+  private activeRequest?: {
+    controller: AbortController;
+    cancelledByPlayer: boolean;
+  };
+
   constructor(
     private readonly config: OpenAiCompatibleJudgeConfig,
     private readonly fetcher: typeof fetch = fetch,
   ) {}
+
+  cancel(): boolean {
+    const request = this.activeRequest;
+    if (!request || request.controller.signal.aborted) return false;
+    request.cancelledByPlayer = true;
+    request.controller.abort();
+    return true;
+  }
+
+  isEvaluating(): boolean {
+    return Boolean(
+      this.activeRequest && !this.activeRequest.controller.signal.aborted,
+    );
+  }
 
   async evaluate(
     input: QuestJudgePromptInput,
@@ -140,9 +174,13 @@ export class OpenAiCompatibleQuestJudgeClient
     const model = this.config.model.trim();
     if (!endpoint || !model) throw new Error('副 API 地址和模型不能为空');
 
-    const controller = new AbortController();
+    const request = {
+      controller: new AbortController(),
+      cancelledByPlayer: false,
+    };
+    this.activeRequest = request;
     const timeout = setTimeout(
-      () => controller.abort(),
+      () => request.controller.abort(),
       this.config.timeoutMs ?? 30_000,
     );
     try {
@@ -176,7 +214,7 @@ export class OpenAiCompatibleQuestJudgeClient
                   : {}),
               },
         ),
-        signal: controller.signal,
+        signal: request.controller.signal,
       });
       if (!response.ok) {
         const detail = await responseErrorDetail(response);
@@ -196,12 +234,16 @@ export class OpenAiCompatibleQuestJudgeClient
         rawResponse: content,
       };
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
+      if (request.controller.signal.aborted) {
+        if (request.cancelledByPlayer) {
+          throw new QuestJudgeCancelledError();
+        }
         throw new Error('副 API 请求超时', { cause: error });
       }
       throw error;
     } finally {
       clearTimeout(timeout);
+      if (this.activeRequest === request) this.activeRequest = undefined;
     }
   }
 }

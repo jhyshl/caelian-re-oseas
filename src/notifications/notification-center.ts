@@ -127,6 +127,7 @@ export class NotificationCenter {
       priority: Number.isFinite(input.priority)
         ? Number(input.priority)
         : DEFAULT_PRIORITIES[kind],
+      actionText: input.actionText?.trim().slice(0, 24) ?? '',
       clickable: typeof input.onClick === 'function',
       leaving: false,
       paused: false,

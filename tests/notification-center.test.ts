@@ -80,6 +80,29 @@ describe('NotificationCenter', () => {
       .toContain('剧情推进器尚未启用');
   });
 
+  it('为进行中的副 API 判定显示独立终止按钮', async () => {
+    const onClick = vi.fn();
+    center = new NotificationCenter(document);
+    center.show({
+      kind: 'task',
+      title: '正在推进剧情',
+      actionText: '终止副 API',
+      onClick,
+    });
+
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLButtonElement>('.notification-action')
+            ?.textContent,
+      )
+      .toContain('终止副 API');
+    document
+      .querySelector<HTMLButtonElement>('.notification-action')
+      ?.click();
+    await expect.poll(() => onClick.mock.calls.length).toBe(1);
+  });
+
   it('显示常驻剧情引导卡，并把完整引导填入输入框但不自动发送', async () => {
     const onInject = vi.fn(() => true);
     center = new NotificationCenter(document);

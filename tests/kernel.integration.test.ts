@@ -1334,7 +1334,7 @@ describe('CaelianKernel integration', () => {
       .toContain('剧情推进器尚未启用');
     await expect
       .poll(() => guildPanel?.textContent)
-      .toContain('暂停追踪');
+      .toContain('取消追踪');
     expect(setExtensionPrompt.mock.calls.at(-1)?.[1]).toContain(
       '[凯利安任务导航｜芙萝拉说]',
     );
@@ -1362,7 +1362,7 @@ describe('CaelianKernel integration', () => {
     textarea.remove();
   });
 
-  it('收到主 API 楼层后自动判定，并在删除楼层时回退节点', async () => {
+  it('只在生成完成后判定，并在删除楼层时保留已确认节点', async () => {
     const databaseName = `caelian-alpha-quest-floor-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
     const handlers = new Map<unknown, (...args: unknown[]) => void>();
@@ -1463,16 +1463,35 @@ describe('CaelianKernel integration', () => {
         subclass: 'holy_knight',
       },
     });
-    await kernel.api.acceptManagedQuest('side_flora_says');
     kernel.api.configureQuestJudge({
       endpoint: 'https://judge.example/v1/chat/completions',
       model: 'judge-model',
     });
+    chat.push({
+      mes: '当前没有追踪任务，这条消息不应触发副 API。',
+      is_user: false,
+    });
+    handlers.get('generation-ended')?.(0);
+    await new Promise((resolve) => window.setTimeout(resolve, 160));
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('judge.example'),
+      ),
+    ).toHaveLength(0);
+    chat.splice(0);
+    await kernel.api.acceptManagedQuest('side_flora_says');
     chat.push(
       { mes: '好，我陪你去采花。', is_user: true },
       { mes: '芙萝拉开心地点头，收好花篮准备出发。', is_user: false },
     );
     handlers.get('character-message-rendered')?.(1);
+    await new Promise((resolve) => window.setTimeout(resolve, 40));
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('judge.example'),
+      ),
+    ).toHaveLength(0);
+    handlers.get('generation-ended')?.(1);
 
     await expect
       .poll(() => document.body.textContent, { timeout: 3000 })
@@ -1508,23 +1527,20 @@ describe('CaelianKernel integration', () => {
           (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId,
         { timeout: 3000 },
       )
-      .toBe('flora-encounter');
-    expect(
-      document.querySelector('[data-caelian-quest-guidance]'),
-    ).toBeNull();
+      .toBe('flora-selling-flowers');
 
+    await kernel.api.pauseTrackedQuest();
     chat.push({
-      mes: '芙萝拉开心地点了点头，收好花篮准备出发。',
+      mes: '这条新消息不应触发已经取消追踪的副 API。',
       is_user: false,
     });
     handlers.get('generation-ended')?.(2);
-    await expect
-      .poll(
-        async () =>
-          (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId,
-        { timeout: 3000 },
-      )
-      .toBe('flora-selling-flowers');
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('judge.example'),
+      ),
+    ).toHaveLength(1);
 
     await kernel.api.shutdown();
     fetchMock.mockRestore();

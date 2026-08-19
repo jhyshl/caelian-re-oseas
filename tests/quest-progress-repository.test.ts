@@ -61,7 +61,7 @@ async function setup() {
 }
 
 describe('QuestProgressRepository', () => {
-  it('原子发放合法剧情赠礼，并在楼层回退时撤销', async () => {
+  it('原子发放合法剧情赠礼，并在楼层变化后保留已提交结果', async () => {
     const { database, quest, repository } = await setup();
     await repository.bindFloor('profile', {
       questId: quest.id,
@@ -80,8 +80,12 @@ describe('QuestProgressRepository', () => {
     expect(await database.inventoryStacks.get('profile:小血瓶')).toMatchObject({
       quantity: 2,
     });
-    await repository.rollbackFromFloor('profile', 2);
-    expect(await database.inventoryStacks.get('profile:小血瓶')).toBeUndefined();
+    await expect(repository.rollbackFromFloor('profile', 2)).resolves.toEqual(
+      [],
+    );
+    expect(await database.inventoryStacks.get('profile:小血瓶')).toMatchObject({
+      quantity: 2,
+    });
   });
 
   it('把副 API 结果、摘要和任务状态绑定到同一个楼层', async () => {
@@ -122,7 +126,7 @@ describe('QuestProgressRepository', () => {
     });
   });
 
-  it('删除楼层时撤销该楼层及之后的进度并恢复上一份摘要', async () => {
+  it('删除楼层时不撤销已经确认的任务进度', async () => {
     const { database, quest, repository } = await setup();
     await repository.bindFloor('profile', {
       questId: quest.id,
@@ -152,27 +156,17 @@ describe('QuestProgressRepository', () => {
     });
 
     const result = await repository.rollbackFromFloor('profile', 4);
-    expect(result).toEqual([
-      expect.objectContaining({
-        questId: quest.id,
-        cutoffFloorIndex: 4,
-        removedCheckpointCount: 1,
-        restored: expect.objectContaining({
-          currentNodeId: 'arrived',
-          summary: '抵达现场。',
-        }),
-      }),
-    ]);
+    expect(result).toEqual([]);
     expect(await repository.listCheckpoints('profile', quest.id)).toHaveLength(
-      1,
+      2,
     );
     expect(await database.questRecords.get(quest.id)).toMatchObject({
-      currentStage: 1,
-      objective: '调查现场',
+      currentStage: 2,
+      objective: '追踪足迹',
     });
   });
 
-  it('较早楼层被编辑时通过对话前缀指纹撤销所有后续进度', async () => {
+  it('较早楼层被编辑时保留已确认节点并避免重复判定', async () => {
     const { database, quest, repository } = await setup();
     await repository.bindFloor('profile', {
       questId: quest.id,
@@ -191,19 +185,20 @@ describe('QuestProgressRepository', () => {
     const result = await repository.reconcileFloors('profile', [
       floor(4, 'same-reply', 'edited-lineage'),
     ]);
-    expect(result[0]).toMatchObject({
-      cutoffFloorIndex: 4,
-      removedCheckpointCount: 1,
-      restored: {
-        currentStage: 0,
-        currentNodeId: 'stage:0',
-        summary: '',
-      },
-    });
-    expect(await repository.listCheckpoints('profile', quest.id)).toEqual([]);
+    expect(result).toEqual([]);
+    expect(await repository.listCheckpoints('profile', quest.id)).toHaveLength(
+      1,
+    );
+    await expect(
+      repository.hasCheckpointForFloor(
+        'profile',
+        quest.id,
+        floor(4, 'same-reply-edited', 'edited-lineage'),
+      ),
+    ).resolves.toBe(true);
     expect(await database.questRecords.get(quest.id)).toMatchObject({
-      currentStage: 0,
-      objective: '前往任务地点',
+      currentStage: 1,
+      objective: '继续调查',
     });
   });
 });

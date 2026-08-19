@@ -43,6 +43,7 @@ import {
 } from '@/quests/catalog';
 import {
   fetchOpenAiCompatibleModels,
+  isQuestJudgeCancelledError,
   OpenAiCompatibleQuestJudgeClient,
   resolveChatEndpoint,
   type OpenAiCompatibleJudgeConfig,
@@ -134,9 +135,11 @@ export class CaelianKernel {
   private memoryTogetherLetterPending = false;
   private surveyPromptActive = false;
   private questTracker?: QuestTrackerService;
+  private questJudgeClient?: OpenAiCompatibleQuestJudgeClient;
   private questJudgeApiKey?: string;
   private questJudge: QuestJudgeStatus = {
     configured: false,
+    evaluating: false,
     apiKeyPresent: false,
   };
   private shuttingDown = false;
@@ -383,11 +386,17 @@ export class CaelianKernel {
   configureQuestJudge(
     config: OpenAiCompatibleJudgeConfig | null,
   ): void {
+    this.cancelQuestJudge();
     this.missingQuestJudgeFloors.clear();
     if (!config) {
       this.questTracker = undefined;
+      this.questJudgeClient = undefined;
       this.questJudgeApiKey = undefined;
-      this.questJudge = { configured: false, apiKeyPresent: false };
+      this.questJudge = {
+        configured: false,
+        evaluating: false,
+        apiKeyPresent: false,
+      };
       clearQuestJudgePreferences(this.adapter.host);
       return;
     }
@@ -413,9 +422,11 @@ export class CaelianKernel {
       this.questProgress,
       client,
     );
+    this.questJudgeClient = client;
     this.questJudgeApiKey = apiKey;
     this.questJudge = {
       configured: true,
+      evaluating: false,
       endpoint,
       ...(modelsEndpoint ? { modelsEndpoint } : {}),
       model,
@@ -426,7 +437,14 @@ export class CaelianKernel {
   }
 
   getQuestJudgeStatus(): QuestJudgeStatus {
-    return { ...this.questJudge };
+    return {
+      ...this.questJudge,
+      evaluating: this.questJudgeClient?.isEvaluating() ?? false,
+    };
+  }
+
+  cancelQuestJudge(): boolean {
+    return this.questJudgeClient?.cancel() ?? false;
   }
 
   fetchQuestJudgeModels(
@@ -472,6 +490,7 @@ export class CaelianKernel {
   async acceptManagedQuest(
     definitionId: string,
   ): Promise<TrackedQuestView> {
+    this.cancelQuestJudge();
     this.notifications.clearQuestGuidance();
     const profileId = this.requireProfile();
     const [catalog, snapshot] = await Promise.all([
@@ -525,6 +544,7 @@ export class CaelianKernel {
   }
 
   async trackQuest(questId: string): Promise<TrackedQuestView> {
+    this.cancelQuestJudge();
     this.notifications.clearQuestGuidance();
     const profileId = this.requireProfile();
     const quest = await this.requireManagedQuest(profileId, questId);
@@ -554,6 +574,7 @@ export class CaelianKernel {
   }
 
   async pauseTrackedQuest(): Promise<TrackedQuestView | null> {
+    this.cancelQuestJudge();
     this.notifications.clearQuestGuidance();
     const profileId = this.requireProfile();
     const tracker = await this.repository.pauseTrackedQuest(profileId);
@@ -755,6 +776,7 @@ export class CaelianKernel {
   async shutdown(): Promise<void> {
     if (this.status === 'stopped') return;
     this.shuttingDown = true;
+    this.cancelQuestJudge();
     if (this.surveyTimer !== undefined) {
       this.adapter.host.clearInterval(this.surveyTimer);
       this.surveyTimer = undefined;
@@ -779,6 +801,7 @@ export class CaelianKernel {
     eventName: string,
     payload?: TavernEventPayload,
   ): void {
+    if (eventName === 'CHAT_CHANGED') this.cancelQuestJudge();
     const task = this.tavernUpdateQueue
       .catch(() => undefined)
       .then(() => this.handleTavernUpdate(eventName, payload))
@@ -848,6 +871,8 @@ export class CaelianKernel {
       ].includes(eventName)
     ) {
       await this.triggerStoryBattle(payload);
+    }
+    if (eventName === 'GENERATION_ENDED') {
       const evaluation = await this.evaluateTrackedQuest(payload);
       await this.advanceTrackedQuestFromLocalState();
       if (evaluation) await this.presentQuestGuidance(evaluation);
@@ -969,7 +994,15 @@ export class CaelianKernel {
     const tracker = await this.repository.selectedQuestTracker(
       this.profileId,
     );
-    if (!tracker) return undefined;
+    if (
+      !tracker?.selected ||
+      tracker.current.status !== 'active' ||
+      !['armed', 'tracking', 'detour'].includes(
+        tracker.current.trackerState,
+      )
+    ) {
+      return undefined;
+    }
     const snapshot = await this.repository.snapshot(this.profileId);
     const quest = snapshot.quests.find(
       (candidate) => candidate.id === tracker.questId,
@@ -1044,6 +1077,16 @@ export class CaelianKernel {
             meta: '判定中',
             duration: 35_000,
             priority: 96,
+            actionText: '终止副 API',
+            onClick: () => {
+              if (!this.cancelQuestJudge()) return;
+              this.notifications.show({
+                kind: 'info',
+                title: '已终止剧情判定',
+                description: '本轮不会写入任务进度，之后的新回复仍可重新判定。',
+                duration: 4_500,
+              });
+            },
           });
         },
       });
@@ -1077,6 +1120,7 @@ export class CaelianKernel {
         summary: result.decision.next.summary,
       };
     } catch (error) {
+      if (isQuestJudgeCancelledError(error)) return undefined;
       const message = error instanceof Error ? error.message : String(error);
       await this.events.emit('quest.judge-failed', {
         questId: quest.id,
@@ -1357,6 +1401,7 @@ export class CaelianKernel {
       configureQuestJudge: (config) =>
         this.configureQuestJudge(config),
       getQuestJudgeStatus: () => this.getQuestJudgeStatus(),
+      cancelQuestJudge: () => this.cancelQuestJudge(),
       fetchQuestJudgeModels: (config) =>
         this.fetchQuestJudgeModels(config),
       listAvailableQuests: (options) =>
@@ -1410,6 +1455,7 @@ export class CaelianKernel {
       configureQuestJudge: (config) =>
         this.configureQuestJudge(config),
       getQuestJudgeStatus: () => this.getQuestJudgeStatus(),
+      cancelQuestJudge: () => this.cancelQuestJudge(),
       fetchQuestJudgeModels: (config) =>
         this.fetchQuestJudgeModels(config),
       listAvailableQuests: (options) =>

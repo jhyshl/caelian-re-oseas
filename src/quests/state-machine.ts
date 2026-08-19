@@ -200,7 +200,7 @@ function trackerStateFor(
       return 'detour';
     case 'left_scene':
     case 'drifted':
-      return 'suspended';
+      return 'detour';
     case 'uncertain':
       return fallback === 'evaluating' ? 'tracking' : fallback;
   }

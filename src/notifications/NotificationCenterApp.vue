@@ -30,15 +30,15 @@ defineProps<{
           {
             leaving: toast.leaving,
             paused: toast.paused,
-            clickable: toast.clickable,
+            clickable: toast.clickable && !toast.actionText,
           },
         ]"
         :style="{ '--toast-duration': `${toast.duration}ms` }"
-        :role="toast.clickable ? 'button' : 'status'"
-        :tabindex="toast.clickable ? 0 : undefined"
-        @click="toast.clickable && activate(toast.id)"
-        @keydown.enter="toast.clickable && activate(toast.id)"
-        @keydown.space.prevent="toast.clickable && activate(toast.id)"
+        :role="toast.clickable && !toast.actionText ? 'button' : 'status'"
+        :tabindex="toast.clickable && !toast.actionText ? 0 : undefined"
+        @click="toast.clickable && !toast.actionText && activate(toast.id)"
+        @keydown.enter="toast.clickable && !toast.actionText && activate(toast.id)"
+        @keydown.space.prevent="toast.clickable && !toast.actionText && activate(toast.id)"
         @mouseenter="pause(toast.id)"
         @mouseleave="resume(toast.id)"
         @focusin="pause(toast.id)"
@@ -56,6 +56,14 @@ defineProps<{
           <strong>{{ toast.title }}</strong>
           <p v-if="toast.description">{{ toast.description }}</p>
         </div>
+        <button
+          v-if="toast.clickable && toast.actionText"
+          type="button"
+          class="notification-action"
+          @click.stop="activate(toast.id)"
+        >
+          {{ toast.actionText }}
+        </button>
         <button
           type="button"
           class="notification-close"
@@ -614,6 +622,26 @@ defineProps<{
   background: rgba(255, 255, 255, 0.055);
   font: 400 17px/22px sans-serif;
   cursor: pointer;
+}
+
+.notification-action {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent-light) 52%, transparent);
+  border-radius: 9px;
+  color: var(--accent-light);
+  background: color-mix(in srgb, var(--accent) 16%, rgba(12, 15, 22, 0.88));
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.notification-action:hover,
+.notification-action:focus-visible {
+  border-color: var(--accent-light);
+  filter: brightness(1.12);
+  outline: none;
 }
 
 .notification-close:hover,

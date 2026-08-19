@@ -145,7 +145,7 @@ async function toggleTracking(quest: QuestRecord) {
       notice.value = `已继续追踪“${quest.title}”。`;
     } else {
       await props.context.api.pauseTrackedQuest();
-      notice.value = `已暂停追踪“${quest.title}”，任务进度会保留。`;
+      notice.value = `已取消追踪“${quest.title}”，任务进度会保留，后续消息不会调用副 API。`;
     }
     await refresh();
   } catch (error) {
@@ -483,7 +483,7 @@ onUnmounted(() => {
                       trackedQuest?.tracker.current.trackerState ?? '',
                     )
                       ? '继续追踪'
-                      : '暂停追踪'
+                      : '取消追踪'
                   }}
                 </button>
                 <button

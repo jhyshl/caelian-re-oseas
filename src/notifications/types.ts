@@ -16,6 +16,7 @@ export interface NotificationInput {
   meta?: string;
   duration?: number;
   priority?: number;
+  actionText?: string;
   onClick?: () => void | Promise<void>;
 }
 
@@ -37,6 +38,7 @@ export interface NotificationToastView {
   meta: string;
   duration: number;
   priority: number;
+  actionText: string;
   clickable: boolean;
   leaving: boolean;
   paused: boolean;
