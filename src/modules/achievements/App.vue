@@ -6,11 +6,9 @@ import {
   achievementTarget,
   type AchievementCategory,
 } from '@/achievements/catalog';
-import { loadAchievementDefinitions } from '@/content/catalogs/achievements';
 import type { AchievementDefinition } from '@/content/types';
 import type {
   AchievementProgressRecord,
-  AchievementSpecialState,
   GameSnapshot,
 } from '@/domain/types';
 import type { PanelContext } from '@/kernel/public-api';
@@ -18,7 +16,6 @@ import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
-const special = ref<AchievementSpecialState>();
 const definitions = ref<Record<string, AchievementDefinition>>({});
 const mode = ref<'all' | 'unlocked' | 'locked'>('all');
 const category = ref<AchievementCategory>('all');
@@ -117,9 +114,9 @@ const categoryOptions = computed(() =>
 );
 
 async function refresh(): Promise<void> {
-  [snapshot.value, special.value] = await Promise.all([
+  [snapshot.value, definitions.value] = await Promise.all([
     props.context.api.query('state'),
-    props.context.api.query('achievement-special'),
+    props.context.api.query('achievement-definitions'),
   ]);
 }
 
@@ -155,16 +152,7 @@ function isHidden(id: string, definition: AchievementDefinition): boolean {
   return Boolean(definition.hidden) && !unlockedIds.value.has(id);
 }
 
-function openSpecialLetter(): void {
-  void props.context.api.openPanel('achievement-letter');
-}
-
-function openMailbox(): void {
-  void props.context.api.navigatePanel('mailbox');
-}
-
 onMounted(async () => {
-  [definitions.value] = await Promise.all([loadAchievementDefinitions()]);
   await refresh();
   for (const event of [
     'state.changed',
@@ -204,40 +192,6 @@ onUnmounted(() => {
             <dd>{{ totalStars }}/{{ possibleStars }} ★</dd>
           </div>
         </dl>
-      </section>
-
-      <section class="poem-card">
-        <div class="poem-icon">✉</div>
-        <div>
-          <span>SPECIAL ACHIEVEMENT</span>
-          <strong>今昔的诗行</strong>
-          <p v-if="!special?.letterClaimed">
-            一封写给今昔的感谢信正在等你开启。
-          </p>
-          <p v-else-if="special.dailyGiftAvailable">
-            空白的书页带来了今天的随机赠礼。
-          </p>
-          <p v-else>
-            今日赠礼已领取；空白的书页会在明天再次生效。
-          </p>
-        </div>
-        <button type="button" @click="openSpecialLetter">
-          {{
-            !special?.letterClaimed
-              ? '开启信件'
-              : special.dailyGiftAvailable
-                ? '领取赠礼'
-                : '重读信件'
-          }}
-        </button>
-        <button
-          v-if="special?.letterClaimed"
-          type="button"
-          class="mailbox-button"
-          @click="openMailbox"
-        >
-          打开邮箱
-        </button>
       </section>
 
       <div class="achievement-filters">
@@ -353,8 +307,7 @@ onUnmounted(() => {
     var(--ca-surface);
 }
 
-.achievement-summary > div > span,
-.poem-card > div:nth-child(2) > span {
+.achievement-summary > div > span {
   color: var(--ca-gold);
   font-size: 9px;
   letter-spacing: 0.17em;
@@ -366,8 +319,7 @@ onUnmounted(() => {
   font: 700 23px var(--ca-serif);
 }
 
-.achievement-summary p,
-.poem-card p {
+.achievement-summary p {
   margin: 0;
   color: var(--ca-muted);
   font-size: 11px;
@@ -398,55 +350,6 @@ onUnmounted(() => {
   margin: 0;
   color: var(--ca-gold-light);
   font: 700 15px var(--ca-serif);
-}
-
-.poem-card {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 13px;
-  margin: 12px 0;
-  padding: 13px 15px;
-  border: 1px solid rgba(212, 168, 67, 0.35);
-  border-radius: 12px;
-  background:
-    radial-gradient(circle at 0 50%, rgba(83, 41, 103, 0.24), transparent 30%),
-    var(--ca-surface);
-}
-
-.poem-icon {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border: 1px solid var(--ca-gold-dark);
-  border-radius: 50%;
-  color: var(--ca-gold-light);
-  background: #211526;
-  font-size: 19px;
-}
-
-.poem-card strong {
-  display: block;
-  margin: 2px 0 3px;
-  color: var(--ca-text-bright);
-  font: 700 16px var(--ca-serif);
-}
-
-.poem-card button {
-  padding: 8px 12px;
-  border: 1px solid var(--ca-gold-dark);
-  border-radius: 8px;
-  color: var(--ca-gold-light);
-  background: rgba(212, 168, 67, 0.08);
-  font: 700 10px var(--ca-ui);
-  cursor: pointer;
-}
-
-.poem-card .mailbox-button {
-  border-color: var(--ca-border-light);
-  color: var(--ca-muted);
-  background: transparent;
 }
 
 .achievement-filters {
@@ -640,13 +543,5 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
 
-  .poem-card {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .poem-card button {
-    grid-column: 1 / -1;
-    width: 100%;
-  }
 }
 </style>

@@ -167,8 +167,17 @@ export class TavernAdapter {
         'caelian_global_achievements_v1',
       );
       const prefix = 'caelian_special_patch_past_present_poem_v1';
+      const hostDefinitions = this.asRecord(
+        (this.host as unknown as Record<string, unknown>)
+          .ADVENTURER_ACHIEVEMENT_DEFS,
+      );
+      const runtimeDefinitions = this.asRecord(
+        (this.runtime as unknown as Record<string, unknown>)
+          .ADVENTURER_ACHIEVEMENT_DEFS,
+      );
       return {
         unlocked: this.asRecord(achievementState.unlocked),
+        definitions: { ...runtimeDefinitions, ...hostDefinitions },
         advanced: this.readLocalJson(
           'caelian_advanced_achievement_stats_v1',
         ),
@@ -445,6 +454,7 @@ export class TavernAdapter {
     for (const eventName of [
       'caelian-special-achievement-patch',
       'caelian-launch-reward-patch',
+      'caelian-special-reward-patch',
     ]) {
       const listener = () => {
         void handler('ACHIEVEMENT_PATCH_CHANGED');

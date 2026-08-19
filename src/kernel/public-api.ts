@@ -1,4 +1,5 @@
 import type { CommandResult } from '@/domain/commands';
+import type { AchievementDefinition } from '@/content/types';
 import type {
   AchievementSpecialState,
   EventLogRecord,
@@ -110,6 +111,7 @@ export type QueryName =
   | 'inventory'
   | 'market'
   | 'events'
+  | 'achievement-definitions'
   | 'achievement-special'
   | 'mailbox';
 
@@ -119,6 +121,7 @@ export interface QueryResultMap {
   inventory: InventoryStackRecord[];
   market: MarketView;
   events: EventLogRecord[];
+  'achievement-definitions': Record<string, AchievementDefinition>;
   'achievement-special': AchievementSpecialState;
   mailbox: MailboxState;
 }

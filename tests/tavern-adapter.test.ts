@@ -520,6 +520,9 @@ describe('TavernAdapter', () => {
       new CustomEvent('caelian-special-achievement-patch'),
     );
     expect(listener).toHaveBeenCalledWith('ACHIEVEMENT_PATCH_CHANGED');
+    listener.mockClear();
+    window.dispatchEvent(new CustomEvent('caelian-special-reward-patch'));
+    expect(listener).toHaveBeenCalledWith('ACHIEVEMENT_PATCH_CHANGED');
     adapter.unsubscribeAll();
     listener.mockClear();
     window.dispatchEvent(
@@ -532,6 +535,30 @@ describe('TavernAdapter', () => {
       'caelian_launch_reward_old_timer_v1_letter_opened',
     );
     delete hostState.__CAELIAN_SPECIAL_PATCH_REPO_REWARD__;
+  });
+
+  it('读取奖励脚本在运行时注册的成就定义', () => {
+    const hostState = window as unknown as Record<string, unknown>;
+    hostState.ADVENTURER_ACHIEVEMENT_DEFS = {
+      ach_bug_hunting: {
+        id: 'ach_bug_hunting',
+        name: '抓虫中……',
+        star: 5,
+      },
+    };
+    localStorage.setItem(
+      'caelian_global_achievements_v1',
+      JSON.stringify({ unlocked: { ach_bug_hunting: { unlocked: true } } }),
+    );
+
+    expect(new TavernAdapter(window).legacyAchievementPayload()).toMatchObject({
+      definitions: {
+        ach_bug_hunting: { name: '抓虫中……', star: 5 },
+      },
+      unlocked: { ach_bug_hunting: { unlocked: true } },
+    });
+
+    delete hostState.ADVENTURER_ACHIEVEMENT_DEFS;
   });
 
   it('为楼层生成内容指纹和包含前文的因果指纹', async () => {

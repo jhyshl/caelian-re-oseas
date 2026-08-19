@@ -73,8 +73,47 @@ const hasTarget = computed(
 
 const basicNestedOptions = WORKSHOP_EFFECT_OPTIONS.filter(
   (option) =>
-    option.type !== 'conditional_group' && option.type !== 'summon',
+    ![
+      'conditional_group',
+      'summon',
+      'spend_mp_damage',
+      'spend_mp_shield',
+      'mp_to_ap',
+    ].includes(option.type),
 );
+const nestedOptionGroups = [
+  {
+    label: '即时效果',
+    types: ['damage', 'shield', 'heal', 'draw', 'gain_ap', 'gain_mp'],
+  },
+  {
+    label: '状态效果',
+    types: ['apply_buff', 'apply_debuff', 'cleanse', 'dispel'],
+  },
+  {
+    label: '特殊机制',
+    types: [
+      'strip_shield',
+      'strip_buffs',
+      'trap',
+      'damage_from_shield',
+      'damage_per_debuff',
+      'discard',
+      'recover_discard',
+      'discard_all_damage',
+      'generate_blank_to_draw',
+      'blank_regen',
+      'discard_blank_damage',
+      'destroy_summon',
+      'reveal_intent',
+    ],
+  },
+].map((group) => ({
+  ...group,
+  options: basicNestedOptions.filter((option) =>
+    group.types.includes(option.type),
+  ),
+}));
 const summonSkillOptions = basicNestedOptions.filter((option) =>
   [
     'damage',
@@ -106,7 +145,8 @@ const conditions = [
   ['self_not_full_hp', '自身非满生命'],
   ['has_summon', '拥有召唤物'],
   ['no_summon', '没有召唤物'],
-  ['spend_mp', '支付 MP'],
+  ['spend_mp', '支付 MP（换取可支配强度）'],
+  ['spend_hp', '支付 HP（换取可支配强度）'],
   ['discard', '弃置手牌'],
   ['destroy_summon', '牺牲召唤物'],
 ];
@@ -289,10 +329,11 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
           <option value="entangle">缠绕</option>
         </select>
         <input
-          v-if="['spend_mp', 'discard', 'destroy_summon'].includes(condition.type)"
+          v-if="['spend_mp', 'spend_hp', 'discard', 'destroy_summon'].includes(condition.type)"
           v-model.number="condition.amount"
           type="number"
           min="1"
+          :max="condition.type === 'spend_hp' ? 20 : undefined"
         />
         <button
           type="button"
@@ -310,7 +351,7 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
         + 添加条件
       </button>
 
-      <h5>满足条件时</h5>
+      <h5>则（满足条件时）</h5>
       <WorkshopEffectEditor
         v-for="(child, index) in effect.then_effects"
         :key="`then:${index}`"
@@ -330,16 +371,22 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
         "
       >
         <option value="" disabled>+ 添加触发效果</option>
-        <option
-          v-for="option in basicNestedOptions"
-          :key="option.type"
-          :value="option.type"
+        <optgroup
+          v-for="group in nestedOptionGroups"
+          :key="group.label"
+          :label="group.label"
         >
-          {{ option.label }}
-        </option>
+          <option
+            v-for="option in group.options"
+            :key="option.type"
+            :value="option.type"
+          >
+            {{ option.label }}
+          </option>
+        </optgroup>
       </select>
 
-      <h5>不满足时（可选）</h5>
+      <h5>否则（不满足时，可选）</h5>
       <WorkshopEffectEditor
         v-for="(child, index) in effect.else_effects"
         :key="`else:${index}`"
@@ -359,13 +406,19 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
         "
       >
         <option value="" disabled>+ 添加备选效果</option>
-        <option
-          v-for="option in basicNestedOptions"
-          :key="option.type"
-          :value="option.type"
+        <optgroup
+          v-for="group in nestedOptionGroups"
+          :key="group.label"
+          :label="group.label"
         >
-          {{ option.label }}
-        </option>
+          <option
+            v-for="option in group.options"
+            :key="option.type"
+            :value="option.type"
+          >
+            {{ option.label }}
+          </option>
+        </optgroup>
       </select>
     </div>
 

@@ -394,17 +394,29 @@ export class BattleRepository {
       ? 1
       : Math.max(1, Math.min(12, Math.floor(requestedCount)));
     const packScale = this.packStrengthMultiplier(enemyCount);
-    const enemies = Array.from({ length: enemyCount }, (_, index) =>
-      this.makeEnemy(
-        monsterId,
-        monster,
-        player.level,
-        difficulty,
-        region,
-        battlePlayer,
-        packScale,
-        index,
-      ),
+    const encounterPack = resolvedMonsterId
+      ? Array.from(
+          { length: enemyCount },
+          () => [monsterId, monster] as const,
+        )
+      : this.chooseEncounterPack(
+          region,
+          player.level,
+          [monsterId, monster],
+          enemyCount,
+        );
+    const enemies = encounterPack.map(
+      ([definitionId, definition], index) =>
+        this.makeEnemy(
+          definitionId,
+          definition,
+          player.level,
+          difficulty,
+          region,
+          battlePlayer,
+          packScale,
+          index,
+        ),
     );
     const state: LocalBattleState = {
       schemaVersion: 1,
@@ -445,12 +457,18 @@ export class BattleRepository {
     );
     this.runWorkshopMechanisms(state, 'battle_start');
     for (const enemy of enemies) {
-      enemy.intent = this.chooseIntent(monster, enemy);
+      const definition = this.monsters?.[enemy.definitionId];
+      enemy.intent = definition
+        ? this.chooseIntent(definition, enemy, enemies.length)
+        : null;
     }
+    const encounterNames = [
+      ...new Set(encounterPack.map(([, definition]) => definition.name)),
+    ].join('、');
     this.log(
       state,
       'system',
-      `在${region}遭遇 ${enemyCount > 1 ? `${enemyCount} 只` : ''}${monster.name}。抽取 ${battlePlayer.hand.length} 张起始手牌。`,
+      `在${region}遭遇 ${enemyCount > 1 ? `${enemyCount} 只怪物：` : ''}${encounterNames}。抽取 ${battlePlayer.hand.length} 张起始手牌。`,
     );
     if (state.companion) {
       this.log(
@@ -466,7 +484,7 @@ export class BattleRepository {
       active: true,
       source:
         input.source?.trim() ||
-        `${world?.location || region} · ${enemyCount > 1 ? '群体遭遇' : monster.name}`,
+        `${world?.location || region} · ${enemyCount > 1 ? `混合群体遭遇（${encounterNames}）` : monster.name}`,
       storyTriggered: input.storyTriggered === true,
       relatedQuestId: input.relatedQuestId?.trim() || '',
       turn: state.turn,
@@ -841,7 +859,7 @@ export class BattleRepository {
     if (state.workshopTest && !state.workshopTest.dummyAttackEnabled) {
       this.log(state, 'system', '测试木桩已设置为不主动攻击。');
     } else {
-      for (const enemy of this.aliveEnemies(state)) {
+      for (const enemy of this.enemyTurnOrder(state)) {
         const monster = this.monsters?.[enemy.definitionId];
         this.applyStartOfTurnEffects(state, enemy);
         this.stabilizeWorkshopTest(state);
@@ -901,9 +919,12 @@ export class BattleRepository {
     this.triggerBlankGenerators(state);
     this.drawCards(state, state.player.drawPerTurn);
     this.runWorkshopMechanisms(state, 'turn_start');
+    const aliveEnemyCount = this.aliveEnemies(state).length;
     for (const enemy of this.aliveEnemies(state)) {
       const monster = this.monsters?.[enemy.definitionId];
-      enemy.intent = monster ? this.chooseIntent(monster, enemy) : null;
+      enemy.intent = monster
+        ? this.chooseIntent(monster, enemy, aliveEnemyCount)
+        : null;
     }
     this.log(
       state,
@@ -1297,6 +1318,61 @@ export class BattleRepository {
     return chosen ?? all[0] ?? ['', undefined];
   }
 
+  private chooseEncounterPack(
+    region: string,
+    playerLevel: number,
+    lead: readonly [string, MonsterDefinition],
+    count: number,
+  ): Array<readonly [string, MonsterDefinition]> {
+    const pack: Array<readonly [string, MonsterDefinition]> = [lead];
+    if (count <= 1 || this.isBossMonster(lead[1])) return pack;
+
+    const all = Object.entries(this.monsters ?? {}).filter(
+      (entry): entry is [string, MonsterDefinition] =>
+        Boolean(entry[1]) && !this.isBossMonster(entry[1]),
+    );
+    const regional = all.filter(([, monster]) =>
+      monster.regions?.includes(region),
+    );
+    const levelCompatible = regional.filter(([, monster]) => {
+      const minimum = this.number(monster.level_range?.[0], 1);
+      const maximum = this.number(monster.level_range?.[1], 99);
+      return minimum <= playerLevel + 3 && maximum >= Math.max(1, playerLevel - 8);
+    });
+    const candidates =
+      levelCompatible.length > 0
+        ? levelCompatible
+        : regional.length > 0
+          ? regional
+          : all;
+    const used = new Set([lead[0]]);
+
+    while (pack.length < count) {
+      const unused = candidates.filter(([id]) => !used.has(id));
+      const pool = unused.length > 0 ? unused : candidates;
+      const chosen = this.weightedChoice(pool, ([, monster]) => {
+        const minimum = this.number(monster.level_range?.[0], 1);
+        const levelGap = Math.abs(minimum - playerLevel);
+        const roleBonus = Object.values(monster.skills ?? {}).some((skill) =>
+          skill.effects?.some(
+            (effect) =>
+              effect.target === 'all_enemies' || effect.type === 'cleanse',
+          ),
+        )
+          ? 1.45
+          : 1;
+        return Math.max(1, Math.round((28 * roleBonus) / (1 + levelGap * 0.24)));
+      });
+      if (!chosen) {
+        pack.push(lead);
+        continue;
+      }
+      pack.push(chosen);
+      used.add(chosen[0]);
+    }
+    return pack;
+  }
+
   private resolveMonsterId(input: string): string | undefined {
     const value = input.trim();
     if (this.monsters?.[value]) return value;
@@ -1592,8 +1668,17 @@ export class BattleRepository {
   private chooseIntent(
     monster: MonsterDefinition,
     enemy: BattleEnemyState,
+    allyCount = 1,
   ): BattleIntent | null {
-    const skills = Object.entries(monster.skills ?? {});
+    const skills = Object.entries(monster.skills ?? {}).filter(
+      ([, skill]) =>
+        allyCount > 1 ||
+        !skill.effects?.some(
+          (effect) =>
+            effect.target === 'all_enemies' ||
+            effect.target === 'enemy_team',
+        ),
+    );
     if (skills.length === 0) return null;
     const chosen = this.weightedChoice(skills, ([, skill]) =>
       Math.max(1, this.number(skill.weight, 1)),
@@ -1644,13 +1729,17 @@ export class BattleRepository {
       this.stabilizeCompanion(state);
       return;
     }
+    const teamAction = skill.effects?.some(
+      (effect) =>
+        effect.target === 'all_enemies' || effect.target === 'enemy_team',
+    );
     this.log(state, 'enemy', `${enemy.name} 使用「${skill.name}」`);
     this.animation(state, {
       kind: 'enemy-action',
       sourceSide: 'enemy',
       sourceId: enemy.id,
-      targetSide: friendlyIdentity.side,
-      targetId: friendlyIdentity.id,
+      targetSide: teamAction ? 'enemy' : friendlyIdentity.side,
+      targetId: teamAction ? enemy.id : friendlyIdentity.id,
       label: skill.name,
     });
     for (const effect of skill.effects ?? []) {
@@ -1702,47 +1791,78 @@ export class BattleRepository {
           });
         }
       } else if (effect.type === 'heal') {
-        this.heal(
-          state,
-          enemy,
-          this.enemyEffectAmount(enemy, effect),
-          skill.name,
-        );
+        for (const target of this.enemyTeamTargets(state, enemy, effect)) {
+          this.heal(
+            state,
+            target,
+            this.enemyEffectAmount(enemy, effect),
+            skill.name,
+          );
+        }
       } else if (effect.type === 'shield') {
         const amount = this.enemyEffectAmount(enemy, effect);
-        enemy.shield += amount;
-        this.log(state, 'enemy', `${enemy.name} 获得 ${amount} 点护盾`);
-        this.animation(state, {
-          kind: 'shield',
-          sourceSide: 'enemy',
-          sourceId: enemy.id,
-          targetSide: 'enemy',
-          targetId: enemy.id,
-          amount,
-          shieldAfter: enemy.shield,
-          label: '护盾',
-        });
+        for (const target of this.enemyTeamTargets(state, enemy, effect)) {
+          target.shield += amount;
+          this.log(state, 'enemy', `${target.name} 获得 ${amount} 点护盾`);
+          this.animation(state, {
+            kind: 'shield',
+            sourceSide: 'enemy',
+            sourceId: enemy.id,
+            targetSide: 'enemy',
+            targetId: target.id,
+            amount,
+            shieldAfter: target.shield,
+            label: '护盾',
+          });
+        }
       } else if (effect.type === 'buff' || effect.type === 'apply_buff') {
         const effectName = String(effect.buff ?? 'strength');
-        this.addTimedEffect(
-          enemy.buffs,
-          effectName,
-          this.number(effect.value),
-          this.number(effect.turns, 1),
-          {
-            charges: this.optionalPositiveNumber(effect.charges),
-            undispellable: effect.undispellable === true,
-          },
-        );
-        this.animation(state, {
-          kind: 'status',
-          sourceSide: 'enemy',
-          sourceId: enemy.id,
-          targetSide: 'enemy',
-          targetId: enemy.id,
-          amount: this.number(effect.value),
-          label: effectName,
-        });
+        for (const target of this.enemyTeamTargets(state, enemy, effect)) {
+          this.addTimedEffect(
+            target.buffs,
+            effectName,
+            this.number(effect.value),
+            this.number(effect.turns, 1),
+            {
+              charges: this.optionalPositiveNumber(effect.charges),
+              undispellable: effect.undispellable === true,
+            },
+          );
+          this.animation(state, {
+            kind: 'status',
+            sourceSide: 'enemy',
+            sourceId: enemy.id,
+            targetSide: 'enemy',
+            targetId: target.id,
+            amount: this.number(effect.value),
+            label: effectName,
+          });
+        }
+      } else if (effect.type === 'cleanse') {
+        let removed = 0;
+        const targets = this.enemyTeamTargets(state, enemy, effect);
+        for (const target of targets) {
+          const count = this.removeEffects(target.debuffs, effect.amount);
+          removed += count;
+          if (count > 0) {
+            this.animation(state, {
+              kind: 'status',
+              sourceSide: 'enemy',
+              sourceId: enemy.id,
+              targetSide: 'enemy',
+              targetId: target.id,
+              amount: count,
+              label: '净化',
+            });
+          }
+        }
+        if (removed > 0) {
+          this.log(
+            state,
+            'enemy',
+            `${enemy.name} 为怪物队伍净化了 ${removed} 个减益`,
+          );
+        }
       } else if (effect.type === 'debuff' || effect.type === 'apply_debuff') {
         const effectName = String(effect.debuff ?? 'weak');
         this.addTimedEffect(
@@ -3990,6 +4110,8 @@ export class BattleRepository {
         return state.player.summons.length === 0;
       case 'spend_mp':
         return state.player.mp >= this.number(detail.amount ?? detail.value, 1);
+      case 'spend_hp':
+        return state.player.hp > this.number(detail.amount ?? detail.value, 1);
       case 'discard':
         return (
           this.discardableHandCount(state) >=
@@ -4072,7 +4194,9 @@ export class BattleRepository {
   }
 
   private isPayableCondition(condition: CardEffect): boolean {
-    return ['spend_mp', 'discard', 'destroy_summon'].includes(condition.type);
+    return ['spend_mp', 'spend_hp', 'discard', 'destroy_summon'].includes(
+      condition.type,
+    );
   }
 
   private payCondition(state: LocalBattleState, condition: CardEffect): void {
@@ -4082,6 +4206,22 @@ export class BattleRepository {
     );
     if (condition.type === 'spend_mp') {
       state.player.mp = Math.max(0, state.player.mp - requested);
+    } else if (condition.type === 'spend_hp') {
+      const before = state.player.hp;
+      state.player.hp = Math.max(1, state.player.hp - requested);
+      const spent = before - state.player.hp;
+      this.animation(state, {
+        kind: 'damage',
+        sourceSide: 'player',
+        sourceId: 'spend_hp',
+        targetSide: 'player',
+        targetId: 'player',
+        amount: spent,
+        hpAfter: state.player.hp,
+        shieldAfter: state.player.shield,
+        label: '支付生命',
+      });
+      this.log(state, 'player', `支付 ${spent} HP 作为卡牌效果代价`);
     } else if (condition.type === 'discard') {
       const discarded = this.takeDiscardableCards(state, requested);
       state.player.discardPile.push(...discarded);
@@ -4971,6 +5111,40 @@ export class BattleRepository {
     return state.enemies.filter((enemy) => enemy.hp > 0);
   }
 
+  private enemyTeamTargets(
+    state: LocalBattleState,
+    actor: BattleEnemyState,
+    effect: CardEffect,
+  ): BattleEnemyState[] {
+    return effect.target === 'all_enemies' || effect.target === 'enemy_team'
+      ? this.aliveEnemies(state)
+      : [actor];
+  }
+
+  private enemyTurnOrder(state: LocalBattleState): BattleEnemyState[] {
+    return [...this.aliveEnemies(state)].sort((left, right) => {
+      const priority = (enemy: BattleEnemyState): number => {
+        const skill = enemy.intent
+          ? this.monsters?.[enemy.definitionId]?.skills?.[enemy.intent.skillId]
+          : undefined;
+        if (skill?.effects?.some((effect) => effect.type === 'cleanse')) {
+          return 0;
+        }
+        if (
+          skill?.effects?.some(
+            (effect) =>
+              effect.target === 'all_enemies' ||
+              effect.target === 'enemy_team',
+          )
+        ) {
+          return 1;
+        }
+        return 2;
+      };
+      return priority(left) - priority(right);
+    });
+  }
+
   private enemyEffectAmount(
     enemy: BattleEnemyState,
     effect: CardEffect,
@@ -4987,10 +5161,21 @@ export class BattleRepository {
   }
 
   private intentKind(skill: MonsterSkillDefinition): string {
-    const type = skill.effects?.[0]?.type;
+    const effects = skill.effects ?? [];
+    if (effects.some((effect) => effect.type === 'cleanse')) return '净化';
+    if (
+      effects.some(
+        (effect) =>
+          effect.target === 'all_enemies' || effect.target === 'enemy_team',
+      )
+    ) {
+      return '支援';
+    }
+    const type = effects[0]?.type;
     if (type === 'damage') return '攻击';
     if (type === 'shield') return '防御';
-    if (type === 'buff') return '强化';
+    if (type === 'buff' || type === 'apply_buff') return '强化';
+    if (type === 'heal') return '治疗';
     return '特殊';
   }
 

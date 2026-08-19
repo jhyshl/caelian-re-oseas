@@ -122,6 +122,48 @@ describe('AchievementRepository integration', () => {
     expect(notices).toHaveBeenCalled();
   });
 
+  it('首次迁移完成后仍持续接收任意外部成就定义与解锁记录', async () => {
+    const { repository } = createRepository();
+    const profile = await repository.ensureProfile('dynamic-achievement');
+
+    await repository.importLegacyAchievements(profile.id, {
+      unlocked: {},
+      definitions: {},
+    });
+    await repository.importLegacyAchievements(profile.id, {
+      definitions: {
+        ach_bug_hunting: {
+          id: 'ach_bug_hunting',
+          name: '抓虫中……',
+          star: 5,
+          condition: '只能通过该邮件获得。',
+          description: '或许需要一瓶杀虫剂？',
+          hidden: false,
+          special: true,
+          patchOnly: true,
+          source: 'bug_feedback_patch',
+        },
+      },
+      unlocked: {
+        ach_bug_hunting: { completedAt: '2026-08-19T00:00:00.000Z' },
+      },
+    });
+
+    await expect(repository.achievementDefinitions()).resolves.toMatchObject({
+      ach_bug_hunting: {
+        name: '抓虫中……',
+        star: 5,
+        description: '或许需要一瓶杀虫剂？',
+        patchOnly: true,
+      },
+    });
+    expect(
+      (await repository.snapshot(profile.id)).achievements.find(
+        (entry) => entry.achievementId === 'ach_bug_hunting',
+      ),
+    ).toMatchObject({ unlocked: true, progress: 1 });
+  });
+
   it('按旧版规则结算感谢信、空白书页和每日十件赠礼', async () => {
     const { repository } = createRepository();
     const profile = await repository.ensureProfile('achievement-poem');

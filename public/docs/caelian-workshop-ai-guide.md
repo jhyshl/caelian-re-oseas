@@ -138,7 +138,7 @@
 
 `apply_buff`：每回合基础分依次为 `strength=6`、`fortitude=5`、`agility=5`、`regen=4`、`thorns=4`、`ap_regen=9`、`draw_regen=7`、`shield_regen=3`、`heal_regen=3.5`、`damage_bonus=4`、`spell_damage_bonus=4`、`damage_reduce=4`、`mp_regen=1.2`、`blood_burn=3`。分数为 `基础分 × max(1, value) × turns × D × M`；`blood_burn` 最后再乘 `0.72`。
 
-`conditional_group`：分别汇总 `then_effects` 与 `else_effects`。每个条件使用默认折扣：`self_has_shield=0.86`、`self_no_shield=0.9`、`enemy_has_shield=0.86`、`enemy_no_shield=0.9`、`enemy_has_debuff=0.84`、`enemy_no_debuff=0.92`、`enemy_has_specific_debuff=0.8`、`enemy_no_specific_debuff=0.9`、`self_has_buff=0.9`、`self_no_buff=0.92`、`self_full_hp=0.82`、`self_not_full_hp=0.88`、`has_summon=0.82`、`no_summon=0.95`、`spend_mp=0.74`、`discard=0.78`、`destroy_summon=0.62`。`and` 将折扣相乘，`or` 取最大折扣；最终分数为 `max(then 总分 × 条件折扣, else 总分)`。
+`conditional_group`：分别汇总 `then_effects` 与 `else_effects`。每个条件使用默认折扣：`self_has_shield=0.86`、`self_no_shield=0.9`、`enemy_has_shield=0.86`、`enemy_no_shield=0.9`、`enemy_has_debuff=0.84`、`enemy_no_debuff=0.92`、`enemy_has_specific_debuff=0.8`、`enemy_no_specific_debuff=0.9`、`self_has_buff=0.9`、`self_no_buff=0.92`、`self_full_hp=0.82`、`self_not_full_hp=0.88`、`has_summon=0.82`、`no_summon=0.95`、`spend_mp=0.74`、`spend_hp` 按支付 1–20 HP 从 `0.896` 递减到 `0.44`、`discard=0.78`、`destroy_summon=0.62`。`and` 将折扣相乘，`or` 取最大折扣；最终分数为 `max(then 总分 × 条件折扣, else 总分)`。
 
 `summon`：先把技能 `weight` 归一化为总和 1，再算单回合期望分 `E=Σ(技能内效果分 × 归一化 weight)`。可攻击召唤物的预计存活回合按 `hp_ratio` 计算：`≤20→1`、`≤35→2`、`≤50→3`、`≤75→4`、`>75→5`，总分为 `hp_ratio × 0.28 + E × 预计回合`；不可攻击召唤物为 `E × max(1,duration) × 1.15`。
 
@@ -267,7 +267,7 @@
 - `summon`：使用 `name`、`attackable`、`hp_ratio`、`unique_by_name`、`skills`；每个技能含 `name`、`weight`、`effects`。
 - `conditional_group`：使用 `logic`（`and`/`or`）、`conditions`、`then_effects`、`else_effects`。
 
-条件类型可用：`self_has_shield`、`self_no_shield`、`enemy_has_shield`、`enemy_no_shield`、`enemy_has_debuff`、`enemy_no_debuff`、`enemy_has_specific_debuff`、`enemy_no_specific_debuff`、`self_has_buff`、`self_no_buff`、`self_full_hp`、`self_not_full_hp`、`has_summon`、`no_summon`、`spend_mp`、`discard`、`destroy_summon`。
+条件类型可用：`self_has_shield`、`self_no_shield`、`enemy_has_shield`、`enemy_no_shield`、`enemy_has_debuff`、`enemy_no_debuff`、`enemy_has_specific_debuff`、`enemy_no_specific_debuff`、`self_has_buff`、`self_no_buff`、`self_full_hp`、`self_not_full_hp`、`has_summon`、`no_summon`、`spend_mp`、`spend_hp`、`discard`、`destroy_summon`。`spend_mp` 与 `spend_hp` 是资源限制积木：先支付资源，再执行“则”中的任意效果；它们通过强度折扣换取更大的原始效果空间，不会凭空产生伤害或护盾。支付 HP 必须至少保留 1 HP。
 
 空白牌没有可执行效果，不能直接打出，也不能被 1 AP 弃牌按钮、普通 `discard`、`discard_all_damage`、随机弃牌或敌方弃牌移走。普通弃牌作为费用时，必须有足够数量的非空白牌才可打出对应卡牌。空白牌仅存在于本场战斗，不进入职业 `cards`、`cardPool`、`starterDeck`、收藏、市场或战后奖励。
 

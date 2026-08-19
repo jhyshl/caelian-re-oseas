@@ -83,6 +83,122 @@ let rulesCache: BattleRules | undefined;
 let passiveCache: Record<string, PassiveDefinition> | undefined;
 const installedWorkshopPassiveIds = new Set<string>();
 
+// These additions live beside the generated legacy catalog so content:verify can
+// continue to guarantee that the imported source data itself was not rewritten.
+const MONSTER_TEAM_SKILL_OVERLAYS: Record<
+  string,
+  Record<string, MonsterSkillDefinition>
+> = {
+  mon_goblin: {
+    pack_rally: {
+      name: '集群号令',
+      intent: '支援',
+      desc: '鼓舞所有仍在战斗的怪物。',
+      weight: 0.72,
+      effects: [
+        {
+          type: 'apply_buff',
+          buff: 'strength',
+          value: 1,
+          turns: 2,
+          target: 'all_enemies',
+        },
+      ],
+    },
+  },
+  mon_goblin_archer: {
+    covering_fire: {
+      name: '交替掩护',
+      intent: '支援',
+      desc: '为怪物队伍提供掩护。',
+      weight: 0.62,
+      effects: [
+        {
+          type: 'shield',
+          value: 3,
+          defense_ratio: 0.2,
+          target: 'all_enemies',
+        },
+      ],
+    },
+  },
+  mon_water_sprite: {
+    purifying_ripple: {
+      name: '净澈涟漪',
+      intent: '净化',
+      desc: '净化所有怪物身上的减益。',
+      weight: 0.78,
+      effects: [{ type: 'cleanse', amount: 'all', target: 'all_enemies' }],
+    },
+  },
+  mon_solar_guard: {
+    shared_aegis: {
+      name: '辉光战阵',
+      intent: '支援',
+      desc: '为所有怪物展开辉光护盾。',
+      weight: 0.74,
+      effects: [
+        {
+          type: 'shield',
+          value: 5,
+          defense_ratio: 0.25,
+          target: 'all_enemies',
+        },
+      ],
+    },
+  },
+  mon_false_priest: {
+    false_absolution: {
+      name: '伪典赦免',
+      intent: '净化',
+      desc: '为怪物队伍净化全部减益。',
+      weight: 0.92,
+      effects: [{ type: 'cleanse', amount: 'all', target: 'all_enemies' }],
+    },
+  },
+  mon_murloc_tidecaller: {
+    rising_tide: {
+      name: '群潮共鸣',
+      intent: '支援',
+      desc: '潮水为所有怪物提供护盾与力量。',
+      weight: 0.76,
+      effects: [
+        { type: 'shield', value: 4, target: 'all_enemies' },
+        {
+          type: 'apply_buff',
+          buff: 'strength',
+          value: 1,
+          turns: 2,
+          target: 'all_enemies',
+        },
+      ],
+    },
+  },
+  mon_oldroot_treant: {
+    root_network: {
+      name: '根网庇护',
+      intent: '支援',
+      desc: '根系连接所有怪物并提供防护。',
+      weight: 0.7,
+      effects: [
+        {
+          type: 'apply_buff',
+          buff: 'fortitude',
+          value: 1,
+          turns: 2,
+          target: 'all_enemies',
+        },
+        {
+          type: 'shield',
+          value: 4,
+          defense_ratio: 0.2,
+          target: 'all_enemies',
+        },
+      ],
+    },
+  },
+};
+
 export function refreshWorkshopPassiveCatalog(): void {
   if (!passiveCache) return;
   for (const passiveId of installedWorkshopPassiveIds) {
@@ -111,10 +227,24 @@ export async function loadMonsterCatalog() {
     const module = await import(
       '@/content/generated/battle/monsters.json'
     );
-    monsterCache = module.default as unknown as Record<
+    const generated = module.default as unknown as Record<
       string,
       MonsterDefinition
     >;
+    monsterCache = Object.fromEntries(
+      Object.entries(generated).map(([id, monster]) => [
+        id,
+        MONSTER_TEAM_SKILL_OVERLAYS[id]
+          ? {
+              ...monster,
+              skills: {
+                ...(monster.skills ?? {}),
+                ...MONSTER_TEAM_SKILL_OVERLAYS[id],
+              },
+            }
+          : monster,
+      ]),
+    );
   }
   return monsterCache;
 }

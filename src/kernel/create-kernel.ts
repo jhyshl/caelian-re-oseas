@@ -349,6 +349,9 @@ export class CaelianKernel {
         this.profileId,
       )) as QueryResultMap[K];
     }
+    if (name === 'achievement-definitions') {
+      return (await this.repository.achievementDefinitions()) as QueryResultMap[K];
+    }
     if (name === 'mailbox') {
       return (await this.repository.mailboxState(
         this.profileId,
@@ -790,6 +793,12 @@ export class CaelianKernel {
     payload?: TavernEventPayload,
   ): Promise<void> {
     if (eventName === 'ACHIEVEMENT_PATCH_CHANGED') {
+      if (this.profileId) {
+        await this.repository.importLegacyAchievements(
+          this.profileId,
+          this.adapter.legacyAchievementPayload(),
+        );
+      }
       await this.syncAchievementPatches();
       await this.events.emit('tavern.changed', { event: eventName });
       return;

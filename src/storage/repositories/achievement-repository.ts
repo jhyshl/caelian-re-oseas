@@ -54,6 +54,8 @@ export interface AchievementCommandCapture {
 
 export interface LegacyAchievementPayload {
   unlocked?: Record<string, unknown>;
+  /** Achievement definitions registered by standalone reward or patch scripts. */
+  definitions?: Record<string, unknown>;
   advanced?: Record<string, unknown>;
   oldPlayerPatch?: boolean;
   repoRewardPatch?: boolean;
@@ -122,6 +124,8 @@ const CREATOR_GIFT_ITEMS = [
   { itemId: '小魔药瓶', name: '小魔药瓶', quantity: 15 },
 ] as const;
 
+const EXTERNAL_DEFINITION_COUNTER_PREFIX = 'external.definition.';
+
 export class AchievementRepository {
   private definitions?: Record<string, AchievementDefinition>;
   private dailyGiftPool?: Array<{ itemId: string; name: string }>;
@@ -150,6 +154,25 @@ export class AchievementRepository {
     );
     for (const record of global) merged.set(record.achievementId, record);
     return [...merged.values()];
+  }
+
+  async listDefinitions(): Promise<Record<string, AchievementDefinition>> {
+    const builtIn = await this.loadDefinitions();
+    const stored = await this.db.achievementCounters
+      .where('profileId')
+      .equals(GLOBAL_ACHIEVEMENT_PROFILE_ID)
+      .filter((record) =>
+        record.key.startsWith(EXTERNAL_DEFINITION_COUNTER_PREFIX),
+      )
+      .toArray();
+    return Object.fromEntries([
+      ...Object.entries(builtIn),
+      ...stored.flatMap((record) => {
+        const id = record.key.slice(EXTERNAL_DEFINITION_COUNTER_PREFIX.length);
+        const definition = this.normalizeExternalDefinition(id, record.data);
+        return definition ? [[id, definition] as const] : [];
+      }),
+    ]);
   }
 
   async syncPatchEntitlements(
@@ -669,14 +692,37 @@ export class AchievementRepository {
     payload: LegacyAchievementPayload,
   ): Promise<void> {
     const marker = await this.counter('legacy.imported');
-    if (marker.value > 0) return;
     this.suppressUnlockNotices = true;
     try {
       const definitions = await this.loadDefinitions();
       const now = Date.now();
 
+      for (const [id, raw] of Object.entries(payload.definitions ?? {})) {
+        const definition = this.normalizeExternalDefinition(id, raw);
+        if (!definition) continue;
+        definitions[id] = definition;
+        await this.setCounter(
+          `${EXTERNAL_DEFINITION_COUNTER_PREFIX}${id}`,
+          1,
+          definition,
+        );
+      }
+
       for (const [id, raw] of Object.entries(payload.unlocked ?? {})) {
+        const fallback = this.normalizeExternalDefinition(id, raw);
+        if (!definitions[id] && fallback) {
+          definitions[id] = fallback;
+          await this.setCounter(
+            `${EXTERNAL_DEFINITION_COUNTER_PREFIX}${id}`,
+            1,
+            fallback,
+          );
+        }
         if (!definitions[id]) continue;
+        const existing = await this.db.achievementProgress.get(
+          this.progressId(id),
+        );
+        if (existing?.unlocked) continue;
         const value =
           raw && typeof raw === 'object'
             ? (raw as Record<string, unknown>)
@@ -701,70 +747,72 @@ export class AchievementRepository {
         });
       }
 
-      const advanced = payload.advanced ?? {};
-      const economy = this.object(advanced.economy);
-      const combat = this.object(advanced.combat);
-      const craft = this.object(advanced.craft);
-      const collectibles = this.object(advanced.collectibles);
-      await this.setCounter(
-        'economy.goldGained',
-        this.number(economy.total_gold_gained),
-      );
-      await this.setCounter(
-        'economy.sellGold',
-        this.number(economy.sell_gold_gained),
-      );
-      await this.setCounter(
-        'battle.astrologyDraw',
-        this.number(combat.astrology_draw_count),
-      );
-      await this.setCounter(
-        'craft.item',
-        this.number(craft.item_craft_count),
-      );
-      const specialIds = Array.isArray(
-        collectibles.special_obtained_ids,
-      )
-        ? collectibles.special_obtained_ids
-        : [];
-      await this.setCounter('collection.special', specialIds.length);
-      await this.setProgress('ach_special_collectible_5', specialIds.length);
-
-      if (payload.oldPlayerPatch) {
-        await this.unlockSilently('ach_thanks_old_caelian');
-      }
-      if (payload.repoRewardPatch) {
-        await this.unlockSilently('ach_repo_reward');
-      }
-      if (payload.poemRewardGranted) {
-        await this.unlockSilently(
-          PAST_PRESENT_POEM_ID,
-          Date.parse(payload.poemUnlockedAt ?? '') || now,
+      if (marker.value <= 0) {
+        const advanced = payload.advanced ?? {};
+        const economy = this.object(advanced.economy);
+        const combat = this.object(advanced.combat);
+        const craft = this.object(advanced.craft);
+        const collectibles = this.object(advanced.collectibles);
+        await this.setCounter(
+          'economy.goldGained',
+          this.number(economy.total_gold_gained),
         );
-        await this.setCounter('poem.claimed', 1);
-        await this.ensureBlankPage(profileId);
-        await this.ensurePoemMail(profileId);
-      }
-      if (payload.poemDailyGiftDate) {
-        await this.setCounter('poem.dailyGift', 1, {
-          date: payload.poemDailyGiftDate,
-          items: this.normalizeGiftItems(payload.poemDailyGiftItems),
-        });
-      }
-
-      const local = await this.db.achievementProgress
-        .where('profileId')
-        .equals(profileId)
-        .toArray();
-      for (const record of local) {
-        if (!record.unlocked) continue;
-        await this.unlockSilently(
-          record.achievementId,
-          record.unlockedAt ?? record.updatedAt,
+        await this.setCounter(
+          'economy.sellGold',
+          this.number(economy.sell_gold_gained),
         );
-      }
+        await this.setCounter(
+          'battle.astrologyDraw',
+          this.number(combat.astrology_draw_count),
+        );
+        await this.setCounter(
+          'craft.item',
+          this.number(craft.item_craft_count),
+        );
+        const specialIds = Array.isArray(
+          collectibles.special_obtained_ids,
+        )
+          ? collectibles.special_obtained_ids
+          : [];
+        await this.setCounter('collection.special', specialIds.length);
+        await this.setProgress('ach_special_collectible_5', specialIds.length);
 
-      await this.setCounter('legacy.imported', 1);
+        if (payload.oldPlayerPatch) {
+          await this.unlockSilently('ach_thanks_old_caelian');
+        }
+        if (payload.repoRewardPatch) {
+          await this.unlockSilently('ach_repo_reward');
+        }
+        if (payload.poemRewardGranted) {
+          await this.unlockSilently(
+            PAST_PRESENT_POEM_ID,
+            Date.parse(payload.poemUnlockedAt ?? '') || now,
+          );
+          await this.setCounter('poem.claimed', 1);
+          await this.ensureBlankPage(profileId);
+          await this.ensurePoemMail(profileId);
+        }
+        if (payload.poemDailyGiftDate) {
+          await this.setCounter('poem.dailyGift', 1, {
+            date: payload.poemDailyGiftDate,
+            items: this.normalizeGiftItems(payload.poemDailyGiftItems),
+          });
+        }
+
+        const local = await this.db.achievementProgress
+          .where('profileId')
+          .equals(profileId)
+          .toArray();
+        for (const record of local) {
+          if (!record.unlocked) continue;
+          await this.unlockSilently(
+            record.achievementId,
+            record.unlockedAt ?? record.updatedAt,
+          );
+        }
+
+        await this.setCounter('legacy.imported', 1);
+      }
     } finally {
       this.suppressUnlockNotices = false;
     }
@@ -1336,6 +1384,42 @@ export class AchievementRepository {
   private async loadDefinitions() {
     this.definitions ??= await loadAchievementDefinitions();
     return this.definitions;
+  }
+
+  private normalizeExternalDefinition(
+    id: string,
+    raw: unknown,
+  ): AchievementDefinition | undefined {
+    const normalizedId = String(id ?? '').trim().slice(0, 180);
+    if (!normalizedId) return undefined;
+    const source = this.object(raw);
+    const name = String(source.name ?? source.title ?? normalizedId)
+      .trim()
+      .slice(0, 80);
+    if (!name) return undefined;
+    return {
+      id: normalizedId,
+      name,
+      description: String(
+        source.description ?? source.desc ?? source.summary ?? '',
+      )
+        .trim()
+        .slice(0, 500),
+      condition: String(
+        source.condition ?? source.requirement ?? source.hint ?? '通过外部成就脚本获得',
+      )
+        .trim()
+        .slice(0, 300),
+      star: Math.max(
+        0,
+        Math.min(5, Math.floor(this.number(source.star ?? source.stars ?? 1))),
+      ),
+      category: String(source.category ?? 'special').trim().slice(0, 40),
+      hidden: source.hidden === true,
+      special: source.special !== false,
+      patchOnly: source.patchOnly !== false,
+      source: String(source.source ?? 'external_achievement').slice(0, 80),
+    };
   }
 
   private progressId(id: string): string {

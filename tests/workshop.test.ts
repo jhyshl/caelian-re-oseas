@@ -5,6 +5,7 @@ import {
   cardScore,
   exportWorkshopPack,
   normalizeWorkshopCard,
+  normalizeCardEffect,
   normalizeWorkshopPack,
   readWorkshopPacks,
   saveWorkshopPack,
@@ -55,6 +56,30 @@ describe('旧版创意工坊规则', () => {
         'custom_class_test',
       ),
     ).toThrow('强度过高');
+  });
+
+  it('把支付 MP 与支付 HP 规范化为降低强度占用的条件积木', () => {
+    const mpCondition = normalizeCardEffect({
+      type: 'conditional_group',
+      logic: 'and',
+      conditions: [{ type: 'spend_mp', amount: 4 }],
+      then_effects: [{ type: 'damage', value: 20, target: 'enemy' }],
+    });
+    const hpCondition = normalizeCardEffect({
+      type: 'conditional_group',
+      logic: 'and',
+      conditions: [{ type: 'spend_hp', amount: 10 }],
+      then_effects: [{ type: 'damage', value: 20, target: 'enemy' }],
+    });
+
+    expect(mpCondition?.conditions).toEqual([
+      expect.objectContaining({ type: 'spend_mp', amount: 4, discount: 0.74 }),
+    ]);
+    expect(hpCondition?.conditions).toEqual([
+      expect.objectContaining({ type: 'spend_hp', amount: 10, discount: 0.68 }),
+    ]);
+    expect(cardScore({ effects: [mpCondition!] })).toBeLessThan(20);
+    expect(cardScore({ effects: [hpCondition!] })).toBeLessThan(20);
   });
 
   it('拒绝同一卡牌的重复同类效果', () => {

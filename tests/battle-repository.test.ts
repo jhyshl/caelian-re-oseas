@@ -1180,4 +1180,206 @@ describe('本地战斗仓库', () => {
       shield: 94,
     });
   });
+
+  it('自动探索群体遭遇会组合当前地区的不同怪物', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-mixed-encounter-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:mixed-encounter');
+    await game.execute(profile.id, {
+      id: 'mixed-encounter-player-create',
+      type: 'player.create',
+      payload: {
+        name: '混合遭遇测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const battles = new BattleRepository(database, () => 0);
+    await battles.prepare();
+    await battles.start(profile.id, {});
+
+    const session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    expect(session.state.enemies.length).toBeGreaterThan(1);
+    expect(
+      new Set(session.state.enemies.map((enemy) => enemy.definitionId)).size,
+    ).toBeGreaterThan(1);
+    expect(session.source).toContain('混合群体遭遇');
+  });
+
+  it('怪物净化者优先行动并解除队友冻结，使队友能够继续行动', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-enemy-team-cleanse-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:enemy-team-cleanse');
+    await game.execute(profile.id, {
+      id: 'enemy-team-cleanse-player-create',
+      type: 'player.create',
+      payload: {
+        name: '怪物联动测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const battles = new BattleRepository(database, () => 0.5);
+    await battles.prepare();
+    await battles.start(profile.id, {
+      monsterId: 'mon_false_priest',
+      count: 2,
+    });
+
+    let session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    const purifier = session.state.enemies[0]!;
+    const frozenAlly = session.state.enemies[1]!;
+    session.state.player.ap = 0;
+    session.state.player.hp = session.state.player.hpMax = 10_000;
+    purifier.attack = 0;
+    frozenAlly.attack = 0;
+    purifier.intent = {
+      skillId: 'false_absolution',
+      name: '伪典赦免',
+      kind: '净化',
+      description: '为怪物队伍净化全部减益。',
+      amount: 0,
+      hits: 1,
+    };
+    frozenAlly.intent = {
+      skillId: 'attack',
+      name: '攻击',
+      kind: '攻击',
+      description: '',
+      amount: 1,
+      hits: 1,
+    };
+    frozenAlly.debuffs.freeze = { value: 1, turns: 3 };
+    const animationStart = session.state.animations?.length ?? 0;
+    await database.battleSessions.put(session);
+
+    await battles.endTurn(profile.id, session.id);
+    session = (await database.battleSessions.get(session.id))!;
+    expect(session.state.enemies[1]!.debuffs.freeze).toBeUndefined();
+    expect(
+      (session.state.animations ?? [])
+        .slice(animationStart)
+        .some(
+          (animation) =>
+            animation.kind === 'enemy-action' &&
+            animation.sourceId === frozenAlly.id,
+        ),
+    ).toBe(true);
+    expect(
+      session.state.log.some((entry) =>
+        entry.text.includes('为怪物队伍净化了'),
+      ),
+    ).toBe(true);
+  });
+
+  it('支付 HP 条件积木会扣除生命并执行后续效果', async () => {
+    const cards = Array.from({ length: 8 }, (_, index) => ({
+      id: `custom_hp_cost_${index}`,
+      name: `血契试作${index + 1}`,
+      type: 'skill',
+      cost: 1,
+      effects: [
+        {
+          type: 'conditional_group',
+          logic: 'and',
+          conditions: [{ type: 'spend_hp', amount: 5 }],
+          then_effects: [{ type: 'damage', value: 5, target: 'enemy' }],
+          else_effects: [],
+        },
+      ],
+    }));
+    saveWorkshopPack({
+      format: 'caelian_workshop_class_pack',
+      version: 1,
+      packName: '血契积木测试包',
+      classes: [
+        {
+          id: 'custom_hp_cost_class',
+          main: 'freelance',
+          name: '血契测试师',
+          talent: { name: '无', description: '无', effects: [] },
+          cards,
+          cardPool: [...cards, ...cards].map((card) => card.id),
+          starterDeck: Array.from(
+            { length: 15 },
+            (_, index) => cards[index % cards.length]!.id,
+          ),
+        },
+      ],
+    });
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-hp-condition-test-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:hp-condition');
+    await game.execute(profile.id, {
+      id: 'hp-condition-player-create',
+      type: 'player.create',
+      payload: {
+        name: '生命支付测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const battles = new BattleRepository(database, () => 0);
+    await battles.prepare();
+    await battles.start(profile.id, {
+      workshopTest: {
+        professionId: 'custom_hp_cost_class',
+        mechanismIds: [],
+        dummyCount: 1,
+        dummyHp: 100,
+        dummyAttack: 0,
+        dummyDefense: 0,
+        dummyInvincible: false,
+        dummyAttackEnabled: false,
+        autoRespawn: false,
+        playerInvincible: true,
+        attributes: {
+          hpMax: 40,
+          mpMax: 30,
+          attack: 0,
+          defense: 0,
+          speed: 0,
+          actionPointsPerTurn: 6,
+        },
+      },
+    });
+    let session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    const beforePlayerHp = session.state.player.hp;
+    const beforeEnemyHp = session.state.enemies[0]!.hp;
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    session = (await database.battleSessions.get(session.id))!;
+    expect(session.state.player.hp).toBe(beforePlayerHp - 5);
+    expect(session.state.enemies[0]!.hp).toBeLessThan(beforeEnemyHp);
+    expect(
+      session.state.log.some((entry) =>
+        entry.text.includes('支付 5 HP 作为卡牌效果代价'),
+      ),
+    ).toBe(true);
+  });
 });

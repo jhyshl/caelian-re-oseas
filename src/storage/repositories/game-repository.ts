@@ -11,6 +11,7 @@ import type {
   TavernFloorReference,
 } from '@/domain/types';
 import type { AchievementPatchSignal } from '@/achievements/patch-registry';
+import type { AchievementDefinition } from '@/content/types';
 import type { EventBus } from '@/kernel/event-bus';
 import type { CaelianDatabase } from '@/storage/database';
 import type { QuestDefinition } from '@/quests/schema';
@@ -285,6 +286,10 @@ export class GameRepository {
     profileId: string,
   ): Promise<AchievementSpecialState> {
     return this.achievements.specialState(profileId);
+  }
+
+  achievementDefinitions(): Promise<Record<string, AchievementDefinition>> {
+    return this.achievements.listDefinitions();
   }
 
   syncPatchEntitlements(

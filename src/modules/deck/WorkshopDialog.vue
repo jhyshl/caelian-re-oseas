@@ -11,6 +11,7 @@ import type { CardEffect } from '@/content/types';
 import type { PanelContext } from '@/kernel/public-api';
 import { commandId } from '@/kernel/ids';
 import WorkshopEffectEditor from '@/modules/deck/WorkshopEffectEditor.vue';
+import WorkshopEffectPalette from '@/modules/deck/WorkshopEffectPalette.vue';
 import {
   WORKSHOP_MECHANISM_FORMAT,
   WORKSHOP_SCRIPT_MECHANISM_FORMAT,
@@ -26,7 +27,6 @@ import {
   validateWorkshopScriptMechanism,
 } from '@/workshop-script-runtime';
 import {
-  WORKSHOP_EFFECT_OPTIONS,
   WORKSHOP_MAIN_CLASSES,
   WORKSHOP_TALENT_OPTIONS,
   cardLimit,
@@ -121,7 +121,6 @@ const typeNames: Record<string, string> = {
   skill: '技能',
   summon: '召唤',
 };
-const workshopCardTypes = ['attack', 'defense', 'skill', 'summon'] as const;
 const activeCard = computed(() =>
   editor.value.cards.find((card) => card.id === activeCardId.value),
 );
@@ -147,13 +146,6 @@ const activeCardLimit = computed(() =>
   activeCard.value ? cardLimit(activeCard.value.cost) : 0,
 );
 const effectOptions = computed(() => [
-  ...WORKSHOP_EFFECT_OPTIONS.map((option) => ({
-    id: `builtin:${option.type}`,
-    label: option.label,
-    description: '内置效果',
-    cardTypes: [...workshopCardTypes],
-    effects: [option],
-  })),
   ...extensions.value.flatMap((extension) =>
     extension.presets.map((preset) => ({
       id: `${extension.id}:${preset.id}`,
@@ -395,6 +387,25 @@ function addEffect(optionId: string): void {
   }
   card.effects.push(...effects);
   notice.value = option.description || `已添加「${option.label}」。`;
+}
+
+function addBuiltEffect(effect: CardEffect): void {
+  const card = activeCard.value;
+  if (!card || card.effects.length >= 8) return;
+  if (effect.type === 'summon' && card.type !== 'summon') {
+    error.value = '只有召唤类型卡牌才能创建召唤物。';
+    return;
+  }
+  if (
+    effect.type === 'conditional_group' &&
+    card.effects.some((entry) => entry.type === 'conditional_group')
+  ) {
+    error.value = '每张卡牌最多使用一个条件效果组；请在组内继续添加条件和“则/否则”效果。';
+    return;
+  }
+  error.value = '';
+  card.effects.push(cloneData(effect) as EditableEffect);
+  notice.value = '效果积木已加入卡牌，可继续调整它的参数。';
 }
 
 async function validateCard(): Promise<void> {
@@ -1119,7 +1130,7 @@ async function startWorkshopTest(): Promise<void> {
                     />
                   </label>
                   <label>
-                    <span>当前强度</span>
+                    <span>已用 / 可支配强度</span>
                     <output :class="{ over: activeCardPower > activeCardLimit }">
                       {{ activeCardPower }} / {{ activeCardLimit }}
                     </output>
@@ -1153,7 +1164,13 @@ async function startWorkshopTest(): Promise<void> {
                   :effect="effect"
                   @remove="activeCard.effects.splice(index, 1)"
                 />
+                <WorkshopEffectPalette
+                  :card-type="activeCard.type"
+                  :disabled="activeCard.effects.length >= 8"
+                  @add="addBuiltEffect"
+                />
                 <select
+                  v-if="effectOptions.length"
                   class="effect-picker"
                   value=""
                   :disabled="activeCard.effects.length >= 8"
@@ -1162,7 +1179,7 @@ async function startWorkshopTest(): Promise<void> {
                     ($event.target as HTMLSelectElement).value = '';
                   "
                 >
-                  <option value="" disabled>+ 添加卡牌效果</option>
+                  <option value="" disabled>+ 添加已安装的扩展预设</option>
                   <option
                     v-for="option in effectOptions"
                     :key="option.id"

@@ -195,6 +195,7 @@ const CONDITION_DISCOUNTS: Record<string, number> = {
   has_summon: 0.82,
   no_summon: 0.95,
   spend_mp: 0.74,
+  spend_hp: 0.9,
   discard: 0.78,
   destroy_summon: 0.62,
 };
@@ -392,10 +393,20 @@ function normalizeCondition(value: unknown): CardEffect | undefined {
     if (!ALLOWED_DEBUFFS.includes(debuff)) return undefined;
     result.debuff = debuff;
   }
-  if (['spend_mp', 'discard', 'destroy_summon'].includes(type)) {
-    const normalized = amount(source.amount ?? source.value, 1);
+  if (['spend_mp', 'spend_hp', 'discard', 'destroy_summon'].includes(type)) {
+    const normalized =
+      type === 'spend_hp'
+        ? Math.max(1, Math.floor(number(source.amount ?? source.value, 1)))
+        : amount(source.amount ?? source.value, 1);
     result.amount = normalized === 'all' ? 'all' : Math.max(1, normalized);
     result.value = normalized === 'all' ? 99 : Math.max(1, normalized);
+    if (type === 'spend_hp' && source.discount === undefined) {
+      const hpCost = Number(result.amount) || 1;
+      result.discount = Math.max(
+        0.42,
+        0.92 - Math.min(20, hpCost) * 0.024,
+      );
+    }
   }
   if (type === 'destroy_summon') {
     result.target = String(source.target ?? 'random_summons');
