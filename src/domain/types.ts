@@ -145,6 +145,8 @@ export interface QuestDeferredProgressSnapshot {
   completedSceneIds?: string[];
   objective: string;
   summary: string;
+  /** Durable local confirmation that the whole managed quest reached a ready ending. */
+  completionConfirmed?: boolean;
   ending?: string;
   rewardExperience?: number;
   rewardGold?: number;

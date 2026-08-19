@@ -397,6 +397,35 @@ export class GameRepository {
     return result;
   }
 
+  async syncQuestCompletionEntitlements(
+    profileId: string,
+    definition: QuestDefinition,
+    ending?: string,
+  ) {
+    const result = await this.questProgress.ensureCompletionCollectibles(
+      profileId,
+      definition,
+      ending,
+    );
+    await this.achievements.recordExternal(profileId, {
+      event: 'quest.complete',
+      questId: definition.id,
+      ending,
+    });
+    if (
+      result.collectiblesGranted.length > 0 ||
+      result.relicsRepaired.length > 0
+    ) {
+      await this.events.emit('state.changed', {
+        command: {
+          id: `managed-quest-entitlements:${definition.id}`,
+          status: 'applied',
+        },
+      });
+    }
+    return result;
+  }
+
   rollbackQuestProgressFromFloor(
     profileId: string,
     floorIndex: number,

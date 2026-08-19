@@ -229,7 +229,10 @@ export class CaelianKernel {
         }),
       );
       this.stateDisposers.push(
-        this.events.on('panel.closed', async () => {
+        this.events.on('panel.closed', async ({ panel }) => {
+          if (panel === 'battle') {
+            await this.finishTerminalBattleIfNeeded();
+          }
           await this.presentMemoryTogetherLetterIfReady();
           void this.offerPendingSurvey();
         }),
@@ -238,6 +241,8 @@ export class CaelianKernel {
         this.queueTavernUpdate(eventName, payload);
       });
       this.status = 'ready';
+      await this.finishTerminalBattleIfNeeded();
+      await this.syncCompletedQuestEntitlements();
       await this.syncProjection();
       await this.panels.open('shell');
       if (await this.getPendingQuestSubmission()) {
@@ -283,6 +288,14 @@ export class CaelianKernel {
     }
     try {
       const type = this.commandType(command);
+      const battleMayResolveQuest =
+        type?.startsWith('battle.') === true &&
+        ![
+          'battle.start',
+          'battle.explore',
+          'battle.prepare-item',
+          'battle.claim-reward',
+        ].includes(type);
       const battleBeforeFinish =
         type === 'battle.finish'
           ? (await this.repository.snapshot(this.profileId)).battle
@@ -313,26 +326,28 @@ export class CaelianKernel {
       if (
         result.status === 'applied' &&
         type &&
-        [
+        ([
           'inventory.adjust',
           'inventory.use-consumable',
           'battle.use-item',
           'battle.finish',
-        ].includes(type)
+        ].includes(type) ||
+          battleMayResolveQuest)
       ) {
         await this.advanceTrackedQuestFromLocalState();
       }
       if (
         result.status === 'applied' &&
         type &&
-        [
+        ([
           'world.move',
           'quest.abandon',
           'inventory.adjust',
           'inventory.use-consumable',
           'battle.use-item',
           'battle.finish',
-        ].includes(type)
+        ].includes(type) ||
+          battleMayResolveQuest)
       ) {
         await this.syncQuestContext();
       }
@@ -674,11 +689,41 @@ export class CaelianKernel {
     const node = questNode(definition, tracker.current.currentNodeId);
     const action = node.requiredAction;
     if (!action) throw new Error('当前任务节点没有需要提交的本地动作');
-    if (action.openPanel) {
-      await this.panels.open(action.openPanel);
-    }
     if (action.type === 'start_battle') {
       if (!action.monsterId) throw new Error('当前任务战斗缺少怪物编号');
+      let activeBattle = (await this.repository.snapshot(profileId)).battle;
+      if (activeBattle?.state.status !== 'ongoing') {
+        await this.finishTerminalBattleIfNeeded();
+        activeBattle = (await this.repository.snapshot(profileId)).battle;
+        const progressed = await this.repository.selectedQuestTracker(profileId);
+        if (
+          progressed &&
+          progressed.current.currentNodeId !== tracker.current.currentNodeId
+        ) {
+          const progressedQuest = await this.requireManagedQuest(
+            profileId,
+            progressed.questId,
+          );
+          return this.trackedQuestView(
+            profileId,
+            progressedQuest,
+            progressed,
+            definition,
+          );
+        }
+      }
+      if (activeBattle) {
+        const matchesQuestBattle =
+          activeBattle.relatedQuestId === quest.id &&
+          activeBattle.state.enemies.some(
+            (enemy) => enemy.definitionId === action.monsterId,
+          );
+        if (!matchesQuestBattle) {
+          throw new Error('当前还有另一场战斗未结束，请先处理后再开始任务战斗');
+        }
+        await this.panels.open('battle');
+        return this.trackedQuestView(profileId, quest, tracker, definition);
+      }
       const result = await this.execute({
         id: `quest-battle:${quest.id}:${action.monsterId}:${Date.now()}`,
         type: 'battle.start',
@@ -694,6 +739,9 @@ export class CaelianKernel {
       }
       await this.panels.open('battle');
       return this.trackedQuestView(profileId, quest, tracker, definition);
+    }
+    if (action.openPanel) {
+      await this.panels.open(action.openPanel);
     }
     if (!action.transitionId) throw new Error('当前任务动作缺少本地跳转');
     const floor = await this.currentAssistantFloor();
@@ -898,6 +946,34 @@ export class CaelianKernel {
     const request = parseStoryBattleStart(floor.text);
     if (!request || this.handledStoryBattleFloors.has(floor.id)) return;
     this.handledStoryBattleFloors.add(floor.id);
+    const tracked = await this.repository.selectedQuestTracker(this.profileId);
+    if (tracked) {
+      const trackedQuest = await this.requireManagedQuest(
+        this.profileId,
+        tracked.questId,
+      );
+      const definition = await this.questDefinition(trackedQuest);
+      const currentNode = questNode(definition, tracked.current.currentNodeId);
+      const managedBattleNode = definition.nodes.find(
+        (candidate) =>
+          candidate.requiredAction?.type === 'start_battle' &&
+          candidate.requiredAction.monsterId === request.monster,
+      );
+      if (managedBattleNode) {
+        const currentAction = currentNode.requiredAction;
+        const unlockedHere =
+          currentAction?.type === 'start_battle' &&
+          currentAction.monsterId === request.monster;
+        this.notifyRuntime(
+          unlockedHere ? 'info' : 'warning',
+          unlockedHere
+            ? `“${request.monster}”由任务节点控制，请在协会任务面板点击“${currentAction.label}”。`
+            : `“${request.monster}”对应的任务战斗尚未解锁，本轮不会提前触发。`,
+          unlockedHere ? '请从任务面板开始战斗' : '任务战斗未触发',
+        );
+        return;
+      }
+    }
     const snapshot = await this.repository.snapshot(this.profileId);
     if (snapshot.battle) {
       this.notifyRuntime(
@@ -907,7 +983,6 @@ export class CaelianKernel {
       );
       return;
     }
-    const tracked = await this.repository.selectedQuestTracker(this.profileId);
     const result = await this.execute({
       id: `story-battle:${floor.fingerprint}`,
       type: 'battle.start',
@@ -1114,6 +1189,13 @@ export class CaelianKernel {
         await this.events.emit('quest.submission-changed', { pending: true });
         await this.panels.open('quest-submission');
       }
+      if (result.questCompleted) {
+        await this.syncQuestCompletionEntitlements(
+          quest,
+          definition,
+          result.tracker.current.ending,
+        );
+      }
       return {
         questId: quest.id,
         transitionAccepted: result.decision.accepted,
@@ -1259,8 +1341,103 @@ export class CaelianKernel {
         questId: quest.id,
         trackerState: current.current.trackerState,
       });
+      if (current.current.completionConfirmed) {
+        await this.syncQuestCompletionEntitlements(
+          quest,
+          definition,
+          current.current.ending,
+        );
+      }
     }
     return changed;
+  }
+
+  private async finishTerminalBattleIfNeeded(): Promise<boolean> {
+    if (this.status !== 'ready' || !this.profileId) return false;
+    const battle = (await this.repository.snapshot(this.profileId)).battle;
+    if (!battle || battle.state.status === 'ongoing') return false;
+    const result = await this.execute({
+      id: `battle-finish-recovery:${battle.id}`,
+      type: 'battle.finish',
+      payload: { battleId: battle.id },
+    });
+    return result.status === 'applied' || result.status === 'duplicate';
+  }
+
+  private async syncQuestCompletionEntitlements(
+    quest: QuestRecord,
+    definition: QuestDefinition,
+    ending?: string,
+  ): Promise<void> {
+    if (!this.profileId) return;
+    const result = await this.repository.syncQuestCompletionEntitlements(
+      this.profileId,
+      definition,
+      ending,
+    );
+    const granted = [
+      ...result.collectiblesGranted,
+      ...result.relicsRepaired.filter(
+        (collectibleId) => !result.collectiblesGranted.includes(collectibleId),
+      ),
+    ];
+    if (granted.length === 0) return;
+    this.notifications.show({
+      kind: 'success',
+      icon: '◇',
+      title: '任务藏品已发放',
+      description: `完成“${quest.title}”并获得：${granted.join('、')}`,
+      duration: 7_000,
+    });
+  }
+
+  private async syncCompletedQuestEntitlements(): Promise<void> {
+    if (!this.profileId) return;
+    const [snapshot, catalog] = await Promise.all([
+      this.repository.snapshot(this.profileId),
+      this.questCatalogs.load(),
+    ]);
+    const completed = [
+      ...snapshot.quests
+        .filter((quest) => quest.status === 'ready' && quest.definitionId)
+        .map((quest) => ({
+          quest,
+          definitionId: quest.definitionId as string,
+          ending: quest.ending,
+        })),
+      ...snapshot.questHistory
+        .filter((quest) => quest.definitionId)
+        .map((quest) => ({
+          quest: {
+            id: quest.id,
+            profileId: quest.profileId,
+            definitionId: quest.definitionId,
+            kind: quest.kind,
+            title: quest.title,
+            region: '',
+            objective: '',
+            status: 'completed' as const,
+            currentStage: 0,
+            totalStages: 0,
+            rewardExperience: quest.rewardExperience ?? 0,
+            rewardGold: quest.rewardGold ?? 0,
+            rewardGuildExperience: quest.rewardGuildExperience ?? 0,
+            ending: quest.ending,
+            updatedAt: quest.updatedAt,
+          },
+          definitionId: quest.definitionId as string,
+          ending: quest.ending,
+        })),
+    ];
+    for (const item of completed) {
+      const definition = catalog.get(item.definitionId);
+      if (!definition) continue;
+      await this.syncQuestCompletionEntitlements(
+        item.quest,
+        definition,
+        item.ending,
+      );
+    }
   }
 
   private async currentAssistantFloor() {

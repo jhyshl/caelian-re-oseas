@@ -463,6 +463,7 @@ export const questJudgeResultSchema = z
     ]),
     progress: z.enum(['stay', 'transition']),
     completionGateSatisfied: z.boolean().default(false),
+    questCompleted: z.boolean().optional(),
     matchedTransitionId: z.string().trim().min(1).max(160).nullable(),
     suggestedNodeId: z.string().trim().min(1).max(160).nullable(),
     confidence: z.number().min(0).max(1),

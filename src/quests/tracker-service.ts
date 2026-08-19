@@ -45,6 +45,7 @@ export type EvaluateQuestTurnResult =
       decision: QuestTransitionDecision;
       tracker: QuestTrackerRecord;
       giftItems: Array<{ itemId: string; itemName: string; count: number }>;
+      questCompleted: boolean;
     };
 
 export class QuestTrackerService {
@@ -172,6 +173,8 @@ export class QuestTrackerService {
             },
           }
         : judgedDecision;
+    const questCompleted =
+      decision.accepted && decision.next.status === 'ready';
     const { summary, ...next } = decision.next;
     const tracker = await this.progress.bindFloor(input.profileId, {
       questId: input.questRecord.id,
@@ -182,6 +185,7 @@ export class QuestTrackerService {
       giftItems,
       judgeResult: {
         ...evaluation.result,
+        questCompleted,
         rawResponse: evaluation.rawResponse,
         transitionAccepted: decision.accepted,
         transitionDecision: decision.reason,
@@ -190,7 +194,13 @@ export class QuestTrackerService {
         invalidItemSubmission: Boolean(requested && !requestedName),
       },
     });
-    return { status: 'evaluated', decision, tracker, giftItems };
+    return {
+      status: 'evaluated',
+      decision,
+      tracker,
+      giftItems,
+      questCompleted,
+    };
   }
 }
 

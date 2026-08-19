@@ -39,6 +39,7 @@ export function initialQuestProgress(
     completedSceneIds: [],
     objective: node.objective,
     summary: '',
+    completionConfirmed: node.status === 'ready',
     ...(node.ending ? { ending: node.ending } : {}),
     ...rewardSnapshot(quest, node.ending),
   };
@@ -111,6 +112,7 @@ export function applyJudgeResult(
     completedSceneIds: completedScenes(current, transition.effects?.completeSceneId),
     objective: target.objective,
     summary: result.summary,
+    completionConfirmed: target.status === 'ready',
     ...(target.ending ? { ending: target.ending } : {}),
     ...rewardSnapshot(quest, target.ending),
   };
@@ -155,6 +157,7 @@ export function applyLocalTransition(
       ),
       objective: target.objective,
       summary: summary.trim(),
+      completionConfirmed: target.status === 'ready',
       ...(target.ending ? { ending: target.ending } : {}),
       ...rewardSnapshot(quest, target.ending),
     },

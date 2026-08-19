@@ -1,12 +1,19 @@
 import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import questCatalogJson from '../public/managed-content/quests/alpha.json';
 import { createKernel } from '@/kernel/create-kernel';
+import { QuestCatalog } from '@/quests/catalog';
+import { initialQuestProgress } from '@/quests/state-machine';
 import { CaelianDatabase } from '@/storage/database';
 import { avatarPreferenceKey } from '@/ui/avatar-preferences';
 import { SAVED_DECKS_STORAGE_KEY } from '@/saved-decks';
 
 const databaseNames: string[] = [];
 const defaultFetch = window.fetch;
+const academyQuest = QuestCatalog.parse(questCatalogJson).get(
+  'main_academy_anniversary_preparation',
+);
+if (!academyQuest) throw new Error('学院主线测试定义未加载');
 
 beforeEach(() => {
   window.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
@@ -1129,6 +1136,164 @@ describe('CaelianKernel integration', () => {
     } finally {
       database.close();
       textarea.remove();
+      await kernel.api.shutdown();
+    }
+  });
+
+  it('学院魔像战只由任务按钮启动并在关闭终局面板后推进结算', async () => {
+    const databaseName = `caelian-alpha-academy-golem-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return { stop: () => handlers.delete(event) };
+    });
+    window.tavern_events = {
+      MESSAGE_RECEIVED: 'message-received',
+      CHARACTER_MESSAGE_RENDERED: 'character-message-rendered',
+      GENERATION_ENDED: 'generation-ended',
+    };
+    const chat = [
+      { mes: '广场上的教学魔像出现异动。', is_user: true },
+      {
+        mes: '<BattleStart boss_academy_arcane_golem|1|周年庆预演事故>',
+        is_user: false,
+      },
+    ];
+    window.SillyTavern = {
+      getContext: () => ({
+        chatId: 'academy-golem-test-chat',
+        name1: '测试冒险者',
+        chat,
+        setExtensionPrompt: vi.fn(),
+      }),
+    };
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'academy-golem-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+    const database = new CaelianDatabase('alpha', databaseName);
+
+    try {
+      await kernel.initialize();
+      await kernel.api.execute({
+        id: 'create-academy-golem-adventurer',
+        type: 'player.create',
+        payload: {
+          name: '测试冒险者',
+          classMain: 'knight',
+          subclass: 'holy_knight',
+        },
+      });
+      await kernel.api.execute({
+        id: 'move-to-academy-golem-test',
+        type: 'narrative.update',
+        payload: {
+          world: {
+            region: '圣德里安学院',
+            place: '无为广场',
+            location: '圣德里安学院-无为广场',
+          },
+        },
+      });
+      await kernel.api.acceptManagedQuest(academyQuest.id);
+      await database.open();
+      const tracker = await database.questTrackerStates
+        .where('profileId')
+        .equals(kernel.api.getRuntimeInfo().profileId!)
+        .first();
+      if (!tracker) throw new Error('学院主线追踪记录不存在');
+      const setQuestNode = async (nodeId: string) => {
+        const node = academyQuest.nodes.find((entry) => entry.id === nodeId);
+        if (!node) throw new Error(`学院主线节点不存在：${nodeId}`);
+        const current = {
+          ...initialQuestProgress(academyQuest),
+          status: node.status,
+          trackerState: node.status === 'active' ? ('tracking' as const) : ('ended' as const),
+          currentStage: node.stage,
+          currentNodeId: node.id,
+          currentStageId: node.stageId,
+          currentSceneId: node.sceneId,
+          currentBeatId: node.id,
+          objective: node.objective,
+          summary: '',
+          completionConfirmed: node.status === 'ready',
+        };
+        await database.questTrackerStates.update(tracker.id, { current });
+        await database.questRecords.update(tracker.questId, {
+          status: node.status,
+          currentStage: node.stage,
+          objective: node.objective,
+          updatedAt: Date.now(),
+        });
+      };
+
+      await setQuestNode('academy-preboss-deck');
+      handlers.get('message-received')?.(1);
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+      expect((await kernel.api.query('state')).battle).toBeNull();
+
+      await setQuestNode('academy-defeat-golem');
+      await kernel.api.performTrackedQuestAction();
+      const started = (await kernel.api.query('state')).battle;
+      expect(started).toMatchObject({
+        relatedQuestId: tracker.questId,
+        state: {
+          status: 'ongoing',
+          enemies: [
+            expect.objectContaining({
+              definitionId: 'boss_academy_arcane_golem',
+            }),
+          ],
+        },
+      });
+      expect(kernel.api.listOpenPanels()).toContain('battle');
+
+      await kernel.api.closePanel('battle');
+      expect((await kernel.api.query('state')).battle?.id).toBe(started?.id);
+      await kernel.api.performTrackedQuestAction();
+      expect((await kernel.api.query('state')).battle?.id).toBe(started?.id);
+
+      const session = await database.battleSessions.get(started!.id);
+      if (!session) throw new Error('学院魔像战斗记录不存在');
+      session.state.status = 'victory';
+      session.state.phase = 'ended';
+      session.phase = 'ended';
+      await database.battleSessions.put(session);
+      await kernel.api.closePanel('battle');
+
+      await expect
+        .poll(async () => (await kernel.api.query('state')).battle)
+        .toBeNull();
+      await expect
+        .poll(
+          async () =>
+            (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId,
+        )
+        .toBe('academy-anniversary-settlement');
+      const completed = await kernel.api.getTrackedQuest();
+      expect(completed).toMatchObject({
+        quest: { status: 'ready' },
+        tracker: {
+          current: { status: 'ready', completionConfirmed: true },
+        },
+      });
+      expect(
+        await database.specialCollectibles
+          .where('profileId')
+          .equals(tracker.profileId)
+          .count(),
+      ).toBe(1);
+      expect(
+        (await kernel.api.query('state')).achievements.find(
+          (entry) => entry.achievementId === 'ach_main_academy_anniversary',
+        ),
+      ).toMatchObject({ unlocked: true });
+    } finally {
+      database.close();
       await kernel.api.shutdown();
     }
   });

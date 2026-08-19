@@ -42,6 +42,11 @@ export interface ApplyLocalQuestTransitionInput {
   mode: 'automatic' | 'submit' | 'action';
 }
 
+export interface QuestCompletionEntitlementResult {
+  collectiblesGranted: string[];
+  relicsRepaired: string[];
+}
+
 /**
  * Stores committed quest progress with Tavern floors as an audit trail.
  * Once a node is committed, later message edits, swipes, or deletions must not
@@ -581,6 +586,62 @@ export class QuestProgressRepository {
     return undefined;
   }
 
+  async ensureCompletionCollectibles(
+    profileId: string,
+    definition: QuestDefinition,
+    ending?: string,
+  ): Promise<QuestCompletionEntitlementResult> {
+    const reward =
+      (ending ? definition.rewards.endings[ending] : undefined) ??
+      definition.rewards.default;
+    return this.db.transaction(
+      'rw',
+      [this.db.specialCollectibles, this.db.ownedRelics],
+      async () => {
+        const collectiblesGranted: string[] = [];
+        const relicsRepaired: string[] = [];
+        let carriedCount = await this.db.ownedRelics
+          .where('profileId')
+          .equals(profileId)
+          .filter((relic) => relic.carried)
+          .count();
+        const now = Date.now();
+        for (const name of reward.collectibles) {
+          const collectibleId = `quest:${definition.id}:${name}`;
+          const id = `${profileId}:${collectibleId}`;
+          const existingCollectible = await this.db.specialCollectibles.get(id);
+          if (!existingCollectible) {
+            await this.db.specialCollectibles.put({
+              id,
+              profileId,
+              collectibleId,
+              name,
+              summary: `完成任务「${definition.name}」${ending ? `结局 ${ending}` : ''}的纪念品。`,
+              source: `任务：${definition.name}`,
+              acquiredDate: new Date(now).toISOString(),
+              updatedAt: now,
+            });
+            collectiblesGranted.push(name);
+          }
+          if (!(await this.db.ownedRelics.get(id))) {
+            const carried = carriedCount < 5;
+            await this.db.ownedRelics.put({
+              id,
+              profileId,
+              relicId: collectibleId,
+              carried,
+              acquiredAt: now,
+              updatedAt: now,
+            });
+            if (carried) carriedCount += 1;
+            if (existingCollectible) relicsRepaired.push(name);
+          }
+        }
+        return { collectiblesGranted, relicsRepaired };
+      },
+    );
+  }
+
   async completeDefinition(
     profileId: string,
     definition: QuestDefinition,
@@ -648,27 +709,31 @@ export class QuestProgressRepository {
         for (const name of reward.collectibles) {
           const collectibleId = `quest:${definition.id}:${name}`;
           const id = `${profileId}:${collectibleId}`;
-          const collectible: SpecialCollectibleRecord = {
-            id,
-            profileId,
-            collectibleId,
-            name,
-            summary: `完成任务「${definition.name}」${ending ? `结局 ${ending}` : ''}的纪念品。`,
-            source: `任务：${definition.name}`,
-            acquiredDate: new Date(now).toISOString(),
-            updatedAt: now,
-          };
-          await this.db.specialCollectibles.put(collectible);
-          const carried = carriedCount < 5;
-          await this.db.ownedRelics.put({
-            id,
-            profileId,
-            relicId: collectibleId,
-            carried,
-            acquiredAt: now,
-            updatedAt: now,
-          });
-          if (carried) carriedCount += 1;
+          if (!(await this.db.specialCollectibles.get(id))) {
+            const collectible: SpecialCollectibleRecord = {
+              id,
+              profileId,
+              collectibleId,
+              name,
+              summary: `完成任务「${definition.name}」${ending ? `结局 ${ending}` : ''}的纪念品。`,
+              source: `任务：${definition.name}`,
+              acquiredDate: new Date(now).toISOString(),
+              updatedAt: now,
+            };
+            await this.db.specialCollectibles.put(collectible);
+          }
+          if (!(await this.db.ownedRelics.get(id))) {
+            const carried = carriedCount < 5;
+            await this.db.ownedRelics.put({
+              id,
+              profileId,
+              relicId: collectibleId,
+              carried,
+              acquiredAt: now,
+              updatedAt: now,
+            });
+            if (carried) carriedCount += 1;
+          }
         }
 
         await this.db.questHistory.put({

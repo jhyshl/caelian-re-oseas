@@ -68,6 +68,24 @@ function floraProgressAt(nodeId: string): QuestProgressSnapshot {
   };
 }
 
+function academyProgressAt(nodeId: string): QuestProgressSnapshot {
+  const node = academy.nodes.find((candidate) => candidate.id === nodeId);
+  if (!node) throw new Error(`学院测试节拍不存在：${nodeId}`);
+  return {
+    ...initialQuestProgress(academy),
+    status: node.status,
+    trackerState: node.status === 'active' ? 'tracking' : 'ended',
+    currentStage: node.stage,
+    currentNodeId: node.id,
+    currentStageId: node.stageId,
+    currentSceneId: node.sceneId,
+    currentBeatId: node.id,
+    objective: node.objective,
+    summary: '',
+    completionConfirmed: node.status === 'ready',
+  };
+}
+
 afterEach(async () => {
   vi.restoreAllMocks();
   clearQuestJudgePreferences(window);
@@ -197,6 +215,18 @@ describe('任务定义与提示词', () => {
       academy.nodes.find((node) => node.id === 'academy-feed-teo')
         ?.requiredAction,
     ).toMatchObject({ type: 'submit_item', itemName: '精制面包' });
+    const battleProgress = academyProgressAt('academy-defeat-golem');
+    const context = buildCurrentNodeContext(academy, battleProgress);
+    const messages = buildQuestJudgeMessages({
+      quest: academy,
+      progress: battleProgress,
+      currentLocation: '圣德里安学院·无为广场',
+      recentMessages: [],
+    });
+    expect(context).toContain('这场任务战斗只能由任务面板按钮启动');
+    expect(context).toContain('正文不得输出 BattleStart');
+    expect(messages[0]?.content).toContain('questCompleted');
+    expect(messages[0]?.content).toContain('整条任务完成标记');
   });
 
   it('只把当前节点交给主 API 和剧情判定器', () => {
@@ -608,6 +638,61 @@ describe('副 API 与楼层编排', () => {
     expect(await repository.selectedQuestTracker(profile.id)).toBeUndefined();
   });
 
+  it('任务完成确认只补发缺失的专属成就和特殊藏品', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-quest-completion-entitlements-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('quest-entitlement-profile');
+    await repository.execute(profile.id, {
+      id: 'create-quest-entitlement-adventurer',
+      type: 'player.create',
+      payload: {
+        name: '任务奖励测试者',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+
+    const first = await repository.syncQuestCompletionEntitlements(
+      profile.id,
+      academy,
+    );
+    const second = await repository.syncQuestCompletionEntitlements(
+      profile.id,
+      academy,
+    );
+    const snapshot = await repository.snapshot(profile.id);
+
+    expect(first).toEqual({
+      collectiblesGranted: ['校庆打卡册'],
+      relicsRepaired: [],
+    });
+    expect(second).toEqual({ collectiblesGranted: [], relicsRepaired: [] });
+    expect(
+      await database.specialCollectibles.where('profileId').equals(profile.id).count(),
+    ).toBe(1);
+    expect(
+      snapshot.relics.filter(
+        (entry) =>
+          entry.relicId ===
+          'quest:main_academy_anniversary_preparation:校庆打卡册',
+      ),
+    ).toHaveLength(1);
+    expect(
+      snapshot.achievements.find(
+        (entry) => entry.achievementId === 'ach_first_task_complete',
+      ),
+    ).toMatchObject({ unlocked: true });
+    expect(
+      snapshot.achievements.find(
+        (entry) => entry.achievementId === 'ach_main_academy_anniversary',
+      ),
+    ).toMatchObject({ unlocked: true });
+  });
+
   it('拉取、去重并排序 OpenAI 兼容模型列表', async () => {
     const fetchMock = vi.fn(async () =>
       new Response(
@@ -740,6 +825,7 @@ describe('副 API 与楼层编排', () => {
 
     expect(evaluation.result).toEqual({
       ...judgeResult,
+      questCompleted: false,
       giftItems: [],
       requiredItemSubmission: null,
     });
@@ -1044,6 +1130,85 @@ describe('副 API 与楼层编排', () => {
     });
     expect(judge.evaluate).toHaveBeenCalledOnce();
     expect(onEvaluationStart).toHaveBeenCalledOnce();
+  });
+
+  it('副 API 推进到 ready 节点时返回并持久化整条任务完成标记', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-tracker-completed-marker-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const current = floraProgressAt('flora-offering-reaction');
+    const questRecord: QuestRecord = {
+      id: 'profile:side:flora-completion-marker',
+      profileId: 'profile',
+      definitionId: flora.id,
+      kind: 'side',
+      title: flora.name,
+      region: flora.region,
+      objective: current.objective,
+      status: 'active',
+      currentStage: current.currentStage,
+      totalStages: 3,
+      rewardExperience: 120,
+      rewardGold: 240,
+      rewardGuildExperience: 45,
+      updatedAt: 1,
+    };
+    await database.questRecords.put(questRecord);
+    const progress = new QuestProgressRepository(database);
+    await progress.selectQuest('profile', questRecord.id, current);
+    const result: QuestJudgeResult = {
+      sceneState: 'candidate_complete',
+      progress: 'transition',
+      completionGateSatisfied: true,
+      questCompleted: false,
+      matchedTransitionId: 'advance-flora-offering-reaction',
+      suggestedNodeId: 'flora-ending-ready',
+      confidence: 0.98,
+      evidence: ['芙萝拉与尼尔已经回应献花，墓前情绪收束完成。'],
+      summary: '献花后的回应已经结束，任务可以结算。',
+    };
+    const service = new QuestTrackerService(progress, {
+      evaluate: vi.fn(async () => ({
+        result,
+        rawResponse: JSON.stringify(result),
+      })),
+    });
+    const evaluated = await service.evaluateAssistantTurn({
+      profileId: 'profile',
+      questRecord,
+      quest: flora,
+      floor: {
+        id: '12:flora-completed',
+        index: 12,
+        role: 'assistant',
+        fingerprint: 'flora-completed',
+        lineageHash: 'lineage-through-flora-completed',
+      },
+      currentLocation: '伊拉亚城·城郊墓园',
+      recentMessages: [],
+    });
+    const checkpoints = await progress.listCheckpoints(
+      'profile',
+      questRecord.id,
+    );
+
+    expect(evaluated).toMatchObject({
+      status: 'evaluated',
+      questCompleted: true,
+      tracker: {
+        current: {
+          status: 'ready',
+          currentNodeId: 'flora-ending-ready',
+          completionConfirmed: true,
+        },
+      },
+    });
+    expect(checkpoints[0]?.judgeResult).toMatchObject({
+      questCompleted: true,
+      transitionAccepted: true,
+    });
   });
 
   it('尚未到场时不开判定，进入剧情后允许判断离场', async () => {

@@ -371,12 +371,14 @@ function normalizeJudgeResult(value: unknown): unknown {
     source.requiredItemSubmission ? [source.requiredItemSubmission] : [],
     1,
   )[0] ?? null;
+  const questCompleted = booleanValue(source.questCompleted);
 
   return {
     ...source,
     sceneState,
     progress,
     completionGateSatisfied,
+    questCompleted,
     matchedTransitionId: progress === 'transition' ? matchedTransitionId : null,
     suggestedNodeId: progress === 'transition' ? suggestedNodeId : null,
     confidence: Number.isFinite(confidenceValue)
