@@ -508,7 +508,9 @@ describe('TavernAdapter', () => {
     hostState.__CAELIAN_SPECIAL_PATCH_REPO_REWARD__ = true;
     const adapter = new TavernAdapter(window);
 
-    expect(adapter.achievementPatchSignals()).toEqual([
+    expect(
+      adapter.achievementPatchSignals(new Date(2026, 7, 20, 12, 0, 0)),
+    ).toEqual([
       { id: 'old-player', opened: false },
       { id: 'repo-reward', opened: false },
       { id: 'old-timer', opened: true },
@@ -535,6 +537,17 @@ describe('TavernAdapter', () => {
       'caelian_launch_reward_old_timer_v1_letter_opened',
     );
     delete hostState.__CAELIAN_SPECIAL_PATCH_REPO_REWARD__;
+  });
+
+  it('仅在限定日期自动生成同行的记忆领取信号', () => {
+    const adapter = new TavernAdapter(window);
+
+    expect(
+      adapter.achievementPatchSignals(new Date(2026, 7, 19, 12, 0, 0)),
+    ).toContainEqual({ id: 'memory-together', opened: true });
+    expect(
+      adapter.achievementPatchSignals(new Date(2026, 7, 20, 12, 0, 0)),
+    ).not.toContainEqual(expect.objectContaining({ id: 'memory-together' }));
   });
 
   it('读取奖励脚本在运行时注册的成就定义', () => {

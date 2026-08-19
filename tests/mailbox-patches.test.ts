@@ -50,10 +50,14 @@ describe('Achievement patch mailbox', () => {
     const claimDate = new Date(2026, 7, 19, 12, 0, 0);
 
     await expect(
-      repository.syncPatchEntitlements(profile.id, [], claimDate),
+      repository.syncPatchEntitlements(
+        profile.id,
+        [{ id: 'memory-together', opened: true }],
+        claimDate,
+      ),
     ).resolves.toMatchObject({
       receivedMailIds: [],
-      claimedRewardIds: [],
+      claimedRewardIds: ['mail_memory_together'],
       claimedAchievementIds: [MEMORY_TOGETHER_ACHIEVEMENT_ID],
     });
     const claimed = await repository.snapshot(profile.id);
@@ -65,9 +69,24 @@ describe('Achievement patch mailbox', () => {
         (entry) => entry.achievementId === MEMORY_TOGETHER_ACHIEVEMENT_ID,
       ),
     ).toMatchObject({ unlocked: true, progress: 1 });
+    await expect(repository.mailboxState(profile.id)).resolves.toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'mail_memory_together',
+          body: expect.arrayContaining(['给同行者：']),
+          signature: 'caelian',
+          rewardClaimedAt: expect.any(Number),
+          unread: false,
+        }),
+      ]),
+    });
 
     await expect(
-      repository.syncPatchEntitlements(profile.id, [], claimDate),
+      repository.syncPatchEntitlements(
+        profile.id,
+        [{ id: 'memory-together', opened: true }],
+        claimDate,
+      ),
     ).resolves.toMatchObject({ claimedAchievementIds: [] });
     expect((await repository.snapshot(profile.id)).player.gold).toBe(
       goldBefore + MEMORY_TOGETHER_REWARD_GOLD,
@@ -91,7 +110,7 @@ describe('Achievement patch mailbox', () => {
     await expect(
       repository.syncPatchEntitlements(
         profile.id,
-        [{ id: 'caelian-memory-together-v1', opened: true }],
+        [{ id: 'memory-together', opened: true }],
         new Date(2026, 7, 20, 0, 0, 1),
       ),
     ).resolves.toMatchObject({
@@ -108,7 +127,7 @@ describe('Achievement patch mailbox', () => {
     ).toBe(false);
   });
 
-  it('保留三个补丁的原始奖励与藏品文本', () => {
+  it('保留旧补丁奖励并注册同行的记忆', () => {
     expect(ACHIEVEMENT_PATCH_REGISTRY['old-player']).toMatchObject({
       achievement: { id: 'ach_thanks_old_caelian', name: '感谢有你' },
       reward: {
@@ -141,6 +160,16 @@ describe('Achievement patch mailbox', () => {
           summary: '吃到热乎的了',
         },
       },
+    });
+    expect(ACHIEVEMENT_PATCH_REGISTRY['memory-together']).toMatchObject({
+      achievement: {
+        id: MEMORY_TOGETHER_ACHIEVEMENT_ID,
+        name: '同行的记忆',
+      },
+      claimDate: '2026-08-19',
+      presentLetterOnClaim: true,
+      reward: { gold: MEMORY_TOGETHER_REWARD_GOLD },
+      mail: { id: 'mail_memory_together', signature: 'caelian' },
     });
   });
 

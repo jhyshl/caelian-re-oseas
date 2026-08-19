@@ -37,7 +37,7 @@ export interface MailCatalogEntry {
 
 export interface AchievementPatchReward {
   gold: number;
-  collectible: {
+  collectible?: {
     id: string;
     name: string;
     summary: string;
@@ -56,6 +56,10 @@ export interface AchievementPatchCatalogEntry {
   achievement: AchievementDefinition & { id: string };
   mail: MailCatalogEntry;
   reward: AchievementPatchReward;
+  claimDate?: string;
+  activateOnClaimDate?: boolean;
+  presentLetterOnClaim?: boolean;
+  silentMailDelivery?: boolean;
 }
 
 export interface AchievementPatchSignal {
@@ -271,6 +275,41 @@ export const ACHIEVEMENT_PATCH_REGISTRY: Record<
       },
     },
   },
+  'memory-together': {
+    id: 'memory-together',
+    eventAchievementId: MEMORY_TOGETHER_ACHIEVEMENT_ID,
+    windowFlag: '__CaelianMemoryTogetherPatch',
+    activationStorageKeys: [
+      'caelian-memory-together-v1:claimed:alpha',
+      'caelian-memory-together-v1:claimed:beta',
+    ],
+    openedStorageKeys: [
+      'caelian-memory-together-v1:claimed:alpha',
+      'caelian-memory-together-v1:claimed:beta',
+    ],
+    claimDate: MEMORY_TOGETHER_CLAIM_DATE,
+    activateOnClaimDate: true,
+    presentLetterOnClaim: true,
+    silentMailDelivery: true,
+    achievement: MEMORY_TOGETHER_ACHIEVEMENT,
+    mail: {
+      id: 'mail_memory_together',
+      source: 'achievement-patch',
+      title: '同行的记忆',
+      preview: '一封来自凯利安的信',
+      sender: '凯利安',
+      body: [
+        '给{{playerName}}：',
+        '我原本不认为，一段真正的同行需要靠什么凭证来证明。毕竟，维莱恩家的人从不把承诺寄托在一张纸上。',
+        '不过，既然你已经陪我走到了这里，这份纪念就收下吧。别误会，这不是客套。能被我认可、站在我身边的人本就不多，而你已经在其中。',
+        '往后的路还很长，别擅自掉队。',
+      ],
+      signature: 'caelian',
+      rewardText: '获得金币520；解锁成就：同行的记忆',
+      achievementId: MEMORY_TOGETHER_ACHIEVEMENT_ID,
+    },
+    reward: { gold: MEMORY_TOGETHER_REWARD_GOLD },
+  },
 };
 
 export const ACHIEVEMENT_PATCHES = Object.values(
@@ -278,19 +317,23 @@ export const ACHIEVEMENT_PATCHES = Object.values(
 );
 
 export const PATCH_ACHIEVEMENT_DEFINITIONS = Object.fromEntries(
-  [
-    ...ACHIEVEMENT_PATCHES.map(
-      (patch) => [patch.achievement.id, patch.achievement] as const,
-    ),
-    [MEMORY_TOGETHER_ACHIEVEMENT_ID, MEMORY_TOGETHER_ACHIEVEMENT] as const,
-  ],
+  ACHIEVEMENT_PATCHES.map((patch) => [
+    patch.achievement.id,
+    patch.achievement,
+  ]),
 ) as Record<string, AchievementDefinition>;
 
 export const PATCH_RELIC_DEFINITIONS = Object.fromEntries(
-  ACHIEVEMENT_PATCHES.map((patch) => [
-    patch.reward.collectible.id,
-    patch.reward.collectible.relic,
-  ]),
+  ACHIEVEMENT_PATCHES.flatMap((patch) =>
+    patch.reward.collectible
+      ? [
+          [
+            patch.reward.collectible.id,
+            patch.reward.collectible.relic,
+          ] as const,
+        ]
+      : [],
+  ),
 ) as Record<string, RelicDefinition>;
 
 export const MAIL_CATALOG = Object.fromEntries([

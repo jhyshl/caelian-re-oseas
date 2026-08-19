@@ -206,19 +206,29 @@ export class TavernAdapter {
     }
   }
 
-  achievementPatchSignals(): AchievementPatchSignal[] {
+  achievementPatchSignals(date = new Date()): AchievementPatchSignal[] {
     const hostState = this.host as unknown as Record<string, unknown>;
+    const dateKey = [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0'),
+    ].join('-');
     return ACHIEVEMENT_PATCHES.flatMap((patch) => {
+      const claimDateActive =
+        patch.activateOnClaimDate === true && patch.claimDate === dateKey;
+      const windowFlag = hostState[patch.windowFlag];
       const active =
-        hostState[patch.windowFlag] === true ||
+        claimDateActive ||
+        windowFlag === true ||
+        (patch.presentLetterOnClaim === true && Boolean(windowFlag)) ||
         patch.activationStorageKeys.some((key) => this.localFlag(key));
       if (!active) return [];
       return [
         {
           id: patch.id,
-          opened: patch.openedStorageKeys.some((key) =>
-            this.localFlag(key),
-          ),
+          opened:
+            claimDateActive ||
+            patch.openedStorageKeys.some((key) => this.localFlag(key)),
         },
       ];
     });

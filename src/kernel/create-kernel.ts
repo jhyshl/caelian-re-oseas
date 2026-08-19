@@ -1458,7 +1458,7 @@ export class CaelianKernel {
     if (!this.profileId) return;
     const result = await this.repository.syncPatchEntitlements(
       this.profileId,
-      this.adapter.achievementPatchSignals(),
+      this.adapter.achievementPatchSignals(this.now()),
       this.now(),
     );
     if (

@@ -10,9 +10,6 @@ import {
 import {
   ACHIEVEMENT_PATCH_REGISTRY,
   MAIL_CATALOG,
-  MEMORY_TOGETHER_ACHIEVEMENT_ID,
-  MEMORY_TOGETHER_CLAIM_DATE,
-  MEMORY_TOGETHER_REWARD_GOLD,
   POEM_MAIL,
   POEM_MAIL_ID,
   patchByMailId,
@@ -189,15 +186,23 @@ export class AchievementRepository {
       claimedRewardIds: [],
       claimedAchievementIds: [],
     };
-    if (await this.claimMemoryTogetherIfEligible(profileId, date)) {
-      result.claimedAchievementIds.push(MEMORY_TOGETHER_ACHIEVEMENT_ID);
-    }
     const uniqueSignals = new Map(
       signals.map((signal) => [signal.id, signal]),
     );
     for (const signal of uniqueSignals.values()) {
       const patch = ACHIEVEMENT_PATCH_REGISTRY[signal.id];
       if (!patch) continue;
+      if (patch.claimDate && this.todayKey(date) !== patch.claimDate) continue;
+      if (
+        patch.claimDate &&
+        !(await this.db.playerStates.get(profileId))?.created
+      ) {
+        continue;
+      }
+      const existingProgress = await this.db.achievementProgress.get(
+        this.progressId(patch.achievement.id),
+      );
+      if (patch.claimDate && existingProgress?.unlocked) continue;
       await this.ensurePatchProgress(patch);
       const now = Date.now();
       let record = await this.db.mailRecords.get(
@@ -215,7 +220,9 @@ export class AchievementRepository {
           updatedAt: now,
         };
         await this.db.mailRecords.put(record);
-        result.receivedMailIds.push(patch.mail.id);
+        if (!patch.silentMailDelivery) {
+          result.receivedMailIds.push(patch.mail.id);
+        }
       } else if (signal.opened && !record.openedAt) {
         record = { ...record, openedAt: now, updatedAt: now };
         await this.db.mailRecords.put(record);
@@ -226,6 +233,9 @@ export class AchievementRepository {
         await this.unlock(patch.achievement.id);
         await this.syncCounterProgress('economy.goldGained');
         result.claimedRewardIds.push(patch.mail.id);
+        if (patch.presentLetterOnClaim) {
+          result.claimedAchievementIds.push(patch.achievement.id);
+        }
         record = (await this.db.mailRecords.get(record.id)) ?? record;
       }
       if (record.rewardClaimedAt) {
@@ -237,51 +247,6 @@ export class AchievementRepository {
       }
     }
     return result;
-  }
-
-  private async claimMemoryTogetherIfEligible(
-    profileId: string,
-    date = new Date(),
-  ): Promise<boolean> {
-    if (this.todayKey(date) !== MEMORY_TOGETHER_CLAIM_DATE) return false;
-
-    const progressId = this.progressId(MEMORY_TOGETHER_ACHIEVEMENT_ID);
-    const claimed = await this.db.transaction(
-      'rw',
-      [
-        this.db.playerStates,
-        this.db.achievementProgress,
-        this.db.achievementCounters,
-      ],
-      async () => {
-        const existing = await this.db.achievementProgress.get(progressId);
-        if (existing?.unlocked) return false;
-
-        const player = await this.db.playerStates.get(profileId);
-        if (!player?.created) return false;
-
-        const timestamp = date.getTime();
-        player.gold += MEMORY_TOGETHER_REWARD_GOLD;
-        player.updatedAt = timestamp;
-        await this.db.playerStates.put(player);
-        await this.incrementCounter(
-          'economy.goldGained',
-          MEMORY_TOGETHER_REWARD_GOLD,
-        );
-        await this.db.achievementProgress.put({
-          id: progressId,
-          profileId: GLOBAL_ACHIEVEMENT_PROFILE_ID,
-          achievementId: MEMORY_TOGETHER_ACHIEVEMENT_ID,
-          progress: achievementTarget(MEMORY_TOGETHER_ACHIEVEMENT_ID),
-          unlocked: true,
-          unlockedAt: timestamp,
-          updatedAt: timestamp,
-        });
-        return true;
-      },
-    );
-    if (claimed) await this.syncCounterProgress('economy.goldGained');
-    return claimed;
   }
 
   async mailboxState(profileId: string): Promise<MailboxState> {
@@ -1299,6 +1264,7 @@ export class AchievementRepository {
     patch: AchievementPatchCatalogEntry,
   ): Promise<void> {
     const collectible = patch.reward.collectible;
+    if (!collectible) return;
     const now = Date.now();
     const id = `${profileId}:${collectible.id}`;
     await this.db.specialCollectibles.put({
