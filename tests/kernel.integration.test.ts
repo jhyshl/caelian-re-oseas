@@ -33,6 +33,54 @@ afterEach(async () => {
 });
 
 describe('CaelianKernel integration', () => {
+  it('首次领取同行的记忆后弹出旧信纸风格信件，重启不重复弹出', async () => {
+    const databaseName = `caelian-alpha-memory-letter-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const createMemoryKernel = () =>
+      createKernel({
+        channel: 'alpha',
+        version: '0.2.0-alpha.memory-test',
+        buildId: 'memory-letter-test-build',
+        databaseName,
+        sourceWindow: window,
+        now: () => new Date(2026, 7, 19, 12, 0, 0),
+      });
+    const firstKernel = createMemoryKernel();
+
+    await firstKernel.initialize();
+    for (const panel of ['release-notes', 'achievement-letter'] as const) {
+      if (firstKernel.api.listOpenPanels().includes(panel)) {
+        await firstKernel.api.closePanel(panel);
+      }
+    }
+    await firstKernel.api.execute({
+      id: 'memory-letter-create-player',
+      type: 'player.create',
+      payload: {
+        name: '同行者',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+
+    const letter = document.querySelector(
+      '[data-caelian-panel="memory-together-letter"]',
+    );
+    expect(letter).not.toBeNull();
+    expect(letter?.textContent).toContain('给同行者：');
+    expect(letter?.textContent).toContain('往后的路还很长，别擅自掉队。');
+    expect(letter?.querySelector('.signature')?.textContent).toBe('caelian');
+    expect(letter?.textContent).toContain('金币520');
+    await firstKernel.api.shutdown();
+
+    const repeatedKernel = createMemoryKernel();
+    await repeatedKernel.initialize();
+    expect(
+      document.querySelector('[data-caelian-panel="memory-together-letter"]'),
+    ).toBeNull();
+    await repeatedKernel.api.shutdown();
+  });
+
   it('从独立入口挂载完整合成台并读取全部 50 条配方', async () => {
     const databaseName = `caelian-alpha-crafting-panel-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);

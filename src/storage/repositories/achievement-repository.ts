@@ -10,6 +10,9 @@ import {
 import {
   ACHIEVEMENT_PATCH_REGISTRY,
   MAIL_CATALOG,
+  MEMORY_TOGETHER_ACHIEVEMENT_ID,
+  MEMORY_TOGETHER_CLAIM_DATE,
+  MEMORY_TOGETHER_REWARD_GOLD,
   POEM_MAIL,
   POEM_MAIL_ID,
   patchByMailId,
@@ -68,6 +71,7 @@ export interface LegacyAchievementPayload {
 export interface PatchEntitlementSyncResult {
   receivedMailIds: string[];
   claimedRewardIds: string[];
+  claimedAchievementIds: string[];
 }
 
 const COUNTER_PROGRESS: Record<string, string[]> = {
@@ -178,11 +182,16 @@ export class AchievementRepository {
   async syncPatchEntitlements(
     profileId: string,
     signals: AchievementPatchSignal[],
+    date = new Date(),
   ): Promise<PatchEntitlementSyncResult> {
     const result: PatchEntitlementSyncResult = {
       receivedMailIds: [],
       claimedRewardIds: [],
+      claimedAchievementIds: [],
     };
+    if (await this.claimMemoryTogetherIfEligible(profileId, date)) {
+      result.claimedAchievementIds.push(MEMORY_TOGETHER_ACHIEVEMENT_ID);
+    }
     const uniqueSignals = new Map(
       signals.map((signal) => [signal.id, signal]),
     );
@@ -228,6 +237,51 @@ export class AchievementRepository {
       }
     }
     return result;
+  }
+
+  private async claimMemoryTogetherIfEligible(
+    profileId: string,
+    date = new Date(),
+  ): Promise<boolean> {
+    if (this.todayKey(date) !== MEMORY_TOGETHER_CLAIM_DATE) return false;
+
+    const progressId = this.progressId(MEMORY_TOGETHER_ACHIEVEMENT_ID);
+    const claimed = await this.db.transaction(
+      'rw',
+      [
+        this.db.playerStates,
+        this.db.achievementProgress,
+        this.db.achievementCounters,
+      ],
+      async () => {
+        const existing = await this.db.achievementProgress.get(progressId);
+        if (existing?.unlocked) return false;
+
+        const player = await this.db.playerStates.get(profileId);
+        if (!player?.created) return false;
+
+        const timestamp = date.getTime();
+        player.gold += MEMORY_TOGETHER_REWARD_GOLD;
+        player.updatedAt = timestamp;
+        await this.db.playerStates.put(player);
+        await this.incrementCounter(
+          'economy.goldGained',
+          MEMORY_TOGETHER_REWARD_GOLD,
+        );
+        await this.db.achievementProgress.put({
+          id: progressId,
+          profileId: GLOBAL_ACHIEVEMENT_PROFILE_ID,
+          achievementId: MEMORY_TOGETHER_ACHIEVEMENT_ID,
+          progress: achievementTarget(MEMORY_TOGETHER_ACHIEVEMENT_ID),
+          unlocked: true,
+          unlockedAt: timestamp,
+          updatedAt: timestamp,
+        });
+        return true;
+      },
+    );
+    if (claimed) await this.syncCounterProgress('economy.goldGained');
+    return claimed;
   }
 
   async mailboxState(profileId: string): Promise<MailboxState> {

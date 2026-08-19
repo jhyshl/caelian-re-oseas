@@ -4,6 +4,24 @@ import type {
 } from '@/content/types';
 
 export const POEM_MAIL_ID = 'mail_past_present_poem';
+export const MEMORY_TOGETHER_ACHIEVEMENT_ID = 'ach_memory_together';
+export const MEMORY_TOGETHER_CLAIM_DATE = '2026-08-19';
+export const MEMORY_TOGETHER_REWARD_GOLD = 520;
+
+export const MEMORY_TOGETHER_ACHIEVEMENT: AchievementDefinition & {
+  id: string;
+} = {
+  id: MEMORY_TOGETHER_ACHIEVEMENT_ID,
+  name: '同行的记忆',
+  star: 5,
+  condition: '仅限2026年8月19日领取',
+  description: '并肩走过的路，会成为照亮下一程的光。',
+  category: 'special',
+  hidden: false,
+  special: true,
+  patchOnly: true,
+  source: 'limited_achievement',
+};
 
 export interface MailCatalogEntry {
   id: string;
@@ -260,10 +278,12 @@ export const ACHIEVEMENT_PATCHES = Object.values(
 );
 
 export const PATCH_ACHIEVEMENT_DEFINITIONS = Object.fromEntries(
-  ACHIEVEMENT_PATCHES.map((patch) => [
-    patch.achievement.id,
-    patch.achievement,
-  ]),
+  [
+    ...ACHIEVEMENT_PATCHES.map(
+      (patch) => [patch.achievement.id, patch.achievement] as const,
+    ),
+    [MEMORY_TOGETHER_ACHIEVEMENT_ID, MEMORY_TOGETHER_ACHIEVEMENT] as const,
+  ],
 ) as Record<string, AchievementDefinition>;
 
 export const PATCH_RELIC_DEFINITIONS = Object.fromEntries(

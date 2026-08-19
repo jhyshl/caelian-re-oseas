@@ -1,4 +1,5 @@
 import type { CommandResult } from '@/domain/commands';
+import { MEMORY_TOGETHER_ACHIEVEMENT_ID } from '@/achievements/patch-registry';
 import {
   releaseAnnouncementId,
   releaseNotesFor,
@@ -95,6 +96,7 @@ interface KernelOptions {
   buildId: string;
   databaseName?: string;
   sourceWindow?: Window;
+  now?: () => Date;
 }
 
 interface QuestEvaluationPresentation {
@@ -119,6 +121,7 @@ export class CaelianKernel {
   private readonly questCatalogs: QuestCatalogLoader;
   private readonly questProgress: QuestProgressRepository;
   private readonly regionWorldbook: RegionWorldbookSwitcher;
+  private readonly now: () => Date;
   private readonly stateDisposers: Array<() => void> = [];
   private status: RuntimeStatus = 'starting';
   private profileId?: string;
@@ -128,6 +131,7 @@ export class CaelianKernel {
   private mvuIngestDepth = 0;
   private managedContentTimer?: number;
   private surveyTimer?: number;
+  private memoryTogetherLetterPending = false;
   private surveyPromptActive = false;
   private questTracker?: QuestTrackerService;
   private questJudgeApiKey?: string;
@@ -147,6 +151,7 @@ export class CaelianKernel {
     this.channel = options.channel;
     this.version = options.version;
     this.buildId = options.buildId;
+    this.now = options.now ?? (() => new Date());
     this.adapter = new TavernAdapter(
       options.sourceWindow,
       this.channel === 'beta' ? 'Beta' : 'Alpha',
@@ -221,7 +226,8 @@ export class CaelianKernel {
         }),
       );
       this.stateDisposers.push(
-        this.events.on('panel.closed', () => {
+        this.events.on('panel.closed', async () => {
+          await this.presentMemoryTogetherLetterIfReady();
           void this.offerPendingSurvey();
         }),
       );
@@ -237,6 +243,7 @@ export class CaelianKernel {
       }
       await this.openReleaseNotesIfNew();
       await this.openAchievementSpecialIfNeeded();
+      await this.presentMemoryTogetherLetterIfReady();
       this.startManagedContentUpdates();
       this.startSurveyUpdates();
       await this.events.emit('runtime.ready', this.getRuntimeInfo());
@@ -278,6 +285,10 @@ export class CaelianKernel {
           ? (await this.repository.snapshot(this.profileId)).battle
           : null;
       const result = await this.repository.execute(this.profileId, command);
+      if (result.status === 'applied' && type === 'player.create') {
+        await this.syncAchievementPatches();
+        await this.syncProjection();
+      }
       if (
         result.status === 'applied' &&
         type === 'battle.finish' &&
@@ -1448,7 +1459,13 @@ export class CaelianKernel {
     const result = await this.repository.syncPatchEntitlements(
       this.profileId,
       this.adapter.achievementPatchSignals(),
+      this.now(),
     );
+    if (
+      result.claimedAchievementIds.includes(MEMORY_TOGETHER_ACHIEVEMENT_ID)
+    ) {
+      this.memoryTogetherLetterPending = true;
+    }
     if (result.receivedMailIds.length > 0) {
       this.notifications.show({
         kind: 'info',
@@ -1459,6 +1476,34 @@ export class CaelianKernel {
         duration: 7_000,
         onClick: () => this.panels.navigate('mailbox'),
       });
+    }
+    if (this.status === 'ready') {
+      await this.presentMemoryTogetherLetterIfReady();
+    }
+  }
+
+  private async presentMemoryTogetherLetterIfReady(): Promise<void> {
+    if (
+      !this.memoryTogetherLetterPending ||
+      this.status !== 'ready' ||
+      this.shuttingDown
+    ) {
+      return;
+    }
+    const blockingPanels = new Set([
+      'feedback',
+      'surveys',
+      'release-notes',
+      'achievement-letter',
+      'memory-together-letter',
+      'quest-submission',
+    ]);
+    if (this.panels.list().some((panel) => blockingPanels.has(panel))) return;
+    try {
+      await this.panels.open('memory-together-letter');
+      this.memoryTogetherLetterPending = false;
+    } catch {
+      // The reward is already authoritative; another in-session sync may retry UI.
     }
   }
 
@@ -1597,6 +1642,7 @@ export class CaelianKernel {
       'surveys',
       'release-notes',
       'achievement-letter',
+      'memory-together-letter',
     ]);
     if (this.panels.list().some((panel) => blockingPanels.has(panel))) return;
 

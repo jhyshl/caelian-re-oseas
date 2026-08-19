@@ -103,6 +103,7 @@ export type PanelName =
   | 'surveys'
   | 'release-notes'
   | 'achievement-letter'
+  | 'memory-together-letter'
   | 'quest-submission'
   | 'diagnostics';
 export type QueryName =

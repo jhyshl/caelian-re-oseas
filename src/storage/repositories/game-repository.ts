@@ -295,8 +295,9 @@ export class GameRepository {
   syncPatchEntitlements(
     profileId: string,
     signals: AchievementPatchSignal[],
+    date = new Date(),
   ) {
-    return this.achievements.syncPatchEntitlements(profileId, signals);
+    return this.achievements.syncPatchEntitlements(profileId, signals, date);
   }
 
   mailboxState(profileId: string): Promise<MailboxState> {

@@ -75,9 +75,9 @@ describe('AchievementRepository integration', () => {
     ).rejects.toThrow('已经领取过');
   });
 
-  it('保留旧版 95 项并接入今昔的诗行特殊成就', async () => {
+  it('保留旧版 95 项并接入内置特殊成就', async () => {
     const definitions = await loadAchievementDefinitions();
-    expect(Object.keys(definitions)).toHaveLength(97);
+    expect(Object.keys(definitions)).toHaveLength(98);
     expect(definitions.ach_re_oseas).toMatchObject({
       name: 'Re∞: 欧西亚斯',
       star: 3,
@@ -86,6 +86,12 @@ describe('AchievementRepository integration', () => {
     expect(definitions.ach_past_present_poem).toMatchObject({
       name: '今昔的诗行',
       star: 5,
+    });
+    expect(definitions.ach_memory_together).toMatchObject({
+      name: '同行的记忆',
+      star: 5,
+      condition: '仅限2026年8月19日领取',
+      patchOnly: true,
     });
   });
 

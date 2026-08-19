@@ -23,6 +23,7 @@ export function mountVuePanel(
           panel === 'surveys' ||
           panel === 'release-notes' ||
           panel === 'achievement-letter' ||
+          panel === 'memory-together-letter' ||
           panel === 'quest-submission'
         ? 'caelian-panel-host caelian-modal-host'
         : 'caelian-panel-host';

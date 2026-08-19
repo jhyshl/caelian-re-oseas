@@ -496,6 +496,17 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.5.0-beta.1',
+    label: 'Beta 1.5',
+    releasedAt: '2026-08-19',
+    changes: [
+      '同步 Alpha 45 的成就兼容层：旧版与后续新增成就都可按运行时定义进入成就图鉴；成就页只显示成就，不再放置信件或邮件入口。',
+      '创意工坊恢复旧版积木搭建方式；MP 改为兑换可支配强度的资源限制，而非直接增加强度，并新增消耗 HP 换取更多可支配强度的积木。',
+      '扩展多怪战斗联动：怪物可为敌方全体提供增益、净化与协同支援，不再因单只怪物受控而让整组敌人失去变化。',
+      '内置限定成就“同行的记忆”：仅可在玩家本地日期 2026 年 8 月 19 日首次领取 520 金币；过期或已领取时完全静默，成功领取后展示凯利安信件。',
+    ],
+  },
+  {
     version: '1.4.0-beta.1',
     label: 'Beta 1.4',
     releasedAt: '2026-08-14',
