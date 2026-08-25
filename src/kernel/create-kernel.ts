@@ -253,7 +253,7 @@ export class CaelianKernel {
       await this.openAchievementSpecialIfNeeded();
       await this.presentMemoryTogetherLetterIfReady();
       this.startManagedContentUpdates();
-      this.startSurveyUpdates();
+      if (this.channel === 'alpha') this.startSurveyUpdates();
       await this.events.emit('runtime.ready', this.getRuntimeInfo());
     } catch (error) {
       this.status = 'error';

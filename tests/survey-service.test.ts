@@ -1,4 +1,6 @@
 import Dexie from 'dexie';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CaelianDatabase } from '@/storage/database';
 import {
@@ -241,5 +243,75 @@ describe('问卷清单和一次性提交', () => {
     expect(fetchMock).toHaveBeenCalledTimes(callsAfterFirstSubmission);
 
     db.close();
+  });
+
+  it('Beta 不再发放或接收问卷，但保留已提交答案', async () => {
+    const name = `caelian-beta-survey-${crypto.randomUUID()}`;
+    databaseNames.push(name);
+    const db = new CaelianDatabase('beta', name);
+    await db.open();
+
+    const fetchMock = vi.spyOn(window, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify(catalog), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const service = new SurveyService(db, window, 'beta', [
+      'https://example.test/managed-content/surveys/alpha.json',
+    ]);
+
+    await expect(service.refreshCatalog()).resolves.toMatchObject({ active: 0 });
+    await expect(service.pending()).resolves.toEqual([]);
+    await expect(service.list()).resolves.toEqual([
+      expect.objectContaining({ acceptingResponses: false }),
+    ]);
+    await expect(
+      service.submit(survey.id, {
+        answers: { device: 'mobile' },
+        discordId: '',
+      }),
+    ).rejects.toThrow('这份问卷已过期');
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('caelian_survey_responses'),
+      ),
+    ).toHaveLength(0);
+
+    const submittedAt = Date.now();
+    await db.surveyResponses.put({
+      id: `survey:${survey.id}`,
+      surveyId: survey.id,
+      surveyRevision: survey.revision,
+      status: 'submitted',
+      definition: survey,
+      answers: { device: 'pc' },
+      discordId: 'existing-player',
+      submissionId: crypto.randomUUID(),
+      submittedAt,
+      updatedAt: submittedAt,
+    });
+    await expect(service.list()).resolves.toEqual([
+      expect.objectContaining({
+        acceptingResponses: false,
+        response: expect.objectContaining({
+          status: 'submitted',
+          answers: { device: 'pc' },
+        }),
+      }),
+    ]);
+    db.close();
+  });
+});
+
+describe('问卷过期界面', () => {
+  it('优先显示已过期并使用只读状态', () => {
+    const app = readFileSync(
+      path.join(process.cwd(), 'src', 'modules', 'surveys', 'App.vue'),
+      'utf8',
+    );
+    expect(app).toContain("if (!entry.acceptingResponses) return '已过期'");
+    expect(app).toContain('v-else-if="expired"');
+    expect(app).toContain('这份问卷不再接受回答');
   });
 });

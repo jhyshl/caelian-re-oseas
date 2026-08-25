@@ -35,6 +35,9 @@ const submitted = computed(
 const ignored = computed(
   () => selected.value?.response?.status === 'ignored',
 );
+const expired = computed(
+  () => Boolean(selected.value && !selected.value.acceptingResponses && !submitted.value),
+);
 const canSubmit = computed(
   () => Boolean(selected.value?.acceptingResponses && !submitted.value),
 );
@@ -196,8 +199,8 @@ function answerLabel(
 
 function statusLabel(entry: SurveyListEntry): string {
   if (entry.response?.status === 'submitted') return '已提交';
+  if (!entry.acceptingResponses) return '已过期';
   if (entry.response?.status === 'ignored') return '已忽略提醒';
-  if (!entry.acceptingResponses) return '已结束';
   return '待填写';
 }
 
@@ -366,6 +369,12 @@ onUnmounted(() => {
             <footer>
               该问卷已经锁定，无法再次填写或修改。
             </footer>
+          </section>
+
+          <section v-else-if="expired" class="expired-summary">
+            <b>已过期</b>
+            <h3>这份问卷已停止收集</h3>
+            <p>这份问卷不再接受回答，未填写的内容无法继续提交。</p>
           </section>
 
           <form v-else class="survey-form" @submit.prevent="submitCurrent">
@@ -652,6 +661,13 @@ onUnmounted(() => {
 .readonly-summary article h4 { margin: 5px 0 8px; color: #dcd4c9; font-size: 13px; }
 .readonly-summary article p { margin: 0; color: #b8b1a6; font-size: 12px; line-height: 1.7; white-space: pre-wrap; }
 .readonly-summary > footer { padding-top: 8px; color: #8d877e; font-size: 10px; }
+
+.expired-summary { display: grid; justify-items: start; gap: 10px; margin-top: 24px; padding: 24px; border: 1px solid rgba(212, 168, 67, 0.24); border-radius: 14px; background: rgba(212, 168, 67, 0.05); }
+.expired-summary b { color: #d4a843; font-size: 11px; letter-spacing: 0.12em; }
+.expired-summary h3,
+.expired-summary p { margin: 0; }
+.expired-summary h3 { color: #e8e0d5; }
+.expired-summary p { color: #9a9389; font-size: 12px; line-height: 1.7; }
 
 .center-state { height: 100%; display: grid; place-content: center; justify-items: center; gap: 11px; padding: 30px; text-align: center; }
 .center-state i { width: 26px; height: 26px; border: 2px solid #383b43; border-top-color: #d4a843; border-radius: 50%; animation: spin 0.8s linear infinite; }

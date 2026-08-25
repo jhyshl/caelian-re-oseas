@@ -381,9 +381,13 @@ export class SurveyService {
   constructor(
     private readonly db: CaelianDatabase,
     private readonly sourceWindow: Window,
-    channel: 'alpha' | 'beta' = 'alpha',
+    private readonly channel: 'alpha' | 'beta' = 'alpha',
     private readonly catalogSources = defaultCatalogSources(channel),
   ) {}
+
+  private acceptsResponses(survey: SurveyDefinition): boolean {
+    return this.channel === 'alpha' && isSurveyActive(survey);
+  }
 
   async refreshCatalog(): Promise<SurveyCatalogSyncResult> {
     if (this.refreshInFlight) return this.refreshInFlight;
@@ -421,8 +425,9 @@ export class SurveyService {
           source,
           revision: catalog.revision,
           changed,
-          active: catalog.surveys.filter((survey) => isSurveyActive(survey))
-            .length,
+          active: catalog.surveys.filter((survey) =>
+            this.acceptsResponses(survey),
+          ).length,
         };
       } catch (error) {
         errors.push(error instanceof Error ? error.message : String(error));
@@ -462,7 +467,7 @@ export class SurveyService {
       .map((definition) => ({
         definition,
         response: recordsBySurvey.get(definition.id),
-        acceptingResponses: isSurveyActive(definition),
+        acceptingResponses: this.acceptsResponses(definition),
       }))
       .sort((left, right) => {
         const leftPending = left.acceptingResponses && !left.response;
@@ -519,8 +524,8 @@ export class SurveyService {
     const existing = await this.db.surveyResponses.get(responseId(surveyId));
     if (existing?.status === 'submitted') return existing;
     const definition = await this.definition(surveyId, existing?.definition);
-    if (!isSurveyActive(definition)) {
-      throw new Error('这份问卷已经停止收集，无法继续提交。');
+    if (!this.acceptsResponses(definition)) {
+      throw new Error('这份问卷已过期，无法继续提交。');
     }
 
     const validation = validateSurveySubmission(definition, draft);

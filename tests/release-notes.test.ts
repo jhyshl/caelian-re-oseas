@@ -19,10 +19,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.5.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.6.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.6',
       'Beta 1.5',
       'Beta 1.4',
       'Beta 1.3',
@@ -30,10 +31,11 @@ describe('release notes', () => {
       'Beta 1.1',
       'Beta 1.0',
     ]);
-    expect(releases[0]?.changes.join('\n')).toContain('成就兼容层');
-    expect(releases[0]?.changes.join('\n')).toContain('消耗 HP');
-    expect(releases[0]?.changes.join('\n')).toContain('同行的记忆');
-    expect(releases[0]?.changes.join('\n')).toContain('取消追踪');
+    const latestText = releases[0]?.changes.join('\n') ?? '';
+    expect(latestText).toContain('吸血属性');
+    expect(latestText).toContain('深渊回声');
+    expect(latestText).toContain('持久回执');
+    expect(latestText).toContain('已过期');
     expect(releases.some((release) => release.label.startsWith('Alpha'))).toBe(
       false,
     );
