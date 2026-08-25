@@ -88,6 +88,45 @@ async function dataResponse(response: Response): Promise<unknown> {
   return response.json();
 }
 
+const feedbackDashboardColumns = [
+  'id',
+  'kind',
+  'title',
+  'details',
+  'reproduction_steps',
+  'expected_result',
+  'actual_result',
+  'contact',
+  'app_version',
+  'build_id',
+  'client_context',
+  'admin_status',
+  'admin_note',
+  'created_at',
+  'reviewed_at',
+  'resolved_at',
+  'updated_at',
+].join(',');
+
+function isUuidV4(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function feedbackRecord(
+  id: string,
+): Promise<Record<string, unknown> | null> {
+  const result = await dataResponse(
+    await database(
+      `caelian_feedback?select=${feedbackDashboardColumns}&id=eq.${encodeURIComponent(id)}&limit=1`,
+    ),
+  );
+  if (!Array.isArray(result)) return null;
+  const current = result[0];
+  return current && typeof current === 'object'
+    ? current as Record<string, unknown>
+    : null;
+}
+
 async function dashboard(section: string): Promise<unknown> {
   if (section === 'card-square') {
     return dataResponse(
@@ -98,7 +137,9 @@ async function dashboard(section: string): Promise<unknown> {
   }
   if (section === 'feedback') {
     return dataResponse(
-      await database('caelian_feedback?select=*&order=created_at.desc&limit=500'),
+      await database(
+        `caelian_feedback?select=${feedbackDashboardColumns}&order=created_at.desc&limit=500`,
+      ),
     );
   }
   if (section === 'surveys') {
@@ -144,10 +185,33 @@ async function moderateEntry(body: Record<string, unknown>): Promise<unknown> {
   );
 }
 
+async function viewFeedback(body: Record<string, unknown>): Promise<unknown> {
+  const id = String(body.id ?? '');
+  if (!isUuidV4(id)) throw new Error('Invalid feedback id');
+  const current = await feedbackRecord(id);
+  if (!current) throw new Error('Feedback not found');
+  if (current.reviewed_at) return [current];
+
+  const now = new Date().toISOString();
+  return dataResponse(
+    await database(
+      `caelian_feedback?select=${feedbackDashboardColumns}&id=eq.${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({
+          reviewed_at: now,
+          updated_at: now,
+        }),
+      },
+    ),
+  );
+}
+
 async function updateFeedback(body: Record<string, unknown>): Promise<unknown> {
   const id = String(body.id ?? '');
   const status = String(body.status ?? '');
-  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error('Invalid feedback id');
+  if (!isUuidV4(id)) throw new Error('Invalid feedback id');
   if (status === 'deleted') {
     return dataResponse(
       await database(`caelian_feedback?id=eq.${encodeURIComponent(id)}`, {
@@ -159,16 +223,26 @@ async function updateFeedback(body: Record<string, unknown>): Promise<unknown> {
   if (!['open', 'resolved', 'rejected'].includes(status)) {
     throw new Error('Invalid feedback status');
   }
+  const current = await feedbackRecord(id);
+  if (!current) throw new Error('Feedback not found');
+  const now = new Date().toISOString();
+  const noteValue = body.author_reply ?? body.note;
   return dataResponse(
-    await database(`caelian_feedback?id=eq.${encodeURIComponent(id)}`, {
-      method: 'PATCH',
-      headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({
-        admin_status: status,
-        admin_note: String(body.note ?? '').trim().slice(0, 1000) || null,
-        reviewed_at: status === 'open' ? null : new Date().toISOString(),
-      }),
-    }),
+    await database(
+      `caelian_feedback?select=${feedbackDashboardColumns}&id=eq.${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({
+          admin_status: status,
+          admin_note: String(noteValue ?? '').trim().slice(0, 1000) || null,
+          reviewed_at: current.reviewed_at ?? now,
+          resolved_at:
+            status === 'resolved' ? current.resolved_at ?? now : null,
+          updated_at: now,
+        }),
+      },
+    ),
   );
 }
 
@@ -188,11 +262,13 @@ Deno.serve(async (request: Request) => {
         ? await dashboard(String(body.section ?? ''))
         : action === 'moderate-entry'
           ? await moderateEntry(body)
-          : action === 'update-feedback'
-            ? await updateFeedback(body)
-            : (() => {
-                throw new Error('Unknown action');
-              })();
+          : action === 'view-feedback'
+            ? await viewFeedback(body)
+            : action === 'update-feedback'
+              ? await updateFeedback(body)
+              : (() => {
+                  throw new Error('Unknown action');
+                })();
     return json({ ok: true, result }, 200, origin);
   } catch (error) {
     return json(

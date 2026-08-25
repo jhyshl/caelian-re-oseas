@@ -1,6 +1,8 @@
 import type { PlayerRecord } from '@/domain/types';
 
-export const STAT_POINTS_PER_LEVEL = 8;
+export const STAT_POINTS_PER_LEVEL = 10;
+export const LIFESTEAL_STAT_POINT_COST = 2;
+export const LIFESTEAL_CAP = 30;
 
 type ExperienceState = Pick<
   PlayerRecord,

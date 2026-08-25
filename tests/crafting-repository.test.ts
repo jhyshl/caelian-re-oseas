@@ -107,7 +107,7 @@ describe('CraftingRepository integration', () => {
     ).toBeUndefined();
   });
 
-  it('装备可从一星升到二星和三星，并严格使用旧版倍率', async () => {
+  it('装备每次升星按实例当前属性翻倍，并兼容旧二星数值', async () => {
     const { database, repository } = setup();
     const profile = await repository.ensureProfile('craft-equipment');
     await Promise.all(
@@ -125,10 +125,15 @@ describe('CraftingRepository integration', () => {
     expect(equipment).toEqual([
       expect.objectContaining({
         stars: 2,
-        stats: { attack: 4 },
-        description: '攻击+4',
+        stats: { attack: 6 },
+        description: '攻击+6',
       }),
     ]);
+
+    await database.equipmentInstances.update(equipment[0]!.id, {
+      stats: { attack: 4 },
+      description: '攻击+4',
+    });
 
     await Promise.all(
       ['two-b', 'two-c'].map((id) =>
@@ -144,8 +149,8 @@ describe('CraftingRepository integration', () => {
     expect(equipment).toEqual([
       expect.objectContaining({
         stars: 3,
-        stats: { attack: 6 },
-        description: '攻击+6',
+        stats: { attack: 8 },
+        description: '攻击+8',
       }),
     ]);
     expect(

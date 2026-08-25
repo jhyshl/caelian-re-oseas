@@ -33,6 +33,7 @@ export function defaultPlayer(
     speed: 5,
     actionPointsPerTurn: 5,
     drawPerTurn: 5,
+    lifesteal: 0,
     statPoints: 0,
     gold: 500,
     reclassCount: 0,
@@ -53,6 +54,7 @@ export function defaultStatAllocations(
     defense: 0,
     speed: 0,
     actionPointsPerTurn: 0,
+    lifesteal: 0,
     actionPointCosts: [],
     updatedAt: now,
   };

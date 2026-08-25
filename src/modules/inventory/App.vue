@@ -10,6 +10,7 @@ import type {
   GameSnapshot,
   InventoryStackRecord,
 } from '@/domain/types';
+import { equipmentInstanceDescription } from '@/equipment-stats';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
@@ -382,7 +383,7 @@ onMounted(async () => {
               <i>◇</i>
               <div>
                 <strong>{{ entry.name }} {{ '★'.repeat(entry.stars) }}</strong>
-                <span>{{ entry.description }}</span>
+                <span>{{ equipmentInstanceDescription(entry) }}</span>
               </div>
               <button
                 type="button"

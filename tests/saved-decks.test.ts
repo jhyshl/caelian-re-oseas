@@ -88,7 +88,7 @@ describe('本地命名构筑预设', () => {
     ).toThrow('当前酒馆窗口无法使用本地存储');
   });
 
-  it('只接受 10–20 张构筑，并允许任意数量的同名卡牌', () => {
+  it('只接受 10–20 张预设，重复卡的持有量在实际应用时校验', () => {
     expect(() =>
       saveNamedDeckBuild({
         id: 'saved_build_too_short',

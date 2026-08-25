@@ -241,7 +241,7 @@ async function progressCommission(quest: QuestRecord) {
         },
       });
       if (result.status === 'rejected') throw new Error(result.message);
-      await props.context.api.openPanel('battle');
+      await props.context.api.navigatePanel('battle');
       notice.value = '讨伐战斗已载入，胜利后会自动累计进度。';
     } else {
       const result = await props.context.api.execute({

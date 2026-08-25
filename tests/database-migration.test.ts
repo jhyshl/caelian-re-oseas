@@ -43,7 +43,7 @@ describe('数据库迁移', () => {
 
     const current = new CaelianDatabase('alpha', name);
     await current.open();
-    expect(DATABASE_SCHEMA_VERSION).toBe(7);
+    expect(DATABASE_SCHEMA_VERSION).toBe(8);
     expect(await current.inventoryStacks.toArray()).toEqual([
       expect.objectContaining({
         itemId: 'legacy_apple',
@@ -54,6 +54,40 @@ describe('数据库迁移', () => {
     expect(current.surveyResponses).toBeDefined();
     expect(current.questTrackerStates).toBeDefined();
     expect(current.questFloorCheckpoints).toBeDefined();
+    current.close();
+  });
+
+  it('v8 为旧玩家与加点记录补齐吸血字段', async () => {
+    const name = `caelian-lifesteal-migration-${crypto.randomUUID()}`;
+    databaseNames.push(name);
+    const legacy = new Dexie(name);
+    legacy.version(7).stores({
+      playerStates: 'profileId, updatedAt',
+      statAllocations: 'profileId, updatedAt',
+    });
+    await legacy.open();
+    await legacy.table('playerStates').add({
+      profileId: 'profile',
+      name: '旧玩家',
+      updatedAt: 1,
+    });
+    await legacy.table('statAllocations').add({
+      profileId: 'profile',
+      actionPointCosts: [],
+      updatedAt: 1,
+    });
+    legacy.close();
+
+    const current = new CaelianDatabase('alpha', name);
+    await current.open();
+    expect(await current.playerStates.get('profile')).toMatchObject({
+      profileId: 'profile',
+      lifesteal: 0,
+    });
+    expect(await current.statAllocations.get('profile')).toMatchObject({
+      profileId: 'profile',
+      lifesteal: 0,
+    });
     current.close();
   });
 });

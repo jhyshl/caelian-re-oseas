@@ -32,7 +32,7 @@ describe('奖励效果展示', () => {
       description: '攻击+3，速度+1',
     };
     expect(equipmentRewardMeta(equipment, 2)).toBe('优秀 · 武器 · 2★');
-    expect(equipmentRewardEffect(equipment, 2)).toBe('攻击 +4，速度 +1');
+    expect(equipmentRewardEffect(equipment, 2)).toBe('攻击 +6，速度 +2');
   });
 
   it('直接展示藏品的完整效果说明', () => {

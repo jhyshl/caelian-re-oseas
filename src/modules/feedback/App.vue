@@ -3,10 +3,15 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import {
   FEEDBACK_LIMITS,
+  feedbackReceiptDisplayStatus,
+  readFeedbackReceipts,
+  refreshFeedbackReceipt,
   submitFeedback,
   validateFeedbackDraft,
   type FeedbackDraft,
   type FeedbackKind,
+  type FeedbackReceipt,
+  type FeedbackReceiptDisplayStatus,
 } from '@/feedback/feedback-service';
 import type { PanelContext } from '@/kernel/public-api';
 
@@ -28,7 +33,14 @@ const website = ref('');
 const errors = ref<string[]>([]);
 const submitting = ref(false);
 const submittedId = ref('');
+const submittedReceiptPersisted = ref<boolean | null>(null);
 const serviceError = ref('');
+const view = ref<'submit' | 'receipts'>('submit');
+const receipts = ref<FeedbackReceipt[]>([]);
+const refreshingReceipts = ref(false);
+const refreshingReceiptId = ref('');
+const receiptNotice = ref('');
+const receiptError = ref('');
 const isBug = computed(() => draft.kind === 'bug');
 let previousBodyOverflow = '';
 let previousRootOverflow = '';
@@ -57,6 +69,88 @@ function selectKind(kind: FeedbackKind): void {
   serviceError.value = '';
 }
 
+const receiptStatusLabels: Record<FeedbackReceiptDisplayStatus, string> = {
+  pending: '待查看',
+  viewed: '已查看',
+  resolved: '已解决',
+  rejected: '已处理',
+};
+
+function receiptState(
+  receipt: FeedbackReceipt,
+): FeedbackReceiptDisplayStatus {
+  return feedbackReceiptDisplayStatus(receipt);
+}
+
+function receiptStatusLabel(receipt: FeedbackReceipt): string {
+  return receiptStatusLabels[receiptState(receipt)];
+}
+
+function formatTime(value: string | null): string {
+  return value ? new Date(value).toLocaleString('zh-CN') : '—';
+}
+
+function loadReceipts(): void {
+  receipts.value = readFeedbackReceipts(hostWindow());
+}
+
+async function refreshReceipts(options?: { silent?: boolean }): Promise<void> {
+  if (refreshingReceipts.value) return;
+  const local = readFeedbackReceipts(hostWindow());
+  receipts.value = local;
+  if (!local.length) return;
+
+  refreshingReceipts.value = true;
+  receiptError.value = '';
+  if (!options?.silent) receiptNotice.value = '';
+  const results = await Promise.allSettled(
+    local.map((receipt) => refreshFeedbackReceipt(receipt, hostWindow())),
+  );
+  loadReceipts();
+  const failed = results.filter((result) => result.status === 'rejected').length;
+  if (failed === results.length) {
+    if (!options?.silent) {
+      receiptError.value = '暂时无法查询反馈进度，请稍后重试。';
+    }
+  } else if (!options?.silent) {
+    receiptNotice.value = failed
+      ? `已更新 ${results.length - failed} 条回执，${failed} 条暂时无法查询。`
+      : `已更新 ${results.length} 条反馈回执。`;
+  }
+  refreshingReceipts.value = false;
+}
+
+async function refreshOneReceipt(receipt: FeedbackReceipt): Promise<void> {
+  refreshingReceiptId.value = receipt.id;
+  receiptError.value = '';
+  receiptNotice.value = '';
+  try {
+    const updated = await refreshFeedbackReceipt(receipt, hostWindow());
+    loadReceipts();
+    receiptNotice.value = `“${updated.title}”当前状态：${receiptStatusLabel(updated)}。`;
+  } catch (error) {
+    receiptError.value =
+      error instanceof Error ? error.message : '查询失败，请稍后再试。';
+  } finally {
+    refreshingReceiptId.value = '';
+  }
+}
+
+function showSubmissionForm(): void {
+  view.value = 'submit';
+  submittedId.value = '';
+  submittedReceiptPersisted.value = null;
+  receiptError.value = '';
+  receiptNotice.value = '';
+}
+
+function showReceipts(): void {
+  view.value = 'receipts';
+  submittedId.value = '';
+  loadReceipts();
+  if (receipts.value.length) void refreshReceipts({ silent: true });
+}
+
 function readLastSubmittedAt(): number {
   try {
     return Number(
@@ -81,6 +175,7 @@ function rememberSubmission(): void {
 async function submit(): Promise<void> {
   errors.value = [];
   serviceError.value = '';
+  submittedReceiptPersisted.value = null;
 
   if (website.value) {
     submittedId.value = 'received';
@@ -104,6 +199,8 @@ async function submit(): Promise<void> {
     const result = await submitFeedback(draft, runtime, hostWindow());
     rememberSubmission();
     submittedId.value = result.id;
+    submittedReceiptPersisted.value = result.receiptPersisted;
+    loadReceipts();
   } catch (error) {
     serviceError.value =
       error instanceof Error ? error.message : '提交失败，请稍后再试。';
@@ -118,6 +215,8 @@ onMounted(() => {
   previousRootOverflow = document.documentElement.style.overflow;
   document.body.style.overflow = 'hidden';
   document.documentElement.style.overflow = 'hidden';
+  loadReceipts();
+  if (receipts.value.length) void refreshReceipts({ silent: true });
 });
 
 onUnmounted(() => {
@@ -150,23 +249,140 @@ onUnmounted(() => {
         </button>
       </header>
 
+      <nav class="feedback-tabs" aria-label="反馈窗口">
+        <button
+          type="button"
+          :class="{ active: view === 'submit' }"
+          @click="showSubmissionForm"
+        >
+          提交反馈
+        </button>
+        <button
+          type="button"
+          :class="{ active: view === 'receipts' }"
+          @click="showReceipts"
+        >
+          我的回执 <span>{{ receipts.length }}</span>
+        </button>
+      </nav>
+
       <div v-if="submittedId" class="success-state">
         <div class="success-mark">✓</div>
         <h2>反馈已送达</h2>
-        <p>
-          谢谢你帮助完善欧西亚斯 {{ runtime.channel === 'beta' ? 'Beta' : 'Alpha' }}。处理完成或决定不采纳后，这条记录会被删除。
+        <p v-if="submittedId === 'received'">
+          谢谢你帮助完善欧西亚斯 {{ runtime.channel === 'beta' ? 'Beta' : 'Alpha' }}。
+        </p>
+        <p v-else-if="submittedReceiptPersisted">
+          谢谢你帮助完善欧西亚斯 {{ runtime.channel === 'beta' ? 'Beta' : 'Alpha' }}。回执已保存在当前终端，可随时查看作者是否已读、是否解决以及给你的留言。
+        </p>
+        <p v-else class="persistence-warning">
+          反馈已经成功送达，但当前终端未能保存回执。请先复制下面的反馈编号留存；关闭窗口后，本终端将无法在“我的回执”中查询这条反馈。
         </p>
         <code v-if="submittedId !== 'received'">
           反馈编号：{{ submittedId }}
         </code>
-        <button
-          type="button"
-          class="primary-button"
-          @click="context.api.closePanel('feedback')"
-        >
-          完成
-        </button>
+        <div class="success-actions">
+          <button
+            type="button"
+            class="secondary-button"
+            @click="context.api.closePanel('feedback')"
+          >
+            完成
+          </button>
+          <button
+            v-if="submittedReceiptPersisted"
+            type="button"
+            class="primary-button"
+            @click="showReceipts"
+          >
+            查看我的回执
+          </button>
+        </div>
       </div>
+
+      <main v-else-if="view === 'receipts'" class="receipt-center">
+        <div class="receipt-toolbar">
+          <div>
+            <strong>保存在当前终端的反馈回执</strong>
+            <p>回执查询凭证不会公开给其他玩家。打开本窗口时会自动检查一次进度。</p>
+          </div>
+          <button
+            type="button"
+            class="primary-button"
+            :disabled="refreshingReceipts || receipts.length === 0"
+            @click="refreshReceipts()"
+          >
+            {{ refreshingReceipts ? '查询中……' : '查询最新进度' }}
+          </button>
+        </div>
+
+        <div v-if="receipts.length === 0" class="receipt-empty">
+          <strong>此终端还没有反馈回执</strong>
+          <p>成功提交 Bug 或意见后，回执会自动保存在这里。</p>
+          <button type="button" class="primary-button" @click="showSubmissionForm">
+            提交第一条反馈
+          </button>
+        </div>
+
+        <div v-else class="receipt-list">
+          <article
+            v-for="receipt in receipts"
+            :key="receipt.id"
+            :class="`receipt-status-${receiptState(receipt)}`"
+          >
+            <header>
+              <div>
+                <small>{{ receipt.kind === 'bug' ? 'BUG' : '意见 / 建议' }}</small>
+                <h2>{{ receipt.title }}</h2>
+              </div>
+              <strong>{{ receiptStatusLabel(receipt) }}</strong>
+            </header>
+
+            <p v-if="receipt.authorReply" class="author-reply">
+              <b>作者留言</b>
+              <span>{{ receipt.authorReply }}</span>
+            </p>
+
+            <dl>
+              <div>
+                <dt>提交时间</dt>
+                <dd>{{ formatTime(receipt.createdAt) }}</dd>
+              </div>
+              <div v-if="receipt.reviewedAt">
+                <dt>查看时间</dt>
+                <dd>{{ formatTime(receipt.reviewedAt) }}</dd>
+              </div>
+              <div v-if="receipt.resolvedAt">
+                <dt>解决时间</dt>
+                <dd>{{ formatTime(receipt.resolvedAt) }}</dd>
+              </div>
+              <div>
+                <dt>最后查询</dt>
+                <dd>{{ formatTime(receipt.lastCheckedAt) }}</dd>
+              </div>
+            </dl>
+
+            <footer>
+              <code>编号：{{ receipt.id }}</code>
+              <button
+                type="button"
+                class="secondary-button"
+                :disabled="refreshingReceipts || Boolean(refreshingReceiptId)"
+                @click="refreshOneReceipt(receipt)"
+              >
+                {{ refreshingReceiptId === receipt.id ? '查询中……' : '查询此回执' }}
+              </button>
+            </footer>
+          </article>
+        </div>
+
+        <p v-if="receiptNotice" class="receipt-notice" aria-live="polite">
+          {{ receiptNotice }}
+        </p>
+        <p v-if="receiptError" class="service-error" aria-live="polite">
+          {{ receiptError }}
+        </p>
+      </main>
 
       <form v-else @submit.prevent="submit">
         <div class="kind-switch" aria-label="反馈类型">
@@ -365,6 +581,44 @@ onUnmounted(() => {
   font: 700 24px Georgia, "Noto Serif SC", serif;
 }
 
+.feedback-tabs {
+  display: flex;
+  gap: 5px;
+  margin: -3px 0 17px;
+  padding: 5px;
+  border: 1px solid #292d35;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.feedback-tabs button {
+  flex: 1;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 7px;
+  color: #8f8a82;
+  background: transparent;
+  font: 700 10px inherit;
+  cursor: pointer;
+}
+
+.feedback-tabs button.active {
+  color: #f1d784;
+  background: rgba(212, 168, 67, 0.11);
+}
+
+.feedback-tabs span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  border-radius: 999px;
+  color: #d5c9af;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 9px;
+}
+
 .close {
   padding: 0 5px;
   border: 0;
@@ -556,6 +810,203 @@ form {
   cursor: pointer;
 }
 
+.secondary-button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.receipt-center {
+  display: grid;
+  gap: 13px;
+}
+
+.receipt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 14px;
+  border: 1px solid rgba(212, 168, 67, 0.24);
+  border-radius: 10px;
+  background: rgba(212, 168, 67, 0.055);
+}
+
+.receipt-toolbar strong {
+  color: #ead99f;
+  font-size: 11px;
+}
+
+.receipt-toolbar p {
+  margin: 5px 0 0;
+  color: #8f897f;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.receipt-toolbar .primary-button {
+  flex: 0 0 auto;
+}
+
+.receipt-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 44px 15px 34px;
+  color: #918b82;
+  text-align: center;
+}
+
+.receipt-empty strong {
+  color: #d8d0c4;
+  font: 700 18px Georgia, "Noto Serif SC", serif;
+}
+
+.receipt-empty p {
+  margin: 0 0 8px;
+  font-size: 10px;
+}
+
+.receipt-list {
+  display: grid;
+  gap: 11px;
+}
+
+.receipt-list article {
+  padding: 14px;
+  border: 1px solid #30343d;
+  border-left: 3px solid #8a8174;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.receipt-list article.receipt-status-viewed {
+  border-left-color: #7b9bd0;
+}
+
+.receipt-list article.receipt-status-resolved {
+  border-left-color: #62bb82;
+}
+
+.receipt-list article.receipt-status-rejected {
+  border-left-color: #b98667;
+}
+
+.receipt-list article > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.receipt-list small {
+  color: #d4a843;
+  font-size: 8px;
+  letter-spacing: 0.13em;
+}
+
+.receipt-list h2 {
+  margin: 4px 0 0;
+  color: #eee5d7;
+  font: 700 16px/1.3 Georgia, "Noto Serif SC", serif;
+}
+
+.receipt-list article > header > strong {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  color: #ded6ca;
+  background: #292e37;
+  font-size: 9px;
+}
+
+.receipt-status-viewed > header > strong {
+  color: #b9d1f5 !important;
+  background: rgba(75, 111, 166, 0.22) !important;
+}
+
+.receipt-status-resolved > header > strong {
+  color: #a8e2bd !important;
+  background: rgba(63, 143, 94, 0.2) !important;
+}
+
+.receipt-status-rejected > header > strong {
+  color: #e1b89e !important;
+  background: rgba(153, 96, 62, 0.2) !important;
+}
+
+.author-reply {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(212, 168, 67, 0.2);
+  border-radius: 8px;
+  color: #d9d1c4;
+  background: rgba(212, 168, 67, 0.055);
+  font-size: 10px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.author-reply b {
+  color: #e3c875;
+  font-size: 9px;
+}
+
+.receipt-list dl {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0 0;
+}
+
+.receipt-list dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 9px;
+}
+
+.receipt-list dt {
+  color: #77736d;
+}
+
+.receipt-list dd {
+  margin: 0;
+  color: #bdb5a9;
+  text-align: right;
+}
+
+.receipt-list footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 13px;
+}
+
+.receipt-list code {
+  min-width: 0;
+  color: #77736d;
+  font-size: 8px;
+  overflow-wrap: anywhere;
+}
+
+.receipt-list footer button {
+  flex: 0 0 auto;
+  min-width: 86px;
+  padding: 7px 10px;
+}
+
+.receipt-notice {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(80, 171, 115, 0.27);
+  border-radius: 8px;
+  color: #9ed4b2;
+  background: rgba(54, 132, 83, 0.1);
+  font-size: 10px;
+}
+
 .primary-button {
   border: 1px solid #d4a843;
   color: #1b150a;
@@ -607,6 +1058,14 @@ form {
   line-height: 1.6;
 }
 
+.success-state .persistence-warning {
+  padding: 10px 12px;
+  border: 1px solid rgba(210, 150, 67, 0.34);
+  border-radius: 9px;
+  color: #e3bf8b;
+  background: rgba(155, 96, 33, 0.11);
+}
+
 .success-state code {
   padding: 7px 9px;
   border-radius: 7px;
@@ -616,7 +1075,9 @@ form {
   overflow-wrap: anywhere;
 }
 
-.success-state .primary-button {
+.success-actions {
+  display: flex;
+  gap: 8px;
   margin-top: 10px;
 }
 
@@ -639,6 +1100,24 @@ form {
 
   .result-grid {
     grid-template-columns: 1fr;
+  }
+
+  .receipt-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .receipt-toolbar .primary-button {
+    width: 100%;
+  }
+
+  .receipt-list footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .receipt-list footer button {
+    width: 100%;
   }
 
   .dialog-actions {

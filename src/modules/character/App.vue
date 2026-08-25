@@ -7,6 +7,10 @@ import {
 } from '@/content/catalogs/inventory';
 import type { EquipmentDefinition, RelicDefinition } from '@/content/types';
 import type { GameSnapshot } from '@/domain/types';
+import {
+  aggregateEquipmentStats,
+  equipmentInstanceDescription,
+} from '@/equipment-stats';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import ProfessionDialog from '@/modules/character/ProfessionDialog.vue';
@@ -19,6 +23,10 @@ import {
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import AdjustableAvatar from '@/ui/AdjustableAvatar.vue';
 import MeterBar from '@/ui/adventurer/MeterBar.vue';
+import {
+  LIFESTEAL_CAP,
+  LIFESTEAL_STAT_POINT_COST,
+} from '@/player/progression';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -35,6 +43,44 @@ const notice = ref('');
 const disposers: Array<() => void> = [];
 
 const player = computed(() => snapshot.value?.player);
+const equippedStats = computed(() => {
+  const value = snapshot.value;
+  if (!value) return aggregateEquipmentStats([]);
+  const equippedIds = new Set(
+    [
+      value.loadout.weaponId,
+      value.loadout.armorId,
+      value.loadout.accessoryId,
+    ].filter((id): id is string => Boolean(id)),
+  );
+  return aggregateEquipmentStats(
+    value.equipment.filter((item) => equippedIds.has(item.id)),
+  );
+});
+const effectiveHpMax = computed(() =>
+  Math.max(1, (player.value?.hpMax ?? 1) + equippedStats.value.hpMax),
+);
+const effectiveHp = computed(() =>
+  Math.max(
+    0,
+    Math.min(
+      effectiveHpMax.value,
+      player.value?.hp ?? 0,
+    ),
+  ),
+);
+const effectiveMpMax = computed(() =>
+  Math.max(0, (player.value?.mpMax ?? 0) + equippedStats.value.mpMax),
+);
+const effectiveMp = computed(() =>
+  Math.max(
+    0,
+    Math.min(
+      effectiveMpMax.value,
+      player.value?.mp ?? 0,
+    ),
+  ),
+);
 const profession = computed(() =>
   player.value ? getProfessionTalent(player.value.subclass) : undefined,
 );
@@ -60,6 +106,7 @@ const allocationTotal = computed(() => {
     allocation.attack +
     allocation.defense +
     allocation.speed +
+    allocation.lifesteal * LIFESTEAL_STAT_POINT_COST +
     allocation.actionPointCosts.reduce((sum, value) => sum + value, 0)
   );
 });
@@ -70,6 +117,12 @@ const statRows = [
   { id: 'attack', icon: '⚔', label: '攻击', note: '每点 +1' },
   { id: 'defense', icon: '◈', label: '防御', note: '每点 +1' },
   { id: 'speed', icon: 'ϟ', label: '速度', note: '每点 +1' },
+  {
+    id: 'lifesteal',
+    icon: '♢',
+    label: '吸血',
+    note: '消耗2点 +1%，最高30%',
+  },
   {
     id: 'actionPointsPerTurn',
     icon: '◎',
@@ -177,16 +230,38 @@ async function claimLevelReward(
 }
 
 function statValue(id: (typeof statRows)[number]['id']): number {
-  return snapshot.value?.player[id] ?? 0;
+  const base = snapshot.value?.player[id] ?? 0;
+  return id === 'lifesteal' ? base : base + equippedStats.value[id];
 }
 
 function invested(id: (typeof statRows)[number]['id']): number {
   return snapshot.value?.statAllocations[id] ?? 0;
 }
 
+function equipmentBonus(id: (typeof statRows)[number]['id']): number {
+  return id === 'lifesteal' ? 0 : equippedStats.value[id];
+}
+
+function statAddCost(id: (typeof statRows)[number]['id']): number {
+  if (id === 'lifesteal') return LIFESTEAL_STAT_POINT_COST;
+  if (id !== 'actionPointsPerTurn') return 1;
+  return (snapshot.value?.player.actionPointsPerTurn ?? 0) <= 10 ? 2 : 3;
+}
+
+function canAddStat(id: (typeof statRows)[number]['id']): boolean {
+  const value = snapshot.value;
+  if (!value || value.player.statPoints < statAddCost(id)) return false;
+  return id !== 'lifesteal' || value.player.lifesteal < LIFESTEAL_CAP;
+}
+
 function equipped(slot: 'weaponId' | 'armorId' | 'accessoryId') {
   const id = snapshot.value?.loadout[slot];
   return snapshot.value?.equipment.find((item) => item.id === id);
+}
+
+function equippedDescription(slot: 'weaponId' | 'armorId' | 'accessoryId') {
+  const item = equipped(slot);
+  return item ? equipmentInstanceDescription(item) : '';
 }
 
 async function professionApplied() {
@@ -263,14 +338,14 @@ onUnmounted(() => {
         <div class="vitals">
           <MeterBar
             label="HP"
-            :value="snapshot.player.hp"
-            :max="snapshot.player.hpMax"
+            :value="effectiveHp"
+            :max="effectiveHpMax"
             color="var(--ca-green)"
           />
           <MeterBar
             label="MP"
-            :value="snapshot.player.mp"
-            :max="snapshot.player.mpMax"
+            :value="effectiveMp"
+            :max="effectiveMpMax"
             color="var(--ca-blue)"
           />
           <MeterBar
@@ -407,11 +482,23 @@ onUnmounted(() => {
         <div class="stats-grid">
           <article v-for="row in statRows" :key="row.id">
             <span>{{ row.icon }} {{ row.label }}</span>
-            <strong>{{ statValue(row.id) }}</strong>
+            <strong>
+              {{ statValue(row.id) }}{{ row.id === 'lifesteal' ? '%' : '' }}
+            </strong>
+            <small v-if="equipmentBonus(row.id)">
+              装备 {{ equipmentBonus(row.id) > 0 ? '+' : ''
+              }}{{ equipmentBonus(row.id) }}
+            </small>
           </article>
           <article>
             <span>▱ 补抽</span>
-            <strong>{{ snapshot.player.drawPerTurn }}</strong>
+            <strong>
+              {{ snapshot.player.drawPerTurn + equippedStats.drawPerTurn }}
+            </strong>
+            <small v-if="equippedStats.drawPerTurn">
+              装备 {{ equippedStats.drawPerTurn > 0 ? '+' : ''
+              }}{{ equippedStats.drawPerTurn }}
+            </small>
           </article>
         </div>
         <div v-if="statEditMode" class="allocation-grid">
@@ -436,7 +523,7 @@ onUnmounted(() => {
                 type="button"
                 class="ca-button primary"
                 :disabled="
-                  snapshot.player.statPoints <= 0 ||
+                  !canAddStat(row.id) ||
                     busyStat === `${row.id}:add`
                 "
                 @click="allocate(row.id, 'add')"
@@ -456,7 +543,7 @@ onUnmounted(() => {
             <div>
               <span>武器</span>
               <strong>{{ equipped('weaponId')?.name ?? '空' }}</strong>
-              <small>{{ equipped('weaponId')?.description ?? '' }}</small>
+              <small>{{ equippedDescription('weaponId') }}</small>
             </div>
           </article>
           <article>
@@ -464,7 +551,7 @@ onUnmounted(() => {
             <div>
               <span>防具</span>
               <strong>{{ equipped('armorId')?.name ?? '空' }}</strong>
-              <small>{{ equipped('armorId')?.description ?? '' }}</small>
+              <small>{{ equippedDescription('armorId') }}</small>
             </div>
           </article>
           <article>
@@ -472,7 +559,7 @@ onUnmounted(() => {
             <div>
               <span>饰品</span>
               <strong>{{ equipped('accessoryId')?.name ?? '空' }}</strong>
-              <small>{{ equipped('accessoryId')?.description ?? '' }}</small>
+              <small>{{ equippedDescription('accessoryId') }}</small>
             </div>
           </article>
         </div>
@@ -798,6 +885,13 @@ onUnmounted(() => {
   margin-top: 5px;
   color: var(--ca-gold-light);
   font: 700 21px/1 var(--ca-serif);
+}
+
+.stats-grid small {
+  display: block;
+  margin-top: 4px;
+  color: var(--ca-green);
+  font-size: 8px;
 }
 
 .allocation-grid {

@@ -446,11 +446,19 @@ function navigate(panel: PanelName) {
   }
 
   .ca-frame--battle .ca-page {
+    overflow-x: hidden;
+    overflow-y: auto;
     padding:
       8px
       max(8px, env(safe-area-inset-right))
       15px
       max(8px, env(safe-area-inset-left));
+  }
+}
+
+@media (max-width: 320px) {
+  .ca-nav-button {
+    min-width: 0;
   }
 }
 

@@ -5,7 +5,7 @@ import {
 } from '@/player/progression';
 
 describe('玩家等级成长', () => {
-  it('每提升一级获得 8 点属性点，多级提升会逐级累计', () => {
+  it('每提升一级获得 10 点属性点，多级提升会逐级累计', () => {
     const player = {
       level: 1,
       experience: 90,
@@ -16,13 +16,13 @@ describe('玩家等级成长', () => {
 
     const levelsGained = grantPlayerExperience(player, 170);
 
-    expect(STAT_POINTS_PER_LEVEL).toBe(8);
+    expect(STAT_POINTS_PER_LEVEL).toBe(10);
     expect(levelsGained).toBe(2);
     expect(player).toEqual({
       level: 3,
       experience: 10,
       experienceToNext: 200,
-      statPoints: 19,
+      statPoints: 23,
       pendingLevelRewards: [
         {
           id: 'level-2',

@@ -27,6 +27,7 @@ const snapshot: GameSnapshot = {
     speed: 5,
     actionPointsPerTurn: 5,
     drawPerTurn: 5,
+    lifesteal: 0,
     statPoints: 0,
     gold: 500,
     reclassCount: 0,
@@ -40,6 +41,7 @@ const snapshot: GameSnapshot = {
     defense: 0,
     speed: 0,
     actionPointsPerTurn: 0,
+    lifesteal: 0,
     actionPointCosts: [],
     updatedAt: 1,
   },
@@ -170,5 +172,40 @@ describe('createAiProjection', () => {
     expect(serialized).not.toContain('inventory');
     expect(serialized).not.toContain('cards');
     expect(serialized).not.toContain('equipment');
+  });
+
+  it('只投影穿戴装备后的有效生命与魔力上限，不暴露装备明细', () => {
+    const equipped: GameSnapshot = {
+      ...snapshot,
+      player: { ...snapshot.player, hp: 95, mp: 38 },
+      equipment: [
+        {
+          id: 'profile:test:gear',
+          profileId: 'profile:test',
+          baseId: 'gear',
+          name: '测试装备',
+          slot: 'accessory',
+          rarity: 'common',
+          stars: 2,
+          stats: { hp_max: 20, mpMax: 10 },
+          description: '生命上限+20，魔力上限+10',
+          updatedAt: 2,
+        },
+      ],
+      loadout: {
+        ...snapshot.loadout,
+        accessoryId: 'profile:test:gear',
+      },
+    };
+
+    const projection = createAiProjection(equipped, 'alpha');
+
+    expect(projection.state.player).toMatchObject({
+      hp: 95,
+      hpMax: 100,
+      mp: 38,
+      mpMax: 40,
+    });
+    expect(JSON.stringify(projection)).not.toContain('测试装备');
   });
 });

@@ -26,6 +26,14 @@ import {
   MAGICIAN_PASSIVE_ID,
   MAGICIAN_SUBCLASS_ID,
 } from '@/content/catalogs/magician';
+import {
+  LIFESTEAL_CAP,
+  LIFESTEAL_STAT_POINT_COST,
+} from '@/player/progression';
+import {
+  aggregateEquipmentStats,
+  scaleEquipmentStatsByStars,
+} from '@/equipment-stats';
 
 type AllocatableStat =
   | 'hpMax'
@@ -33,7 +41,8 @@ type AllocatableStat =
   | 'attack'
   | 'defense'
   | 'speed'
-  | 'actionPointsPerTurn';
+  | 'actionPointsPerTurn'
+  | 'lifesteal';
 
 const STANDARD_PASSIVE_BY_SUBCLASS: Record<string, string> = {
   holy_knight: 'pas_shield_master',
@@ -83,6 +92,10 @@ export class PlayerRepository {
   async get(profileId: string): Promise<PlayerRecord> {
     const player = await this.db.playerStates.get(profileId);
     if (!player) throw new Error('玩家档案不存在');
+    player.lifesteal = Math.max(
+      0,
+      Math.min(LIFESTEAL_CAP, Number(player.lifesteal ?? 0) || 0),
+    );
     return player;
   }
 
@@ -158,16 +171,35 @@ export class PlayerRepository {
     stat: AllocatableStat,
     direction: 'add' | 'remove',
   ): Promise<void> {
-    const [player, allocations] = await Promise.all([
+    const [player, allocations, loadout, equipment] = await Promise.all([
       this.get(profileId),
       this.db.statAllocations.get(profileId),
+      this.db.equipmentLoadouts.get(profileId),
+      this.db.equipmentInstances
+        .where('profileId')
+        .equals(profileId)
+        .toArray(),
     ]);
     if (!allocations) throw new Error('属性分配记录不存在');
+    allocations.lifesteal = Math.max(
+      0,
+      Math.min(LIFESTEAL_CAP, Number(allocations.lifesteal ?? 0) || 0),
+    );
+    const equippedIds = new Set(
+      loadout
+        ? [loadout.weaponId, loadout.armorId, loadout.accessoryId].filter(
+            (id): id is string => Boolean(id),
+          )
+        : [],
+    );
+    const equipmentBonus = aggregateEquipmentStats(
+      equipment.filter((item) => equippedIds.has(item.id)),
+    );
 
     if (direction === 'add') {
-      this.addStat(player, allocations, stat);
+      this.addStat(player, allocations, stat, equipmentBonus);
     } else {
-      this.removeStat(player, allocations, stat);
+      this.removeStat(player, allocations, stat, equipmentBonus);
     }
     const now = Date.now();
     player.updatedAt = now;
@@ -245,12 +277,7 @@ export class PlayerRepository {
           slot: definition.slot,
           rarity: definition.rarity,
           stars,
-          stats: Object.fromEntries(
-            Object.entries(definition.stats).map(([key, value]) => [
-              key,
-              Math.round(value * 1.35),
-            ]),
-          ),
+          stats: scaleEquipmentStatsByStars(definition.stats, stars),
           description: `${definition.description}（升级奖励）`,
           updatedAt: now,
         });
@@ -311,23 +338,35 @@ export class PlayerRepository {
     player: PlayerRecord,
     allocations: StatAllocationRecord,
     stat: AllocatableStat,
+    equipmentBonus: ReturnType<typeof aggregateEquipmentStats>,
   ): void {
     const cost =
-      stat === 'actionPointsPerTurn'
+      stat === 'lifesteal'
+        ? LIFESTEAL_STAT_POINT_COST
+        : stat === 'actionPointsPerTurn'
         ? player.actionPointsPerTurn <= 10
           ? 2
           : 3
         : 1;
+    if (stat === 'lifesteal' && player.lifesteal >= LIFESTEAL_CAP) {
+      throw new Error(`吸血最高为 ${LIFESTEAL_CAP}%`);
+    }
     if (player.statPoints < cost) throw new Error('可分配属性点不足');
     player.statPoints -= cost;
     allocations[stat] += 1;
 
     if (stat === 'hpMax') {
       player.hpMax += 5;
-      player.hp = Math.min(player.hpMax, player.hp + 5);
+      player.hp = Math.min(
+        Math.max(1, player.hpMax + equipmentBonus.hpMax),
+        player.hp + 5,
+      );
     } else if (stat === 'mpMax') {
       player.mpMax += 5;
-      player.mp = Math.min(player.mpMax, player.mp + 5);
+      player.mp = Math.min(
+        Math.max(0, player.mpMax + equipmentBonus.mpMax),
+        player.mp + 5,
+      );
     } else {
       player[stat] += 1;
     }
@@ -340,17 +379,24 @@ export class PlayerRepository {
     player: PlayerRecord,
     allocations: StatAllocationRecord,
     stat: AllocatableStat,
+    equipmentBonus: ReturnType<typeof aggregateEquipmentStats>,
   ): void {
     if (allocations[stat] <= 0) throw new Error('该属性没有可返还的投入点');
     allocations[stat] -= 1;
-    let refund = 1;
+    let refund = stat === 'lifesteal' ? LIFESTEAL_STAT_POINT_COST : 1;
 
     if (stat === 'hpMax') {
       player.hpMax = Math.max(1, player.hpMax - 5);
-      player.hp = Math.min(player.hp, player.hpMax);
+      player.hp = Math.min(
+        player.hp,
+        Math.max(1, player.hpMax + equipmentBonus.hpMax),
+      );
     } else if (stat === 'mpMax') {
       player.mpMax = Math.max(0, player.mpMax - 5);
-      player.mp = Math.min(player.mp, player.mpMax);
+      player.mp = Math.min(
+        player.mp,
+        Math.max(0, player.mpMax + equipmentBonus.mpMax),
+      );
     } else {
       player[stat] = Math.max(0, player[stat] - 1);
     }

@@ -2,21 +2,15 @@ import {
   loadCraftingRecipes,
   type CraftingRecipeDefinition,
 } from '@/content/catalogs/crafting';
-import { loadEquipmentDefinitions } from '@/content/catalogs/inventory';
-import type { EquipmentDefinition } from '@/content/types';
 import type {
   EquipmentInstanceRecord,
   EquipmentLoadoutRecord,
   EquipmentSlot,
   InventoryStackRecord,
 } from '@/domain/types';
+import { upgradeEquipmentStats } from '@/equipment-stats';
 import type { CaelianDatabase } from '@/storage/database';
 
-const STAR_MULTIPLIER: Record<number, number> = {
-  1: 1,
-  2: 1.45,
-  3: 2,
-};
 const STAT_NAMES: Record<string, string> = {
   attack: '攻击',
   defense: '防御',
@@ -42,17 +36,12 @@ export interface EquipmentMergeResult {
 
 export class CraftingRepository {
   private recipes?: Map<string, CraftingRecipeDefinition>;
-  private equipment?: Record<string, EquipmentDefinition>;
 
   constructor(private readonly db: CaelianDatabase) {}
 
   async prepare(): Promise<void> {
-    const [recipes, equipment] = await Promise.all([
-      loadCraftingRecipes(),
-      loadEquipmentDefinitions(),
-    ]);
+    const recipes = await loadCraftingRecipes();
     this.recipes ??= new Map(recipes.map((recipe) => [recipe.id, recipe]));
-    this.equipment ??= equipment;
   }
 
   async craftItem(
@@ -138,7 +127,7 @@ export class CraftingRepository {
         const nextStars = (stars + 1) as 2 | 3;
         const now = Date.now();
         const instanceId = `${profileId}:${baseId}:${nextStars}:${this.randomId()}`;
-        const stats = this.scaledStats(source, stars, nextStars);
+        const stats = upgradeEquipmentStats(source.stats);
         const created: EquipmentInstanceRecord = {
           ...source,
           id: instanceId,
@@ -212,29 +201,6 @@ export class CraftingRepository {
       stack: stacks.find((stack) => stack.id === id)!,
       quantity,
     }));
-  }
-
-  private scaledStats(
-    source: EquipmentInstanceRecord,
-    currentStars: number,
-    nextStars: 2 | 3,
-  ): Record<string, number> {
-    const base = this.equipment?.[source.baseId]?.stats;
-    const currentMultiplier = STAR_MULTIPLIER[currentStars] ?? 1;
-    const baseStats =
-      base ??
-      Object.fromEntries(
-        Object.entries(source.stats).map(([key, value]) => [
-          key,
-          Math.max(1, Math.round(value / currentMultiplier)),
-        ]),
-      );
-    return Object.fromEntries(
-      Object.entries(baseStats).map(([key, value]) => [
-        key,
-        Math.max(1, Math.round(value * STAR_MULTIPLIER[nextStars]!)),
-      ]),
-    );
   }
 
   private inheritLoadout(

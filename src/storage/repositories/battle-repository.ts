@@ -30,6 +30,10 @@ import {
   isBattleUsableEffect,
 } from '@/battle/consumables';
 import { createCaelianCompanion } from '@/battle/caelian-companion';
+import {
+  aggregateEquipmentStats,
+  scaleEquipmentStatsByStars,
+} from '@/equipment-stats';
 import type {
   BattleAnimationEvent,
   BattleCompanionState,
@@ -45,7 +49,12 @@ import type {
   PlayerRecord,
 } from '@/domain/types';
 import type { CaelianDatabase } from '@/storage/database';
-import { grantPlayerExperience } from '@/player/progression';
+import {
+  grantPlayerExperience,
+  LIFESTEAL_CAP,
+  LIFESTEAL_STAT_POINT_COST,
+  STAT_POINTS_PER_LEVEL,
+} from '@/player/progression';
 import { updateGuildRank } from '@/guild-progression';
 import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
 import {
@@ -71,6 +80,20 @@ const DIFFICULTY_SCALE = {
   hard: 1.5,
   hell: 2,
 } as const;
+
+const CLASS_RESOURCE_OWNERS: Record<string, string> = {
+  holy_sigil: 'holy_knight',
+  dragon_soul: 'dragon_knight',
+  element_resonance: 'elementalist',
+  ember_echo: 'fire_mage',
+  wind_mark: 'wind_mage',
+  thunder_charge: 'thunder_mage',
+  growth: 'wood_mage',
+  furnace_heat: 'blacksmith',
+  parts: 'mechanic',
+  abyss_echo: 'dark_mage',
+  hunter_prepare: 'vampire_hunter',
+};
 
 const MONSTER_SCALE: Record<
   string,
@@ -208,6 +231,7 @@ type Combatant = {
   attack: number;
   defense: number;
   speed: number;
+  lifesteal?: number;
   buffs: Record<string, BattleTimedEffect>;
   debuffs: Record<string, BattleTimedEffect>;
   onHitDebuff?: string;
@@ -242,6 +266,7 @@ interface WorkshopTestInput {
     defense: number;
     speed: number;
     actionPointsPerTurn: number;
+    lifesteal?: number;
   };
 }
 
@@ -262,6 +287,8 @@ export class BattleRepository {
     type: string;
     tags: string[];
   };
+  private activeDarkPriestRedirect = false;
+  private resolvingPlayerSummonEffect = false;
 
   constructor(
     private readonly db: CaelianDatabase,
@@ -334,6 +361,7 @@ export class BattleRepository {
       ownedPassives,
       world,
       ownedRelics,
+      ownedCards,
     ] = await Promise.all([
         this.db.playerStates.get(profileId),
         this.db.decks
@@ -350,6 +378,7 @@ export class BattleRepository {
         this.db.passiveTalents.where('profileId').equals(profileId).toArray(),
         this.db.worldStates.get(profileId),
         this.db.ownedRelics.where('profileId').equals(profileId).toArray(),
+        this.db.ownedCards.where('profileId').equals(profileId).toArray(),
       ]);
     if (!player) throw new Error('玩家档案不存在');
     if (input.workshopTest) {
@@ -359,6 +388,7 @@ export class BattleRepository {
     if (!deck || deck.cardIds.length === 0) {
       throw new Error('请先准备至少一张卡牌的出战牌组');
     }
+    this.assertOwnedDeck(deck.cardIds, ownedCards);
     const region = world?.region || '伊拉亚城';
     const resolvedMonsterId = input.monsterId
       ? this.resolveMonsterId(input.monsterId)
@@ -427,7 +457,7 @@ export class BattleRepository {
       selectedTarget: 0,
       player: battlePlayer,
       companion: input.companionPresent
-        ? createCaelianCompanion(player.level, this.random)
+        ? createCaelianCompanion(player.level, this.random, player.lifesteal)
         : undefined,
       enemies,
       rewards: null,
@@ -534,6 +564,7 @@ export class BattleRepository {
       throw new Error('缠绕中：无法使用攻击类卡牌');
     }
     this.assertCardDiscardCosts(state, card, cardInstance.instanceId);
+    this.assertCardResourceCosts(state, cardInstance.cardId);
 
     const targetIndex = this.resolveTargetIndex(
       state,
@@ -590,6 +621,27 @@ export class BattleRepository {
         await this.finishBattle(session, 'defeat');
         return;
       }
+      if (
+        state.player.subclass === 'vampire_hunter' &&
+        card.type === 'attack' &&
+        state.player.buffs.blood_moon
+      ) {
+        this.directHpLoss(
+          state,
+          state.player,
+          Math.max(1, Math.ceil(state.player.hpMax * 0.06)),
+          '血月猎杀',
+        );
+        if (state.player.hp <= 0) {
+          await this.finishBattle(session, 'defeat');
+          return;
+        }
+      }
+      this.activeDarkPriestRedirect =
+        state.player.subclass === 'dark_priest' &&
+        card.type === 'attack' &&
+        (state.player.sanity ?? 100) <= 0 &&
+        this.random() < 0.5;
       this.applyCardEffects(
         state,
         card,
@@ -611,6 +663,11 @@ export class BattleRepository {
       });
     } finally {
       this.activeMechanismCard = undefined;
+      this.activeDarkPriestRedirect = false;
+    }
+    if (state.player.hp <= 0) {
+      await this.finishBattle(session, 'defeat');
+      return;
     }
     this.stabilizeWorkshopTest(state);
 
@@ -685,6 +742,9 @@ export class BattleRepository {
     const state = session.state;
     this.assertPlayerPhase(state);
     this.assertNoPendingCardChoice(state);
+    if (state.player.manualDiscardTurn === state.turn) {
+      throw new Error('本回合已使用过一次主动弃牌');
+    }
     if (state.player.ap < 1) throw new Error('弃牌重抽需要 1 点行动点');
     const discarded = this.takeDiscardableCards(
       state,
@@ -693,6 +753,7 @@ export class BattleRepository {
     if (discarded.length === 0) throw new Error('当前没有可弃置的非空白手牌');
     const count = discarded.length;
     state.player.ap -= 1;
+    state.player.manualDiscardTurn = state.turn;
     state.player.discardPile.push(...discarded);
     this.drawCards(state, 3);
     this.log(state, 'player', `弃置 ${count} 张手牌，重新抽取 3 张`);
@@ -767,9 +828,14 @@ export class BattleRepository {
       .first();
     if (active) throw new Error('战斗进行中不能配置战前药剂');
     const stackId = `${profileId}:${itemId}`;
-    const [stack, player] = await Promise.all([
+    const [stack, player, loadout, equipment] = await Promise.all([
       this.db.inventoryStacks.get(stackId),
       this.db.playerStates.get(profileId),
+      this.db.equipmentLoadouts.get(profileId),
+      this.db.equipmentInstances
+        .where('profileId')
+        .equals(profileId)
+        .toArray(),
     ]);
     if (!stack || stack.quantity <= 0) throw new Error('背包中没有这个物品');
     if (!player?.created) throw new Error('玩家档案不存在');
@@ -789,14 +855,26 @@ export class BattleRepository {
       ['heal', 'gain_mp', 'heal_mp'].includes(effect.type),
     );
     if (prepared.length === 0) throw new Error('该物品不是战前准备道具');
+    const equippedIds = new Set(
+      loadout
+        ? [loadout.weaponId, loadout.armorId, loadout.accessoryId].filter(
+            (id): id is string => Boolean(id),
+          )
+        : [],
+    );
+    const equipmentBonus = aggregateEquipmentStats(
+      equipment.filter((item) => equippedIds.has(item.id)),
+    );
+    const effectiveHpMax = Math.max(1, player.hpMax + equipmentBonus.hpMax);
+    const effectiveMpMax = Math.max(0, player.mpMax + equipmentBonus.mpMax);
     for (const effect of immediate) {
       if (effect.type === 'heal') {
-        player.hp = Math.min(player.hpMax, player.hp + this.number(effect.value));
+        player.hp = Math.min(effectiveHpMax, player.hp + this.number(effect.value));
       } else if (effect.type === 'gain_mp') {
-        player.mp = Math.min(player.mpMax, player.mp + this.number(effect.value));
+        player.mp = Math.min(effectiveMpMax, player.mp + this.number(effect.value));
       } else {
-        player.hp = Math.min(player.hpMax, player.hp + this.number(effect.heal));
-        player.mp = Math.min(player.mpMax, player.mp + this.number(effect.mp));
+        player.hp = Math.min(effectiveHpMax, player.hp + this.number(effect.heal));
+        player.mp = Math.min(effectiveMpMax, player.mp + this.number(effect.mp));
       }
     }
     player.pendingBattleEffects = [
@@ -822,7 +900,6 @@ export class BattleRepository {
     this.runWorkshopMechanisms(state, 'turn_end');
     this.log(state, 'system', '结束玩家回合');
 
-    this.resolveChants(state);
     this.resolveSummons(state);
     if (state.companion) {
       state.phase = 'companion';
@@ -904,6 +981,23 @@ export class BattleRepository {
 
     state.turn += 1;
     state.phase = 'player';
+    state.player.cardsPlayedThisTurn = {};
+    if (state.player.subclass === 'arcane_mage') this.resolveChants(state);
+    this.syncAbyssEcho(state);
+    if (state.player.subclass === 'blacksmith') {
+      const heat = this.classResource(state, 'furnace_heat');
+      if (heat > 0) this.setClassResource(state, 'furnace_heat', heat - 1);
+    }
+    if (
+      state.player.subclass === 'vampire_hunter' &&
+      state.turn >= 5 &&
+      !state.player.buffs.blood_moon
+    ) {
+      this.addTimedEffect(state.player.buffs, 'blood_moon', 1, 99, {
+        undispellable: true,
+      });
+      this.setClassResource(state, 'hunter_prepare', 0);
+    }
     state.player.ap = state.player.apMax;
     const mpRegen =
       (this.rules?.mpRegenBase ?? 3) +
@@ -961,8 +1055,16 @@ export class BattleRepository {
     const hpLoss = Math.max(1, Math.round(session.state.player.hp * hpLossRate));
     const goldLoss = Math.min(player.gold, Math.round(player.gold * goldLossRate));
     session.state.player.hp = Math.max(1, session.state.player.hp - hpLoss);
-    player.hp = session.state.player.hp;
-    player.mp = session.state.player.mp;
+    player.hp = this.clamp(
+      session.state.player.hp,
+      1,
+      session.state.player.hpMax,
+    );
+    player.mp = this.clamp(
+      session.state.player.mp,
+      0,
+      session.state.player.mpMax,
+    );
     player.gold -= goldLoss;
     session.state.player.gold = player.gold;
     player.updatedAt = Date.now();
@@ -1041,12 +1143,7 @@ export class BattleRepository {
           slot: definition.slot,
           rarity: definition.rarity,
           stars,
-          stats: Object.fromEntries(
-            Object.entries(definition.stats).map(([key, value]) => [
-              key,
-              Math.round(value * (1 + (stars - 1) * 0.35)),
-            ]),
-          ),
+          stats: scaleEquipmentStatsByStars(definition.stats, stars),
           description: `${definition.description}（战斗奖励）`,
           updatedAt: now,
         });
@@ -1097,7 +1194,7 @@ export class BattleRepository {
       throw new Error('该职业的测试牌组不完整，请重新校验并保存职业');
     }
 
-    const attributeBudget = 99 * 8;
+    const attributeBudget = 99 * STAT_POINTS_PER_LEVEL;
     const apCount = Math.max(0, Math.floor(input.attributes.actionPointsPerTurn));
     const apCost = Math.min(apCount, 6) * 2 + Math.max(0, apCount - 6) * 3;
     const attributeSpent =
@@ -1106,6 +1203,8 @@ export class BattleRepository {
       Math.max(0, Math.floor(input.attributes.attack)) +
       Math.max(0, Math.floor(input.attributes.defense)) +
       Math.max(0, Math.floor(input.attributes.speed)) +
+      Math.max(0, Math.floor(input.attributes.lifesteal ?? 0)) *
+        LIFESTEAL_STAT_POINT_COST +
       apCost;
     if (attributeSpent > attributeBudget) {
       throw new Error(`满级测试角色最多可分配 ${attributeBudget} 点属性`);
@@ -1141,6 +1240,11 @@ export class BattleRepository {
       speed: 5 + input.attributes.speed,
       actionPointsPerTurn: 5 + apCount,
       drawPerTurn: 5,
+      lifesteal: this.clamp(
+        input.attributes.lifesteal ?? 0,
+        0,
+        LIFESTEAL_CAP,
+      ),
       statPoints: attributeBudget - attributeSpent,
       gold: 0,
       pendingBattleEffects: [],
@@ -1238,16 +1342,9 @@ export class BattleRepository {
     cardIds: string[],
     equipment: Array<{ stats: Record<string, number> }>,
   ): BattlePlayerState {
-    const bonus = equipment.reduce<Record<string, number>>((result, item) => {
-      for (const [key, value] of Object.entries(item.stats)) {
-        result[key] = (result[key] ?? 0) + this.number(value);
-      }
-      return result;
-    }, {});
-    const stat = (...keys: string[]) =>
-      keys.reduce((sum, key) => sum + (bonus[key] ?? 0), 0);
-    const hpMax = Math.max(1, player.hpMax + stat('hpMax', 'hp', '生命'));
-    const mpMax = Math.max(0, player.mpMax + stat('mpMax', 'mp', '魔力'));
+    const bonus = aggregateEquipmentStats(equipment);
+    const hpMax = Math.max(1, player.hpMax + bonus.hpMax);
+    const mpMax = Math.max(0, player.mpMax + bonus.mpMax);
     const instances = this.shuffle(
       cardIds.map((cardId, index) => ({
         instanceId: `${cardId}:${index}:${Math.floor(this.random() * 1_000_000)}`,
@@ -1257,25 +1354,25 @@ export class BattleRepository {
     return {
       name: player.name,
       subclass: player.subclass,
-      hp: Math.min(hpMax, player.hp + stat('hp', '生命')),
+      hp: Math.min(hpMax, player.hp),
       hpMax,
-      mp: Math.min(mpMax, player.mp + stat('mp', '魔力')),
+      mp: Math.min(mpMax, player.mp),
       mpMax,
       shield: 0,
-      attack: Math.max(0, player.attack + stat('attack', '攻击')),
-      defense: Math.max(0, player.defense + stat('defense', '防御')),
-      speed: Math.max(0, player.speed + stat('speed', '速度')),
+      attack: Math.max(0, player.attack + bonus.attack),
+      defense: Math.max(0, player.defense + bonus.defense),
+      speed: Math.max(0, player.speed + bonus.speed),
       ap: Math.max(
         1,
-        player.actionPointsPerTurn + stat('actionPointsPerTurn', 'ap', '行动点'),
+        player.actionPointsPerTurn + bonus.actionPointsPerTurn,
       ),
       apMax: Math.max(
         1,
-        player.actionPointsPerTurn + stat('actionPointsPerTurn', 'ap', '行动点'),
+        player.actionPointsPerTurn + bonus.actionPointsPerTurn,
       ),
       initialDraw: this.rules?.initialDraw ?? 5,
       drawPerTurn:
-        (this.rules?.baseDrawPerTurn ?? 3) + stat('drawPerTurn', 'draw', '抽牌'),
+        (this.rules?.baseDrawPerTurn ?? 3) + bonus.drawPerTurn,
       handLimit: this.rules?.handLimit ?? 10,
       drawPile: instances,
       discardPile: [],
@@ -1289,6 +1386,10 @@ export class BattleRepository {
       classResources: {},
       sanity: 100,
       abyssEcho: 0,
+      lifesteal: this.clamp(player.lifesteal, 0, 30),
+      cardsPlayedThisTurn: {},
+      abyssEchoBatches: [],
+      lastElementalistElement: '',
       summonsLost: 0,
     };
   }
@@ -1316,6 +1417,30 @@ export class BattleRepository {
       return Math.max(1, Math.round((30 * difficulty) / (1 + levelGap * 0.9)));
     });
     return chosen ?? all[0] ?? ['', undefined];
+  }
+
+  private assertOwnedDeck(
+    cardIds: string[],
+    ownedCards: Array<{ cardId: string; quantity: number }>,
+  ): void {
+    const ownedCounts = ownedCards.reduce<Map<string, number>>((counts, entry) => {
+      counts.set(entry.cardId, (counts.get(entry.cardId) ?? 0) + entry.quantity);
+      return counts;
+    }, new Map());
+    const requestedCounts = cardIds.reduce<Map<string, number>>((counts, cardId) => {
+      counts.set(cardId, (counts.get(cardId) ?? 0) + 1);
+      return counts;
+    }, new Map());
+    for (const [cardId, requested] of requestedCounts) {
+      const owned = Math.max(0, ownedCounts.get(cardId) ?? 0);
+      if (requested > owned) {
+        throw new Error(
+          owned > 0
+            ? `牌组中的 ${cardId} 需要 ${requested} 张，当前仅持有 ${owned} 张`
+            : `尚未拥有牌组中的 ${cardId}`,
+        );
+      }
+    }
   }
 
   private chooseEncounterPack(
@@ -1930,16 +2055,24 @@ export class BattleRepository {
     if (!target) return;
     const bonus = this.cardDamageBonus(card, state, target);
     const multiplier = this.cardDamageMultiplier(card, state, target);
+    const weaponMasterBonus = this.weaponMasterComboBonus(card, state);
+    let weaponMasterBonusApplied = false;
     for (const effect of card.effects ?? []) {
+      const effectBonus =
+        bonus +
+        (effect.type === 'damage' && !weaponMasterBonusApplied
+          ? weaponMasterBonus
+          : 0);
       this.applyCardEffect(
         state,
         card,
         effect,
         targetIndex,
-        bonus,
+        effectBonus,
         multiplier,
         allyTargetId,
       );
+      if (effect.type === 'damage') weaponMasterBonusApplied = true;
       if (this.aliveEnemies(state).length === 0) break;
     }
     if (card.effects?.some((effect) => effect.type === 'damage')) {
@@ -1965,6 +2098,11 @@ export class BattleRepository {
   ): void {
     const target = state.enemies[targetIndex];
     if (!target) return;
+    const cardId = String(
+      (card as CardDefinition & { id?: unknown }).id ??
+        this.activeMechanismCard?.id ??
+        '',
+    );
     const aliveTargets = this.aliveEnemies(state);
     const targets =
       effect.target === 'all_enemies'
@@ -1978,7 +2116,10 @@ export class BattleRepository {
     switch (effect.type) {
       case 'damage': {
         let totalDamage = 0;
-        for (const enemy of targets) {
+        const damageTargets: Combatant[] = this.activeDarkPriestRedirect
+          ? [state.player]
+          : targets;
+        for (const enemy of damageTargets) {
           const base =
             this.number(effect.value) +
             (card.type === 'attack'
@@ -1998,7 +2139,11 @@ export class BattleRepository {
               card.name,
             );
           }
-          if (state.player.buffs.poison_coat && enemy.hp > 0) {
+          if (
+            state.player.buffs.poison_coat &&
+            enemy.hp > 0 &&
+            this.combatantIdentity(state, enemy).side === 'enemy'
+          ) {
             this.addTimedEffect(
               enemy.debuffs,
               'poison',
@@ -2018,9 +2163,16 @@ export class BattleRepository {
           state,
           'shield_bonus',
         );
+        let baseAmount = this.number(effect.value);
+        if (state.player.subclass === 'mechanic' && cardId === 'mc_scrap_shield') {
+          baseAmount += this.classResource(state, 'parts') * 2;
+        }
+        if (state.player.subclass === 'thunder_mage' && cardId === 'th_ion_shield') {
+          baseAmount += this.classResource(state, 'thunder_charge') * 2;
+        }
         const amount = Math.max(
           0,
-          Math.round(this.number(effect.value) * (1 + shieldBonus)),
+          Math.round(baseAmount * (1 + shieldBonus)),
         );
         for (const recipient of this.cardFriendlyTargets(
           state,
@@ -2062,13 +2214,27 @@ export class BattleRepository {
         break;
       }
       case 'draw':
-        this.drawCards(state, this.number(effect.value, 1));
+        if (
+          !(
+            state.player.subclass === 'fire_mage' &&
+            cardId === 'fm_ember_return' &&
+            this.classResource(state, 'ember_echo') > 0
+          )
+        ) this.drawCards(state, this.number(effect.value, 1));
         break;
       case 'gain_mp': {
+        let requested = this.number(effect.value);
+        if (state.player.subclass === 'thunder_mage' && cardId === 'th_current_draw') {
+          requested = this.classResource(state, 'thunder_charge') * Math.max(1, requested);
+        } else if (state.player.subclass === 'fire_mage' && cardId === 'fm_ember_return') {
+          requested = this.classResource(state, 'ember_echo') > 0 ? requested : 0;
+        } else if (state.player.subclass === 'wood_mage' && cardId === 'wood_growth') {
+          requested = this.classResource(state, 'growth') > 0 ? requested : 0;
+        }
         const before = state.player.mp;
         state.player.mp = Math.min(
           state.player.mpMax,
-          state.player.mp + this.number(effect.value),
+          state.player.mp + requested,
         );
         const gained = state.player.mp - before;
         if (gained > 0) {
@@ -2100,10 +2266,7 @@ export class BattleRepository {
       }
       case 'gain_class_resource': {
         const resource = this.classResourceKey(effect.resource);
-        state.player.classResources ??= {};
-        state.player.classResources[resource] =
-          (state.player.classResources[resource] ?? 0) +
-          this.number(effect.value, 1);
+        this.addClassResource(state, resource, this.number(effect.value, 1));
         break;
       }
       case 'discard_last_drawn': {
@@ -2207,6 +2370,24 @@ export class BattleRepository {
             : this.cardFriendlyTargets(state, effect.target, allyTargetId);
         for (const recipient of recipients) {
           const effectName = String(effect.buff ?? effect.type);
+          const resourceKey = this.classResourceKey(effectName);
+          if (
+            recipient === state.player &&
+            CLASS_RESOURCE_OWNERS[resourceKey] === state.player.subclass
+          ) {
+            const amount = this.number(effect.value, 1);
+            this.addClassResource(state, resourceKey, amount);
+            const identity = this.combatantIdentity(state, recipient);
+            this.animation(state, {
+              kind: 'status',
+              sourceSide: 'player',
+              targetSide: identity.side,
+              targetId: identity.id,
+              amount,
+              label: resourceKey,
+            });
+            continue;
+          }
           this.addTimedEffect(
             recipient.buffs,
             effectName,
@@ -2232,7 +2413,10 @@ export class BattleRepository {
       case 'apply_debuff': {
         const recipients =
           effect.target === 'self' ? [state.player] : targets;
+        let applied = 0;
         for (const recipient of recipients) {
+          const chance = this.clamp(this.number(effect.chance, 100), 0, 100);
+          if (chance < 100 && this.random() * 100 >= chance) continue;
           const effectName = String(effect.debuff ?? 'weak');
           this.addTimedEffect(
             recipient.debuffs,
@@ -2252,6 +2436,35 @@ export class BattleRepository {
             targetId: identity.id,
             amount: this.number(effect.value, 1),
             label: effectName,
+          });
+          applied += 1;
+        }
+        if (
+          applied > 0 &&
+          String(effect.debuff) === 'burn' &&
+          effect.target !== 'self'
+        ) {
+          if (state.player.subclass === 'dragon_knight') {
+            this.addClassResource(state, 'dragon_soul');
+          } else if (state.player.subclass === 'fire_mage') {
+            this.addClassResource(state, 'ember_echo');
+          }
+        }
+        break;
+      }
+      case 'double_debuff': {
+        const debuffName = String(effect.debuff ?? 'poison');
+        for (const recipient of targets) {
+          const current = recipient.debuffs[debuffName];
+          if (!current) continue;
+          current.value = Math.max(0, current.value * 2);
+          this.animation(state, {
+            kind: 'status',
+            sourceSide: 'player',
+            targetSide: 'enemy',
+            targetId: recipient.id,
+            amount: current.value,
+            label: `${debuffName}×2`,
           });
         }
         break;
@@ -2309,6 +2522,14 @@ export class BattleRepository {
               card.name,
             );
           }
+          if (state.player.subclass === 'nun' && removed > 0) {
+            this.addTimedEffect(
+              state.player.buffs,
+              'purified_power',
+              Math.max(3, removed * 3),
+              1,
+            );
+          }
         }
         break;
       }
@@ -2318,7 +2539,12 @@ export class BattleRepository {
           effect.target,
           allyTargetId,
         )) {
-          delete recipient.debuffs[String(effect.debuff)];
+          const key = String(effect.debuff);
+          const removed = recipient.debuffs[key] ? 1 : 0;
+          delete recipient.debuffs[key];
+          if (state.player.subclass === 'nun' && removed > 0) {
+            this.addTimedEffect(state.player.buffs, 'purified_power', 3, 1);
+          }
         }
         break;
       case 'cleanse_buff':
@@ -2569,11 +2795,21 @@ export class BattleRepository {
         break;
       }
       case 'chant':
+        if (state.player.subclass !== 'arcane_mage') break;
+        if (state.player.chants.length >= 3) {
+          this.log(state, 'system', '吟诵队列已满（3/3），无法开始新的吟诵');
+          break;
+        }
         state.player.chants.push({
           id: `chant:${Date.now()}:${Math.floor(this.random() * 1_000_000)}`,
           name: card.name,
           turns: Math.max(1, this.number(effect.turns, 1)),
           effects: Array.isArray(effect.effects) ? effect.effects : [],
+          targetIndex,
+          multiplier: 1,
+        } as LocalBattleState['player']['chants'][number] & {
+          targetIndex: number;
+          multiplier: number;
         });
         this.log(
           state,
@@ -2582,8 +2818,19 @@ export class BattleRepository {
         );
         break;
       case 'reduce_chant': {
-        const chant = state.player.chants[0];
-        if (chant) chant.turns = Math.max(0, chant.turns - this.number(effect.value, 1));
+        const selected = effect.target === 'all'
+          ? [...state.player.chants]
+          : state.player.chants.slice(0, 1);
+        for (const chant of selected) {
+          chant.turns = Math.max(0, chant.turns - this.number(effect.value, 1));
+        }
+        for (const chant of selected.filter((entry) => entry.turns <= 0)) {
+          this.resolveChant(state, chant, 1);
+        }
+        const resolved = new Set(selected.filter((entry) => entry.turns <= 0));
+        state.player.chants = state.player.chants.filter(
+          (entry) => !resolved.has(entry),
+        );
         break;
       }
       case 'force_chant':
@@ -2594,20 +2841,23 @@ export class BattleRepository {
         break;
       case 'damage_per_class_resource': {
         const resource = this.classResourceKey(effect.resource);
-        const stored = state.player.classResources?.[resource] ?? 0;
+        const stored = this.classResource(state, resource);
         const damage = stored * this.number(effect.value);
         for (const enemy of targets) {
           this.damage(state, state.player, enemy, damage, 'player', card.name);
         }
-        if (effect.consume === 'all' && state.player.classResources) {
-          state.player.classResources[resource] = 0;
+        if (effect.consume === 'all') {
+          this.consumeClassResource(state, resource, 'all');
         }
         break;
       }
       case 'gain_mp_per_class_resource': {
         const resource = this.classResourceKey(effect.resource);
-        const stored = state.player.classResources?.[resource] ?? 0;
+        const stored = this.classResource(state, resource);
         this.restoreMp(state, stored * this.number(effect.value), card.name);
+        if (effect.consume === 'all') {
+          this.consumeClassResource(state, resource, 'all');
+        }
         break;
       }
       case 'consume_debuff_damage': {
@@ -2628,21 +2878,14 @@ export class BattleRepository {
       case 'debuff_catalyze': {
         const ratio = Math.max(0, this.number(effect.value_ratio, 1));
         const extraTurns = Math.max(0, this.number(effect.turns));
-        let potency = 0;
-        for (const debuff of Object.values(target.debuffs)) {
-          potency += this.effectValue(debuff);
-          debuff.turns += extraTurns;
-        }
-        if (potency > 0) {
-          this.damage(
-            state,
-            state.player,
-            target,
-            Math.round(potency * ratio),
-            'player',
-            card.name,
-            true,
-          );
+        for (const recipient of targets) {
+          for (const debuff of Object.values(recipient.debuffs)) {
+            debuff.value = Math.max(
+              0,
+              Math.round(debuff.value * (1 + ratio)),
+            );
+            debuff.turns += extraTurns;
+          }
         }
         break;
       }
@@ -2674,13 +2917,12 @@ export class BattleRepository {
       case 'restore_mp_per_abyss_echo':
         this.restoreMp(
           state,
-          (state.player.abyssEcho ?? 0) * this.number(effect.value),
+          this.classResource(state, 'abyss_echo') * this.number(effect.value),
           card.name,
         );
         break;
       case 'clear_abyss_echo':
-        state.player.abyssEcho = 0;
-        if (state.player.classResources) state.player.classResources.abyss_echo = 0;
+        this.consumeClassResource(state, 'abyss_echo', 'all');
         break;
       case 'gain_mp_per_chant':
         this.restoreMp(
@@ -2691,8 +2933,18 @@ export class BattleRepository {
         break;
       case 'copy_chant': {
         const chant = state.player.chants[0];
-        if (chant) {
-          this.resolveChant(state, chant, this.number(effect.multiplier, 0.5));
+        if (chant && state.player.chants.length < 3) {
+          const runtime = chant as typeof chant & { targetIndex?: number; multiplier?: number };
+          state.player.chants.push({
+            ...chant,
+            id: `chant-copy:${Date.now()}:${Math.floor(this.random() * 1_000_000)}`,
+            name: `${chant.name}·复写`,
+            effects: [...chant.effects],
+            targetIndex: runtime.targetIndex,
+            multiplier:
+              this.number(runtime.multiplier, 1) *
+              this.number(effect.multiplier, 0.5),
+          } as typeof chant);
         }
         break;
       }
@@ -2737,18 +2989,23 @@ export class BattleRepository {
         break;
       }
       case 'consume_san':
-        state.player.sanity = Math.max(
-          0,
-          (state.player.sanity ?? 100) - this.number(effect.value),
-        );
+        if (state.player.subclass === 'dark_priest') {
+          state.player.sanity = Math.max(
+            0,
+            (state.player.sanity ?? 100) - this.number(effect.value),
+          );
+        }
         break;
       case 'restore_san':
-        state.player.sanity = Math.min(
-          100,
-          (state.player.sanity ?? 100) + this.number(effect.value),
-        );
+        if (state.player.subclass === 'dark_priest') {
+          state.player.sanity = Math.min(
+            100,
+            (state.player.sanity ?? 100) + this.number(effect.value),
+          );
+        }
         break;
       case 'sacrifice_all_san': {
+        if (state.player.subclass !== 'dark_priest') break;
         const sanity = state.player.sanity ?? 100;
         state.player.sanity = 0;
         this.addTimedEffect(
@@ -3031,11 +3288,7 @@ export class BattleRepository {
       target.hp = Math.max(hpFloor, target.hp - calculatedHpDamage);
     }
     const hpDamage = beforeHp - target.hp;
-    if (target === state.player && hpDamage > 0) {
-      state.player.abyssEcho = (state.player.abyssEcho ?? 0) + 1;
-      state.player.classResources ??= {};
-      state.player.classResources.abyss_echo = state.player.abyssEcho;
-    }
+    if (hpDamage > 0) this.recordAbyssEchoLoss(state, target);
     this.animation(state, {
       kind: 'damage',
       sourceSide: sourceIdentity.side,
@@ -3074,13 +3327,22 @@ export class BattleRepository {
       });
       this.log(state, 'player', `荆棘反弹 ${thorns} 点伤害`);
     }
-    if (source === state.player && target !== state.player && hpDamage > 0) {
-      const lifesteal = Math.round(
-        hpDamage * Math.max(0, this.passiveEffectValue(state, 'lifesteal_ratio')),
-      );
-      if (lifesteal > 0) {
-        this.heal(state, state.player, lifesteal, '吸血', false);
-      }
+    if (targetIdentity.side === 'enemy' && hpDamage > 0) {
+      const ratio =
+        source === state.player
+          ? this.resolvingPlayerSummonEffect
+            ? 0
+            : this.clamp(
+                this.clamp(this.number(state.player.lifesteal), 0, 30) / 100 +
+                  this.passiveEffectValue(state, 'lifesteal_ratio'),
+                0,
+                1,
+              )
+          : sourceIdentity.side === 'companion' || sourceIdentity.side === 'summon'
+            ? this.clamp(this.number(source.lifesteal) / 100, 0, 0.3)
+            : 0;
+      const lifesteal = Math.floor(hpDamage * ratio);
+      if (lifesteal > 0) this.heal(state, source, lifesteal, '吸血', false);
     }
     if (
       sourceIdentity.side === 'enemy' &&
@@ -3606,7 +3868,15 @@ export class BattleRepository {
           effects,
         };
         for (const effect of effects) {
-          this.applyCardEffect(state, virtualCard, effect, targetIndex);
+          const wasResolvingPlayerSummonEffect =
+            this.resolvingPlayerSummonEffect;
+          this.resolvingPlayerSummonEffect = true;
+          try {
+            this.applyCardEffect(state, virtualCard, effect, targetIndex);
+          } finally {
+            this.resolvingPlayerSummonEffect =
+              wasResolvingPlayerSummonEffect;
+          }
         }
       }
       summon.duration -= 1;
@@ -3658,7 +3928,16 @@ export class BattleRepository {
     chant: LocalBattleState['player']['chants'][number],
     multiplier: number,
   ): void {
-    const targetIndex = this.resolveTargetIndex(state, state.selectedTarget);
+    const runtime = chant as typeof chant & {
+      targetIndex?: number;
+      multiplier?: number;
+    };
+    const targetIndex = this.resolveTargetIndex(
+      state,
+      runtime.targetIndex ?? state.selectedTarget,
+    );
+    const resolvedMultiplier =
+      multiplier * this.number(runtime.multiplier, 1);
     const virtualCard: CardDefinition = {
       name: chant.name,
       type: 'skill',
@@ -3671,8 +3950,11 @@ export class BattleRepository {
     for (const rawEffect of chant.effects) {
       if (typeof rawEffect !== 'object' || rawEffect === null) continue;
       const effect = { ...(rawEffect as CardEffect) };
-      if (typeof effect.value === 'number') effect.value *= multiplier;
+      if (typeof effect.value === 'number') effect.value *= resolvedMultiplier;
       this.applyCardEffect(state, virtualCard, effect, targetIndex);
+    }
+    if (state.player.subclass === 'arcane_mage') {
+      this.restoreMp(state, 1, '吟诵完成');
     }
   }
 
@@ -3984,6 +4266,13 @@ export class BattleRepository {
     if (card.type === 'attack') {
       bonus += this.passiveEffectValue(state, 'attack_bonus');
       bonus += this.effectValue(state.player.buffs.next_attack_bonus);
+      bonus += this.effectValue(state.player.buffs.purified_power);
+      if (
+        state.player.subclass === 'vampire_hunter' &&
+        state.player.buffs.blood_moon
+      ) {
+        bonus += Math.max(3, Math.ceil(state.player.hpMax * 0.08));
+      }
     }
     if (this.isSpellCard(card)) {
       bonus += this.effectValue(state.player.buffs.spell_damage_bonus);
@@ -4014,7 +4303,65 @@ export class BattleRepository {
         bonus += this.number(effect.bonus);
       }
     }
+    if (
+      state.player.subclass === 'dark_mage' &&
+      this.isAbyssSpellCard(card)
+    ) {
+      bonus += this.classResource(state, 'abyss_echo') * 2;
+    }
+    if (
+      state.player.subclass === 'dragon_knight' &&
+      card.type === 'attack' &&
+      this.classResource(state, 'dragon_soul') >= 3
+    ) {
+      bonus += 6;
+    }
+    if (state.player.subclass === 'blacksmith' && card.type === 'attack') {
+      bonus += this.classResource(state, 'furnace_heat') * 2;
+    }
+    if (
+      state.player.subclass === 'wind_mage' &&
+      /风痕/.test(this.cardResourceText(card))
+    ) {
+      bonus += this.classResource(state, 'wind_mark') * 3;
+    }
+    const thunderText = this.cardResourceText(card);
+    if (
+      state.player.subclass === 'thunder_mage' &&
+      (/(?:每层|每点|每个)\s*(?:雷荷)?充能[^；，。]*伤害/.test(thunderText) ||
+        /(?:雷荷)?充能\s*(?:每层|每点|每个)[^；，。]*伤害/.test(thunderText) ||
+        /消耗\s*(?:全部\s*)?(?:雷荷)?充能[^；，。]*[+＋]\s*\d+\s*伤害/.test(thunderText) ||
+        (/消耗\s*(?:全部\s*)?(?:雷荷)?充能/.test(thunderText) &&
+          /每层\s*[+＋]\s*\d+\s*伤害/.test(thunderText)))
+    ) {
+      bonus += this.classResource(state, 'thunder_charge') * 3;
+    }
     return bonus;
+  }
+
+  private weaponMasterComboBonus(
+    card: CardDefinition,
+    state: LocalBattleState,
+  ): number {
+    if (
+      state.player.subclass !== 'weapon_master' ||
+      card.type !== 'attack' ||
+      state.player.buffs.weapon_master_no_combo
+    ) return 0;
+    const cardId = String(
+      (card as CardDefinition & { id?: unknown }).id ??
+        this.activeMechanismCard?.id ??
+        '',
+    );
+    let playedBefore = state.player.cardsPlayedThisTurn?.[cardId] ?? 0;
+    if (state.player.buffs.weapon_master_force_combo && playedBefore < 1) {
+      playedBefore = 1;
+    }
+    if (playedBefore <= 0) return 0;
+    const base = playedBefore === 1 ? 2 : 4;
+    const extra = this.effectValue(state.player.buffs.weapon_master_bonus_extra);
+    const cap = 4 + this.effectValue(state.player.buffs.weapon_master_combo_cap);
+    return Math.min(cap, base + extra);
   }
 
   private cardDamageMultiplier(
@@ -4032,7 +4379,27 @@ export class BattleRepository {
     if (card.type === 'attack' && state.player.buffs.spell_double) {
       multiplier *= 2;
     }
+    if (card.type === 'attack' && state.player.buffs.weapon_master_attack_amp) {
+      multiplier *=
+        1 + this.effectValue(state.player.buffs.weapon_master_attack_amp) / 100;
+    }
+    if (
+      state.player.subclass === 'dark_priest' &&
+      (card.type === 'attack' || card.type === 'spell')
+    ) {
+      const lostSanity = 100 - this.clamp(state.player.sanity ?? 100, 0, 100);
+      multiplier *= 1 + Math.min(5, Math.floor(lostSanity / 20)) * 0.08;
+    }
     return multiplier;
+  }
+
+  private isAbyssSpellCard(card: CardDefinition): boolean {
+    return (
+      (card.cls === 'dark_mage' || card.cat === 'sub_dark_mage') &&
+      (card.type === 'spell' ||
+        this.cardElement(card) === 'dark' ||
+        /深渊|虚空|暗|黑潮/.test(`${card.name}${card.description}`))
+    );
   }
 
   private isSpellCard(card: CardDefinition): boolean {
@@ -4091,6 +4458,7 @@ export class BattleRepository {
       case 'enemy_has_shield':
         return target.shield > 0;
       case 'enemy_no_shield':
+      case 'no_shield':
         return target.shield <= 0;
       case 'enemy_no_specific_debuff':
         return !target.debuffs[String(detail.debuff)];
@@ -4138,7 +4506,15 @@ export class BattleRepository {
       case 'last_card_was_spell':
         return state.player.lastCardType === 'spell';
       case 'previous_card_same_name':
-        return state.player.lastCardId === String(detail.cardId ?? detail.id ?? '');
+        return Boolean(
+          state.player.lastCardId &&
+          this.cards?.[state.player.lastCardId]?.name ===
+            this.activeMechanismCard?.name,
+        );
+      case 'same_card_played_this_turn': {
+        const cardId = this.activeMechanismCard?.id ?? '';
+        return (state.player.cardsPlayedThisTurn?.[cardId] ?? 0) > 0;
+      }
       case 'summon_died_this_battle':
         return (state.player.summonsLost ?? 0) > 0;
       case 'has_chant':
@@ -4164,11 +4540,179 @@ export class BattleRepository {
   private classResourceKey(value: unknown): string {
     const key = String(value ?? 'class_resource').toLowerCase();
     if (/圣印|sigil/.test(key)) return 'holy_sigil';
+    if (/龙魂|dragon[_\s-]*soul/.test(key)) return 'dragon_soul';
+    if (/余烬|ember/.test(key)) return 'ember_echo';
+    if (/风痕|wind[_\s-]*mark/.test(key)) return 'wind_mark';
+    if (/生长|growth/.test(key)) return 'growth';
+    if (/炉温|furnace|heat/.test(key)) return 'furnace_heat';
     if (/零件|part/.test(key)) return 'parts';
     if (/雷|charge/.test(key)) return 'thunder_charge';
     if (/共鸣|resonance/.test(key)) return 'element_resonance';
-    if (/深渊|echo/.test(key)) return 'abyss_echo';
+    if (/深渊|abyss/.test(key)) return 'abyss_echo';
+    if (/猎杀|hunter[_\s-]*prepare/.test(key)) return 'hunter_prepare';
     return key.replace(/\s+/g, '_');
+  }
+
+  private classResourceAllowed(state: LocalBattleState, key: string): boolean {
+    const owner = CLASS_RESOURCE_OWNERS[key];
+    return !owner || state.player.subclass === owner;
+  }
+
+  private classResource(state: LocalBattleState, value: unknown): number {
+    const key = this.classResourceKey(value);
+    if (!this.classResourceAllowed(state, key)) return 0;
+    if (key === 'abyss_echo') return this.syncAbyssEcho(state);
+    return Math.max(0, Math.floor(state.player.classResources?.[key] ?? 0));
+  }
+
+  private setClassResource(
+    state: LocalBattleState,
+    value: unknown,
+    amount: number,
+  ): number {
+    const key = this.classResourceKey(value);
+    if (!this.classResourceAllowed(state, key)) return 0;
+    state.player.classResources ??= {};
+    const normalized = Math.max(0, Math.floor(amount));
+    state.player.classResources[key] = normalized;
+    if (key === 'abyss_echo') state.player.abyssEcho = normalized;
+    return normalized;
+  }
+
+  private addClassResource(
+    state: LocalBattleState,
+    value: unknown,
+    amount = 1,
+  ): number {
+    const key = this.classResourceKey(value);
+    return this.setClassResource(
+      state,
+      key,
+      this.classResource(state, key) + Math.max(0, Math.floor(amount)),
+    );
+  }
+
+  private consumeClassResource(
+    state: LocalBattleState,
+    value: unknown,
+    amount: number | 'all',
+  ): number {
+    const key = this.classResourceKey(value);
+    const before = this.classResource(state, key);
+    const consumed = amount === 'all'
+      ? before
+      : Math.min(before, Math.max(0, Math.floor(amount)));
+    this.setClassResource(state, key, before - consumed);
+    if (key === 'abyss_echo' && consumed > 0) {
+      state.player.abyssEchoBatches = [];
+      this.setClassResource(state, key, 0);
+    }
+    return consumed;
+  }
+
+  private syncAbyssEcho(state: LocalBattleState): number {
+    if (state.player.subclass !== 'dark_mage') {
+      state.player.abyssEcho = 0;
+      if (state.player.classResources) state.player.classResources.abyss_echo = 0;
+      return 0;
+    }
+    if (!Array.isArray(state.player.abyssEchoBatches)) {
+      const legacyEcho = Math.max(
+        0,
+        Math.floor(
+          Math.max(
+            this.number(state.player.abyssEcho),
+            this.number(state.player.classResources?.abyss_echo),
+          ),
+        ),
+      );
+      state.player.abyssEchoBatches = legacyEcho > 0
+        ? [{ turn: state.turn, value: legacyEcho }]
+        : [];
+    }
+    state.player.abyssEchoBatches = state.player.abyssEchoBatches.filter(
+      (batch) => batch.value > 0 && state.turn - batch.turn < 2,
+    );
+    const total = state.player.abyssEchoBatches.reduce(
+      (sum, batch) => sum + batch.value,
+      0,
+    );
+    state.player.abyssEcho = total;
+    state.player.classResources ??= {};
+    state.player.classResources.abyss_echo = total;
+    return total;
+  }
+
+  private recordAbyssEchoLoss(
+    state: LocalBattleState,
+    target: Combatant,
+  ): void {
+    if (state.player.subclass !== 'dark_mage' || target !== state.player) {
+      return;
+    }
+    this.syncAbyssEcho(state);
+    const batch = state.player.abyssEchoBatches?.find(
+      (entry) => entry.turn === state.turn,
+    );
+    if (batch) batch.value += 1;
+    else (state.player.abyssEchoBatches ??= []).push({ turn: state.turn, value: 1 });
+    this.syncAbyssEcho(state);
+  }
+
+  private cardResourceText(card: CardDefinition): string {
+    return `${card.description ?? ''}；${String(card.brief ?? '')}；${card.name ?? ''}`;
+  }
+
+  private resourceLayersFromText(card: CardDefinition, name: string): number {
+    const text = this.cardResourceText(card);
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    for (const pattern of [
+      new RegExp(`获得\\s*(\\d+)\\s*(?:层|个|点)?\\s*${escaped}`),
+      new RegExp(`获得\\s*${escaped}\\s*(\\d+)\\s*(?:层|个|点)?`),
+      new RegExp(`${escaped}\\s*[+＋]\\s*(\\d+)`),
+    ]) {
+      const matched = text.match(pattern);
+      if (matched) return Math.max(0, this.number(Number(matched[1])));
+    }
+    return new RegExp(`获得\\s*${escaped}(?:[；，。/]|$)`).test(text) ? 1 : 0;
+  }
+
+  private resourceConsumptionFromText(
+    card: CardDefinition,
+    name: string,
+  ): number | 'all' | 0 {
+    const text = this.cardResourceText(card);
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (
+      new RegExp(`消耗\\s*全部\\s*${escaped}`).test(text) ||
+      new RegExp(`清空\\s*${escaped}`).test(text)
+    ) return 'all';
+    for (const pattern of [
+      new RegExp(`消耗\\s*(\\d+)\\s*(?:层|个|点)?\\s*${escaped}`),
+      new RegExp(`消耗\\s*${escaped}\\s*(\\d+)\\s*(?:层|个|点)?`),
+    ]) {
+      const matched = text.match(pattern);
+      if (matched) return Math.max(0, this.number(Number(matched[1])));
+    }
+    return new RegExp(`消耗\\s*${escaped}`).test(text) ? 1 : 0;
+  }
+
+  private assertCardResourceCosts(
+    state: LocalBattleState,
+    cardId: string,
+  ): void {
+    const requirements: Record<string, [string, number, string]> = {
+      hk_sigil_burst: ['holy_sigil', 1, '没有圣印，无法发动圣印迸发'],
+      th_overcharge: ['thunder_charge', 2, '雷荷充能不足：需要 2 层'],
+      th_arc_jump: ['thunder_charge', 1, '雷荷充能不足：需要 1 层'],
+      wood_growth: ['growth', 1, '生长不足：需要 1 层'],
+      mc_overclock: ['parts', 2, '零件不足：需要 2 个'],
+      mc_parts_bomb: ['parts', 1, '没有零件，无法引爆零件炸弹'],
+    };
+    const requirement = requirements[cardId];
+    if (requirement && this.classResource(state, requirement[0]) < requirement[1]) {
+      throw new Error(requirement[2]);
+    }
   }
 
   private updateClassResourcesAfterCard(
@@ -4176,21 +4720,127 @@ export class BattleRepository {
     card: CardDefinition,
     cardId: string,
   ): void {
-    const resources = (state.player.classResources ??= {});
-    if (card.type === 'defense') {
-      resources.holy_sigil = (resources.holy_sigil ?? 0) + 1;
-    }
-    if (card.type === 'summon') {
-      resources.parts = (resources.parts ?? 0) + 1;
-    }
-    if (this.number(card.mpCost) > 0) {
-      resources.thunder_charge = (resources.thunder_charge ?? 0) + 1;
-    }
-    if (card.type === 'spell' || card.type === 'skill') {
-      resources.element_resonance = (resources.element_resonance ?? 0) + 1;
+    const subclass = state.player.subclass ?? '';
+    if (subclass === 'holy_knight') {
+      const gained = this.resourceLayersFromText(card, '圣印');
+      if (gained > 0) this.addClassResource(state, 'holy_sigil', gained);
+      const used = this.resourceConsumptionFromText(card, '圣印');
+      if (used) this.consumeClassResource(state, 'holy_sigil', used);
+    } else if (subclass === 'dragon_knight') {
+      if (card.type === 'attack' && this.classResource(state, 'dragon_soul') >= 3) {
+        this.consumeClassResource(state, 'dragon_soul', 'all');
+      }
+    } else if (subclass === 'elementalist') {
+      const element = this.cardElement(card);
+      const previous = state.player.lastElementalistElement ?? '';
+      if (element && previous && element !== previous) {
+        this.addClassResource(state, 'element_resonance');
+      }
+      if (element) state.player.lastElementalistElement = element;
+      if (cardId === 'em_element_reset') {
+        this.consumeClassResource(state, 'element_resonance', 'all');
+      }
+    } else if (subclass === 'fire_mage') {
+      const gained = this.resourceLayersFromText(card, '余烬');
+      if (gained > 0) this.addClassResource(state, 'ember_echo', gained);
+      const used = this.resourceConsumptionFromText(card, '余烬');
+      if (used) this.consumeClassResource(state, 'ember_echo', used);
+    } else if (subclass === 'wind_mage') {
+      const gained = this.resourceLayersFromText(card, '风痕');
+      if (gained > 0) this.addClassResource(state, 'wind_mark', gained);
+      else if (
+        card.effects?.some((effect) => effect.type === 'draw') ||
+        /高天|位移|风/.test(card.name)
+      ) this.addClassResource(state, 'wind_mark');
+      if (/消耗风痕/.test(this.cardResourceText(card))) {
+        this.consumeClassResource(state, 'wind_mark', 'all');
+      }
+    } else if (subclass === 'thunder_mage') {
+      const used =
+        this.resourceConsumptionFromText(card, '充能') ||
+        this.resourceConsumptionFromText(card, '雷荷充能');
+      if (used) this.consumeClassResource(state, 'thunder_charge', used);
+      const gained = card.type === 'summon'
+        ? 0
+        : this.resourceLayersFromText(card, '充能') ||
+          this.resourceLayersFromText(card, '雷荷充能');
+      if (gained > 0) this.addClassResource(state, 'thunder_charge', gained);
+      else if (this.number(card.mpCost) > 0) {
+        this.addClassResource(state, 'thunder_charge');
+      }
+    } else if (subclass === 'wood_mage') {
+      const gained = this.resourceLayersFromText(card, '生长');
+      if (gained > 0) this.addClassResource(state, 'growth', gained);
+      else if (card.effects?.some((effect) => ['heal', 'summon'].includes(effect.type))) {
+        this.addClassResource(state, 'growth');
+      }
+      const used = this.resourceConsumptionFromText(card, '生长');
+      if (used) this.consumeClassResource(state, 'growth', used);
+    } else if (subclass === 'blacksmith') {
+      const gained = this.resourceLayersFromText(card, '炉温');
+      if (gained > 0) this.addClassResource(state, 'furnace_heat', gained);
+      else if (card.type === 'defense' || card.type === 'skill') {
+        this.addClassResource(state, 'furnace_heat');
+      }
+      if (card.type === 'attack') {
+        this.consumeClassResource(state, 'furnace_heat', 'all');
+      }
+    } else if (subclass === 'mechanic') {
+      const hasStructuredGain = this.cardHasNestedEffect(
+        card.effects ?? [],
+        (effect) =>
+          effect.type === 'gain_class_resource' &&
+          this.classResourceKey(effect.resource) === 'parts',
+      );
+      const gained = hasStructuredGain
+        ? 0
+        : this.resourceLayersFromText(card, '零件');
+      const used = this.resourceConsumptionFromText(card, '零件');
+      if (gained > 0) this.addClassResource(state, 'parts', gained);
+      else if (
+        !hasStructuredGain &&
+        !used &&
+        (card.type === 'summon' || card.type === 'skill')
+      ) {
+        this.addClassResource(state, 'parts');
+      }
+      if (used) this.consumeClassResource(state, 'parts', used);
+    } else if (subclass === 'vampire_hunter' && cardId === 'vh_force_moon') {
+      if (!state.player.buffs.blood_moon) {
+        this.addClassResource(state, 'hunter_prepare');
+      }
+    } else if (subclass === 'weapon_master') {
+      if (cardId === 'wmst_stance_reset') state.player.cardsPlayedThisTurn = {};
+      if (card.type === 'attack') {
+        const counts = (state.player.cardsPlayedThisTurn ??= {});
+        counts[cardId] = (counts[cardId] ?? 0) + 1;
+        this.spendEffectCharge(state.player.buffs, 'weapon_master_force_combo');
+        this.spendEffectCharge(state.player.buffs, 'weapon_master_no_combo');
+      }
     }
     state.player.lastCardId = cardId;
     state.player.lastCardType = card.type;
+  }
+
+  private cardHasNestedEffect(
+    effects: CardEffect[],
+    predicate: (effect: CardEffect) => boolean,
+  ): boolean {
+    return effects.some((effect) => {
+      if (predicate(effect)) return true;
+      return ['effects', 'then_effects', 'else_effects'].some((key) =>
+        Array.isArray(effect[key])
+          ? this.cardHasNestedEffect(effect[key] as CardEffect[], predicate)
+          : false,
+      );
+    });
+  }
+
+  private cardElement(card: CardDefinition | undefined): string {
+    if (!card) return '';
+    const direct = String((card as CardDefinition & { element?: unknown }).element ?? '');
+    if (direct) return direct;
+    return String(card.effects?.find((effect) => effect.element)?.element ?? '');
   }
 
   private isPayableCondition(condition: CardEffect): boolean {
@@ -4207,20 +4857,13 @@ export class BattleRepository {
     if (condition.type === 'spend_mp') {
       state.player.mp = Math.max(0, state.player.mp - requested);
     } else if (condition.type === 'spend_hp') {
-      const before = state.player.hp;
-      state.player.hp = Math.max(1, state.player.hp - requested);
-      const spent = before - state.player.hp;
-      this.animation(state, {
-        kind: 'damage',
-        sourceSide: 'player',
-        sourceId: 'spend_hp',
-        targetSide: 'player',
-        targetId: 'player',
-        amount: spent,
-        hpAfter: state.player.hp,
-        shieldAfter: state.player.shield,
-        label: '支付生命',
-      });
+      const spent = this.directHpLoss(
+        state,
+        state.player,
+        requested,
+        '支付生命',
+        1,
+      );
       this.log(state, 'player', `支付 ${spent} HP 作为卡牌效果代价`);
     } else if (condition.type === 'discard') {
       const discarded = this.takeDiscardableCards(state, requested);
@@ -4508,8 +5151,8 @@ export class BattleRepository {
     player.hp =
       status === 'defeat'
         ? Math.max(1, Math.round(player.hpMax * 0.3))
-        : Math.max(1, state.player.hp);
-    player.mp = Math.max(0, state.player.mp);
+        : this.clamp(state.player.hp, 1, state.player.hpMax);
+    player.mp = this.clamp(state.player.mp, 0, state.player.mpMax);
     const levelBefore = player.level;
     const levelsGained = grantPlayerExperience(player, rewards.experience);
     player.gold = Math.max(0, state.player.gold ?? player.gold) + rewards.gold;
@@ -4634,8 +5277,8 @@ export class BattleRepository {
   ): Promise<void> {
     const player = await this.db.playerStates.get(profileId);
     if (!player) throw new Error('玩家档案不存在');
-    player.hp = Math.max(1, state.player.hp);
-    player.mp = Math.max(0, state.player.mp);
+    player.hp = this.clamp(state.player.hp, 1, state.player.hpMax);
+    player.mp = this.clamp(state.player.mp, 0, state.player.mpMax);
     player.gold = Math.max(0, state.player.gold ?? player.gold);
     player.updatedAt = Date.now();
     await this.db.playerStates.put(player);
@@ -5230,12 +5873,13 @@ export class BattleRepository {
     if (!target.buffs.blood_burn) return;
     const amount = Math.max(1, Math.floor(target.hpMax * 0.02));
     const stacks = Math.max(1, target.buffs.blood_burn.stacks ?? 1);
-    for (let stack = 1; stack <= stacks && target.hp > 0; stack += 1) {
+    for (let stack = 1; stack <= stacks && target.hp > 1; stack += 1) {
       this.directHpLoss(
         state,
         target,
         amount,
         `烧血·${actionLabel}（${stack}/${stacks}）`,
+        1,
       );
     }
   }
@@ -5282,19 +5926,23 @@ export class BattleRepository {
     target: Combatant,
     rawAmount: number,
     label: string,
+    minimumHp = 0,
   ): number {
     const amount = Math.max(0, Math.round(rawAmount));
     if (amount <= 0 || target.hp <= 0) return 0;
-    const invincibleFloor =
+    const invincibleFloor = Math.max(
+      minimumHp,
       state.workshopTest?.playerInvincible && target === state.player
         ? 1
         : state.workshopTest?.dummyInvincible && target !== state.player
           ? 1
-          : 0;
+          : 0,
+    );
     const before = target.hp;
     target.hp = Math.max(invincibleFloor, target.hp - amount);
     const actual = before - target.hp;
     if (actual <= 0) return 0;
+    this.recordAbyssEchoLoss(state, target);
     const targetIdentity = this.combatantIdentity(state, target);
     const targetIsFriendly = targetIdentity.side !== 'enemy';
     this.animation(state, {

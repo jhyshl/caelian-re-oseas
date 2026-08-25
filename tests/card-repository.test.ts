@@ -15,7 +15,7 @@ afterEach(async () => {
 });
 
 describe('牌组构筑规则', () => {
-  it('普通构筑接受 10–20 张并允许同一卡牌超过持有数量重复入组', async () => {
+  it('普通构筑只允许同名卡牌按实际持有数量重复入组', async () => {
     const database = new CaelianDatabase(
       'alpha',
       `caelian-deck-rules-${crypto.randomUUID()}`,
@@ -32,19 +32,34 @@ describe('牌组构筑规则', () => {
         subclass: 'holy_knight',
       },
     });
-    const firstOwned = (await repository.snapshot(profile.id)).cards[0]!;
-    const repeated = Array.from({ length: 20 }, () => firstOwned.cardId);
+    const initial = await repository.snapshot(profile.id);
+    const firstOwned = initial.cards[0]!;
+    const activeDeck = initial.decks.find((deck) => deck.active)!;
 
     await expect(
       repository.execute(profile.id, {
-        id: 'deck-rules-repeat-one-card',
+        id: 'deck-rules-valid-owned-counts',
+        type: 'deck.update',
+        payload: { cardIds: [...activeDeck.cardIds] },
+      }),
+    ).resolves.toMatchObject({ status: 'applied' });
+
+    const repeated = Array.from(
+      { length: Math.max(10, firstOwned.quantity + 1) },
+      () => firstOwned.cardId,
+    );
+    expect(firstOwned.quantity).toBeLessThan(20);
+    expect(repeated.length).toBeLessThanOrEqual(20);
+    await expect(
+      repository.execute(profile.id, {
+        id: 'deck-rules-over-owned-count',
         type: 'deck.update',
         payload: { cardIds: repeated },
       }),
-    ).resolves.toMatchObject({ status: 'applied' });
+    ).rejects.toThrow('当前仅持有');
     expect(
       (await repository.snapshot(profile.id)).decks.find((deck) => deck.active)
         ?.cardIds,
-    ).toEqual(repeated);
+    ).toEqual(activeDeck.cardIds);
   });
 });

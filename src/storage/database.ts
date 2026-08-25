@@ -41,7 +41,7 @@ import type {
   SurveyTokenRecord,
 } from '@/surveys/types';
 
-export const DATABASE_SCHEMA_VERSION = 7;
+export const DATABASE_SCHEMA_VERSION = 8;
 
 export class CaelianDatabase extends Dexie {
   profiles!: Table<ProfileRecord, string>;
@@ -169,5 +169,32 @@ export class CaelianDatabase extends Dexie {
       questFloorCheckpoints:
         'id, profileId, questId, floorId, floorIndex, [profileId+questId], [profileId+questId+floorIndex], createdAt',
     });
+
+    this.version(8)
+      .stores({})
+      .upgrade(async (transaction) => {
+        if (transaction.storeNames.includes('playerStates')) {
+          await transaction
+            .table<PlayerRecord, string>('playerStates')
+            .toCollection()
+            .modify((player) => {
+              player.lifesteal = Math.max(
+                0,
+                Math.min(30, Number(player.lifesteal ?? 0) || 0),
+              );
+            });
+        }
+        if (transaction.storeNames.includes('statAllocations')) {
+          await transaction
+            .table<StatAllocationRecord, string>('statAllocations')
+            .toCollection()
+            .modify((allocation) => {
+              allocation.lifesteal = Math.max(
+                0,
+                Math.min(30, Number(allocation.lifesteal ?? 0) || 0),
+              );
+            });
+        }
+      });
   }
 }

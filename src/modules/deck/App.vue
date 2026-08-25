@@ -114,7 +114,15 @@ function beginEdit() {
 
 function addCard(id: string) {
   const owned = snapshot.value?.cards.find((entry) => entry.cardId === id);
-  if (!owned || owned.quantity < 1 || draft.value.length >= 20) return;
+  const inDeck = draft.value.filter((cardId) => cardId === id).length;
+  if (
+    !owned ||
+    owned.quantity < 1 ||
+    inDeck >= owned.quantity ||
+    draft.value.length >= 20
+  ) {
+    return;
+  }
   draft.value.push(id);
 }
 
@@ -436,14 +444,14 @@ onMounted(async () => {
               <span>{{ entry.definition.description }}</span>
             </div>
             <div>
-              <small>已入组 {{ entry.inDeck }} · 可重复</small>
+              <small>持有 {{ entry.quantity }} · 已入组 {{ entry.inDeck }}</small>
               <button
                 type="button"
                 class="ca-button primary"
-                :disabled="draft.length >= 20"
+                :disabled="draft.length >= 20 || entry.inDeck >= entry.quantity"
                 @click="addCard(entry.id)"
               >
-                加入
+                {{ entry.inDeck >= entry.quantity ? '已全部入组' : '加入' }}
               </button>
             </div>
           </article>

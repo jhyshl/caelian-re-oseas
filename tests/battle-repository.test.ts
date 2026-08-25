@@ -1382,4 +1382,815 @@ describe('本地战斗仓库', () => {
       ),
     ).toBe(true);
   });
+
+  it('开战前按实际持有数量拒绝旧存档中的非法重复卡牌', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-illegal-deck-start-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:illegal-deck-start');
+    await game.execute(profile.id, {
+      id: 'illegal-deck-player-create',
+      type: 'player.create',
+      payload: {
+        name: '非法牌组测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const deck = (await database.decks
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    const cardId = deck.cardIds[0]!;
+    const owned = (await database.ownedCards.get(`${profile.id}:${cardId}`))!;
+    deck.cardIds = Array.from({ length: owned.quantity + 1 }, () => cardId);
+    await database.decks.put(deck);
+    const battles = new BattleRepository(database, () => 0.99);
+    await battles.prepare();
+
+    await expect(
+      battles.start(profile.id, { monsterId: 'mon_slime', count: 1 }),
+    ).rejects.toThrow(`当前仅持有 ${owned.quantity} 张`);
+  });
+
+  it('让烧血绕过护盾且保留 1HP，并限制主动弃牌每回合一次', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'blood-burn-discard-limit',
+      'holy_knight',
+    );
+    session.state.player.hp = 20;
+    session.state.player.shield = 50;
+    session.state.player.buffs.blood_burn = {
+      value: 20,
+      turns: 5,
+      stacks: 2,
+    };
+    session.state.enemies[0]!.attack = 0;
+    session.state.enemies[0]!.intent = null;
+    await database.battleSessions.put(session);
+
+    await battles.discardHand(profile.id, session.id);
+    let current = (await database.battleSessions.get(session.id))!;
+    const burnPerStack = Math.max(
+      1,
+      Math.floor(current.state.player.hpMax * 0.02),
+    );
+    expect(current.state.player).toMatchObject({
+      hp: 20 - burnPerStack * 2,
+      shield: 50,
+      manualDiscardTurn: 1,
+    });
+    current.state.player.hp = 1;
+    await database.battleSessions.put(current);
+    await expect(battles.discardHand(profile.id, session.id)).rejects.toThrow(
+      '本回合已使用过一次主动弃牌',
+    );
+
+    await battles.endTurn(profile.id, session.id);
+    await battles.discardHand(profile.id, session.id);
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.manualDiscardTurn).toBe(2);
+    expect(current.state.player.hp).toBe(1);
+  });
+
+  it('把三张“中毒层数翻倍”牌按乘法结算而不是中毒 +2', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'poison-double',
+      'wood_mage',
+    );
+    session.state.player.attack = 0;
+    session.state.player.ap = 20;
+    session.state.player.mp = session.state.player.mpMax = 100;
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 10_000;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.debuffs.poison = { value: 4, turns: 3 };
+    await database.battleSessions.put(session);
+
+    let expected = 4;
+    for (const cardId of [
+      'wood_poison_bloom',
+      'al_catalyst',
+      'ap_poison_amplifier',
+    ]) {
+      const current = (await database.battleSessions.get(session.id))!;
+      current.state.player.ap = 20;
+      current.state.player.mp = 100;
+      current.state.player.hand.unshift({
+        instanceId: `test:${cardId}`,
+        cardId,
+      });
+      await database.battleSessions.put(current);
+      await battles.playCard(profile.id, {
+        battleId: session.id,
+        handIndex: 0,
+        targetIndex: 0,
+      });
+      expected *= 2;
+      const after = (await database.battleSessions.get(session.id))!;
+      expect(after.state.enemies[0]!.debuffs.poison?.value).toBe(expected);
+    }
+  });
+
+  it('按职业限定资源并让龙魂、炉温、风痕、雷荷与零件进入实际伤害', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'class-resource-damage',
+      'dragon_knight',
+    );
+
+    async function playWithResource(
+      subclass: string,
+      cardId: string,
+      resource: string,
+      value: number,
+    ) {
+      const current = (await database.battleSessions.get(session.id))!;
+      current.state.player.subclass = subclass;
+      current.state.player.attack = 0;
+      current.state.player.ap = 20;
+      current.state.player.mp = current.state.player.mpMax = 100;
+      current.state.player.passiveEffects = [];
+      current.state.player.classResources = { [resource]: value };
+      current.state.enemies[0]!.hp = current.state.enemies[0]!.hpMax = 1_000;
+      current.state.enemies[0]!.shield = 0;
+      current.state.enemies[0]!.defense = 0;
+      current.state.enemies[0]!.speed = 0;
+      current.state.enemies[0]!.buffs = {};
+      current.state.enemies[0]!.debuffs = {};
+      current.state.player.hand.unshift({
+        instanceId: `test:${subclass}:${cardId}`,
+        cardId,
+      });
+      await database.battleSessions.put(current);
+      await battles.playCard(profile.id, {
+        battleId: session.id,
+        handIndex: 0,
+        targetIndex: 0,
+      });
+      return 1_000 - (await database.battleSessions.get(session.id))!.state.enemies[0]!.hp;
+    }
+
+    expect(await playWithResource('dragon_knight', 'dk_skyfall', 'dragon_soul', 3)).toBe(30);
+    expect(await playWithResource('blacksmith', 'bs_hammer', 'furnace_heat', 2)).toBe(13);
+    expect(await playWithResource('wind_mage', 'wind_pressure_cut', 'wind_mark', 2)).toBe(22);
+    expect(await playWithResource('thunder_mage', 'th_thunderbolt', 'thunder_charge', 2)).toBe(24);
+    expect(await playWithResource('mechanic', 'mc_parts_bomb', 'parts', 3)).toBe(15);
+  });
+
+  it('元素法师打出无元素功能牌后仍保留上一个元素', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'elementalist-last-element',
+      'elementalist',
+    );
+    session.state.player.attack = 0;
+    session.state.player.ap = 20;
+    session.state.player.mp = session.state.player.mpMax = 100;
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 10_000;
+    session.state.enemies[0]!.shield = 0;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    await database.battleSessions.put(session);
+
+    for (const cardId of ['em_fire_spark', 'em_element_sense', 'em_ice_needle']) {
+      const current = (await database.battleSessions.get(session.id))!;
+      current.state.player.ap = 20;
+      current.state.player.mp = 100;
+      current.state.player.hand.unshift({
+        instanceId: `test:elementalist-last-element:${cardId}`,
+        cardId,
+      });
+      await database.battleSessions.put(current);
+      await battles.playCard(profile.id, {
+        battleId: session.id,
+        handIndex: 0,
+        targetIndex: 0,
+      });
+    }
+
+    const current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.lastElementalistElement).toBe('water');
+    expect(current.state.player.classResources?.element_resonance).toBe(1);
+  });
+
+  it('雷系消耗牌结算后仍按魔力消耗回充1层', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'thunder-charge-spend-and-regain',
+      'thunder_mage',
+    );
+    session.state.player.attack = 0;
+    session.state.player.ap = 20;
+    session.state.player.mp = session.state.player.mpMax = 100;
+    session.state.player.classResources = { thunder_charge: 3 };
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 10_000;
+    session.state.enemies[0]!.shield = 0;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    session.state.player.hand.unshift({
+      instanceId: 'test:thunder-charge-spend-all',
+      cardId: 'th_thunderbolt',
+    });
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    let current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.classResources?.thunder_charge).toBe(1);
+
+    current.state.player.ap = 20;
+    current.state.player.mp = 100;
+    current.state.player.hand.unshift({
+      instanceId: 'test:thunder-charge-spend-one',
+      cardId: 'th_arc_jump',
+    });
+    await database.battleSessions.put(current);
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.classResources?.thunder_charge).toBe(1);
+
+    current.state.player.ap = 20;
+    current.state.player.classResources = { thunder_charge: 0 };
+    current.state.player.hand.unshift({
+      instanceId: 'test:thunder-charge-gain-two',
+      cardId: 'th_capacitor',
+    });
+    await database.battleSessions.put(current);
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.classResources?.thunder_charge).toBe(2);
+  });
+
+  it('风暴核心的充能技能写入雷荷职业资源', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'storm-core-charge',
+      'thunder_mage',
+    );
+    session.state.player.ap = 20;
+    session.state.player.classResources = { thunder_charge: 0 };
+    session.state.player.hand.unshift({
+      instanceId: 'test:storm-core-charge',
+      cardId: 'th_storm_core',
+    });
+    session.state.enemies[0]!.attack = 0;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.debuffs.freeze = { value: 1, turns: 10 };
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    await battles.endTurn(profile.id, session.id);
+    const current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.classResources?.thunder_charge).toBe(1);
+    expect(current.state.player.buffs.thunder_charge).toBeUndefined();
+  });
+
+  it('结算武器大师同名连击，并在新回合清空计数', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'weapon-master-combo',
+      'weapon_master',
+    );
+    session.state.player.attack = 0;
+    session.state.player.ap = 20;
+    session.state.player.passiveEffects = [];
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 1_000;
+    session.state.enemies[0]!.shield = 0;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.buffs = {};
+    session.state.enemies[0]!.debuffs = {};
+    session.state.enemies[0]!.debuffs.freeze = { value: 1, turns: 10 };
+    let current = session;
+    let hpBefore = 1_000;
+    for (const [index, expected] of [10, 12, 14].entries()) {
+      current.state.player.hand.unshift({
+        instanceId: `test:weapon-master-combo:${index}`,
+        cardId: 'wmst_pierce',
+      });
+      await database.battleSessions.put(current);
+      await battles.playCard(profile.id, {
+        battleId: session.id,
+        handIndex: 0,
+        targetIndex: 0,
+      });
+      current = (await database.battleSessions.get(session.id))!;
+      expect(hpBefore - current.state.enemies[0]!.hp).toBe(expected);
+      hpBefore = current.state.enemies[0]!.hp;
+    }
+    expect(current.state.player.cardsPlayedThisTurn?.wmst_pierce).toBe(3);
+    await battles.endTurn(profile.id, session.id);
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.cardsPlayedThisTurn).toEqual({});
+  });
+
+  it('按理智分档强化暗黑牧师伤害，并在零理智时按 50% 攻击自己', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'dark-priest-sanity',
+      'dark_priest',
+      () => 0,
+    );
+    session.state.player.hp = session.state.player.hpMax = 200;
+    session.state.player.attack = 0;
+    session.state.player.defense = 0;
+    session.state.player.speed = 0;
+    session.state.player.ap = 20;
+    session.state.player.passiveEffects = [];
+    session.state.player.sanity = 60;
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 1_000;
+    session.state.enemies[0]!.shield = 0;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.buffs = {};
+    session.state.enemies[0]!.debuffs = {};
+    session.state.player.hand.unshift({
+      instanceId: 'test:dark-priest-tier',
+      cardId: 'dp_mind_lash',
+    });
+    await database.battleSessions.put(session);
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    let current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.enemies[0]!.hp).toBe(991);
+    expect(current.state.player.sanity).toBe(55);
+
+    current.state.player.hp = 200;
+    current.state.player.sanity = 0;
+    current.state.player.ap = 20;
+    current.state.player.buffs = {};
+    current.state.player.debuffs = {};
+    current.state.player.hand.unshift({
+      instanceId: 'test:dark-priest-redirect',
+      cardId: 'dp_mind_lash',
+    });
+    const enemyHpBefore = current.state.enemies[0]!.hp;
+    await database.battleSessions.put(current);
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.enemies[0]!.hp).toBe(enemyHpBefore);
+    expect(current.state.player.hp).toBe(189);
+    expect(current.state.player.sanity).toBe(0);
+  });
+
+  it('锁定并在回合开始结算奥术吟诵，同时回复 1 魔力', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'arcane-chant-resolution',
+      'arcane_mage',
+    );
+    session.state.player.attack = 0;
+    session.state.player.ap = 20;
+    session.state.player.mp = session.state.player.mpMax = 100;
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 1_000;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.debuffs.freeze = { value: 1, turns: 10 };
+    session.state.player.hand.unshift({
+      instanceId: 'test:arcane-chant',
+      cardId: 'ar_arcane_missile',
+    });
+    await database.battleSessions.put(session);
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    let current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.enemies[0]!.hp).toBe(1_000);
+    expect(current.state.player.chants).toHaveLength(1);
+    expect(current.state.player.chants[0]!.turns).toBe(2);
+    await battles.endTurn(profile.id, session.id);
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.chants[0]!.turns).toBe(1);
+    current.state.player.mp = 0;
+    await database.battleSessions.put(current);
+    await battles.endTurn(profile.id, session.id);
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.enemies[0]!.hp).toBe(986);
+    expect(current.state.player.chants).toEqual([]);
+    expect(current.state.player.mp).toBe(7);
+  });
+
+  it('按受伤批次显示、强化、消耗并过期深渊回声', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'abyss-echo-batches',
+      'dark_mage',
+    );
+    session.state.player.hp = session.state.player.hpMax = 200;
+    session.state.player.attack = 0;
+    session.state.player.ap = 20;
+    session.state.player.mp = session.state.player.mpMax = 100;
+    session.state.player.hand.unshift(
+      { instanceId: 'test:echo-loss:1', cardId: 'dm_blood_mana' },
+      { instanceId: 'test:echo-loss:2', cardId: 'dm_blood_mana' },
+    );
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 1_000;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.debuffs.freeze = { value: 1, turns: 10 };
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, { battleId: session.id, handIndex: 0 });
+    await battles.playCard(profile.id, { battleId: session.id, handIndex: 0 });
+    let current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.abyssEcho).toBe(2);
+    expect(current.state.player.classResources?.abyss_echo).toBe(2);
+    expect(current.state.player.abyssEchoBatches).toEqual([{ turn: 1, value: 2 }]);
+
+    current.state.player.hand.unshift({
+      instanceId: 'test:echo-damage',
+      cardId: 'dm_void_spark',
+    });
+    const hpBefore = current.state.enemies[0]!.hp;
+    await database.battleSessions.put(current);
+    await battles.playCard(profile.id, { battleId: session.id, handIndex: 0 });
+    current = (await database.battleSessions.get(session.id))!;
+    expect(hpBefore - current.state.enemies[0]!.hp).toBe(13);
+    expect(current.state.player.abyssEcho).toBe(3);
+
+    current.state.player.mp = 0;
+    current.state.player.hand.unshift({
+      instanceId: 'test:echo-return',
+      cardId: 'dm_echo_return',
+    });
+    await database.battleSessions.put(current);
+    await battles.playCard(profile.id, { battleId: session.id, handIndex: 0 });
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.mp).toBe(3);
+    expect(current.state.player.abyssEcho).toBe(0);
+    expect(current.state.player.abyssEchoBatches).toEqual([]);
+
+    current.state.player.hand.unshift({
+      instanceId: 'test:echo-expiry',
+      cardId: 'dm_blood_mana',
+    });
+    await database.battleSessions.put(current);
+    await battles.playCard(profile.id, { battleId: session.id, handIndex: 0 });
+    await battles.endTurn(profile.id, session.id);
+    expect((await database.battleSessions.get(session.id))!.state.player.abyssEcho).toBe(1);
+    await battles.endTurn(profile.id, session.id);
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.abyssEcho).toBe(0);
+    expect(current.state.player.classResources?.abyss_echo).toBe(0);
+  });
+
+  it('迁移旧进行中战斗的深渊回声而不丢失层数', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'legacy-abyss-echo-migration',
+      'dark_mage',
+    );
+    session.state.player.attack = 0;
+    session.state.player.ap = 20;
+    session.state.player.mp = session.state.player.mpMax = 100;
+    session.state.player.passiveEffects = [];
+    delete session.state.player.abyssEchoBatches;
+    session.state.player.abyssEcho = 3;
+    session.state.player.classResources = { abyss_echo: 3 };
+    session.state.player.hand.unshift({
+      instanceId: 'test:legacy-abyss-echo-migration',
+      cardId: 'dm_dark_bolt',
+    });
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 1_000;
+    session.state.enemies[0]!.shield = 0;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    const current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.enemies[0]!.hp).toBe(978);
+    expect(current.state.player.abyssEcho).toBe(3);
+    expect(current.state.player.classResources?.abyss_echo).toBe(3);
+    expect(current.state.player.abyssEchoBatches).toEqual([
+      { turn: 1, value: 3 },
+    ]);
+  });
+
+  it('普通玩家召唤物不继承玩家的吸血属性', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'player-summon-no-lifesteal',
+      'summoner',
+    );
+    session.state.player.hp = 40;
+    session.state.player.hpMax = 100;
+    session.state.player.lifesteal = 30;
+    session.state.player.passiveEffects = [];
+    session.state.player.summons.push({
+      id: 'test:no-lifesteal-summon',
+      name: '不继承吸血的召唤物',
+      duration: 2,
+      hp: null,
+      skills: [
+        {
+          name: '召唤物打击',
+          weight: 1,
+          effects: [{ type: 'damage', value: 20, target: 'enemy' }],
+        },
+      ],
+    });
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 1_000;
+    session.state.enemies[0]!.shield = 0;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.debuffs.freeze = { value: 1, turns: 10 };
+    await database.battleSessions.put(session);
+
+    await battles.endTurn(profile.id, session.id);
+    const current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.enemies[0]!.hp).toBe(980);
+    expect(current.state.player.hp).toBe(40);
+  });
+
+  it('让 30% 吸血属性与旧被动叠加，并让凯利安和特莱奥继承属性的 80%', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-lifesteal-stacking-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:lifesteal-stacking');
+    await game.execute(profile.id, {
+      id: 'lifesteal-player-create',
+      type: 'player.create',
+      payload: {
+        name: '吸血测试员',
+        classMain: 'mage',
+        subclass: 'dark_mage',
+      },
+    });
+    const player = (await database.playerStates.get(profile.id))!;
+    player.lifesteal = 30;
+    await database.playerStates.put(player);
+    const battles = new BattleRepository(database, () => 0.99);
+    await battles.prepare();
+    await battles.start(profile.id, {
+      monsterId: 'mon_slime',
+      count: 1,
+      companionPresent: true,
+    });
+    const session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    expect(session.state.companion?.lifesteal).toBe(24);
+    expect(session.state.companion?.summons[0]?.lifesteal).toBe(24);
+    session.state.player.hp = 40;
+    session.state.player.attack = 0;
+    session.state.player.ap = 20;
+    expect(session.state.player.passiveEffects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'lifesteal_ratio', value: 0.1 }),
+      ]),
+    );
+    session.state.player.hand.unshift({
+      instanceId: 'test:lifesteal-hit',
+      cardId: 'hk_final_judge',
+    });
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 1_000;
+    session.state.enemies[0]!.shield = 10;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.buffs = {};
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    let current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.enemies[0]!.hp).toBe(978);
+    expect(current.state.player.hp).toBe(48);
+
+    current.state.player.hp = 40;
+    current.state.player.ap = 20;
+    current.state.player.hand.unshift({
+      instanceId: 'test:lifesteal-fully-shielded',
+      cardId: 'hk_final_judge',
+    });
+    current.state.enemies[0]!.hp = 1_000;
+    current.state.enemies[0]!.shield = 1_000;
+    await database.battleSessions.put(current);
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.hp).toBe(40);
+
+    current.state.player.hp = 40;
+    current.state.player.ap = 20;
+    current.state.player.hand.unshift({
+      instanceId: 'test:lifesteal-overkill',
+      cardId: 'hk_final_judge',
+    });
+    current.state.enemies[0]!.hp = 5;
+    current.state.enemies[0]!.shield = 0;
+    await database.battleSessions.put(current);
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.enemies[0]!.hp).toBe(0);
+    expect(current.state.player.hp).toBe(42);
+  });
+
+  it('装备只提高生命魔力上限，低血结算不会凭空加减装备数值', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-equipment-current-resource-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:equipment-current-resource');
+    await game.execute(profile.id, {
+      id: 'equipment-current-player-create',
+      type: 'player.create',
+      payload: {
+        name: '装备当前值测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const player = (await database.playerStates.get(profile.id))!;
+    player.hp = 5;
+    player.mp = 3;
+    await database.playerStates.put(player);
+    const equipmentId = `${profile.id}:test-maxima`;
+    await database.equipmentInstances.add({
+      id: equipmentId,
+      profileId: profile.id,
+      baseId: 'test-maxima',
+      name: '上限测试剑',
+      slot: 'weapon',
+      rarity: 'common',
+      stars: 1,
+      stats: { hpMax: 20, mpMax: 10 },
+      description: '',
+      updatedAt: Date.now(),
+    });
+    await database.equipmentLoadouts.put({
+      profileId: profile.id,
+      weaponId: equipmentId,
+      armorId: null,
+      accessoryId: null,
+      updatedAt: Date.now(),
+    });
+    const battles = new BattleRepository(database, () => 0.99);
+    await battles.prepare();
+    await battles.start(profile.id, { monsterId: 'mon_slime', count: 1 });
+    const session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    expect(session.state.player).toMatchObject({
+      hp: 5,
+      hpMax: player.hpMax + 20,
+      mp: 3,
+      mpMax: player.mpMax + 10,
+    });
+    session.state.player.attack = 0;
+    session.state.player.ap = 20;
+    session.state.player.hand.unshift({
+      instanceId: 'test:equipment-settlement-hit',
+      cardId: 'hk_final_judge',
+    });
+    session.state.enemies[0]!.hp = 1;
+    session.state.enemies[0]!.shield = 0;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    expect(await database.playerStates.get(profile.id)).toMatchObject({
+      hp: 5,
+      mp: 3,
+    });
+    await battles.finish(profile.id, session.id);
+
+    const stored = (await database.playerStates.get(profile.id))!;
+    stored.hp = stored.hpMax + 10;
+    stored.mp = stored.mpMax + 5;
+    await database.playerStates.put(stored);
+    await battles.start(profile.id, { monsterId: 'mon_slime', count: 1 });
+    const secondSession = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .filter((entry) => entry.active)
+      .first())!;
+    expect(secondSession.state.player).toMatchObject({
+      hp: stored.hpMax + 10,
+      hpMax: stored.hpMax + 20,
+      mp: stored.mpMax + 5,
+      mpMax: stored.mpMax + 10,
+    });
+    secondSession.state.player.attack = 0;
+    secondSession.state.player.ap = 20;
+    secondSession.state.player.hand.unshift({
+      instanceId: 'test:equipment-high-current-settlement-hit',
+      cardId: 'hk_final_judge',
+    });
+    secondSession.state.enemies[0]!.hp = 1;
+    secondSession.state.enemies[0]!.shield = 0;
+    secondSession.state.enemies[0]!.defense = 0;
+    secondSession.state.enemies[0]!.speed = 0;
+    await database.battleSessions.put(secondSession);
+    await battles.playCard(profile.id, {
+      battleId: secondSession.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    expect(await database.playerStates.get(profile.id)).toMatchObject({
+      hp: stored.hpMax + 10,
+      mp: stored.mpMax + 5,
+    });
+  });
 });
+
+async function createStartedBattle(
+  label: string,
+  subclass: string,
+  random: () => number = () => 0.99,
+  companionPresent = false,
+) {
+  const database = new CaelianDatabase(
+    'alpha',
+    `caelian-${label}-${crypto.randomUUID()}`,
+  );
+  databases.push(database);
+  const game = new GameRepository(database, new EventBus());
+  const profile = await game.ensureProfile(`chat:${label}`);
+  await game.execute(profile.id, {
+    id: `${label}:player-create`,
+    type: 'player.create',
+    payload: {
+      name: `${label}测试员`,
+      classMain: ['holy_knight', 'shadow_knight', 'dragon_knight'].includes(
+        subclass,
+      )
+        ? 'knight'
+        : [
+              'elementalist',
+              'fire_mage',
+              'water_mage',
+              'wind_mage',
+              'thunder_mage',
+              'wood_mage',
+              'light_mage',
+              'dark_mage',
+              'arcane_mage',
+              'summoner',
+            ].includes(subclass)
+          ? 'mage'
+          : ['alchemist', 'apothecary', 'blacksmith', 'mechanic'].includes(
+                subclass,
+              )
+            ? 'artisan'
+            : 'freelance',
+      subclass,
+    },
+  });
+  const battles = new BattleRepository(database, random);
+  await battles.prepare();
+  await battles.start(profile.id, {
+    monsterId: 'mon_slime',
+    count: 1,
+    companionPresent,
+  });
+  const session = (await database.battleSessions
+    .where('profileId')
+    .equals(profile.id)
+    .first())!;
+  return { database, game, profile, battles, session };
+}

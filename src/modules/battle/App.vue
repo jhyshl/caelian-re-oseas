@@ -48,6 +48,8 @@ import {
 } from '@/modules/battle/card-face';
 import {
   MAGICIAN_BLANK_CARD_ID,
+  MAGICIAN_BLANK_LIMIT,
+  MAGICIAN_SUBCLASS_ID,
 } from '@/content/catalogs/magician';
 
 const props = defineProps<{ context: PanelContext }>();
@@ -98,6 +100,20 @@ interface BattlePileRow {
   quantity: number;
   definition?: CardDefinition;
 }
+
+type BattlePlayerUiState = LocalBattleState['player'] & {
+  manualDiscardTurn?: number;
+  cardsPlayedThisTurn?: Record<string, number>;
+};
+
+interface ProfessionStatusEntry {
+  id: string;
+  label: string;
+  value: string;
+  description: string;
+}
+
+type ProfessionStatusDefinition = Omit<ProfessionStatusEntry, 'value'>;
 
 interface CardDragSession {
   document: Document;
@@ -172,6 +188,189 @@ const discardableHandCount = computed(
       (instance) => instance.cardId !== MAGICIAN_BLANK_CARD_ID,
     ).length ?? 0,
 );
+const battlePlayerUi = computed(
+  () => state.value?.player as BattlePlayerUiState | undefined,
+);
+const manualDiscardUsed = computed(
+  () => battlePlayerUi.value?.manualDiscardTurn === state.value?.turn,
+);
+const discardUnavailableReason = computed(() => {
+  const current = state.value;
+  if (!current || current.phase !== 'player') return '当前不是玩家行动阶段。';
+  if (manualDiscardUsed.value) return '本回合已使用过一次主动弃牌。';
+  if (current.player.ap < 1) return '行动点不足。';
+  if (discardableHandCount.value === 0) return '当前没有可弃置的非空白手牌。';
+  return '';
+});
+const classResourceDefinitions = {
+  holy_knight: {
+    id: 'holy_sigil',
+    label: '圣印',
+    description: '圣辉誓约的可消耗层数。',
+  },
+  dragon_knight: {
+    id: 'dragon_soul',
+    label: '龙魂',
+    description: '达到阈值后强化下一张攻击牌。',
+  },
+  elementalist: {
+    id: 'element_resonance',
+    label: '元素共鸣',
+    description: '轮换不同元素法术时积累。',
+  },
+  fire_mage: {
+    id: 'ember_echo',
+    label: '余烬',
+    description: '施加灼烧或点燃火种时积累。',
+  },
+  wind_mage: {
+    id: 'wind_mark',
+    label: '风痕',
+    description: '风系连击可消耗的增伤层数。',
+  },
+  thunder_mage: {
+    id: 'thunder_charge',
+    label: '雷荷充能',
+    description: '雷系牌积累的可消耗充能。',
+  },
+  wood_mage: {
+    id: 'growth',
+    label: '生长',
+    description: '治疗与召唤积累的职业资源。',
+  },
+  blacksmith: {
+    id: 'furnace_heat',
+    label: '炉温',
+    description: '攻击牌可消耗炉温获得额外伤害。',
+  },
+  mechanic: {
+    id: 'parts',
+    label: '零件',
+    description: '召唤与功能牌积累的机械资源。',
+  },
+  dark_mage: {
+    id: 'abyss_echo',
+    label: '深渊回声',
+    description: '自身失去生命时获得，分批按回合过期。',
+  },
+} as const;
+const classResourceDefinitionsById = Object.fromEntries(
+  Object.values(classResourceDefinitions).map((resource) => [
+    resource.id,
+    resource,
+  ]),
+) as Record<string, ProfessionStatusDefinition>;
+
+function formatClassResourceLabel(id: string): string {
+  return id
+    .split(/[_-]+/u)
+    .filter(Boolean)
+    .join(' ')
+    .trim() || id;
+}
+
+function formatClassResourceValue(value: unknown): string {
+  const numeric = Number(value);
+  return String(Number.isFinite(numeric) ? Math.max(0, numeric) : 0);
+}
+
+const professionStatusEntries = computed<ProfessionStatusEntry[]>(() => {
+  const player = battlePlayerUi.value;
+  if (!player) return [];
+  const subclass = player.subclass ?? snapshot.value?.player.subclass ?? '';
+  const entries: ProfessionStatusEntry[] = [];
+  const displayedResourceIds = new Set<string>();
+  const resource =
+    classResourceDefinitions[
+      subclass as keyof typeof classResourceDefinitions
+    ];
+  if (resource) {
+    const value =
+      resource.id === 'abyss_echo'
+        ? (player.classResources?.[resource.id] ?? player.abyssEcho ?? 0)
+        : (player.classResources?.[resource.id] ?? 0);
+    entries.push({ ...resource, value: formatClassResourceValue(value) });
+    displayedResourceIds.add(resource.id);
+  }
+  if (subclass === 'dark_priest') {
+    entries.push({
+      id: 'sanity',
+      label: '理智',
+      value: `${Math.max(0, player.sanity ?? 100)} / 100`,
+      description: '理智越低，暗黑牧师伤害越高；归零后攻击可能反噬自身。',
+    });
+  }
+  if (subclass === 'arcane_mage') {
+    entries.push({
+      id: 'chants',
+      label: '吟诵队列',
+      value: `${player.chants.length} / 3`,
+      description: '已锁定目标、等待指定回合结算的法术。',
+    });
+  }
+  if (subclass === 'summoner') {
+    entries.push({
+      id: 'summon_contracts',
+      label: '契约召唤',
+      value: String(player.summons.length),
+      description: '当前在场的玩家召唤物数量。',
+    });
+  }
+  if (subclass === 'vampire_hunter') {
+    const bloodMoon = player.buffs.blood_moon;
+    const hunterPrepare = formatClassResourceValue(
+      player.classResources?.hunter_prepare ?? 0,
+    );
+    entries.push({
+      id: bloodMoon ? 'blood_moon' : 'hunter_prepare',
+      label: bloodMoon ? '血月猎杀' : '猎杀准备',
+      value: bloodMoon
+        ? '已触发'
+        : `回合 ${Math.min(5, Math.max(1, state.value?.turn ?? 1))} / 5 · ${hunterPrepare} 层`,
+      description: bloodMoon
+        ? '红蔷薇猎人已进入血月猎杀状态。'
+        : '第 5 回合会进入血月猎杀。',
+    });
+    displayedResourceIds.add('hunter_prepare');
+  }
+  if (subclass === 'weapon_master') {
+    const highestCombo = Math.max(
+      0,
+      ...Object.values(player.cardsPlayedThisTurn ?? {}),
+    );
+    entries.push({
+      id: 'weapon_master_combo',
+      label: '武器精通',
+      value: `同名最高 ${highestCombo}`,
+      description: '本回合同名攻击牌的最高连续使用数。',
+    });
+  }
+  if (subclass === MAGICIAN_SUBCLASS_ID) {
+    const blankCount = [
+      ...player.drawPile,
+      ...player.discardPile,
+      ...player.hand,
+    ].filter((card) => card.cardId === MAGICIAN_BLANK_CARD_ID).length;
+    entries.push({
+      id: 'magician_blanks',
+      label: '空白牌',
+      value: `${blankCount} / ${MAGICIAN_BLANK_LIMIT}`,
+      description: '当前手牌、抽牌堆与弃牌堆中的空白牌总数。',
+    });
+  }
+  for (const [id, value] of Object.entries(player.classResources ?? {})) {
+    if (displayedResourceIds.has(id)) continue;
+    const known = classResourceDefinitionsById[id];
+    entries.push({
+      id: `class-resource:${id}`,
+      label: known?.label ?? formatClassResourceLabel(id),
+      value: formatClassResourceValue(value),
+      description:
+        known?.description ?? `动态识别的职业资源（${id}）。`,
+    });
+  }
+  return entries;
+});
 const mechanismResources = computed(() => {
   const runtime = state.value?.workshopMechanisms;
   if (!runtime) return [];
@@ -335,6 +534,14 @@ const statusNames: Record<string, string> = {
   corrosion: '腐蚀',
   heal_block: '禁疗',
   trap: '陷阱',
+  blood_moon: '血月猎杀',
+  purified_power: '净化回响',
+  next_attack_bonus: '下次攻击强化',
+  weapon_master_combo_cap: '连击上限提升',
+  weapon_master_bonus_extra: '连击额外强化',
+  weapon_master_force_combo: '强制连击',
+  weapon_master_no_combo: '连击封锁',
+  weapon_master_attack_amp: '攻击增幅',
 };
 const typeNames: Record<string, string> = {
   attack: '攻击',
@@ -416,10 +623,14 @@ function handleCardClick(index: number, cardId: string) {
 
 function cardStyle(index: number, total: number, cardId: string) {
   const offset = index - (total - 1) / 2;
+  const compactStep = total > 1 ? Math.min(35, 250 / (total - 1)) : 0;
+  const narrowStep = total > 1 ? Math.min(35, 130 / (total - 1)) : 0;
   const definition = cardDefinition(cardId);
   return {
     '--card-x': `${offset * 54}px`,
     '--card-x-mobile': `${offset * 35}px`,
+    '--card-x-compact': `${offset * compactStep}px`,
+    '--card-x-narrow': `${offset * narrowStep}px`,
     '--card-rot': `${offset * 1.8}deg`,
     '--card-rot-mobile': `${offset * 2.1}deg`,
     '--card-z': String(20 + index),
@@ -983,6 +1194,10 @@ async function endTurn() {
 
 async function discardHand() {
   if (!battle.value) return;
+  if (discardUnavailableReason.value) {
+    notice.value = discardUnavailableReason.value;
+    return;
+  }
   await execute({
     id: commandId('battle.discard-hand'),
     type: 'battle.discard-hand',
@@ -1423,6 +1638,14 @@ onUnmounted(() => {
             <b>场上状态</b>
             <div class="status-row">
               <span
+                v-for="entry in professionStatusEntries"
+                :key="`profession:${entry.id}`"
+                class="special profession-status"
+                :title="entry.description"
+              >
+                {{ entry.label }} · {{ entry.value }}
+              </span>
+              <span
                 v-for="[name, effect] in effectEntries(state.player.buffs)"
                 :key="`pb:${name}`"
               >
@@ -1447,7 +1670,8 @@ onUnmounted(() => {
                 v-if="
                   !Object.keys(state.player.buffs).length &&
                     !Object.keys(state.player.debuffs).length &&
-                    !(state.player.blankGenerators?.length ?? 0)
+                    !(state.player.blankGenerators?.length ?? 0) &&
+                    !professionStatusEntries.length
                 "
               >
                 暂无状态
@@ -1541,10 +1765,11 @@ onUnmounted(() => {
             <button
               type="button"
               class="discard"
-              :disabled="busy || state.player.ap < 1 || discardableHandCount === 0"
+              :disabled="busy || Boolean(discardUnavailableReason)"
+              :title="discardUnavailableReason || '每回合可花费 1 AP 主动弃牌一次'"
               @click="discardHand"
             >
-              弃牌 1AP
+              {{ manualDiscardUsed ? '本回合已弃牌' : '弃牌 1AP' }}
             </button>
             <button
               type="button"
@@ -2300,6 +2525,12 @@ onUnmounted(() => {
 .battle-field-row > .status-row {
   flex: 1;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.battle-field-row > .status-row::-webkit-scrollbar {
+  display: none;
 }
 
 .battle-field-row > small {
@@ -2380,6 +2611,13 @@ onUnmounted(() => {
   color: #efe0ff;
   background: rgba(130, 82, 184, 0.24);
   box-shadow: inset 0 0 8px rgba(197, 151, 255, 0.12);
+}
+
+.status-row span.profession-status {
+  border-color: rgba(255, 216, 104, 0.68);
+  color: #fff0ad;
+  background: linear-gradient(180deg, rgba(133, 88, 24, 0.44), rgba(89, 52, 18, 0.32));
+  box-shadow: inset 0 0 9px rgba(255, 211, 92, 0.15);
 }
 
 .hand-zone {
@@ -3506,8 +3744,11 @@ onUnmounted(() => {
 
 @media (max-width: 759px) {
   .legacy-battle-shell {
-    grid-template-rows: auto minmax(98px, 0.86fr) minmax(105px, 0.82fr) minmax(190px, 1.05fr);
+    height: auto;
+    min-height: 100%;
+    grid-template-rows: auto auto auto minmax(190px, 48dvh);
     gap: 4px;
+    overflow: visible;
     padding: 4px;
     border-radius: 0;
   }
@@ -3523,12 +3764,15 @@ onUnmounted(() => {
   }
 
   .enemy-zone {
+    overflow: visible;
     padding: 4px;
     border-radius: 12px;
   }
 
   .enemy-layout {
+    height: auto;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: minmax(88px, auto);
     gap: 4px;
   }
 
@@ -3555,6 +3799,22 @@ onUnmounted(() => {
   .player-bars {
     grid-template-columns: 1fr 1fr minmax(68px, auto);
     gap: 2px;
+  }
+
+  .battle-mid {
+    grid-template-rows: auto auto auto auto;
+  }
+
+  .companion-party {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .companion-sequence {
+    grid-column: 1 / -1;
+  }
+
+  .friendly-target-picker {
+    bottom: calc(max(190px, 48dvh) + 8px);
   }
 
   .battle-field-row > small {
@@ -3711,17 +3971,34 @@ onUnmounted(() => {
   }
 }
 
-@media (max-width: 390px) {
-  .legacy-battle-shell {
-    grid-template-rows: auto minmax(94px, 0.85fr) minmax(100px, 0.8fr) minmax(178px, 1fr);
+@media (max-width: 480px) {
+  .fan-card {
+    transform:
+      translateX(calc(-50% + var(--card-x-compact)))
+      rotate(var(--card-rot-mobile));
   }
 
+  .fan-card:hover {
+    transform:
+      translateX(calc(-50% + var(--card-x-compact)))
+      translateY(-12%)
+      scale(1.06)
+      rotate(0);
+  }
+}
+
+@media (max-width: 390px) {
   .hand-actions {
+    right: 4px;
+    left: 58px;
+    justify-content: flex-end;
     gap: 2px;
-    max-width: calc(100% - 110px);
+    max-width: none;
+    transform: none;
   }
 
   .hand-actions button {
+    min-width: 0;
     padding-inline: 5px;
     font-size: 8px;
   }
@@ -3732,8 +4009,18 @@ onUnmounted(() => {
     text-overflow: ellipsis;
   }
 
-  .hand-actions {
-    max-width: calc(100% - 98px);
+  .fan-card {
+    transform:
+      translateX(calc(-50% + var(--card-x-narrow)))
+      rotate(var(--card-rot-mobile));
+  }
+
+  .fan-card:hover {
+    transform:
+      translateX(calc(-50% + var(--card-x-narrow)))
+      translateY(-12%)
+      scale(1.06)
+      rotate(0);
   }
 
   .enemy-layout {

@@ -5,6 +5,7 @@ import {
   loadItemCatalog,
   loadMarketItemsByRegion,
 } from '@/content/catalogs/inventory';
+import { scaleEquipmentStatsByStars } from '@/equipment-stats';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { GameRepository } from '@/storage/repository';
@@ -120,6 +121,12 @@ describe('MarketRepository integration', () => {
     expect(instance?.slot).toBe(definitions[listing!.refId!]?.slot);
     expect(instance?.rarity).toBe(definitions[listing!.refId!]?.rarity);
     expect(instance?.stars).toBe(listing?.stars);
+    expect(instance?.stats).toEqual(
+      scaleEquipmentStatsByStars(
+        definitions[listing!.refId!]!.stats,
+        listing!.stars!,
+      ),
+    );
     expect(JSON.stringify(await loadEquipmentDefinitions())).toBe(
       serializedDefinitions,
     );

@@ -1140,6 +1140,83 @@ describe('CaelianKernel integration', () => {
     }
   });
 
+  it('战斗状态栏显示职业资源，主动弃牌后本回合禁用按钮', async () => {
+    const databaseName = `caelian-alpha-profession-status-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'profession-status-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    await kernel.api.execute({
+      id: 'create-profession-status-adventurer',
+      type: 'player.create',
+      payload: {
+        name: '回声测试员',
+        classMain: 'mage',
+        subclass: 'dark_mage',
+      },
+    });
+    await kernel.api.execute({
+      id: 'start-profession-status-battle',
+      type: 'battle.start',
+      payload: { monsterId: 'mon_slime', count: 1 },
+    });
+    const persistedDatabase = new CaelianDatabase('alpha', databaseName);
+    await persistedDatabase.open();
+    try {
+      const activeBattle = (await kernel.api.query('state')).battle;
+      const session = await persistedDatabase.battleSessions.get(activeBattle!.id);
+      if (!session) throw new Error('职业资源测试战斗不存在');
+      session.state.player.classResources = {
+        abyss_echo: 2,
+        future_flux: 7,
+      };
+      await persistedDatabase.battleSessions.put(session);
+    } finally {
+      persistedDatabase.close();
+    }
+    await kernel.api.navigatePanel('battle');
+
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLElement>('.profession-status')
+            ?.textContent,
+      )
+      .toContain('深渊回声 · 2');
+    const professionStatuses = [
+      ...document.querySelectorAll<HTMLElement>('.profession-status'),
+    ].map((entry) => entry.textContent ?? '');
+    expect(professionStatuses).toContainEqual(expect.stringContaining('future flux · 7'));
+    expect(
+      professionStatuses.filter((entry) => entry.includes('深渊回声')),
+    ).toHaveLength(1);
+
+    const discardButton = document.querySelector<HTMLButtonElement>(
+      '.hand-actions .discard',
+    );
+    expect(discardButton?.disabled).toBe(false);
+    discardButton?.click();
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLButtonElement>('.hand-actions .discard')
+            ?.textContent,
+      )
+      .toContain('本回合已弃牌');
+    expect(
+      document.querySelector<HTMLButtonElement>('.hand-actions .discard')
+        ?.disabled,
+    ).toBe(true);
+
+    await kernel.api.shutdown();
+  });
+
   it('学院魔像战只由任务按钮启动并在关闭终局面板后推进结算', async () => {
     const databaseName = `caelian-alpha-academy-golem-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
@@ -1237,6 +1314,8 @@ describe('CaelianKernel integration', () => {
       expect((await kernel.api.query('state')).battle).toBeNull();
 
       await setQuestNode('academy-defeat-golem');
+      await kernel.api.navigatePanel('guild');
+      expect(kernel.api.listOpenPanels()).toContain('guild');
       await kernel.api.performTrackedQuestAction();
       const started = (await kernel.api.query('state')).battle;
       expect(started).toMatchObject({
@@ -1251,11 +1330,15 @@ describe('CaelianKernel integration', () => {
         },
       });
       expect(kernel.api.listOpenPanels()).toContain('battle');
+      expect(kernel.api.listOpenPanels()).not.toContain('guild');
 
       await kernel.api.closePanel('battle');
       expect((await kernel.api.query('state')).battle?.id).toBe(started?.id);
+      await kernel.api.navigatePanel('guild');
       await kernel.api.performTrackedQuestAction();
       expect((await kernel.api.query('state')).battle?.id).toBe(started?.id);
+      expect(kernel.api.listOpenPanels()).toContain('battle');
+      expect(kernel.api.listOpenPanels()).not.toContain('guild');
 
       const session = await database.battleSessions.get(started!.id);
       if (!session) throw new Error('学院魔像战斗记录不存在');

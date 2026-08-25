@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { loadEquipmentDefinitions } from '@/content/catalogs/inventory';
+import { scaleEquipmentStatsByStars } from '@/equipment-stats';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { GameRepository } from '@/storage/repository';
@@ -15,6 +17,114 @@ afterEach(async () => {
 });
 
 describe('GameRepository', () => {
+  it('穿戴上限装备时加减生命魔力仍按有效上限恢复和截断', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-equipped-stat-allocation-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile(
+      'chat:equipped-stat-allocation',
+    );
+    const equipmentId = `${profile.id}:allocation-maxima`;
+    await database.equipmentInstances.add({
+      id: equipmentId,
+      profileId: profile.id,
+      baseId: 'allocation-maxima',
+      name: '加点上限测试装备',
+      slot: 'accessory',
+      rarity: 'common',
+      stars: 1,
+      stats: { hp_max: 20, mp_max: 10 },
+      description: '',
+      updatedAt: Date.now(),
+    });
+    await database.equipmentLoadouts.update(profile.id, {
+      accessoryId: equipmentId,
+    });
+    await database.playerStates.update(profile.id, {
+      hp: 100,
+      mp: 40,
+      statPoints: 4,
+    });
+
+    await repository.execute(profile.id, {
+      id: 'equipped-hp-add',
+      type: 'player.allocate-stat',
+      payload: { stat: 'hpMax', direction: 'add' },
+    });
+    let player = (await database.playerStates.get(profile.id))!;
+    expect(player).toMatchObject({ hp: 105, hpMax: 85, statPoints: 3 });
+
+    await repository.execute(profile.id, {
+      id: 'equipped-hp-remove',
+      type: 'player.allocate-stat',
+      payload: { stat: 'hpMax', direction: 'remove' },
+    });
+    player = (await database.playerStates.get(profile.id))!;
+    expect(player).toMatchObject({ hp: 100, hpMax: 80, statPoints: 4 });
+
+    await repository.execute(profile.id, {
+      id: 'equipped-mp-add',
+      type: 'player.allocate-stat',
+      payload: { stat: 'mpMax', direction: 'add' },
+    });
+    player = (await database.playerStates.get(profile.id))!;
+    expect(player).toMatchObject({ mp: 45, mpMax: 35, statPoints: 3 });
+
+    await repository.execute(profile.id, {
+      id: 'equipped-mp-remove',
+      type: 'player.allocate-stat',
+      payload: { stat: 'mpMax', direction: 'remove' },
+    });
+    player = (await database.playerStates.get(profile.id))!;
+    expect(player).toMatchObject({ mp: 40, mpMax: 30, statPoints: 4 });
+  });
+
+  it('吸血每点消耗 2 属性点、可原价返还且最高 30%', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-lifesteal-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:lifesteal');
+    await database.playerStates.update(profile.id, { statPoints: 4 });
+
+    await expect(
+      repository.execute(profile.id, {
+        id: 'lifesteal-add',
+        type: 'player.allocate-stat',
+        payload: { stat: 'lifesteal', direction: 'add' },
+      }),
+    ).resolves.toMatchObject({ status: 'applied' });
+    let snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.player).toMatchObject({ lifesteal: 1, statPoints: 2 });
+    expect(snapshot.statAllocations.lifesteal).toBe(1);
+
+    await repository.execute(profile.id, {
+      id: 'lifesteal-remove',
+      type: 'player.allocate-stat',
+      payload: { stat: 'lifesteal', direction: 'remove' },
+    });
+    snapshot = await repository.snapshot(profile.id);
+    expect(snapshot.player).toMatchObject({ lifesteal: 0, statPoints: 4 });
+
+    await database.playerStates.update(profile.id, {
+      lifesteal: 30,
+      statPoints: 2,
+    });
+    await database.statAllocations.update(profile.id, { lifesteal: 30 });
+    await expect(
+      repository.execute(profile.id, {
+        id: 'lifesteal-over-cap',
+        type: 'player.allocate-stat',
+        payload: { stat: 'lifesteal', direction: 'add' },
+      }),
+    ).rejects.toThrow('吸血最高为 30%');
+  });
+
   it('地图移动命令会统一地区别名并同步地区、地点与展示位置', async () => {
     const database = new CaelianDatabase(
       'alpha',
@@ -367,7 +477,7 @@ describe('GameRepository', () => {
     });
 
     let snapshot = await repository.snapshot(profile.id);
-    expect(snapshot.player).toMatchObject({ level: 2, statPoints: 8 });
+    expect(snapshot.player).toMatchObject({ level: 2, statPoints: 10 });
     expect(snapshot.player.pendingLevelRewards).toEqual([
       expect.objectContaining({ id: 'level-2', level: 2 }),
     ]);
@@ -401,8 +511,13 @@ describe('GameRepository', () => {
       },
     });
     snapshot = await repository.snapshot(profile.id);
+    const equipmentDefinitions = await loadEquipmentDefinitions();
+    const chosenEquipment = equipmentDefinitions[reward!.equipmentIds[0]!];
     expect(snapshot.equipment).toEqual([
-      expect.objectContaining({ stars: 2 }),
+      expect.objectContaining({
+        stars: 2,
+        stats: scaleEquipmentStatsByStars(chosenEquipment!.stats, 2),
+      }),
     ]);
     expect(snapshot.relics).toHaveLength(1);
     expect(snapshot.player.pendingLevelRewards).toEqual([]);

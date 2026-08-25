@@ -1,4 +1,6 @@
 import type {
+  EquipmentInstanceRecord,
+  EquipmentLoadoutRecord,
   EquipmentSlot,
   InventoryStackRecord,
   PlayerRecord,
@@ -10,6 +12,7 @@ import {
   childEffects,
   isInventoryUsableEffect,
 } from '@/battle/consumables';
+import { aggregateEquipmentStats } from '@/equipment-stats';
 import type { CaelianDatabase } from '@/storage/database';
 
 export class InventoryRepository {
@@ -54,9 +57,14 @@ export class InventoryRepository {
     if (activeBattle) throw new Error('战斗中请从战斗背包使用消耗品');
 
     const stackId = `${profileId}:${itemId}`;
-    const [stack, player] = await Promise.all([
+    const [stack, player, loadout, equipment] = await Promise.all([
       this.db.inventoryStacks.get(stackId),
       this.db.playerStates.get(profileId),
+      this.db.equipmentLoadouts.get(profileId),
+      this.db.equipmentInstances
+        .where('profileId')
+        .equals(profileId)
+        .toArray(),
     ]);
     if (!stack || stack.quantity <= 0) throw new Error('背包中没有这个物品');
     if (!player?.created) throw new Error('玩家档案不存在');
@@ -66,11 +74,28 @@ export class InventoryRepository {
     if (!effect || !isInventoryUsableEffect(effect)) {
       throw new Error('这个消耗品需要在战斗中或作为战前道具使用');
     }
-    if (!canApplyInventoryConsumable(effect, player)) {
+    const equippedIds = new Set(
+      loadout
+        ? [loadout.weaponId, loadout.armorId, loadout.accessoryId].filter(
+            (id): id is string => Boolean(id),
+          )
+        : [],
+    );
+    const equipmentBonus = aggregateEquipmentStats(
+      equipment.filter((item) => equippedIds.has(item.id)),
+    );
+    const effectiveHpMax = Math.max(1, player.hpMax + equipmentBonus.hpMax);
+    const effectiveMpMax = Math.max(0, player.mpMax + equipmentBonus.mpMax);
+    const effectivePlayer = {
+      ...player,
+      hpMax: effectiveHpMax,
+      mpMax: effectiveMpMax,
+    };
+    if (!canApplyInventoryConsumable(effect, effectivePlayer)) {
       throw new Error('当前生命与魔力均无需恢复');
     }
 
-    this.applyRestoration(player, effect);
+    this.applyRestoration(player, effect, effectiveHpMax, effectiveMpMax);
     player.updatedAt = Date.now();
     await this.db.playerStates.put(player);
     if (stack.quantity === 1) {
@@ -85,31 +110,75 @@ export class InventoryRepository {
   }
 
   async equip(profileId: string, instanceId: string): Promise<void> {
-    const [equipment, loadout] = await Promise.all([
-      this.db.equipmentInstances.get(instanceId),
-      this.db.equipmentLoadouts.get(profileId),
-    ]);
-    if (!equipment || equipment.profileId !== profileId) {
-      throw new Error('装备实例不存在');
-    }
-    if (!loadout) throw new Error('装备栏不存在');
-    const field = this.loadoutField(equipment.slot);
-    await this.db.equipmentLoadouts.put({
-      ...loadout,
-      [field]: instanceId,
-      updatedAt: Date.now(),
-    });
+    await this.db.transaction(
+      'rw',
+      [
+        this.db.equipmentInstances,
+        this.db.equipmentLoadouts,
+        this.db.playerStates,
+      ],
+      async () => {
+        const [equipment, loadout, player, allEquipment] = await Promise.all([
+          this.db.equipmentInstances.get(instanceId),
+          this.db.equipmentLoadouts.get(profileId),
+          this.db.playerStates.get(profileId),
+          this.db.equipmentInstances
+            .where('profileId')
+            .equals(profileId)
+            .toArray(),
+        ]);
+        if (!equipment || equipment.profileId !== profileId) {
+          throw new Error('装备实例不存在');
+        }
+        if (!loadout) throw new Error('装备栏不存在');
+        if (!player) throw new Error('玩家档案不存在');
+        const field = this.loadoutField(equipment.slot);
+        const now = Date.now();
+        const nextLoadout = {
+          ...loadout,
+          [field]: instanceId,
+          updatedAt: now,
+        };
+        this.clampPlayerResources(player, nextLoadout, allEquipment);
+        player.updatedAt = now;
+        await this.db.equipmentLoadouts.put(nextLoadout);
+        await this.db.playerStates.put(player);
+      },
+    );
   }
 
   async unequip(profileId: string, slot: EquipmentSlot): Promise<void> {
-    const loadout = await this.db.equipmentLoadouts.get(profileId);
-    if (!loadout) throw new Error('装备栏不存在');
-    const field = this.loadoutField(slot);
-    await this.db.equipmentLoadouts.put({
-      ...loadout,
-      [field]: null,
-      updatedAt: Date.now(),
-    });
+    await this.db.transaction(
+      'rw',
+      [
+        this.db.equipmentInstances,
+        this.db.equipmentLoadouts,
+        this.db.playerStates,
+      ],
+      async () => {
+        const [loadout, player, equipment] = await Promise.all([
+          this.db.equipmentLoadouts.get(profileId),
+          this.db.playerStates.get(profileId),
+          this.db.equipmentInstances
+            .where('profileId')
+            .equals(profileId)
+            .toArray(),
+        ]);
+        if (!loadout) throw new Error('装备栏不存在');
+        if (!player) throw new Error('玩家档案不存在');
+        const field = this.loadoutField(slot);
+        const now = Date.now();
+        const nextLoadout = {
+          ...loadout,
+          [field]: null,
+          updatedAt: now,
+        };
+        this.clampPlayerResources(player, nextLoadout, equipment);
+        player.updatedAt = now;
+        await this.db.equipmentLoadouts.put(nextLoadout);
+        await this.db.playerStates.put(player);
+      },
+    );
   }
 
   async setRelicCarried(
@@ -143,20 +212,48 @@ export class InventoryRepository {
     return 'accessoryId';
   }
 
-  private applyRestoration(player: PlayerRecord, effect: CardEffect): void {
+  private clampPlayerResources(
+    player: PlayerRecord,
+    loadout: EquipmentLoadoutRecord,
+    equipment: EquipmentInstanceRecord[],
+  ): void {
+    const equippedIds = new Set(
+      [loadout.weaponId, loadout.armorId, loadout.accessoryId].filter(
+        (id): id is string => Boolean(id),
+      ),
+    );
+    const equipmentBonus = aggregateEquipmentStats(
+      equipment.filter((item) => equippedIds.has(item.id)),
+    );
+    player.hp = Math.min(
+      player.hp,
+      Math.max(1, player.hpMax + equipmentBonus.hpMax),
+    );
+    player.mp = Math.min(
+      player.mp,
+      Math.max(0, player.mpMax + equipmentBonus.mpMax),
+    );
+  }
+
+  private applyRestoration(
+    player: PlayerRecord,
+    effect: CardEffect,
+    hpMax: number,
+    mpMax: number,
+  ): void {
     if (effect.type === 'multi') {
       for (const child of childEffects(effect)) {
-        this.applyRestoration(player, child);
+        this.applyRestoration(player, child, hpMax, mpMax);
       }
       return;
     }
     if (effect.type === 'heal') {
-      player.hp = Math.min(player.hpMax, player.hp + this.number(effect.value));
+      player.hp = Math.min(hpMax, player.hp + this.number(effect.value));
     } else if (effect.type === 'gain_mp') {
-      player.mp = Math.min(player.mpMax, player.mp + this.number(effect.value));
+      player.mp = Math.min(mpMax, player.mp + this.number(effect.value));
     } else if (effect.type === 'heal_mp') {
-      player.hp = Math.min(player.hpMax, player.hp + this.number(effect.heal));
-      player.mp = Math.min(player.mpMax, player.mp + this.number(effect.mp));
+      player.hp = Math.min(hpMax, player.hp + this.number(effect.heal));
+      player.mp = Math.min(mpMax, player.mp + this.number(effect.mp));
     }
   }
 

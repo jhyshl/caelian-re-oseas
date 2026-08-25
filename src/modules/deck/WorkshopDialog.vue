@@ -10,6 +10,11 @@ import { refreshWorkshopProfessionCatalogs } from '@/content/catalogs/profession
 import type { CardEffect } from '@/content/types';
 import type { PanelContext } from '@/kernel/public-api';
 import { commandId } from '@/kernel/ids';
+import {
+  LIFESTEAL_CAP,
+  LIFESTEAL_STAT_POINT_COST,
+  STAT_POINTS_PER_LEVEL,
+} from '@/player/progression';
 import WorkshopEffectEditor from '@/modules/deck/WorkshopEffectEditor.vue';
 import WorkshopEffectPalette from '@/modules/deck/WorkshopEffectPalette.vue';
 import {
@@ -105,6 +110,7 @@ const testConfig = ref({
     defense: 180,
     speed: 100,
     actionPointsPerTurn: 6,
+    lifesteal: 0,
   },
 });
 let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -156,7 +162,7 @@ const effectOptions = computed(() => [
     })),
   ),
 ]);
-const maxLevelAttributeBudget = 99 * 8;
+const maxLevelAttributeBudget = 99 * STAT_POINTS_PER_LEVEL;
 const testAttributeSpent = computed(() => {
   const attributes = testConfig.value.attributes;
   const apCount = Math.max(0, Math.floor(attributes.actionPointsPerTurn));
@@ -167,6 +173,7 @@ const testAttributeSpent = computed(() => {
     Math.max(0, attributes.attack) +
     Math.max(0, attributes.defense) +
     Math.max(0, attributes.speed) +
+    Math.max(0, attributes.lifesteal) * LIFESTEAL_STAT_POINT_COST +
     apCost
   );
 });
@@ -930,13 +937,14 @@ async function startWorkshopTest(): Promise<void> {
           <section class="test-attributes">
             <header>
               <strong>Lv.100 属性点配置</strong>
-              <small>生命/魔力每点 +5；攻击、防御、速度每点 +1；行动点前 6 次各耗 2 点，之后各耗 3 点。</small>
+              <small>生命/魔力每点 +5；攻击、防御、速度每点 +1；吸血每 2 点属性换 1%，最高 30%；行动点前 6 次各耗 2 点，之后各耗 3 点。</small>
             </header>
-            <label><span>生命投入</span><input v-model.number="testConfig.attributes.hpMax" type="number" min="0" max="792" /></label>
-            <label><span>魔力投入</span><input v-model.number="testConfig.attributes.mpMax" type="number" min="0" max="792" /></label>
-            <label><span>攻击投入</span><input v-model.number="testConfig.attributes.attack" type="number" min="0" max="792" /></label>
-            <label><span>防御投入</span><input v-model.number="testConfig.attributes.defense" type="number" min="0" max="792" /></label>
-            <label><span>速度投入</span><input v-model.number="testConfig.attributes.speed" type="number" min="0" max="792" /></label>
+            <label><span>生命投入</span><input v-model.number="testConfig.attributes.hpMax" type="number" min="0" :max="maxLevelAttributeBudget" /></label>
+            <label><span>魔力投入</span><input v-model.number="testConfig.attributes.mpMax" type="number" min="0" :max="maxLevelAttributeBudget" /></label>
+            <label><span>攻击投入</span><input v-model.number="testConfig.attributes.attack" type="number" min="0" :max="maxLevelAttributeBudget" /></label>
+            <label><span>防御投入</span><input v-model.number="testConfig.attributes.defense" type="number" min="0" :max="maxLevelAttributeBudget" /></label>
+            <label><span>速度投入</span><input v-model.number="testConfig.attributes.speed" type="number" min="0" :max="maxLevelAttributeBudget" /></label>
+            <label><span>吸血（%）</span><input v-model.number="testConfig.attributes.lifesteal" type="number" min="0" :max="LIFESTEAL_CAP" /></label>
             <label><span>行动点提升次数</span><input v-model.number="testConfig.attributes.actionPointsPerTurn" type="number" min="0" max="100" /></label>
           </section>
 

@@ -3,6 +3,7 @@ import type {
   EquipmentDefinition,
   RelicDefinition,
 } from '@/content/types';
+import { scaleEquipmentStatsByStars } from '@/equipment-stats';
 
 const rarityNames: Record<string, string> = {
   common: '普通',
@@ -76,9 +77,9 @@ export function equipmentRewardEffect(
   stars: number,
 ): string {
   if (!equipment) return '暂无效果说明';
-  const multiplier = 1 + (Math.max(1, stars) - 1) * 0.35;
-  const stats = Object.entries(equipment.stats).map(([key, value]) => {
-    const actual = Math.round(value * multiplier);
+  const stats = Object.entries(
+    scaleEquipmentStatsByStars(equipment.stats, stars),
+  ).map(([key, actual]) => {
     return `${statNames[key] ?? key} ${actual >= 0 ? '+' : ''}${actual}`;
   });
   return stats.length > 0 ? stats.join('，') : equipment.description;

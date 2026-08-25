@@ -12,6 +12,7 @@ import type {
   MarketStateRecord,
   MarketView,
 } from '@/domain/types';
+import { scaleEquipmentStatsByStars } from '@/equipment-stats';
 import type { CaelianDatabase } from '@/storage/database';
 import { GLOBAL_ACHIEVEMENT_PROFILE_ID } from '@/achievements/catalog';
 
@@ -435,7 +436,7 @@ export class MarketRepository {
         level,
         `${refreshKey}:${regionId}:eqstar:${equipment.id}`,
       );
-      const stats = scaleStats(equipment.stats, stars);
+      const stats = scaleEquipmentStatsByStars(equipment.stats, stars);
       candidates.push({
         key: `equipment:${equipment.id}:s${stars}`,
         kind: 'equipment',
@@ -682,7 +683,7 @@ export class MarketRepository {
       slot: definition.slot,
       rarity: definition.rarity,
       stars,
-      stats: scaleStats(definition.stats, stars),
+      stats: scaleEquipmentStatsByStars(definition.stats, stars),
       description: `${definition.description}（${starText(stars)}${
         stars > 1 ? '，属性已提升' : ''
       }）`,
@@ -989,24 +990,13 @@ function starText(stars: number): string {
   return `${'★'.repeat(value)}${'☆'.repeat(3 - value)}`;
 }
 
-function scaleStats(
-  stats: Record<string, number>,
-  stars: number,
-): Record<string, number> {
-  const multiplier = { 1: 1, 2: 1.45, 3: 2 }[stars] ?? 1;
-  return Object.fromEntries(
-    Object.entries(stats).map(([key, value]) => [
-      key,
-      Math.max(1, Math.round(Number(value || 0) * multiplier)),
-    ]),
-  );
-}
-
 function equipmentPrice(
   equipment: EquipmentDefinition,
   stars: number,
 ): number {
-  const stats = Object.values(scaleStats(equipment.stats, stars)).reduce(
+  const stats = Object.values(
+    scaleEquipmentStatsByStars(equipment.stats, stars),
+  ).reduce(
     (total, value) => total + Math.max(0, Number(value || 0)),
     0,
   );

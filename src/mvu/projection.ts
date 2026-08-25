@@ -4,6 +4,7 @@ import type {
   GameSnapshot,
   ReleaseChannel,
 } from '@/domain/types';
+import { aggregateEquipmentStats } from '@/equipment-stats';
 import {
   createMvuNarrative,
   MVU_OWNER,
@@ -15,6 +16,24 @@ export function createAiProjection(
   snapshot: GameSnapshot,
   channel: ReleaseChannel,
 ): AiProjection {
+  const equippedIds = new Set(
+    [
+      snapshot.loadout.weaponId,
+      snapshot.loadout.armorId,
+      snapshot.loadout.accessoryId,
+    ].filter((id): id is string => Boolean(id)),
+  );
+  const equipmentStats = aggregateEquipmentStats(
+    snapshot.equipment.filter((item) => equippedIds.has(item.id)),
+  );
+  const effectiveHpMax = Math.max(
+    1,
+    snapshot.player.hpMax + equipmentStats.hpMax,
+  );
+  const effectiveMpMax = Math.max(
+    0,
+    snapshot.player.mpMax + equipmentStats.mpMax,
+  );
   const narrative = createMvuNarrative(
     snapshot.social,
     snapshot.storyFlags,
@@ -34,10 +53,10 @@ export function createAiProjection(
         profession:
           subclassNames[snapshot.player.subclass] ?? snapshot.player.subclass,
         level: snapshot.player.level,
-        hp: snapshot.player.hp,
-        hpMax: snapshot.player.hpMax,
-        mp: snapshot.player.mp,
-        mpMax: snapshot.player.mpMax,
+        hp: Math.min(effectiveHpMax, snapshot.player.hp),
+        hpMax: effectiveHpMax,
+        mp: Math.min(effectiveMpMax, snapshot.player.mp),
+        mpMax: effectiveMpMax,
         gold: snapshot.player.gold,
       },
       world: {

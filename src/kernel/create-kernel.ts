@@ -721,7 +721,7 @@ export class CaelianKernel {
         if (!matchesQuestBattle) {
           throw new Error('当前还有另一场战斗未结束，请先处理后再开始任务战斗');
         }
-        await this.panels.open('battle');
+        await this.panels.navigate('battle');
         return this.trackedQuestView(profileId, quest, tracker, definition);
       }
       const result = await this.execute({
@@ -737,7 +737,7 @@ export class CaelianKernel {
       if (result.status !== 'applied') {
         throw new Error(result.message ?? '任务战斗启动失败');
       }
-      await this.panels.open('battle');
+      await this.panels.navigate('battle');
       return this.trackedQuestView(profileId, quest, tracker, definition);
     }
     if (action.openPanel) {
@@ -1003,7 +1003,7 @@ export class CaelianKernel {
       );
       return;
     }
-    await this.panels.open('battle');
+    await this.panels.navigate('battle');
     this.notifyRuntime(
       'success',
       `${request.monster}${request.count > 1 ? ` × ${request.count}` : ''}`,

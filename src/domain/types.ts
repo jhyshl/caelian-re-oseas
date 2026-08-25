@@ -45,6 +45,8 @@ export interface PlayerRecord {
   speed: number;
   actionPointsPerTurn: number;
   drawPerTurn: number;
+  /** Percentage points healed from actual enemy HP loss after shields. */
+  lifesteal: number;
   statPoints: number;
   gold: number;
   reclassCount: number;
@@ -72,6 +74,7 @@ export interface StatAllocationRecord {
   defense: number;
   speed: number;
   actionPointsPerTurn: number;
+  lifesteal: number;
   actionPointCosts: number[];
   updatedAt: number;
 }
@@ -406,6 +409,12 @@ export interface BattlePlayerState {
   classResources?: Record<string, number>;
   sanity?: number;
   abyssEcho?: number;
+  lifesteal?: number;
+  manualDiscardTurn?: number;
+  cardsPlayedThisTurn?: Record<string, number>;
+  abyssEchoBatches?: Array<{ turn: number; value: number }>;
+  /** Last elemental affinity played by an Elementalist; non-element cards do not clear it. */
+  lastElementalistElement?: string;
   lastCardId?: string;
   lastCardType?: string;
   summonsLost?: number;
@@ -460,6 +469,7 @@ export interface BattleCompanionSummonState {
   attack: number;
   defense: number;
   speed: number;
+  lifesteal?: number;
   buffs: Record<string, BattleTimedEffect>;
   debuffs: Record<string, BattleTimedEffect>;
 }
@@ -475,6 +485,7 @@ export interface BattleCompanionState {
   attack: number;
   defense: number;
   speed: number;
+  lifesteal?: number;
   buffs: Record<string, BattleTimedEffect>;
   debuffs: Record<string, BattleTimedEffect>;
   injured: boolean;

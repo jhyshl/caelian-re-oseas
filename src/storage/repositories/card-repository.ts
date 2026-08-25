@@ -55,14 +55,22 @@ export class CardRepository {
         .filter((deck) => deck.active)
         .first(),
     ]);
-    const ownedIds = new Set(
-      ownedCards
-        .filter((entry) => entry.quantity > 0)
-        .map((entry) => entry.cardId),
-    );
-    for (const cardId of new Set(cardIds)) {
-      if (!ownedIds.has(cardId)) {
-        throw new Error(`尚未拥有牌组中的 ${cardId}`);
+    const ownedCounts = ownedCards.reduce<Map<string, number>>((counts, entry) => {
+      counts.set(entry.cardId, (counts.get(entry.cardId) ?? 0) + entry.quantity);
+      return counts;
+    }, new Map());
+    const requestedCounts = cardIds.reduce<Map<string, number>>((counts, cardId) => {
+      counts.set(cardId, (counts.get(cardId) ?? 0) + 1);
+      return counts;
+    }, new Map());
+    for (const [cardId, requested] of requestedCounts) {
+      const owned = Math.max(0, ownedCounts.get(cardId) ?? 0);
+      if (requested > owned) {
+        throw new Error(
+          owned > 0
+            ? `牌组中的 ${cardId} 需要 ${requested} 张，当前仅持有 ${owned} 张`
+            : `尚未拥有牌组中的 ${cardId}`,
+        );
       }
     }
     const now = Date.now();
