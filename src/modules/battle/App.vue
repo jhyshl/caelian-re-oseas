@@ -14,6 +14,7 @@ import {
 import type {
   BattleItemDefinition,
   CardDefinition,
+  CardEffect,
   EquipmentDefinition,
   RelicDefinition,
 } from '@/content/types';
@@ -26,6 +27,7 @@ import type {
   BattleAnimationEvent,
   BattleEnemyState,
   BattleFriendlyTargetId,
+  BattleSummonState,
   GameSnapshot,
   LocalBattleState,
 } from '@/domain/types';
@@ -51,6 +53,26 @@ import {
   MAGICIAN_BLANK_LIMIT,
   MAGICIAN_SUBCLASS_ID,
 } from '@/content/catalogs/magician';
+import cardBuffNamesJson from '@/content/generated/battle/card-buff-names.json';
+import cardDebuffNamesJson from '@/content/generated/battle/card-debuff-names.json';
+import cardStatusDescriptionsJson from '@/content/generated/battle/card-status-descriptions.json';
+import worldBuffNamesJson from '@/content/generated/battle/world-buff-names.json';
+import worldDebuffNamesJson from '@/content/generated/battle/world-debuff-names.json';
+import worldStatusDescriptionsJson from '@/content/generated/battle/world-status-descriptions.json';
+
+type GeneratedStatusDescriptions = {
+  buff: Record<string, string>;
+  debuff: Record<string, string>;
+} & Record<string, string | Record<string, string>>;
+
+const generatedBuffNames = cardBuffNamesJson as Record<string, string>;
+const generatedDebuffNames = cardDebuffNamesJson as Record<string, string>;
+const generatedStatusDescriptions =
+  cardStatusDescriptionsJson as GeneratedStatusDescriptions;
+const worldBuffNames = worldBuffNamesJson as Record<string, string>;
+const worldDebuffNames = worldDebuffNamesJson as Record<string, string>;
+const worldStatusDescriptions =
+  worldStatusDescriptionsJson as GeneratedStatusDescriptions;
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -260,6 +282,11 @@ const classResourceDefinitionsById = Object.fromEntries(
     resource,
   ]),
 ) as Record<string, ProfessionStatusDefinition>;
+classResourceDefinitionsById.hunter_prepare = {
+  id: 'hunter_prepare',
+  label: '猎杀准备',
+  description: '吸血鬼猎人的血月准备层数。',
+};
 
 function formatClassResourceLabel(id: string): string {
   return id
@@ -272,6 +299,42 @@ function formatClassResourceLabel(id: string): string {
 function formatClassResourceValue(value: unknown): string {
   const numeric = Number(value);
   return String(Number.isFinite(numeric) ? Math.max(0, numeric) : 0);
+}
+
+const elementLabels: Record<string, string> = {
+  fire: '火',
+  water: '水',
+  thunder: '雷',
+  wind: '风',
+  wood: '木',
+  light: '光',
+  dark: '暗',
+  arcane: '奥术',
+};
+
+function elementLabel(value: unknown): string {
+  const key = String(value ?? '').trim().toLowerCase();
+  return key ? (elementLabels[key] ?? key) : '尚未锚定';
+}
+
+function activeAbyssEchoBatches(player: BattlePlayerUiState) {
+  const turn = Math.max(1, Number(state.value?.turn) || 1);
+  return (player.abyssEchoBatches ?? []).filter((batch) => {
+    const value = Math.max(0, Math.floor(Number(batch.value) || 0));
+    const gainedTurn = Math.max(1, Math.floor(Number(batch.turn) || turn));
+    return value > 0 && turn - gainedTurn < 2;
+  });
+}
+
+function weaponMasterNextComboBonus(
+  playedBefore: number,
+  player: BattlePlayerUiState,
+): number {
+  if (playedBefore <= 0 || player.buffs.weapon_master_no_combo) return 0;
+  const base = playedBefore === 1 ? 2 : 4;
+  const extra = battleEffectValue(player.buffs.weapon_master_bonus_extra);
+  const cap = 4 + battleEffectValue(player.buffs.weapon_master_combo_cap);
+  return Math.max(0, Math.min(cap, base + extra));
 }
 
 const professionStatusEntries = computed<ProfessionStatusEntry[]>(() => {
@@ -289,15 +352,52 @@ const professionStatusEntries = computed<ProfessionStatusEntry[]>(() => {
       resource.id === 'abyss_echo'
         ? (player.classResources?.[resource.id] ?? player.abyssEcho ?? 0)
         : (player.classResources?.[resource.id] ?? 0);
-    entries.push({ ...resource, value: formatClassResourceValue(value) });
+    const abyssBatches = resource.id === 'abyss_echo'
+      ? activeAbyssEchoBatches(player)
+      : [];
+    entries.push({
+      ...resource,
+      value: resource.id === 'abyss_echo'
+        ? `${formatClassResourceValue(value)} 层 · ${abyssBatches.length} 批`
+        : formatClassResourceValue(value),
+      description: statusDescription(resource.id, 'buff', resource.description),
+    });
     displayedResourceIds.add(resource.id);
+  }
+  if (subclass === 'elementalist') {
+    entries.push({
+      id: 'elementalist_anchor',
+      label: '元素锚点',
+      value: elementLabel(player.lastElementalistElement),
+      description: '记录上一张元素法术的元素；改用不同元素时会获得元素共鸣。',
+    });
+  }
+  if (subclass === 'dark_mage') {
+    const currentTurn = Math.max(1, Number(state.value?.turn) || 1);
+    activeAbyssEchoBatches(player).forEach((batch, index) => {
+      const gainedTurn = Math.max(
+        1,
+        Math.floor(Number(batch.turn) || currentTurn),
+      );
+      const expiresIn = Math.max(1, 2 - (currentTurn - gainedTurn));
+      entries.push({
+        id: `abyss_echo_batch:${gainedTurn}:${index}`,
+        label: `回声分批 ${index + 1}`,
+        value: `${formatClassResourceValue(batch.value)} 层 · ${expiresIn === 1 ? '下回合过期' : `${expiresIn} 回合后过期`}`,
+        description: '深渊回声按获得批次独立保留 2 回合；到期时只移除该批。',
+      });
+    });
   }
   if (subclass === 'dark_priest') {
     entries.push({
       id: 'sanity',
       label: '理智',
       value: `${Math.max(0, player.sanity ?? 100)} / 100`,
-      description: '理智越低，暗黑牧师伤害越高；归零后攻击可能反噬自身。',
+      description: statusDescription(
+        'sanity',
+        'buff',
+        '理智越低，暗黑牧师伤害越高；归零后攻击可能反噬自身。',
+      ),
     });
   }
   if (subclass === 'arcane_mage') {
@@ -305,7 +405,23 @@ const professionStatusEntries = computed<ProfessionStatusEntry[]>(() => {
       id: 'chants',
       label: '吟诵队列',
       value: `${player.chants.length} / 3`,
-      description: '已锁定目标、等待指定回合结算的法术。',
+      description: statusDescription(
+        'chanting',
+        'buff',
+        '等待指定回合结算的法术。',
+      ),
+    });
+    player.chants.forEach((chant, index) => {
+      entries.push({
+        id: `chant:${chant.id}:${index}`,
+        label: chant.name || '吟诵法术',
+        value: `剩余 ${Math.max(0, Number(chant.turns) || 0)} 回合`,
+        description: statusDescription(
+          'chanting',
+          'buff',
+          '吟诵法术会在倒计归零时自动结算。',
+        ),
+      });
     });
   }
   if (subclass === 'summoner') {
@@ -328,22 +444,45 @@ const professionStatusEntries = computed<ProfessionStatusEntry[]>(() => {
         ? '已触发'
         : `回合 ${Math.min(5, Math.max(1, state.value?.turn ?? 1))} / 5 · ${hunterPrepare} 层`,
       description: bloodMoon
-        ? '红蔷薇猎人已进入血月猎杀状态。'
+        ? '攻击牌额外造成至少 3 点、或最大生命 8% 的伤害（取较高者）；每打出 1 张攻击牌会直接失去最大生命 6% 的生命。'
         : '第 5 回合会进入血月猎杀。',
     });
     displayedResourceIds.add('hunter_prepare');
   }
   if (subclass === 'weapon_master') {
-    const highestCombo = Math.max(
-      0,
-      ...Object.values(player.cardsPlayedThisTurn ?? {}),
-    );
-    entries.push({
-      id: 'weapon_master_combo',
-      label: '武器精通',
-      value: `同名最高 ${highestCombo}`,
-      description: '本回合同名攻击牌的最高连续使用数。',
-    });
+    const combos = Object.entries(player.cardsPlayedThisTurn ?? {})
+      .map(([cardId, rawCount]) => ({
+        cardId,
+        count: Math.max(0, Math.floor(Number(rawCount) || 0)),
+        definition: cards.value[cardId],
+      }))
+      .filter(
+        ({ count, definition }) =>
+          count > 0 && (!definition || definition.type === 'attack'),
+      )
+      .sort((left, right) =>
+        (left.definition?.name ?? left.cardId).localeCompare(
+          right.definition?.name ?? right.cardId,
+          'zh-CN',
+        ),
+      );
+    if (combos.length === 0) {
+      entries.push({
+        id: 'weapon_master_combo',
+        label: '武器精通',
+        value: '本回合尚未使用攻击牌',
+        description: '再次使用本回合已打出的同名攻击牌时会获得额外伤害。',
+      });
+    } else {
+      combos.forEach(({ cardId, count, definition }) => {
+        entries.push({
+          id: `weapon_master_combo:${cardId}`,
+          label: definition?.name ?? cardId,
+          value: `已用 ${count} 次 · 下次 +${weaponMasterNextComboBonus(count, player)} 伤害`,
+          description: '本回合同名攻击牌的使用次数，以及再次使用该牌时追加的伤害。',
+        });
+      });
+    }
   }
   if (subclass === MAGICIAN_SUBCLASS_ID) {
     const blankCount = [
@@ -361,12 +500,17 @@ const professionStatusEntries = computed<ProfessionStatusEntry[]>(() => {
   for (const [id, value] of Object.entries(player.classResources ?? {})) {
     if (displayedResourceIds.has(id)) continue;
     const known = classResourceDefinitionsById[id];
+    // Built-in class resources are owned by exactly one profession. Old battle
+    // saves can contain a stale zero-valued key, but that must never make a
+    // different profession appear to have the resource.
+    if (known) continue;
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) continue;
     entries.push({
       id: `class-resource:${id}`,
-      label: known?.label ?? formatClassResourceLabel(id),
+      label: formatClassResourceLabel(id),
       value: formatClassResourceValue(value),
-      description:
-        known?.description ?? `动态识别的职业资源（${id}）。`,
+      description: `动态识别的职业资源（${id}）。`,
     });
   }
   return entries;
@@ -522,11 +666,11 @@ const statusNames: Record<string, string> = {
   draw_regen: '持续抽牌',
   damage_bonus: '伤害强化',
   spell_damage_bonus: '法术强化',
-  damage_reduce: '减伤',
-  empower: '强化',
+  damage_reduce: '固定减伤',
+  empower: '蓄力',
   cost_reduction: '减费',
   poison_coat: '淬毒',
-  spell_double: '法术双倍',
+  spell_double: '攻击翻倍',
   on_hit_draw: '受击抽牌',
   thorns_debuff: '反制荆棘',
   entangle: '缠绕',
@@ -542,6 +686,21 @@ const statusNames: Record<string, string> = {
   weapon_master_force_combo: '强制连击',
   weapon_master_no_combo: '连击封锁',
   weapon_master_attack_amp: '攻击增幅',
+  attack_amp_percent: '攻击增幅',
+  healing_amp_percent: '治疗增幅',
+};
+const localStatusDescriptions: Record<string, string> = {
+  attack_amp_percent:
+    '攻击增幅：状态持续期间，攻击牌造成的伤害按显示百分比提高。',
+  healing_amp_percent:
+    '治疗增幅：状态持续期间，造成的治疗量按显示百分比提高。',
+  empower: '蓄力：下一次造成伤害时追加显示数值的伤害，触发后消耗 1 次。',
+  purified_power:
+    '净化增伤：本回合攻击牌造成的伤害按显示数值提高。',
+  damage_reduce: '固定减伤：受到伤害时减去显示数值，最低仍会受到 1 点伤害。',
+  spell_double: '攻击翻倍：下一张攻击牌造成的伤害翻倍，触发后消耗 1 次。',
+  wet: '湿润：当前作为特定卡牌的条件标记；不会自行增加雷系伤害或冻结回合。',
+  abyss_echo: '自身失去生命时获得；每批深渊回声独立保留 2 回合并分别过期。',
 };
 const typeNames: Record<string, string> = {
   attack: '攻击',
@@ -563,6 +722,199 @@ function requiredDiscardCount(definition?: CardDefinition) {
   }, 0);
 }
 
+function cardContainsEffect(
+  definition: CardDefinition,
+  predicate: (effect: CardEffect) => boolean,
+): boolean {
+  let found = false;
+  const visit = (effects: CardDefinition['effects']) => {
+    for (const effect of effects ?? []) {
+      if (predicate(effect)) {
+        found = true;
+        return;
+      }
+      for (const key of ['effects', 'then_effects', 'else_effects']) {
+        if (Array.isArray(effect[key])) {
+          visit(effect[key] as CardDefinition['effects']);
+          if (found) return;
+        }
+      }
+    }
+  };
+  visit(definition.effects ?? []);
+  return found;
+}
+
+function cardContainsEffectTypes(
+  definition: CardDefinition,
+  types: ReadonlySet<string>,
+): boolean {
+  return cardContainsEffect(definition, (effect) =>
+    types.has(String(effect.type ?? '')),
+  );
+}
+
+function battleEffectValue(
+  effect: LocalBattleState['player']['buffs'][string] | undefined,
+): number {
+  const numeric = Number(effect?.value);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function isSpellCard(definition: CardDefinition): boolean {
+  return definition.type === 'spell';
+}
+
+function cardElement(definition: CardDefinition): string {
+  const direct = String(
+    (definition as CardDefinition & { element?: unknown }).element ?? '',
+  );
+  if (direct) return direct;
+  return String(
+    definition.effects?.find((effect) => effect.element)?.element ?? '',
+  );
+}
+
+function isSummonCard(definition: CardDefinition): boolean {
+  return (
+    definition.type === 'summon' ||
+    cardContainsEffect(definition, (effect) => effect.type === 'summon')
+  );
+}
+
+function isMechanicalSummonCard(definition: CardDefinition): boolean {
+  if (!isSummonCard(definition)) return false;
+  if (
+    cardContainsEffect(
+      definition,
+      (effect) =>
+        effect.type === 'summon' &&
+        (effect.mechanical === true || effect.attackable === false),
+    )
+  ) {
+    return true;
+  }
+  return /机械|齿轮|装填|无人机|机器人|核心|炮台|机械臂|锻锤/u.test(
+    `${definition.name}${definition.description}${String(definition.brief ?? '')}${String(definition.cat ?? '')}`,
+  );
+}
+
+function summonCanBeDestroyed(summon: BattleSummonState): boolean {
+  if (summonIsAttackable(summon)) return (Number(summon.hp) || 0) > 0;
+  return (Number(summon.duration) || 0) > 0;
+}
+
+function destroySummonUnavailableReason(
+  definition: CardDefinition,
+  player: BattlePlayerUiState,
+): string {
+  let reason = '';
+  cardContainsEffect(definition, (effect) => {
+    if (effect.type !== 'destroy_summon_damage_per') return false;
+    const mechanicalOnly = effect.mechanicalOnly === true;
+    const hasTarget = player.summons.some(
+      (summon) =>
+        summonCanBeDestroyed(summon) &&
+        (!mechanicalOnly || summonIsMechanical(summon)),
+    );
+    if (hasTarget) return false;
+    reason = mechanicalOnly
+      ? '场上没有可摧毁的机械召唤物。'
+      : '场上没有可摧毁的召唤物。';
+    return true;
+  });
+  return reason;
+}
+
+function selectedEnemyMatchesCostCondition(effect: CardEffect): boolean {
+  const current = state.value;
+  const target = current?.enemies[selectedTarget.value];
+  if (!current || !target) return false;
+  const condition = String(effect.condition ?? effect.type ?? '');
+  switch (condition) {
+    case 'enemy_has_specific_debuff':
+      return Boolean(target.debuffs[String(effect.debuff ?? '')]);
+    case 'enemy_has_debuff':
+      return Object.keys(target.debuffs).length > 0;
+    case 'enemy_no_debuff':
+      return Object.keys(target.debuffs).length === 0;
+    case 'enemy_has_shield':
+      return target.shield > 0;
+    case 'enemy_no_shield':
+      return target.shield <= 0;
+    case 'self_has_shield':
+    case 'has_shield':
+      return current.player.shield > 0;
+    case 'self_no_shield':
+      return current.player.shield <= 0;
+    default:
+      return false;
+  }
+}
+
+function conditionalCardApReduction(definition: CardDefinition): number {
+  let reduction = 0;
+  const visit = (effects: CardDefinition['effects']) => {
+    for (const effect of effects ?? []) {
+      if (
+        effect.type === 'conditional_cost_reduction' &&
+        selectedEnemyMatchesCostCondition(effect)
+      ) {
+        reduction += Math.max(0, Number(effect.value) || 0);
+      }
+      for (const key of ['effects', 'then_effects', 'else_effects']) {
+        if (Array.isArray(effect[key])) {
+          visit(effect[key] as CardDefinition['effects']);
+        }
+      }
+    }
+  };
+  visit(definition.effects ?? []);
+  return reduction;
+}
+
+function effectiveCardApCost(definition: CardDefinition): number {
+  const buffs = state.value?.player.buffs;
+  let cost = Math.max(0, Number(definition.cost) || 0);
+  if (!buffs) return cost;
+  if (definition.type === 'attack') {
+    cost -= battleEffectValue(buffs.cost_reduction);
+  }
+  if (isSpellCard(definition)) {
+    if (buffs.next_spell_ap_free) cost = 0;
+    cost -= battleEffectValue(buffs.next_spell_ap_reduce);
+  }
+  if (isSummonCard(definition)) {
+    cost -= battleEffectValue(buffs.next_summon_ap_reduce);
+  }
+  if (isMechanicalSummonCard(definition)) {
+    cost -= battleEffectValue(buffs.next_mech_summon_ap_reduce);
+  }
+  cost -= conditionalCardApReduction(definition);
+  return Math.max(0, cost);
+}
+
+function effectiveCardMpCost(definition: CardDefinition): number {
+  const buffs = state.value?.player.buffs;
+  let cost = Math.max(0, Number(definition.mpCost) || 0);
+  if (!buffs || !isSpellCard(definition)) return cost;
+  cost -= battleEffectValue(buffs.next_spell_mp_reduce);
+  if (cardElement(definition) === 'water') {
+    cost -= battleEffectValue(buffs.next_water_spell_mp_reduce);
+  }
+  return Math.max(0, Math.round(cost));
+}
+
+function displayedCardApCost(cardId: string): number {
+  const definition = cardDefinition(cardId);
+  return definition ? effectiveCardApCost(definition) : 0;
+}
+
+function displayedCardMpCost(cardId: string): number {
+  const definition = cardDefinition(cardId);
+  return definition ? effectiveCardMpCost(definition) : 0;
+}
+
 function cardUnavailableReason(cardId: string, handIndex?: number) {
   const definition = cardDefinition(cardId);
   const player = state.value?.player;
@@ -571,11 +923,19 @@ function cardUnavailableReason(cardId: string, handIndex?: number) {
   if (definition.unplayable === true) {
     return '空白牌无法打出，只有「真相揭晓」可以将其揭晓。';
   }
-  if (player.ap < Math.max(0, Number(definition.cost) || 0)) {
+  const summonRequirement = destroySummonUnavailableReason(definition, player);
+  if (summonRequirement) return summonRequirement;
+  if (player.ap < effectiveCardApCost(definition)) {
     return '行动点不足。';
   }
-  if (player.mp < Math.max(0, Number(definition.mpCost) || 0)) {
+  if (player.mp < effectiveCardMpCost(definition)) {
     return '魔力不足。';
+  }
+  if (
+    player.chants.length >= 3 &&
+    cardContainsEffectTypes(definition, new Set(['chant', 'copy_chant']))
+  ) {
+    return '吟诵队列已满（3 / 3），无法开始或复写新的吟诵。';
   }
   const required = requiredDiscardCount(definition);
   const available = player.hand.filter(
@@ -638,8 +998,100 @@ function cardStyle(index: number, total: number, cardId: string) {
   };
 }
 
-function effectEntries(effects: LocalBattleState['player']['buffs']) {
-  return Object.entries(effects);
+interface StatusDisplayEntry {
+  key: string;
+  name: string;
+  effect: LocalBattleState['player']['buffs'][string];
+}
+
+function effectEntries(
+  effects: LocalBattleState['player']['buffs'],
+): StatusDisplayEntry[] {
+  return Object.entries(effects).flatMap(([name, aggregate]) => {
+    const instances = Array.isArray(aggregate.instances)
+      ? aggregate.instances
+      : [];
+    if (instances.length === 0) {
+      return [{ key: name, name, effect: aggregate }];
+    }
+    return instances.map((instance, index) => ({
+      key: `${name}:${index}`,
+      name,
+      effect: { ...instance },
+    }));
+  });
+}
+
+function statusDisplayName(name: string, kind: 'buff' | 'debuff'): string {
+  const world = kind === 'buff' ? worldBuffNames : worldDebuffNames;
+  const generated = kind === 'buff' ? generatedBuffNames : generatedDebuffNames;
+  return statusNames[name] ?? world[name] ?? generated[name] ?? name;
+}
+
+function statusDescription(
+  name: string,
+  kind: 'buff' | 'debuff',
+  fallback = '',
+): string {
+  if (localStatusDescriptions[name]) return localStatusDescriptions[name];
+  const worldGlobalDescription = worldStatusDescriptions[name];
+  if (typeof worldGlobalDescription === 'string') return worldGlobalDescription;
+  const generatedGlobalDescription = generatedStatusDescriptions[name];
+  if (typeof generatedGlobalDescription === 'string') {
+    return generatedGlobalDescription;
+  }
+  return (
+    worldStatusDescriptions[kind]?.[name] ??
+    generatedStatusDescriptions[kind]?.[name] ??
+    fallback
+  );
+}
+
+function formatStatusNumber(value: unknown): string {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '0';
+  return Number.isInteger(numeric)
+    ? String(numeric)
+    : numeric.toFixed(2).replace(/\.0+$/u, '').replace(/(\.\d*?)0+$/u, '$1');
+}
+
+function statusEffectSummary(
+  effect: LocalBattleState['player']['buffs'][string],
+): string {
+  const parts = [`数值 ${formatStatusNumber(effect.value)}`];
+  if (effect.stacks !== undefined) {
+    parts.push(`层数 ${formatStatusNumber(effect.stacks)}`);
+  }
+  if (effect.charges !== undefined) {
+    parts.push(`可触发 ${formatStatusNumber(effect.charges)} 次`);
+  }
+  parts.push(`剩余 ${formatStatusNumber(effect.turns)} 回合`);
+  return parts.join(' · ');
+}
+
+const playerBuffEntries = computed(() => {
+  const entries = effectEntries(state.value?.player.buffs ?? {});
+  const bloodMoonShownAsProfessionStatus = professionStatusEntries.value.some(
+    (entry) => entry.id === 'blood_moon',
+  );
+  return bloodMoonShownAsProfessionStatus
+    ? entries.filter((entry) => entry.name !== 'blood_moon')
+    : entries;
+});
+
+function summonIsAttackable(summon: BattleSummonState): boolean {
+  return summon.attackable ?? summon.hp !== null;
+}
+
+function summonIsMechanical(summon: BattleSummonState): boolean {
+  return summon.mechanical ?? !summonIsAttackable(summon);
+}
+
+function summonHealthLabel(summon: BattleSummonState): string {
+  const hp = Math.max(0, Number(summon.hp) || 0);
+  const hpMax = Math.max(1, Number(summon.hpMax) || hp || 1);
+  const shield = Math.max(0, Number(summon.shield) || 0);
+  return `HP ${hp}/${hpMax} · 盾 ${shield}`;
 }
 
 function canUseBattleItem(definition: BattleItemDefinition) {
@@ -737,7 +1189,11 @@ function visibleTarget(event: BattleAnimationEvent) {
   }
   if (event.targetSide === 'companion') return current.companion ?? null;
   if (event.targetSide === 'summon') {
-    return current.companion?.summons.find((summon) => summon.id === event.targetId) ?? null;
+    return (
+      current.player.summons.find((summon) => summon.id === event.targetId) ??
+      current.companion?.summons.find((summon) => summon.id === event.targetId) ??
+      null
+    );
   }
   return current.player;
 }
@@ -1491,17 +1947,21 @@ onUnmounted(() => {
               <div class="status-row">
                 <span v-if="enemy.shield">护盾 {{ enemy.shield }}</span>
                 <span
-                  v-for="[name, effect] in effectEntries(enemy.buffs)"
-                  :key="`eb:${name}`"
+                  v-for="entry in effectEntries(enemy.buffs)"
+                  :key="`eb:${entry.key}`"
+                  :title="statusDescription(entry.name, 'buff')"
                 >
-                  {{ statusNames[name] ?? name }} {{ effect.value }}·{{ effect.turns }}
+                  {{ statusDisplayName(entry.name, 'buff') }}
+                  {{ statusEffectSummary(entry.effect) }}
                 </span>
                 <span
-                  v-for="[name, effect] in effectEntries(enemy.debuffs)"
-                  :key="`ed:${name}`"
+                  v-for="entry in effectEntries(enemy.debuffs)"
+                  :key="`ed:${entry.key}`"
                   class="negative"
+                  :title="statusDescription(entry.name, 'debuff')"
                 >
-                  {{ statusNames[name] ?? name }} {{ effect.value }}·{{ effect.turns }}
+                  {{ statusDisplayName(entry.name, 'debuff') }}
+                  {{ statusEffectSummary(entry.effect) }}
                 </span>
               </div>
               <div class="battle-float-layer" aria-hidden="true">
@@ -1616,9 +2076,60 @@ onUnmounted(() => {
               <article
                 v-for="summon in state.player.summons"
                 :key="summon.id"
+                class="player-summon"
+                :class="{
+                  defeated:
+                    summonIsAttackable(summon) &&
+                    (Number(summon.hp) || 0) <= 0,
+                  acting: activeActorKey === `summon:${summon.id}`,
+                  hit: hitTargetKey === `summon:${summon.id}`,
+                  glow: glowTargetKey === `summon:${summon.id}`,
+                }"
               >
+                <small>
+                  {{ summonIsMechanical(summon) ? '机械召唤物' : '可攻击召唤物' }}
+                </small>
                 <strong>{{ summon.name }}</strong>
-                <span>{{ summon.duration }} 回合</span>
+                <span v-if="summonIsAttackable(summon)">
+                  {{ summonHealthLabel(summon) }}
+                </span>
+                <span v-if="summonIsMechanical(summon)">
+                  剩余 {{ Math.max(0, Number(summon.duration) || 0) }} 回合
+                </span>
+                <div
+                  v-if="
+                    Object.keys(summon.buffs ?? {}).length ||
+                      Object.keys(summon.debuffs ?? {}).length
+                  "
+                  class="summon-statuses"
+                >
+                  <span
+                    v-for="entry in effectEntries(summon.buffs ?? {})"
+                    :key="`sb:${summon.id}:${entry.key}`"
+                    :title="statusDescription(entry.name, 'buff')"
+                  >
+                    {{ statusDisplayName(entry.name, 'buff') }} ·
+                    {{ statusEffectSummary(entry.effect) }}
+                  </span>
+                  <span
+                    v-for="entry in effectEntries(summon.debuffs ?? {})"
+                    :key="`sd:${summon.id}:${entry.key}`"
+                    class="negative"
+                    :title="statusDescription(entry.name, 'debuff')"
+                  >
+                    {{ statusDisplayName(entry.name, 'debuff') }} ·
+                    {{ statusEffectSummary(entry.effect) }}
+                  </span>
+                </div>
+                <div class="battle-float-layer" aria-hidden="true">
+                  <span
+                    v-for="effect in floatsFor(`summon:${summon.id}`)"
+                    :key="effect.id"
+                    :data-kind="effect.kind"
+                  >
+                    {{ effect.text }}
+                  </span>
+                </div>
               </article>
             </template>
             <span v-else>暂无召唤物</span>
@@ -1646,17 +2157,21 @@ onUnmounted(() => {
                 {{ entry.label }} · {{ entry.value }}
               </span>
               <span
-                v-for="[name, effect] in effectEntries(state.player.buffs)"
-                :key="`pb:${name}`"
+                v-for="entry in playerBuffEntries"
+                :key="`pb:${entry.key}`"
+                :title="statusDescription(entry.name, 'buff')"
               >
-                {{ statusNames[name] ?? name }} {{ effect.value }}·{{ effect.turns }}
+                {{ statusDisplayName(entry.name, 'buff') }}
+                {{ statusEffectSummary(entry.effect) }}
               </span>
               <span
-                v-for="[name, effect] in effectEntries(state.player.debuffs)"
-                :key="`pd:${name}`"
+                v-for="entry in effectEntries(state.player.debuffs)"
+                :key="`pd:${entry.key}`"
                 class="negative"
+                :title="statusDescription(entry.name, 'debuff')"
               >
-                {{ statusNames[name] ?? name }} {{ effect.value }}·{{ effect.turns }}
+                {{ statusDisplayName(entry.name, 'debuff') }}
+                {{ statusEffectSummary(entry.effect) }}
               </span>
               <span
                 v-for="generator in state.player.blankGenerators ?? []"
@@ -1810,11 +2325,11 @@ onUnmounted(() => {
               <div class="fan-cost">
                 <span class="ap">
                   <small>AP</small>
-                  <b>{{ cardDefinition(card.cardId)?.cost ?? 0 }}</b>
+                  <b>{{ displayedCardApCost(card.cardId) }}</b>
                 </span>
                 <span class="mp">
                   <small>MP</small>
-                  <b>{{ cardDefinition(card.cardId)?.mpCost ?? 0 }}</b>
+                  <b>{{ displayedCardMpCost(card.cardId) }}</b>
                 </span>
               </div>
               <strong class="fan-card-name">
@@ -2462,12 +2977,38 @@ onUnmounted(() => {
 }
 
 .summon-strip article {
-  min-width: 102px;
+  position: relative;
+  min-width: 168px;
   display: grid;
+  align-content: start;
+  gap: 2px;
+  overflow: hidden;
   padding: 5px 7px;
   border: 1px solid rgba(125, 238, 158, 0.34);
   border-radius: 9px;
   background: rgba(73, 230, 109, 0.08);
+}
+
+.summon-strip article.acting {
+  animation: player-action 0.46s cubic-bezier(.2, .75, .24, 1);
+}
+
+.summon-strip article.hit {
+  animation: battle-hit 0.42s ease;
+}
+
+.summon-strip article.glow {
+  animation: battle-glow 0.48s ease;
+}
+
+.summon-strip article.defeated {
+  filter: grayscale(0.75);
+  opacity: 0.68;
+}
+
+.summon-strip article > small {
+  color: rgba(171, 240, 195, 0.64);
+  font-size: 7px;
 }
 
 .summon-strip strong {
@@ -2475,9 +3016,34 @@ onUnmounted(() => {
   font-size: 9px;
 }
 
-.summon-strip article span {
+.summon-strip article > span {
   color: rgba(224, 255, 225, 0.7);
   font-size: 8px;
+}
+
+.summon-statuses {
+  min-width: 0;
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding-top: 2px;
+}
+
+.summon-statuses span {
+  flex: 0 0 auto;
+  padding: 2px 4px;
+  border: 1px solid rgba(73, 230, 109, 0.32);
+  border-radius: 999px;
+  color: #c9f6d3;
+  background: rgba(73, 230, 109, 0.12);
+  font-size: 7px;
+  white-space: nowrap;
+}
+
+.summon-statuses span.negative {
+  border-color: rgba(255, 98, 91, 0.38);
+  color: #ffb1ac;
+  background: rgba(255, 55, 48, 0.13);
 }
 
 .mechanism-resource-strip {

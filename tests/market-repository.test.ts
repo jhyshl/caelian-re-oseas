@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadCardCatalog } from '@/content/catalogs/cards';
+import { loadMarketCatalogs } from '@/content/catalogs/market';
 import {
   loadEquipmentDefinitions,
   loadItemCatalog,
@@ -129,6 +130,170 @@ describe('MarketRepository integration', () => {
     );
     expect(JSON.stringify(await loadEquipmentDefinitions())).toBe(
       serializedDefinitions,
+    );
+  });
+
+  it('商人出售掉落、采集和合成物时获得 50% 加成', async () => {
+    const marketDate = new Date(2026, 7, 26, 12, 30);
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-alpha-market-merchant-talent-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('market-merchant-talent');
+    await database.playerStates.update(profile.id, {
+      classMain: 'martial',
+      subclass: 'warrior',
+      gold: 0,
+    });
+    const marketRepository = new MarketRepository(
+      database,
+      () => marketDate,
+    );
+    const catalogs = await loadMarketCatalogs();
+    const initialView = await marketRepository.view(profile.id);
+    const localKeys = new Set(
+      initialView.listings
+        .filter((listing) => listing.kind === 'item')
+        .flatMap((listing) => [listing.itemId, listing.name]),
+    );
+    const pickNonLocal = (
+      rows: Array<{ itemId: string; name: string }>,
+    ) =>
+      rows.find(
+        (row) =>
+          row.itemId &&
+          row.name &&
+          !localKeys.has(row.itemId) &&
+          !localKeys.has(row.name),
+      );
+    const gather = pickNonLocal(
+      Object.entries(catalogs.gatherResources).map(([itemId, item]) => ({
+        itemId,
+        name: item.name,
+      })),
+    );
+    const loot = pickNonLocal(
+      Object.values(catalogs.monsters).flatMap((monster) =>
+        (monster.loot ?? []).map((item) => ({
+          itemId: item.id || item.name || '',
+          name: item.name || item.id || '',
+        })),
+      ),
+    );
+    const crafted = pickNonLocal(
+      catalogs.recipes.map((recipe) => ({
+        itemId: recipe.output || recipe.name,
+        name: recipe.output || recipe.name,
+      })),
+    );
+    expect(gather).toBeDefined();
+    expect(loot).toBeDefined();
+    expect(crafted).toBeDefined();
+    const eligibleItems = [gather!, loot!, crafted!];
+    for (const item of eligibleItems) {
+      await database.inventoryStacks.put({
+        id: `${profile.id}:${item.itemId}`,
+        profileId: profile.id,
+        itemId: item.itemId,
+        name: item.name,
+        quantity: 2,
+        updatedAt: Date.now(),
+      });
+    }
+
+    const normalView = await marketRepository.view(profile.id);
+    await database.playerStates.update(profile.id, { subclass: 'merchant' });
+    const merchantView = await marketRepository.view(profile.id);
+    for (const item of eligibleItems) {
+      const normalPrice = normalView.sellItems.find(
+        (entry) => entry.itemId === item.itemId,
+      )?.price;
+      const merchantPrice = merchantView.sellItems.find(
+        (entry) => entry.itemId === item.itemId,
+      )?.price;
+      expect(normalPrice).toBeDefined();
+      expect(merchantPrice).toBe(Math.round(normalPrice! * 1.5));
+    }
+
+    const sold = eligibleItems[0]!;
+    const soldPrice = merchantView.sellItems.find(
+      (entry) => entry.itemId === sold.itemId,
+    )!.price;
+    await marketRepository.sellItem(profile.id, {
+      itemId: sold.itemId,
+      quantity: 2,
+    });
+    expect((await database.playerStates.get(profile.id))?.gold).toBe(
+      soldPrice * 2,
+    );
+  });
+
+  it('商人出售当前本地集市正在售卖的同名商品时不享受加成', async () => {
+    const marketDate = new Date(2026, 7, 26, 12, 30);
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-alpha-market-merchant-local-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('market-merchant-local');
+    await database.playerStates.update(profile.id, {
+      classMain: 'martial',
+      subclass: 'warrior',
+      gold: 0,
+    });
+    const marketRepository = new MarketRepository(
+      database,
+      () => marketDate,
+    );
+    const catalogs = await loadMarketCatalogs();
+    const view = await marketRepository.view(profile.id);
+    const eligible = new Set<string>();
+    for (const [itemId, item] of Object.entries(catalogs.gatherResources)) {
+      eligible.add(itemId);
+      eligible.add(item.name);
+    }
+    for (const monster of Object.values(catalogs.monsters)) {
+      for (const item of monster.loot ?? []) {
+        if (item.id) eligible.add(item.id);
+        if (item.name) eligible.add(item.name);
+      }
+    }
+    for (const recipe of catalogs.recipes) {
+      if (recipe.output) eligible.add(recipe.output);
+      eligible.add(recipe.name);
+    }
+    const localListing = view.listings.find(
+      (listing) =>
+        listing.kind === 'item' &&
+        (eligible.has(listing.itemId) || eligible.has(listing.name)),
+    );
+    expect(localListing).toBeDefined();
+    await database.inventoryStacks.put({
+      id: `${profile.id}:${localListing!.itemId}`,
+      profileId: profile.id,
+      itemId: localListing!.itemId,
+      name: localListing!.name,
+      quantity: 1,
+      updatedAt: Date.now(),
+    });
+    const normalPrice = (
+      await marketRepository.view(profile.id)
+    ).sellItems.find((item) => item.itemId === localListing!.itemId)!.price;
+    await database.playerStates.update(profile.id, { subclass: 'merchant' });
+    const merchantPrice = (
+      await marketRepository.view(profile.id)
+    ).sellItems.find((item) => item.itemId === localListing!.itemId)!.price;
+    expect(merchantPrice).toBe(normalPrice);
+
+    await marketRepository.sellItem(profile.id, {
+      itemId: localListing!.itemId,
+      quantity: 1,
+    });
+    expect((await database.playerStates.get(profile.id))?.gold).toBe(
+      normalPrice,
     );
   });
 });

@@ -231,7 +231,7 @@ async function claimLevelReward(
 
 function statValue(id: (typeof statRows)[number]['id']): number {
   const base = snapshot.value?.player[id] ?? 0;
-  return id === 'lifesteal' ? base : base + equippedStats.value[id];
+  return base + equippedStats.value[id];
 }
 
 function invested(id: (typeof statRows)[number]['id']): number {
@@ -239,7 +239,7 @@ function invested(id: (typeof statRows)[number]['id']): number {
 }
 
 function equipmentBonus(id: (typeof statRows)[number]['id']): number {
-  return id === 'lifesteal' ? 0 : equippedStats.value[id];
+  return equippedStats.value[id];
 }
 
 function statAddCost(id: (typeof statRows)[number]['id']): number {
@@ -487,7 +487,7 @@ onUnmounted(() => {
             </strong>
             <small v-if="equipmentBonus(row.id)">
               装备 {{ equipmentBonus(row.id) > 0 ? '+' : ''
-              }}{{ equipmentBonus(row.id) }}
+              }}{{ equipmentBonus(row.id) }}{{ row.id === 'lifesteal' ? '%' : '' }}
             </small>
           </article>
           <article>

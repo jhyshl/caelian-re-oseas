@@ -6,6 +6,7 @@ export interface NormalizedEquipmentStats {
   attack: number;
   defense: number;
   speed: number;
+  lifesteal: number;
   actionPointsPerTurn: number;
   drawPerTurn: number;
 }
@@ -31,6 +32,11 @@ const EQUIPMENT_STAT_DISPLAY_NAMES: Record<string, string> = {
   '防御力': '防御',
   speed: '速度',
   '速度': '速度',
+  lifesteal: '吸血',
+  life_steal: '吸血',
+  lifeSteal: '吸血',
+  lifesteal_percent: '吸血',
+  '吸血': '吸血',
   ap: '每回合行动点',
   ap_per_turn: '每回合行动点',
   action_points: '每回合行动点',
@@ -47,7 +53,7 @@ const EQUIPMENT_STAT_DISPLAY_NAMES: Record<string, string> = {
 // Only remove a whole, standalone stat clause. Prose such as
 // "命中后使目标攻击-1" must remain visible.
 const LEGACY_STAT_DESCRIPTION_CLAUSE =
-  /^(?:生命(?:上限)?|魔力(?:上限)?|攻击(?:力)?|防御(?:力)?|速度|行动点|每回合(?:AP|行动点|抽牌)|AP|抽牌|HP|MP)\s*[+＋−-]?\s*\d+(?:\.\d+)?(?:%|％)?(?:点)?[.。]?$/i;
+  /^(?:生命(?:上限)?|魔力(?:上限)?|攻击(?:力)?|防御(?:力)?|速度|吸血|行动点|每回合(?:AP|行动点|抽牌)|AP|抽牌|HP|MP)\s*[+＋−-]?\s*\d+(?:\.\d+)?(?:%|％)?(?:点)?[.。]?$/i;
 
 const EQUIPMENT_STAT_ALIASES: Record<string, NormalizedEquipmentStat> = {
   hp: 'hpMax',
@@ -68,6 +74,11 @@ const EQUIPMENT_STAT_ALIASES: Record<string, NormalizedEquipmentStat> = {
   '防御力': 'defense',
   speed: 'speed',
   '速度': 'speed',
+  lifesteal: 'lifesteal',
+  life_steal: 'lifesteal',
+  lifeSteal: 'lifesteal',
+  lifesteal_percent: 'lifesteal',
+  '吸血': 'lifesteal',
   ap: 'actionPointsPerTurn',
   ap_per_turn: 'actionPointsPerTurn',
   action_points: 'actionPointsPerTurn',
@@ -88,6 +99,7 @@ function emptyEquipmentStats(): NormalizedEquipmentStats {
     attack: 0,
     defense: 0,
     speed: 0,
+    lifesteal: 0,
     actionPointsPerTurn: 0,
     drawPerTurn: 0,
   };
@@ -128,7 +140,8 @@ export function formatEquipmentStats(
       const value = Number(rawValue);
       if (!Number.isFinite(value)) return [];
       const name = EQUIPMENT_STAT_DISPLAY_NAMES[key] ?? key;
-      return [`${name} ${value >= 0 ? '+' : ''}${value}`];
+      const suffix = EQUIPMENT_STAT_ALIASES[key] === 'lifesteal' ? '%' : '';
+      return [`${name} ${value >= 0 ? '+' : ''}${value}${suffix}`];
     })
     .join('，');
 }

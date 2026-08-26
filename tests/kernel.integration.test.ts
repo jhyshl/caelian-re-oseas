@@ -1197,6 +1197,47 @@ describe('CaelianKernel integration', () => {
       professionStatuses.filter((entry) => entry.includes('深渊回声')),
     ).toHaveLength(1);
 
+    await persistedDatabase.open();
+    try {
+      const activeBattle = (await kernel.api.query('state')).battle;
+      const session = await persistedDatabase.battleSessions.get(activeBattle!.id);
+      if (!session) throw new Error('职业资源测试战斗不存在');
+      session.state.player.subclass = 'holy_knight';
+      session.state.player.classResources = {
+        holy_sigil: 1,
+        abyss_echo: 2,
+        hunter_prepare: 3,
+        future_flux: 7,
+      };
+      await persistedDatabase.battleSessions.put(session);
+    } finally {
+      persistedDatabase.close();
+    }
+    await kernel.api.navigatePanel('character');
+    await kernel.api.navigatePanel('battle');
+    await expect
+      .poll(() =>
+        [...document.querySelectorAll<HTMLElement>('.profession-status')].map(
+          (entry) => entry.textContent ?? '',
+        ),
+      )
+      .toContainEqual(expect.stringContaining('圣印 · 1'));
+    const switchedStatuses = [
+      ...document.querySelectorAll<HTMLElement>('.profession-status'),
+    ].map((entry) => entry.textContent ?? '');
+    expect(switchedStatuses).toContainEqual(
+      expect.stringContaining('future flux · 7'),
+    );
+    expect(switchedStatuses.some((entry) => entry.includes('深渊回声'))).toBe(
+      false,
+    );
+    expect(
+      switchedStatuses.some(
+        (entry) =>
+          entry.includes('猎杀准备') || entry.includes('hunter prepare'),
+      ),
+    ).toBe(false);
+
     const discardButton = document.querySelector<HTMLButtonElement>(
       '.hand-actions .discard',
     );

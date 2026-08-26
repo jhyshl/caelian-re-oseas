@@ -48,8 +48,7 @@ export function createCaelianCompanion(
   playerLifesteal = 0,
 ): BattleCompanionState {
   const level = Math.max(1, Math.floor(playerLevel));
-  const inheritedLifesteal =
-    Math.max(0, Math.min(30, Number(playerLifesteal) || 0)) * 0.8;
+  const inheritedLifesteal = Math.max(0, Number(playerLifesteal) || 0) * 0.8;
   const sequence = [...CAELIAN_SKILLS];
   for (let index = sequence.length - 1; index > 0; index -= 1) {
     const swap = Math.floor(random() * (index + 1));

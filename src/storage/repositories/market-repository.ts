@@ -57,6 +57,7 @@ const RARITY_MULTIPLIER: Record<string, number> = {
 
 export class MarketRepository {
   private catalogs?: MarketCatalogs;
+  private merchantTalentEligibleItems?: Set<string>;
 
   constructor(
     private readonly db: CaelianDatabase,
@@ -66,6 +67,8 @@ export class MarketRepository {
 
   async prepare(): Promise<void> {
     this.catalogs ??= await loadMarketCatalogs();
+    this.merchantTalentEligibleItems ??=
+      this.buildMerchantTalentEligibleItems();
   }
 
   async view(profileId: string): Promise<MarketView> {
@@ -91,6 +94,9 @@ export class MarketRepository {
       ...regionState.inventory.listings,
       ...cardState.inventory.listings,
     ].filter((listing) => listing.stock > 0);
+    const isMerchant =
+      player.classMain === 'merchant' || player.subclass === 'merchant';
+    const localMarketItems = this.localMarketItemKeys(regionState);
     const sellItems = inventory
       .filter((stack) => stack.quantity > 0)
       .map((stack) => ({
@@ -98,13 +104,22 @@ export class MarketRepository {
         name: stack.name,
         quantity: stack.quantity,
         detail: this.catalog().items[stack.itemId]?.desc ?? '',
-        price: this.sellItemPrice(stack.itemId, stack.name, regionId, refreshKey),
+        price: this.sellItemPrice(
+          stack.itemId,
+          stack.name,
+          regionId,
+          refreshKey,
+          this.hasMerchantTalentSellBonus(
+            isMerchant,
+            stack.itemId,
+            stack.name,
+            localMarketItems,
+          ),
+        ),
       }));
     const equipped = new Set(
       [loadout.weaponId, loadout.armorId, loadout.accessoryId].filter(Boolean),
     );
-    const isMerchant =
-      player.classMain === 'merchant' || player.subclass === 'merchant';
     const sellEquipment = isMerchant
       ? equipment
           .filter((entry) => !equipped.has(entry.id))
@@ -216,8 +231,27 @@ export class MarketRepository {
     );
     const refreshKey = currentMarketSlotKey(this.now());
     const regionId = this.resolveRegion(world.region, world.location);
+    const regionState = await this.ensureRegionState(
+      profileId,
+      regionId,
+      refreshKey,
+      player.level,
+    );
+    const isMerchant =
+      player.classMain === 'merchant' || player.subclass === 'merchant';
     const gain =
-      this.sellItemPrice(input.itemId, stack.name, regionId, refreshKey) *
+      this.sellItemPrice(
+        input.itemId,
+        stack.name,
+        regionId,
+        refreshKey,
+        this.hasMerchantTalentSellBonus(
+          isMerchant,
+          input.itemId,
+          stack.name,
+          this.localMarketItemKeys(regionState),
+        ),
+      ) *
       quantity;
     const nextQuantity = stack.quantity - quantity;
     const now = Date.now();
@@ -770,17 +804,67 @@ export class MarketRepository {
     name: string,
     regionId: string,
     refreshKey: string,
+    merchantTalentBonus = false,
   ): number {
     const basePrice =
       this.catalog().itemPrices[itemId] ??
       this.catalog().itemPrices[name] ??
       10;
-    return Math.max(
+    const normalPrice = Math.max(
       1,
       Math.round(
         basePrice * marketFactor(`sell:${name}`, regionId, refreshKey),
       ),
     );
+    return merchantTalentBonus
+      ? Math.max(1, Math.round(normalPrice * 1.5))
+      : normalPrice;
+  }
+
+  private buildMerchantTalentEligibleItems(): Set<string> {
+    const eligible = new Set<string>();
+    const add = (...values: Array<string | undefined>) => {
+      for (const value of values) {
+        const normalized = String(value ?? '').trim();
+        if (normalized) eligible.add(normalized);
+      }
+    };
+    for (const [key, resource] of Object.entries(
+      this.catalog().gatherResources,
+    )) {
+      add(key, resource.name);
+    }
+    for (const monster of Object.values(this.catalog().monsters)) {
+      for (const loot of monster.loot ?? []) {
+        add(loot.id, loot.name);
+      }
+    }
+    for (const recipe of this.catalog().recipes) {
+      add(recipe.output, recipe.name);
+    }
+    return eligible;
+  }
+
+  private localMarketItemKeys(state: MarketStateRecord): Set<string> {
+    const local = new Set<string>();
+    for (const listing of state.inventory.listings) {
+      if (listing.kind !== 'item') continue;
+      local.add(listing.itemId);
+      local.add(listing.name);
+    }
+    return local;
+  }
+
+  private hasMerchantTalentSellBonus(
+    isMerchant: boolean,
+    itemId: string,
+    name: string,
+    localMarketItems: ReadonlySet<string>,
+  ): boolean {
+    if (!isMerchant) return false;
+    const eligible = this.merchantTalentEligibleItems;
+    if (!eligible?.has(itemId) && !eligible?.has(name)) return false;
+    return !localMarketItems.has(itemId) && !localMarketItems.has(name);
   }
 
   private sellEquipmentPrice(

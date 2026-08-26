@@ -323,15 +323,24 @@ export type BattleStatus =
   | 'defeat'
   | 'surrendered';
 
-export interface BattleTimedEffect {
+export interface BattleTimedEffectInstance {
   value: number;
   turns: number;
   charges?: number;
-  stacks?: number;
   debuff?: string;
   fresh?: boolean;
   undispellable?: boolean;
   uncleanseable?: boolean;
+}
+
+export interface BattleTimedEffect extends BattleTimedEffectInstance {
+  /** Aggregated number of independently expiring applications. */
+  stacks?: number;
+  /**
+   * New battles retain each application separately. Older saves omit this
+   * field and are normalized as one aggregate-compatible instance.
+   */
+  instances?: BattleTimedEffectInstance[];
 }
 
 export interface BattleCardInstance {
@@ -353,6 +362,16 @@ export interface BattleSummonState {
   name: string;
   duration: number;
   hp: number | null;
+  /** Attackable summons use full combat stats; older saves may omit them. */
+  hpMax?: number;
+  shield?: number;
+  attack?: number;
+  defense?: number;
+  speed?: number;
+  attackable?: boolean;
+  mechanical?: boolean;
+  buffs?: Record<string, BattleTimedEffect>;
+  debuffs?: Record<string, BattleTimedEffect>;
   skills: unknown[];
 }
 
@@ -428,6 +447,8 @@ export interface BattleEnemyState {
   id: string;
   definitionId: string;
   name: string;
+  /** Scaled encounter level. Older in-progress battle saves may omit it. */
+  level?: number;
   hp: number;
   hpMax: number;
   shield: number;

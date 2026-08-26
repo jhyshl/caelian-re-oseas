@@ -12,7 +12,10 @@ import {
   loadEquipmentDefinitions,
   loadRelics,
 } from '@/content/catalogs/inventory';
-import { loadCardCatalog } from '@/content/catalogs/cards';
+import {
+  loadCardCatalog,
+  normalizeBuiltInCardEffect,
+} from '@/content/catalogs/cards';
 import {
   MAGICIAN_BLANK_CARD_ID,
   MAGICIAN_BLANK_LIMIT,
@@ -44,7 +47,9 @@ import type {
   BattlePlayerState,
   BattleRewards,
   BattleSessionRecord,
+  BattleSummonState,
   BattleTimedEffect,
+  BattleTimedEffectInstance,
   LocalBattleState,
   PlayerRecord,
 } from '@/domain/types';
@@ -237,6 +242,18 @@ type Combatant = {
   onHitDebuff?: string;
 };
 
+type PlayerSummonCombatant = BattleSummonState &
+  Combatant & {
+    hp: number;
+    hpMax: number;
+    shield: number;
+    attack: number;
+    defense: number;
+    speed: number;
+    buffs: Record<string, BattleTimedEffect>;
+    debuffs: Record<string, BattleTimedEffect>;
+  };
+
 interface DamageOptions {
   ignoreDefense?: boolean;
   ignoreAgility?: boolean;
@@ -289,6 +306,7 @@ export class BattleRepository {
   };
   private activeDarkPriestRedirect = false;
   private resolvingPlayerSummonEffect = false;
+  private activePlayerSummon?: BattleSummonState;
 
   constructor(
     private readonly db: CaelianDatabase,
@@ -457,7 +475,7 @@ export class BattleRepository {
       selectedTarget: 0,
       player: battlePlayer,
       companion: input.companionPresent
-        ? createCaelianCompanion(player.level, this.random, player.lifesteal)
+        ? createCaelianCompanion(player.level, this.random, battlePlayer.lifesteal)
         : undefined,
       enemies,
       rewards: null,
@@ -485,6 +503,7 @@ export class BattleRepository {
         .filter((entry) => entry.carried)
         .map((entry) => entry.relicId),
     );
+    this.syncInheritedLifesteal(state);
     this.runWorkshopMechanisms(state, 'battle_start');
     for (const enemy of enemies) {
       const definition = this.monsters?.[enemy.definitionId];
@@ -563,8 +582,19 @@ export class BattleRepository {
     if (state.player.debuffs.entangle && card.type === 'attack') {
       throw new Error('缠绕中：无法使用攻击类卡牌');
     }
+    if (
+      state.player.subclass === 'arcane_mage' &&
+      state.player.chants.length >= 3 &&
+      this.cardHasNestedEffect(
+        card.effects ?? [],
+        (effect) => effect.type === 'chant' || effect.type === 'copy_chant',
+      )
+    ) {
+      throw new Error('吟诵队列已满（3/3）');
+    }
     this.assertCardDiscardCosts(state, card, cardInstance.instanceId);
     this.assertCardResourceCosts(state, cardInstance.cardId);
+    this.assertCardSummonCosts(state, card);
 
     const targetIndex = this.resolveTargetIndex(
       state,
@@ -578,7 +608,7 @@ export class BattleRepository {
       tags: cardTags,
     };
     let cost = this.cardCost(card, state, targetIndex);
-    let mpCost = Math.max(0, this.number(card.mpCost));
+    let mpCost = this.cardMpCost(card, state);
     try {
       const beforeCard = this.runWorkshopMechanisms(state, 'before_card', {
         cardId: cardInstance.cardId,
@@ -595,6 +625,7 @@ export class BattleRepository {
 
       state.player.ap -= cost;
       state.player.mp -= mpCost;
+      this.spendCardCostBuffs(state, card);
       state.selectedTarget = targetIndex;
       state.player.hand.splice(input.handIndex, 1);
       state.player.discardPile.push(cardInstance);
@@ -650,9 +681,6 @@ export class BattleRepository {
       );
       this.updateClassResourcesAfterCard(state, card, cardInstance.cardId);
       this.recordBossMechanicCard(state, card.type);
-      if (card.type === 'attack' && state.player.buffs.cost_reduction) {
-        this.spendEffectCharge(state.player.buffs, 'cost_reduction');
-      }
       this.runWorkshopMechanisms(state, 'after_card', {
         cardId: cardInstance.cardId,
         cardName: card.name,
@@ -899,6 +927,7 @@ export class BattleRepository {
     this.assertNoPendingCardChoice(state);
     this.runWorkshopMechanisms(state, 'turn_end');
     this.log(state, 'system', '结束玩家回合');
+    this.applyPlayerEndTurnEffects(state);
 
     this.resolveSummons(state);
     if (state.companion) {
@@ -964,6 +993,9 @@ export class BattleRepository {
     this.runWorkshopMechanisms(state, 'after_enemy_turn');
 
     this.tickEffects(state.player);
+    for (const summon of state.player.summons) {
+      this.tickEffects(this.normalizePlayerSummon(summon));
+    }
     if (state.companion) {
       this.tickEffects(state.companion);
       for (const summon of state.companion.summons) this.tickEffects(summon);
@@ -1386,7 +1418,11 @@ export class BattleRepository {
       classResources: {},
       sanity: 100,
       abyssEcho: 0,
-      lifesteal: this.clamp(player.lifesteal, 0, 30),
+      // The 30% limit belongs to allocated/base stats only. Equipment is an
+      // external source and may raise the effective battle value above it.
+      lifesteal:
+        this.clamp(player.lifesteal, 0, LIFESTEAL_CAP) +
+        Math.max(0, bonus.lifesteal),
       cardsPlayedThisTurn: {},
       abyssEchoBatches: [],
       lastElementalistElement: '',
@@ -1640,6 +1676,7 @@ export class BattleRepository {
       name: `${affix?.name ?? ''}${monster.name}${
         instanceIndex > 0 ? ` ${instanceIndex + 1}` : ''
       }`,
+      level: targetLevel,
       hp: hpMax,
       hpMax,
       shield: 0,
@@ -2057,7 +2094,9 @@ export class BattleRepository {
     const multiplier = this.cardDamageMultiplier(card, state, target);
     const weaponMasterBonus = this.weaponMasterComboBonus(card, state);
     let weaponMasterBonusApplied = false;
-    for (const effect of card.effects ?? []) {
+    const cardId = this.activeMechanismCard?.id ?? '';
+    for (const rawEffect of card.effects ?? []) {
+      const effect = normalizeBuiltInCardEffect(cardId, rawEffect);
       const effectBonus =
         bonus +
         (effect.type === 'damage' && !weaponMasterBonusApplied
@@ -2075,15 +2114,42 @@ export class BattleRepository {
       if (effect.type === 'damage') weaponMasterBonusApplied = true;
       if (this.aliveEnemies(state).length === 0) break;
     }
-    if (card.effects?.some((effect) => effect.type === 'damage')) {
-      for (const key of [
-        'empower',
-        'next_attack_bonus',
-        'spell_double',
-        'poison_coat',
-      ]) {
+    const hasDamage = this.cardHasNestedEffect(
+      card.effects ?? [],
+      (effect) => effect.type === 'damage',
+    );
+    const hasHeal = this.cardHasNestedEffect(
+      card.effects ?? [],
+      (effect) => effect.type === 'heal' || effect.type === 'heal_overflow_shield',
+    );
+    const hasShield = this.cardHasNestedEffect(
+      card.effects ?? [],
+      (effect) => effect.type === 'shield' || effect.type === 'shield_from_shield',
+    );
+    if (hasDamage) {
+      for (const key of ['empower', 'next_attack_bonus']) {
         this.spendEffectCharge(state.player.buffs, key);
       }
+      if (card.type === 'attack') {
+        this.spendEffectCharge(state.player.buffs, 'spell_double');
+        this.spendEffectCharge(state.player.buffs, 'poison_coat');
+      }
+    }
+    if (this.isSpellCard(card) && (hasDamage || hasHeal || hasShield)) {
+      this.spendEffectCharge(state.player.buffs, 'spell_amp_percent');
+    }
+    if (this.isSpellCard(card) && (hasHeal || hasShield)) {
+      this.spendEffectCharge(
+        state.player.buffs,
+        'spell_heal_shield_amp',
+      );
+    }
+    if (
+      hasDamage &&
+      this.isSpellCard(card) &&
+      this.cardElement(card) === 'thunder'
+    ) {
+      this.spendEffectCharge(state.player.buffs, 'thunder_spell_amp');
     }
   }
 
@@ -2116,30 +2182,45 @@ export class BattleRepository {
     switch (effect.type) {
       case 'damage': {
         let totalDamage = 0;
+        let killCount = 0;
         const damageTargets: Combatant[] = this.activeDarkPriestRedirect
           ? [state.player]
           : targets;
+        const selectedBaseBonus = this.cardDamageBonus(card, state, target);
+        const bonusSupplement = bonus - selectedBaseBonus;
         for (const enemy of damageTargets) {
+          const battleEnemy = state.enemies.find((entry) => entry === enemy);
+          const resolvedBonus =
+            this.activeMechanismCard && battleEnemy
+              ? this.cardDamageBonus(card, state, battleEnemy) + bonusSupplement
+              : bonus;
+          const resolvedMultiplier =
+            this.activeMechanismCard && battleEnemy
+              ? this.cardDamageMultiplier(card, state, battleEnemy)
+              : multiplier;
           const base =
-            this.number(effect.value) +
+            this.activeSummonEffectValue(effect.value) +
             (card.type === 'attack'
               ? Math.floor(
                   state.player.attack * (this.rules?.playerAttackScale ?? 0.35),
                 )
               : 0) +
-            bonus;
+            resolvedBonus;
           const hits = Math.max(1, this.number(effect.hits, 1));
+          const beforeHp = enemy.hp;
           for (let hit = 0; hit < hits; hit += 1) {
             totalDamage += this.damage(
               state,
-              state.player,
+              this.activePlayerSummonCombatant() ?? state.player,
               enemy,
-              Math.max(0, Math.round(base * multiplier)),
+              Math.max(0, Math.round(base * resolvedMultiplier)),
               'player',
               card.name,
             );
           }
+          if (beforeHp > 0 && enemy.hp <= 0) killCount += 1;
           if (
+            card.type === 'attack' &&
             state.player.buffs.poison_coat &&
             enemy.hp > 0 &&
             this.combatantIdentity(state, enemy).side === 'enemy'
@@ -2156,6 +2237,13 @@ export class BattleRepository {
           totalDamage * Math.max(0, this.number(effect.lifesteal_ratio)),
         );
         if (lifesteal > 0) this.heal(state, state.player, lifesteal, card.name);
+        if (killCount > 0 && this.number(effect.on_kill_gain_mp) > 0) {
+          this.restoreMp(
+            state,
+            killCount * this.number(effect.on_kill_gain_mp),
+            `${card.name}击杀`,
+          );
+        }
         break;
       }
       case 'shield': {
@@ -2170,6 +2258,12 @@ export class BattleRepository {
         if (state.player.subclass === 'thunder_mage' && cardId === 'th_ion_shield') {
           baseAmount += this.classResource(state, 'thunder_charge') * 2;
         }
+        baseAmount = this.amplifiedCardEffectValue(
+          state,
+          card,
+          'shield',
+          baseAmount,
+        );
         const amount = Math.max(
           0,
           Math.round(baseAmount * (1 + shieldBonus)),
@@ -2184,17 +2278,28 @@ export class BattleRepository {
         break;
       }
       case 'heal': {
+        const amount = this.amplifiedCardEffectValue(
+          state,
+          card,
+          'heal',
+          this.number(effect.value),
+        );
         for (const recipient of this.cardFriendlyTargets(
           state,
           effect.target,
           allyTargetId,
         )) {
-          this.heal(state, recipient, this.number(effect.value), card.name);
+          this.heal(state, recipient, amount, card.name);
         }
         break;
       }
       case 'heal_overflow_shield': {
-        const amount = this.number(effect.value);
+        const amount = this.amplifiedCardEffectValue(
+          state,
+          card,
+          'heal',
+          this.number(effect.value),
+        );
         for (const recipient of this.cardFriendlyTargets(
           state,
           effect.target,
@@ -2352,25 +2457,39 @@ export class BattleRepository {
         break;
       }
       case 'self_damage':
-        this.damage(
+        this.directHpLoss(
           state,
           state.player,
-          state.player,
           this.number(effect.value),
-          'player',
           card.name,
-          true,
         );
         break;
       case 'apply_buff':
       case 'thorns': {
+        const effectName = String(effect.buff ?? effect.type);
+        const resourceKey = this.classResourceKey(effectName);
+        if (
+          this.resolvingPlayerSummonEffect &&
+          CLASS_RESOURCE_OWNERS[resourceKey] === state.player.subclass
+        ) {
+          const amount = this.number(effect.value, 1);
+          this.addClassResource(state, resourceKey, amount);
+          this.animation(state, {
+            kind: 'status',
+            sourceSide: 'summon',
+            sourceId: this.activePlayerSummon?.id,
+            targetSide: 'player',
+            targetId: 'player',
+            amount,
+            label: resourceKey,
+          });
+          break;
+        }
         const recipients =
           effect.target === 'enemy' || effect.target === 'all_enemies'
             ? targets
             : this.cardFriendlyTargets(state, effect.target, allyTargetId);
         for (const recipient of recipients) {
-          const effectName = String(effect.buff ?? effect.type);
-          const resourceKey = this.classResourceKey(effectName);
           if (
             recipient === state.player &&
             CLASS_RESOURCE_OWNERS[resourceKey] === state.player.subclass
@@ -2412,7 +2531,11 @@ export class BattleRepository {
       }
       case 'apply_debuff': {
         const recipients =
-          effect.target === 'self' ? [state.player] : targets;
+          effect.target === 'self'
+            ? this.resolvingPlayerSummonEffect && this.activePlayerSummon
+              ? [this.normalizePlayerSummon(this.activePlayerSummon)]
+              : [state.player]
+            : targets;
         let applied = 0;
         for (const recipient of recipients) {
           const chance = this.clamp(this.number(effect.chance, 100), 0, 100);
@@ -2455,9 +2578,14 @@ export class BattleRepository {
       case 'double_debuff': {
         const debuffName = String(effect.debuff ?? 'poison');
         for (const recipient of targets) {
-          const current = recipient.debuffs[debuffName];
+          const current = this.mutateTimedEffect(
+            recipient.debuffs,
+            debuffName,
+            (instance) => {
+              instance.value = Math.max(0, instance.value * 2);
+            },
+          );
           if (!current) continue;
-          current.value = Math.max(0, current.value * 2);
           this.animation(state, {
             kind: 'status',
             sourceSide: 'player',
@@ -2518,7 +2646,12 @@ export class BattleRepository {
             this.heal(
               state,
               recipient,
-              removed * this.number(effect.value),
+              this.amplifiedCardEffectValue(
+                state,
+                card,
+                'heal',
+                removed * this.number(effect.value),
+              ),
               card.name,
             );
           }
@@ -2574,7 +2707,12 @@ export class BattleRepository {
           this.heal(
             state,
             state.player,
-            removed * this.number(effect.value),
+            this.amplifiedCardEffectValue(
+              state,
+              card,
+              'heal',
+              removed * this.number(effect.value),
+            ),
             card.name,
           );
         }
@@ -2598,25 +2736,44 @@ export class BattleRepository {
       }
       case 'damage_per_debuff':
         for (const enemy of targets) {
+          const debuffCount = this.activeEffectCount(enemy.debuffs);
+          let amount =
+            debuffCount * this.number(effect.value) +
+            Math.floor(state.player.attack * 0.15 * debuffCount);
+          if (this.isAbyssSpellCard(card)) {
+            amount += this.classResource(state, 'abyss_echo') * 2;
+          }
+          if (state.player.subclass === 'dark_priest' && amount > 0) {
+            const lostSanity =
+              100 - this.clamp(state.player.sanity ?? 100, 0, 100);
+            amount = Math.ceil(
+              amount *
+                (1 + Math.min(5, Math.floor(lostSanity / 20)) * 0.08),
+            );
+          }
           this.damage(
             state,
             state.player,
             enemy,
-            Object.keys(enemy.debuffs).length * this.number(effect.value),
+            amount,
             'player',
             card.name,
           );
         }
         break;
       case 'damage_per_buff':
-        this.damage(
-          state,
-          state.player,
-          target,
-          Object.keys(state.player.buffs).length * this.number(effect.value),
-          'player',
-          card.name,
-        );
+        for (const recipient of this.activeDarkPriestRedirect
+          ? [state.player]
+          : targets) {
+          this.damage(
+            state,
+            state.player,
+            recipient,
+            this.activeEffectCount(recipient.buffs) * this.number(effect.value),
+            'player',
+            card.name,
+          );
+        }
         break;
       case 'damage_from_shield':
         for (const enemy of targets) {
@@ -2766,15 +2923,10 @@ export class BattleRepository {
             : Math.max(1, this.number(effect.amount, 1));
         const destroyed =
           effect.target === 'all_summons'
-            ? state.player.summons.splice(0)
+            ? [...state.player.summons]
             : this.shuffle(state.player.summons).slice(0, requested);
-        if (effect.target !== 'all_summons') {
-          const destroyedIds = new Set(destroyed.map((summon) => summon.id));
-          state.player.summons = state.player.summons.filter(
-            (summon) => !destroyedIds.has(summon.id),
-          );
-        }
-        this.log(state, 'player', `牺牲 ${destroyed.length} 个召唤物`);
+        const removed = this.removePlayerSummons(state, destroyed, '牺牲');
+        this.log(state, 'player', `牺牲 ${removed} 个召唤物`);
         break;
       }
       case 'reveal_intent':
@@ -2782,16 +2934,36 @@ export class BattleRepository {
         break;
       case 'recover_discard':
       case 'recover_discard_summon': {
-        const amount = Math.min(
-          state.player.discardPile.length,
-          Math.max(0, this.number(effect.amount, 1)),
-        );
-        for (let index = 0; index < amount; index += 1) {
-          const recovered = state.player.discardPile.pop();
-          if (recovered && state.player.hand.length < state.player.handLimit) {
-            state.player.hand.push(recovered);
-          }
+        const requested = Math.max(0, this.number(effect.amount, 1));
+        let recovered = 0;
+        for (
+          let index = state.player.discardPile.length - 1;
+          index >= 0 &&
+          recovered < requested &&
+          state.player.hand.length < state.player.handLimit;
+          index -= 1
+        ) {
+          const instance = state.player.discardPile[index];
+          const definition = instance ? this.cards?.[instance.cardId] : undefined;
+          const eligible =
+            definition &&
+            (effect.type === 'recover_discard_summon'
+              ? this.isSummonCard(definition)
+              : cardId === 'wm_clear_current'
+                ? this.isSpellCard(definition)
+                : true);
+          if (!instance || !eligible) continue;
+          state.player.discardPile.splice(index, 1);
+          state.player.hand.push(instance);
+          recovered += 1;
         }
+        this.log(
+          state,
+          'player',
+          recovered > 0
+            ? `${card.name} 从弃牌堆回收了 ${recovered} 张符合条件的牌`
+            : `${card.name} 没有可回收的符合条件卡牌，或手牌已满`,
+        );
         break;
       }
       case 'chant':
@@ -2820,7 +2992,9 @@ export class BattleRepository {
       case 'reduce_chant': {
         const selected = effect.target === 'all'
           ? [...state.player.chants]
-          : state.player.chants.slice(0, 1);
+          : [...state.player.chants]
+              .sort((left, right) => left.turns - right.turns)
+              .slice(0, 1);
         for (const chant of selected) {
           chant.turns = Math.max(0, chant.turns - this.number(effect.value, 1));
         }
@@ -2862,13 +3036,20 @@ export class BattleRepository {
       }
       case 'consume_debuff_damage': {
         const debuff = String(effect.debuff ?? '');
-        if (debuff && target.debuffs[debuff]) {
-          delete target.debuffs[debuff];
+        for (const recipient of targets) {
+          const current = debuff ? recipient.debuffs[debuff] : undefined;
+          if (!current) continue;
+          const total = this.timedEffectInstances(current).reduce(
+            (sum, instance) =>
+              sum + Math.max(1, this.number(instance.value)),
+            0,
+          );
+          delete recipient.debuffs[debuff];
           this.damage(
             state,
             state.player,
-            target,
-            this.number(effect.value),
+            recipient,
+            total * this.number(effect.value),
             'player',
             card.name,
           );
@@ -2879,12 +3060,14 @@ export class BattleRepository {
         const ratio = Math.max(0, this.number(effect.value_ratio, 1));
         const extraTurns = Math.max(0, this.number(effect.turns));
         for (const recipient of targets) {
-          for (const debuff of Object.values(recipient.debuffs)) {
-            debuff.value = Math.max(
-              0,
-              Math.round(debuff.value * (1 + ratio)),
-            );
-            debuff.turns += extraTurns;
+          for (const key of Object.keys(recipient.debuffs)) {
+            this.mutateTimedEffect(recipient.debuffs, key, (instance) => {
+              instance.value = Math.max(
+                0,
+                Math.round(instance.value * (1 + ratio)),
+              );
+              if (instance.turns >= 0) instance.turns += extraTurns;
+            });
           }
         }
         break;
@@ -2932,7 +3115,9 @@ export class BattleRepository {
         );
         break;
       case 'copy_chant': {
-        const chant = state.player.chants[0];
+        const chant = [...state.player.chants].sort(
+          (left, right) => left.turns - right.turns,
+        )[0];
         if (chant && state.player.chants.length < 3) {
           const runtime = chant as typeof chant & { targetIndex?: number; multiplier?: number };
           state.player.chants.push({
@@ -2953,39 +3138,49 @@ export class BattleRepository {
           state.player.summons.length,
           Math.max(1, this.number(effect.amount, 1)),
         );
-        const recalled = this.shuffle(state.player.summons).slice(0, amount);
-        const ids = new Set(recalled.map((summon) => summon.id));
-        state.player.summons = state.player.summons.filter(
-          (summon) => !ids.has(summon.id),
-        );
+        const recalled = this.shuffle(
+          state.player.summons.filter(
+            (summon) => this.normalizePlayerSummon(summon).hp > 0,
+          ),
+        ).slice(0, amount);
+        const maxGain = Math.max(1, this.number(effect.max, 5));
+        const gained = recalled.reduce((sum, summon) => {
+          const normalized = this.normalizePlayerSummon(summon);
+          const hpRatio = normalized.hpMax > 0
+            ? normalized.hp / normalized.hpMax
+            : 0;
+          const raw = Math.ceil(Math.max(0, normalized.duration) + hpRatio * 3);
+          return sum + this.clamp(raw, 1, maxGain);
+        }, 0);
+        this.removePlayerSummons(state, recalled, '召回');
         this.restoreMp(
           state,
-          Math.min(this.number(effect.max, 999), recalled.length),
+          Math.min(maxGain, gained),
           card.name,
         );
-        state.player.summonsLost = (state.player.summonsLost ?? 0) + recalled.length;
         break;
       }
       case 'destroy_summon_damage_per': {
         const mechanicalOnly = Boolean(effect.mechanicalOnly);
         const candidates = state.player.summons.filter(
-          (summon) =>
-            !mechanicalOnly || /机|械|炮|傀儡|机械/i.test(`${summon.id}${summon.name}`),
+          (summon) => {
+            const normalized = this.normalizePlayerSummon(summon);
+            return normalized.hp > 0 && (!mechanicalOnly || normalized.mechanical);
+          },
         );
         const requested =
           effect.amount === 'all'
             ? candidates.length
             : Math.max(1, this.number(effect.amount, 1));
         const destroyed = candidates.slice(0, requested);
-        const ids = new Set(destroyed.map((summon) => summon.id));
-        state.player.summons = state.player.summons.filter(
-          (summon) => !ids.has(summon.id),
-        );
-        const damage = destroyed.length * this.number(effect.value);
-        for (const enemy of targets) {
+        const removed = this.removePlayerSummons(state, destroyed, '摧毁');
+        const damage = removed * this.number(effect.value);
+        const damageTargets = effect.enemy_target === 'all_enemies'
+          ? this.aliveEnemies(state)
+          : targets;
+        for (const enemy of damageTargets) {
           this.damage(state, state.player, enemy, damage, 'player', card.name);
         }
-        state.player.summonsLost = (state.player.summonsLost ?? 0) + destroyed.length;
         break;
       }
       case 'consume_san':
@@ -3017,11 +3212,24 @@ export class BattleRepository {
         break;
       }
       case 'merchant_bribe': {
+        const difficultyMultipliers: Record<string, number> = {
+          easy: 1,
+          normal: 1.6,
+          hard: 2.6,
+          nightmare: 4.2,
+          hell: 4.2,
+        };
         const cost = Math.max(
-          50,
+          10,
           Math.round(
-            this.aliveEnemies(state).reduce((sum, enemy) => sum + enemy.hpMax, 0) *
-              0.25,
+            this.aliveEnemies(state).reduce(
+              (sum, enemy) =>
+                sum +
+                18 *
+                  Math.max(1, this.number(enemy.level, 1)) *
+                  (difficultyMultipliers[enemy.difficulty] ?? 1.6),
+              0,
+            ),
           ),
         );
         if ((state.player.gold ?? 0) < cost) {
@@ -3034,12 +3242,25 @@ export class BattleRepository {
         break;
       }
       case 'merchant_flee': {
-        const lostGold = Math.round((state.player.gold ?? 0) * 0.2);
+        const lostPercent = 1 + Math.floor(this.random() * 99);
+        const lostGold = Math.floor(
+          ((state.player.gold ?? 0) * lostPercent) / 100,
+        );
         state.player.gold = Math.max(0, (state.player.gold ?? 0) - lostGold);
-        state.player.hp = Math.max(1, Math.round(state.player.hp * 0.5));
+        this.directHpLoss(
+          state,
+          state.player,
+          Math.max(1, Math.ceil(state.player.hp * 0.5)),
+          '仓皇逃窜',
+          1,
+        );
         state.status = 'surrendered';
         state.phase = 'ended';
-        this.log(state, 'system', `商人脱身：保留一半生命并损失 ${lostGold} 金币`);
+        this.log(
+          state,
+          'system',
+          `商人脱身：损失 ${lostPercent}% 金币（-${lostGold}）并失去一半生命`,
+        );
         break;
       }
       case 'conditional_group': {
@@ -3081,8 +3302,8 @@ export class BattleRepository {
             card,
             child,
             targetIndex,
-            0,
-            1,
+            bonus,
+            multiplier,
             allyTargetId,
           );
         }
@@ -3332,14 +3553,9 @@ export class BattleRepository {
         source === state.player
           ? this.resolvingPlayerSummonEffect
             ? 0
-            : this.clamp(
-                this.clamp(this.number(state.player.lifesteal), 0, 30) / 100 +
-                  this.passiveEffectValue(state, 'lifesteal_ratio'),
-                0,
-                1,
-              )
+            : this.playerLifestealRatio(state)
           : sourceIdentity.side === 'companion' || sourceIdentity.side === 'summon'
-            ? this.clamp(this.number(source.lifesteal) / 100, 0, 0.3)
+            ? this.clamp(this.number(source.lifesteal) / 100, 0, 1)
             : 0;
       const lifesteal = Math.floor(hpDamage * ratio);
       if (lifesteal > 0) this.heal(state, source, lifesteal, '吸血', false);
@@ -3374,6 +3590,7 @@ export class BattleRepository {
       );
     }
     this.stabilizeWorkshopTest(state);
+    this.stabilizePlayerSummons(state);
     this.stabilizeCompanion(state);
     return hpDamage;
   }
@@ -3450,8 +3667,24 @@ export class BattleRepository {
     allyTargetId: BattleFriendlyTargetId,
   ): Combatant[] {
     const companion = state.companion;
+    const playerSummons = state.player.summons.map((summon) =>
+      this.normalizePlayerSummon(summon),
+    );
+    if (effectTarget === 'all_summons') return playerSummons;
+    if (
+      this.resolvingPlayerSummonEffect &&
+      effectTarget === 'self' &&
+      this.activePlayerSummon
+    ) {
+      return [this.normalizePlayerSummon(this.activePlayerSummon)];
+    }
     if (effectTarget === 'all_allies') {
-      return companion ? [state.player, companion] : [state.player];
+      return [
+        state.player,
+        ...(companion && !companion.injured ? [companion] : []),
+        ...playerSummons,
+        ...(companion?.summons.filter((summon) => summon.hp > 0) ?? []),
+      ];
     }
     return allyTargetId === 'caelian' && companion
       ? [companion]
@@ -3493,6 +3726,12 @@ export class BattleRepository {
 
   private enemyFriendlyTargets(state: LocalBattleState): Combatant[] {
     const targets: Combatant[] = [state.player];
+    for (const summon of state.player.summons) {
+      const normalized = this.normalizePlayerSummon(summon);
+      if (normalized.attackable !== false && normalized.hp > 0) {
+        targets.push(normalized);
+      }
+    }
     if (state.companion && !state.companion.injured && state.companion.hp > 0) {
       targets.push(state.companion);
     }
@@ -3503,6 +3742,10 @@ export class BattleRepository {
   }
 
   private chooseEnemyFriendlyTarget(state: LocalBattleState): Combatant {
+    const interceptingSummon = state.player.summons
+      .map((summon) => this.normalizePlayerSummon(summon))
+      .find((summon) => summon.attackable !== false && summon.hp > 0);
+    if (interceptingSummon) return interceptingSummon;
     const targets = this.enemyFriendlyTargets(state);
     return targets[Math.floor(this.random() * targets.length)] ?? state.player;
   }
@@ -3843,76 +4086,218 @@ export class BattleRepository {
   }
 
   private resolveSummons(state: LocalBattleState): void {
-    const existingIds = new Set(state.player.summons.map((summon) => summon.id));
+    this.stabilizePlayerSummons(state);
     for (const summon of [...state.player.summons]) {
-      const skills = summon.skills.filter(
-        (entry): entry is Record<string, unknown> =>
-          typeof entry === 'object' && entry !== null,
-      );
-      const chosen = this.weightedChoice(skills, (skill) =>
-        Math.max(1, this.number(skill.weight, 1)),
-      );
-      const targetIndex = this.resolveTargetIndex(state, state.selectedTarget);
-      const target = state.enemies[targetIndex];
-      if (chosen && target) {
-        const effects = Array.isArray(chosen.effects)
-          ? (chosen.effects as CardEffect[])
-          : [];
-        this.log(state, 'player', `${summon.name}发动「${String(chosen.name ?? '技能')}」`);
-        const virtualCard: CardDefinition = {
-          name: summon.name,
-          type: 'summon',
-          cost: 0,
-          rarity: 'common',
-          description: '',
-          effects,
-        };
-        for (const effect of effects) {
-          const wasResolvingPlayerSummonEffect =
-            this.resolvingPlayerSummonEffect;
-          this.resolvingPlayerSummonEffect = true;
-          try {
-            this.applyCardEffect(state, virtualCard, effect, targetIndex);
-          } finally {
-            this.resolvingPlayerSummonEffect =
-              wasResolvingPlayerSummonEffect;
-          }
-        }
-      }
-      summon.duration -= 1;
-    }
-    state.player.summons = state.player.summons.filter(
-      (summon) => summon.duration > 0 && (summon.hp === null || summon.hp > 0),
-    );
-    for (const id of existingIds) {
-      if (!state.player.summons.some((summon) => summon.id === id)) {
-        this.runWorkshopMechanisms(state, 'summon_removed', { summonId: id });
+      const normalized = this.normalizePlayerSummon(summon);
+      if (normalized.hp <= 0) continue;
+      this.applyStartOfTurnEffects(state, normalized);
+      if (normalized.hp <= 0) continue;
+      this.resolvePlayerSummonAction(state, normalized);
+      if (normalized.mechanical || normalized.attackable === false) {
+        normalized.duration -= 1;
       }
     }
+    this.stabilizePlayerSummons(state);
   }
 
   private addSummon(state: LocalBattleState, effect: CardEffect): void {
     const name = String(effect.name ?? '召唤物');
-    if (
-      effect.unique_by_name &&
-      state.player.summons.some((summon) => summon.name === name)
-    ) {
-      this.log(state, 'system', `${name} 已在场上`);
+    const baseId = String(effect.id ?? `summon:${name}`);
+    const uniqueByName = effect.unique_by_name !== false;
+    const attackable = effect.attackable !== false;
+    const mechanical = effect.mechanical === true || !attackable;
+    const rawHpRatio = this.number(effect.hp_ratio, attackable ? 80 : 0);
+    const hpRatio = rawHpRatio > 0 && rawHpRatio <= 1
+      ? rawHpRatio * 100
+      : rawHpRatio;
+    const hpMax = attackable
+      ? Math.max(1, Math.round((state.player.hpMax * hpRatio) / 100))
+      : 1;
+    const duration = Math.max(
+      1,
+      this.number(effect.duration ?? effect.max_turns, 3),
+    );
+    const existing = uniqueByName
+      ? state.player.summons.find(
+          (summon) => summon.id === baseId || summon.name === name,
+        )
+      : undefined;
+    if (existing) {
+      const normalized = this.normalizePlayerSummon(existing);
+      normalized.hpMax = hpMax;
+      normalized.hp = hpMax;
+      normalized.duration = duration;
+      normalized.attackable = attackable;
+      normalized.mechanical = mechanical;
+      this.log(
+        state,
+        'system',
+        attackable
+          ? `${name} 的生命已回复至上限`
+          : `${name} 的存在时间已刷新至 ${duration} 回合`,
+      );
       return;
     }
-    const hpRatio = this.number(effect.hp_ratio);
-    state.player.summons.push({
-      id: String(effect.id ?? `summon:${Date.now()}`),
+    const summon = this.normalizePlayerSummon({
+      id: uniqueByName
+        ? baseId
+        : `${baseId}:${Date.now()}:${Math.floor(this.random() * 1_000_000)}`,
       name,
-      duration: Math.max(1, this.number(effect.duration, 3)),
-      hp:
-        hpRatio > 0
-          ? Math.max(1, Math.round((state.player.hpMax * hpRatio) / 100))
-          : null,
+      duration,
+      hp: hpMax,
+      hpMax,
+      shield: 0,
+      attack: Math.max(
+        0,
+        this.number(
+          effect.attack,
+          Math.max(3, Math.floor(state.player.attack * 0.35)),
+        ),
+      ),
+      defense: Math.max(0, this.number(effect.defense)),
+      speed: Math.max(0, this.number(effect.speed, state.player.speed)),
+      attackable,
+      mechanical,
+      buffs: {},
+      debuffs: {},
       skills: Array.isArray(effect.skills) ? effect.skills : [],
     });
+    state.player.summons.push(summon);
     this.log(state, 'player', `召唤 ${name}`);
     this.runWorkshopMechanisms(state, 'summon_created', { summonName: name });
+    if (state.player.buffs.summon_entry_double) {
+      this.resolvePlayerSummonAction(state, summon, '双重契约·入场行动');
+      this.spendEffectCharge(state.player.buffs, 'summon_entry_double');
+      this.log(state, 'player', `${name} 受双重契约影响，立即额外行动一次`);
+    }
+  }
+
+  private normalizePlayerSummon(
+    summon: BattleSummonState,
+  ): PlayerSummonCombatant {
+    const attackable = summon.attackable ?? summon.hp !== null;
+    summon.attackable = attackable;
+    summon.mechanical ??= !attackable;
+    summon.hp = Math.max(0, this.number(summon.hp, 1));
+    summon.hpMax = Math.max(1, this.number(summon.hpMax, summon.hp || 1));
+    summon.shield = Math.max(0, this.number(summon.shield));
+    summon.attack = Math.max(0, this.number(summon.attack, 4));
+    summon.defense = Math.max(0, this.number(summon.defense));
+    summon.speed = Math.max(0, this.number(summon.speed));
+    summon.buffs ??= {};
+    summon.debuffs ??= {};
+    return summon as PlayerSummonCombatant;
+  }
+
+  private activePlayerSummonCombatant(): PlayerSummonCombatant | undefined {
+    return this.activePlayerSummon
+      ? this.normalizePlayerSummon(this.activePlayerSummon)
+      : undefined;
+  }
+
+  private activeSummonEffectValue(rawValue: unknown): number {
+    let value = Math.max(0, this.number(rawValue));
+    const summon = this.activePlayerSummonCombatant();
+    if (summon?.buffs.summon_skill_amp) {
+      value = Math.ceil(
+        value * (1 + this.effectValue(summon.buffs.summon_skill_amp) / 100),
+      );
+    }
+    return value;
+  }
+
+  private resolvePlayerSummonAction(
+    state: LocalBattleState,
+    summon: PlayerSummonCombatant,
+    forcedLabel?: string,
+  ): void {
+    const skills = summon.skills.filter(
+      (entry): entry is Record<string, unknown> =>
+        typeof entry === 'object' && entry !== null,
+    );
+    const fallback: Record<string, unknown> = {
+      name: '协同攻击',
+      weight: 1,
+      effects: [{ type: 'damage', value: summon.attack, target: 'enemy' }],
+    };
+    const chosen = this.weightedChoice(
+      skills.length > 0 ? skills : [fallback],
+      (skill) => Math.max(1, this.number(skill.weight, 1)),
+    );
+    const targetIndex = this.resolveTargetIndex(state, state.selectedTarget);
+    if (!chosen || !state.enemies[targetIndex]?.hp) return;
+    const effects = Array.isArray(chosen.effects)
+      ? (chosen.effects as CardEffect[])
+      : [];
+    const skillName = forcedLabel ?? String(chosen.name ?? '技能');
+    this.log(state, 'player', `${summon.name}发动「${skillName}」`);
+    const virtualCard: CardDefinition = {
+      name: `${summon.name}·${skillName}`,
+      type: 'summon',
+      cost: 0,
+      rarity: 'common',
+      description: '',
+      effects,
+    };
+    const previousResolving = this.resolvingPlayerSummonEffect;
+    const previousSummon = this.activePlayerSummon;
+    this.resolvingPlayerSummonEffect = true;
+    this.activePlayerSummon = summon;
+    try {
+      for (const effect of effects) {
+        this.applyCardEffect(state, virtualCard, effect, targetIndex);
+      }
+    } finally {
+      this.resolvingPlayerSummonEffect = previousResolving;
+      this.activePlayerSummon = previousSummon;
+    }
+  }
+
+  private stabilizePlayerSummons(state: LocalBattleState): void {
+    const removed: BattleSummonState[] = [];
+    state.player.summons = state.player.summons.filter((summon) => {
+      const normalized = this.normalizePlayerSummon(summon);
+      const active =
+        normalized.hp > 0 &&
+        (!(normalized.mechanical || normalized.attackable === false) ||
+          normalized.duration > 0);
+      if (!active) removed.push(summon);
+      return active;
+    });
+    this.recordPlayerSummonRemovals(state, removed, '离场');
+  }
+
+  private removePlayerSummons(
+    state: LocalBattleState,
+    summons: BattleSummonState[],
+    reason: string,
+  ): number {
+    const requestedIds = new Set(summons.map((summon) => summon.id));
+    if (requestedIds.size === 0) return 0;
+    const removed = state.player.summons.filter((summon) =>
+      requestedIds.has(summon.id),
+    );
+    state.player.summons = state.player.summons.filter(
+      (summon) => !requestedIds.has(summon.id),
+    );
+    this.recordPlayerSummonRemovals(state, removed, reason);
+    return removed.length;
+  }
+
+  private recordPlayerSummonRemovals(
+    state: LocalBattleState,
+    removed: BattleSummonState[],
+    reason: string,
+  ): void {
+    if (removed.length === 0) return;
+    state.player.summonsLost =
+      (state.player.summonsLost ?? 0) + removed.length;
+    for (const summon of removed) {
+      this.runWorkshopMechanisms(state, 'summon_removed', {
+        summonId: summon.id,
+      });
+      this.log(state, 'system', `${summon.name} 已${reason}`);
+    }
   }
 
   private resolveChants(state: LocalBattleState): void {
@@ -3940,7 +4325,7 @@ export class BattleRepository {
       multiplier * this.number(runtime.multiplier, 1);
     const virtualCard: CardDefinition = {
       name: chant.name,
-      type: 'skill',
+      type: 'spell',
       cost: 0,
       rarity: 'common',
       description: '',
@@ -4029,6 +4414,25 @@ export class BattleRepository {
         );
       }
     }
+  }
+
+  private applyPlayerEndTurnEffects(state: LocalBattleState): void {
+    const field = state.player.buffs.end_turn_enemy_damage;
+    if (!field) return;
+    const target = state.enemies[
+      this.resolveTargetIndex(state, state.selectedTarget)
+    ];
+    const amount = Math.max(0, this.effectValue(field));
+    if (!target || target.hp <= 0 || amount <= 0) return;
+    this.damage(
+      state,
+      state.player,
+      target,
+      amount,
+      'player',
+      '回合结束伤害',
+      { ignoreStrength: true, ignoreWeak: true },
+    );
   }
 
   private createBossMechanic(
@@ -4158,13 +4562,14 @@ export class BattleRepository {
 
   private tickEffects(target: Combatant): void {
     for (const effects of [target.buffs, target.debuffs]) {
-      for (const [key, effect] of Object.entries(effects)) {
-        if (effect.fresh) {
-          effect.fresh = false;
-          continue;
-        }
-        effect.turns -= 1;
-        if (effect.turns <= 0) delete effects[key];
+      for (const key of Object.keys(effects)) {
+        this.mutateTimedEffect(effects, key, (instance) => {
+          if (instance.fresh) {
+            delete instance.fresh;
+            return;
+          }
+          if (instance.turns >= 0) instance.turns -= 1;
+        });
       }
     }
   }
@@ -4242,6 +4647,18 @@ export class BattleRepository {
     if (card.type === 'attack' && state.player.buffs.cost_reduction) {
       cost -= this.effectValue(state.player.buffs.cost_reduction);
     }
+    if (this.isSpellCard(card)) {
+      if (state.player.buffs.next_spell_ap_free) cost = 0;
+      cost -= this.effectValue(state.player.buffs.next_spell_ap_reduce);
+    }
+    if (this.isSummonCard(card)) {
+      cost -= this.effectValue(state.player.buffs.next_summon_ap_reduce);
+    }
+    if (this.isMechanicalSummonCard(card)) {
+      cost -= this.effectValue(
+        state.player.buffs.next_mech_summon_ap_reduce,
+      );
+    }
     const target = state.enemies[targetIndex];
     for (const effect of card.effects ?? []) {
       if (
@@ -4253,6 +4670,75 @@ export class BattleRepository {
       }
     }
     return Math.max(0, cost);
+  }
+
+  private cardMpCost(card: CardDefinition, state: LocalBattleState): number {
+    let cost = Math.max(0, this.number(card.mpCost));
+    if (this.isSpellCard(card)) {
+      cost -= this.effectValue(state.player.buffs.next_spell_mp_reduce);
+      if (this.cardElement(card) === 'water') {
+        cost -= this.effectValue(
+          state.player.buffs.next_water_spell_mp_reduce,
+        );
+      }
+    }
+    return Math.max(0, Math.round(cost));
+  }
+
+  private spendCardCostBuffs(
+    state: LocalBattleState,
+    card: CardDefinition,
+  ): void {
+    if (card.type === 'attack') {
+      this.spendEffectCharge(state.player.buffs, 'cost_reduction');
+    }
+    if (this.isSpellCard(card)) {
+      this.spendEffectCharge(state.player.buffs, 'next_spell_ap_free');
+      this.spendEffectCharge(state.player.buffs, 'next_spell_ap_reduce');
+      this.spendEffectCharge(state.player.buffs, 'next_spell_mp_reduce');
+      if (this.cardElement(card) === 'water') {
+        this.spendEffectCharge(
+          state.player.buffs,
+          'next_water_spell_mp_reduce',
+        );
+      }
+    }
+    if (this.isSummonCard(card)) {
+      this.spendEffectCharge(state.player.buffs, 'next_summon_ap_reduce');
+    }
+    if (this.isMechanicalSummonCard(card)) {
+      this.spendEffectCharge(
+        state.player.buffs,
+        'next_mech_summon_ap_reduce',
+      );
+    }
+  }
+
+  private isSummonCard(card: CardDefinition): boolean {
+    return (
+      card.type === 'summon' ||
+      this.cardHasNestedEffect(
+        card.effects ?? [],
+        (effect) => effect.type === 'summon',
+      )
+    );
+  }
+
+  private isMechanicalSummonCard(card: CardDefinition): boolean {
+    if (!this.isSummonCard(card)) return false;
+    if (
+      this.cardHasNestedEffect(
+        card.effects ?? [],
+        (effect) =>
+          effect.type === 'summon' &&
+          (effect.mechanical === true || effect.attackable === false),
+      )
+    ) {
+      return true;
+    }
+    return /机械|齿轮|装填|无人机|机器人|核心|炮台|机械臂|锻锤/.test(
+      `${card.name}${card.description}${String(card.brief ?? '')}${String(card.cat ?? '')}`,
+    );
   }
 
   private cardDamageBonus(
@@ -4276,6 +4762,12 @@ export class BattleRepository {
     }
     if (this.isSpellCard(card)) {
       bonus += this.effectValue(state.player.buffs.spell_damage_bonus);
+    }
+    if (
+      state.player.buffs.undead_damage_bonus &&
+      target.tags.includes('undead')
+    ) {
+      bonus += this.effectValue(state.player.buffs.undead_damage_bonus);
     }
     for (const rawEffect of state.player.passiveEffects ?? []) {
       if (typeof rawEffect !== 'object' || rawEffect === null) continue;
@@ -4383,6 +4875,22 @@ export class BattleRepository {
       multiplier *=
         1 + this.effectValue(state.player.buffs.weapon_master_attack_amp) / 100;
     }
+    if (card.type === 'attack' && state.player.buffs.attack_amp_percent) {
+      multiplier *=
+        1 + this.effectValue(state.player.buffs.attack_amp_percent) / 100;
+    }
+    if (this.isSpellCard(card) && state.player.buffs.spell_amp_percent) {
+      multiplier *=
+        1 + this.effectValue(state.player.buffs.spell_amp_percent) / 100;
+    }
+    if (
+      this.isSpellCard(card) &&
+      this.cardElement(card) === 'thunder' &&
+      state.player.buffs.thunder_spell_amp
+    ) {
+      multiplier *=
+        1 + this.effectValue(state.player.buffs.thunder_spell_amp) / 100;
+    }
     if (
       state.player.subclass === 'dark_priest' &&
       (card.type === 'attack' || card.type === 'spell')
@@ -4391,6 +4899,41 @@ export class BattleRepository {
       multiplier *= 1 + Math.min(5, Math.floor(lostSanity / 20)) * 0.08;
     }
     return multiplier;
+  }
+
+  private amplifiedCardEffectValue(
+    state: LocalBattleState,
+    card: CardDefinition,
+    kind: 'heal' | 'shield',
+    rawValue: number,
+  ): number {
+    let value = this.activeSummonEffectValue(rawValue);
+    if (this.resolvingPlayerSummonEffect) {
+      return Math.max(0, Math.round(value));
+    }
+    if (this.isSpellCard(card) && state.player.buffs.spell_amp_percent) {
+      value = Math.ceil(
+        value *
+          (1 + this.effectValue(state.player.buffs.spell_amp_percent) / 100),
+      );
+    }
+    if (
+      this.isSpellCard(card) &&
+      state.player.buffs.spell_heal_shield_amp
+    ) {
+      value = Math.ceil(
+        value *
+          (1 +
+            this.effectValue(state.player.buffs.spell_heal_shield_amp) / 100),
+      );
+    }
+    if (kind === 'heal' && state.player.buffs.healing_amp_percent) {
+      value = Math.ceil(
+        value *
+          (1 + this.effectValue(state.player.buffs.healing_amp_percent) / 100),
+      );
+    }
+    return Math.max(0, Math.round(value));
   }
 
   private isAbyssSpellCard(card: CardDefinition): boolean {
@@ -4403,12 +4946,7 @@ export class BattleRepository {
   }
 
   private isSpellCard(card: CardDefinition): boolean {
-    return (
-      card.type === 'spell' ||
-      /mage|magic|spell|法|术|奥术|元素|魔/.test(
-        `${String(card.cat ?? '')}${card.name}${card.description}`,
-      )
-    );
+    return card.type === 'spell';
   }
 
   private isCleanseCard(card: CardDefinition): boolean {
@@ -4453,6 +4991,13 @@ export class BattleRepository {
         return Object.keys(target.debuffs).length === 0;
       case 'enemy_has_specific_debuff':
         return Boolean(target.debuffs[String(detail.debuff)]);
+      case 'enemy_has_any_specific_debuff':
+        return (
+          Array.isArray(detail.debuffs) &&
+          detail.debuffs
+            .map(String)
+            .some((debuff) => Boolean(target.debuffs[debuff]))
+        );
       case 'enemy_has_buff':
         return Object.keys(target.buffs).length > 0;
       case 'enemy_has_shield':
@@ -4537,6 +5082,24 @@ export class BattleRepository {
     }, 0);
   }
 
+  private playerLifestealPercent(state: LocalBattleState): number {
+    return (
+      Math.max(0, this.number(state.player.lifesteal)) +
+      Math.max(0, this.passiveEffectValue(state, 'lifesteal_ratio')) * 100
+    );
+  }
+
+  private playerLifestealRatio(state: LocalBattleState): number {
+    return this.clamp(this.playerLifestealPercent(state) / 100, 0, 1);
+  }
+
+  private syncInheritedLifesteal(state: LocalBattleState): void {
+    if (!state.companion) return;
+    const inherited = this.playerLifestealPercent(state) * 0.8;
+    state.companion.lifesteal = inherited;
+    for (const summon of state.companion.summons) summon.lifesteal = inherited;
+  }
+
   private classResourceKey(value: unknown): string {
     const key = String(value ?? 'class_resource').toLowerCase();
     if (/圣印|sigil/.test(key)) return 'holy_sigil';
@@ -4613,7 +5176,10 @@ export class BattleRepository {
   private syncAbyssEcho(state: LocalBattleState): number {
     if (state.player.subclass !== 'dark_mage') {
       state.player.abyssEcho = 0;
-      if (state.player.classResources) state.player.classResources.abyss_echo = 0;
+      state.player.abyssEchoBatches = [];
+      if (state.player.classResources) {
+        delete state.player.classResources.abyss_echo;
+      }
       return 0;
     }
     if (!Array.isArray(state.player.abyssEchoBatches)) {
@@ -4647,7 +5213,11 @@ export class BattleRepository {
     state: LocalBattleState,
     target: Combatant,
   ): void {
-    if (state.player.subclass !== 'dark_mage' || target !== state.player) {
+    if (state.player.subclass !== 'dark_mage') {
+      this.syncAbyssEcho(state);
+      return;
+    }
+    if (target !== state.player) {
       return;
     }
     this.syncAbyssEcho(state);
@@ -4715,6 +5285,40 @@ export class BattleRepository {
     }
   }
 
+  private assertCardSummonCosts(
+    state: LocalBattleState,
+    card: CardDefinition,
+  ): void {
+    const destructiveEffects: CardEffect[] = [];
+    const collect = (effects: CardEffect[]): void => {
+      for (const effect of effects) {
+        if (effect.type === 'destroy_summon_damage_per') {
+          destructiveEffects.push(effect);
+        }
+        for (const key of ['effects', 'then_effects', 'else_effects']) {
+          if (Array.isArray(effect[key])) {
+            collect(effect[key] as CardEffect[]);
+          }
+        }
+      }
+    };
+    collect(card.effects ?? []);
+    for (const effect of destructiveEffects) {
+      const mechanicalOnly = effect.mechanicalOnly === true;
+      const eligible = state.player.summons.some((summon) => {
+        const normalized = this.normalizePlayerSummon(summon);
+        return normalized.hp > 0 && (!mechanicalOnly || normalized.mechanical);
+      });
+      if (!eligible) {
+        throw new Error(
+          mechanicalOnly
+            ? '场上没有可摧毁的机械召唤物'
+            : '场上没有可摧毁的召唤物',
+        );
+      }
+    }
+  }
+
   private updateClassResourcesAfterCard(
     state: LocalBattleState,
     card: CardDefinition,
@@ -4749,6 +5353,7 @@ export class BattleRepository {
       const gained = this.resourceLayersFromText(card, '风痕');
       if (gained > 0) this.addClassResource(state, 'wind_mark', gained);
       else if (
+        cardId === 'wind_reposition' ||
         card.effects?.some((effect) => effect.type === 'draw') ||
         /高天|位移|风/.test(card.name)
       ) this.addClassResource(state, 'wind_mark');
@@ -4777,7 +5382,12 @@ export class BattleRepository {
       const used = this.resourceConsumptionFromText(card, '生长');
       if (used) this.consumeClassResource(state, 'growth', used);
     } else if (subclass === 'blacksmith') {
-      const gained = this.resourceLayersFromText(card, '炉温');
+      // Summon skill text belongs to the summon action, not to the card's
+      // immediate resource gain. In particular, 自动锻锤 only has a 50%
+      // skill that grants furnace heat after it enters play.
+      const gained = card.type === 'summon'
+        ? 0
+        : this.resourceLayersFromText(card, '炉温');
       if (gained > 0) this.addClassResource(state, 'furnace_heat', gained);
       else if (card.type === 'defense' || card.type === 'skill') {
         this.addClassResource(state, 'furnace_heat');
@@ -4873,10 +5483,7 @@ export class BattleRepository {
         condition.amount === 'all'
           ? [...state.player.summons]
           : this.shuffle(state.player.summons).slice(0, requested);
-      const ids = new Set(destroyed.map((summon) => summon.id));
-      state.player.summons = state.player.summons.filter(
-        (summon) => !ids.has(summon.id),
-      );
+      this.removePlayerSummons(state, destroyed, '牺牲');
     }
   }
 
@@ -5691,6 +6298,13 @@ export class BattleRepository {
     ) {
       throw new Error('当前战斗不存在或已经结束');
     }
+    for (const summon of session.state.player.summons) {
+      this.normalizePlayerSummon(summon);
+    }
+    this.syncInheritedLifesteal(session.state);
+    if (session.state.player.subclass !== 'dark_mage') {
+      this.syncAbyssEcho(session.state);
+    }
     return session;
   }
 
@@ -5833,26 +6447,21 @@ export class BattleRepository {
     > = {},
   ): void {
     const existing = target[key];
-    target[key] = {
-      value: Math.max(0, value) + (existing?.value ?? 0),
-      turns: Math.max(turns, existing?.turns ?? 0),
-      ...((options.charges ?? existing?.charges) !== undefined
-        ? { charges: (options.charges ?? 0) + (existing?.charges ?? 0) }
+    const instances = existing
+      ? this.timedEffectInstances(existing)
+      : [];
+    instances.push({
+      value: Math.max(0, value),
+      turns: turns < 0 ? -1 : Math.max(1, turns),
+      ...(options.charges !== undefined
+        ? { charges: Math.max(0, options.charges) }
         : {}),
-      ...(options.undispellable || existing?.undispellable
-        ? { undispellable: true }
-        : {}),
-      ...(options.uncleanseable || existing?.uncleanseable
-        ? { uncleanseable: true }
-        : {}),
-      ...((options.debuff ?? existing?.debuff) !== undefined
-        ? { debuff: options.debuff ?? existing?.debuff }
-        : {}),
-      ...(key === 'blood_burn'
-        ? { stacks: (existing ? (existing.stacks ?? 1) : 0) + 1 }
-        : {}),
+      ...(options.undispellable ? { undispellable: true } : {}),
+      ...(options.uncleanseable ? { uncleanseable: true } : {}),
+      ...(options.debuff !== undefined ? { debuff: options.debuff } : {}),
       fresh: true,
-    };
+    });
+    this.rebuildTimedEffect(target, key, instances);
   }
 
   private spendEffectCharge(
@@ -5861,8 +6470,105 @@ export class BattleRepository {
   ): void {
     const effect = effects[key];
     if (!effect || effect.charges === undefined) return;
-    effect.charges -= 1;
-    if (effect.charges <= 0) delete effects[key];
+    const instances = this.timedEffectInstances(effect);
+    const charged = instances.find(
+      (instance) => instance.charges !== undefined,
+    );
+    if (!charged) return;
+    charged.charges = this.number(charged.charges) - 1;
+    this.rebuildTimedEffect(effects, key, instances);
+  }
+
+  private timedEffectInstances(
+    effect: BattleTimedEffect,
+  ): BattleTimedEffectInstance[] {
+    if (Array.isArray(effect.instances) && effect.instances.length > 0) {
+      return effect.instances.map((instance) => ({ ...instance }));
+    }
+    // Older Alpha saves only persisted the aggregate shape. Blood burn also
+    // stored a numeric stack count, so distribute the aggregate value across
+    // those synthetic instances while preserving the exact total.
+    const count = Math.max(1, Math.floor(this.number(effect.stacks, 1)));
+    const value = this.number(effect.value) / count;
+    return Array.from({ length: count }, (_, index) => ({
+      value,
+      turns: this.number(effect.turns, 1),
+      ...(index === 0 && effect.charges !== undefined
+        ? { charges: this.number(effect.charges) }
+        : {}),
+      ...(effect.debuff !== undefined ? { debuff: effect.debuff } : {}),
+      ...(effect.fresh ? { fresh: true } : {}),
+      ...(effect.undispellable ? { undispellable: true } : {}),
+      ...(effect.uncleanseable ? { uncleanseable: true } : {}),
+    }));
+  }
+
+  private rebuildTimedEffect(
+    effects: Record<string, BattleTimedEffect>,
+    key: string,
+    rawInstances: BattleTimedEffectInstance[],
+  ): BattleTimedEffect | undefined {
+    const instances = rawInstances.filter((instance) => {
+      if (instance.charges !== undefined && instance.charges <= 0) return false;
+      return instance.turns < 0 || instance.turns > 0;
+    });
+    if (instances.length === 0) {
+      delete effects[key];
+      return undefined;
+    }
+    const timedTurns = instances
+      .map((instance) => instance.turns)
+      .filter((turns) => turns >= 0);
+    const charged = instances.filter(
+      (instance) => instance.charges !== undefined,
+    );
+    const rebuilt: BattleTimedEffect = {
+      value: instances.reduce(
+        (sum, instance) => sum + this.number(instance.value),
+        0,
+      ),
+      turns:
+        timedTurns.length > 0
+          ? Math.max(...timedTurns)
+          : -1,
+      stacks: instances.length,
+      instances,
+      ...(charged.length > 0
+        ? {
+            charges: charged.reduce(
+              (sum, instance) => sum + this.number(instance.charges),
+              0,
+            ),
+          }
+        : {}),
+      ...(instances.some((instance) => instance.fresh)
+        ? { fresh: true }
+        : {}),
+      ...(instances.some((instance) => instance.undispellable)
+        ? { undispellable: true }
+        : {}),
+      ...(instances.some((instance) => instance.uncleanseable)
+        ? { uncleanseable: true }
+        : {}),
+    };
+    const debuff = instances.find(
+      (instance) => instance.debuff !== undefined,
+    )?.debuff;
+    if (debuff !== undefined) rebuilt.debuff = debuff;
+    effects[key] = rebuilt;
+    return rebuilt;
+  }
+
+  private mutateTimedEffect(
+    effects: Record<string, BattleTimedEffect>,
+    key: string,
+    mutate: (instance: BattleTimedEffectInstance) => void,
+  ): BattleTimedEffect | undefined {
+    const effect = effects[key];
+    if (!effect) return undefined;
+    const instances = this.timedEffectInstances(effect);
+    for (const instance of instances) mutate(instance);
+    return this.rebuildTimedEffect(effects, key, instances);
   }
 
   private triggerBloodBurnAction(
@@ -5961,6 +6667,9 @@ export class BattleRepository {
       targetIsFriendly ? 'enemy' : 'player',
       `${target.name}因${label}失去 ${actual} 点生命`,
     );
+    this.stabilizeWorkshopTest(state);
+    this.stabilizePlayerSummons(state);
+    this.stabilizeCompanion(state);
     return actual;
   }
 
@@ -6110,15 +6819,37 @@ export class BattleRepository {
     effects: Record<string, BattleTimedEffect>,
     amount: unknown,
   ): number {
-    const keys = Object.keys(effects).filter(
-      (key) => !effects[key]?.undispellable && !effects[key]?.uncleanseable,
-    );
-    const count =
+    let remaining =
       amount === 'all'
-        ? keys.length
-        : Math.min(keys.length, Math.max(1, this.number(amount, 1)));
-    for (const key of keys.slice(0, count)) delete effects[key];
-    return count;
+        ? Number.POSITIVE_INFINITY
+        : Math.max(1, this.number(amount, 1));
+    let removed = 0;
+    for (const key of Object.keys(effects)) {
+      if (remaining <= 0) break;
+      const kept: BattleTimedEffectInstance[] = [];
+      for (const instance of this.timedEffectInstances(effects[key]!)) {
+        const protectedLayer =
+          instance.undispellable === true ||
+          instance.uncleanseable === true;
+        if (!protectedLayer && remaining > 0) {
+          removed += 1;
+          remaining -= 1;
+        } else {
+          kept.push(instance);
+        }
+      }
+      this.rebuildTimedEffect(effects, key, kept);
+    }
+    return removed;
+  }
+
+  private activeEffectCount(
+    effects: Record<string, BattleTimedEffect>,
+  ): number {
+    return Object.values(effects).reduce(
+      (total, effect) => total + this.timedEffectInstances(effect).length,
+      0,
+    );
   }
 
   private effectValue(effect?: BattleTimedEffect): number {
@@ -6135,6 +6866,10 @@ export class BattleRepository {
     if (combatant === state.companion) {
       return { side: 'companion', id: 'caelian' };
     }
+    const playerSummon = state.player.summons.find(
+      (entry) => entry === combatant,
+    );
+    if (playerSummon) return { side: 'summon', id: playerSummon.id };
     const summon = state.companion?.summons.find(
       (entry) => entry === combatant,
     );
