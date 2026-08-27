@@ -22,6 +22,7 @@ beforeEach(() => {
 afterEach(async () => {
   window.fetch = defaultFetch;
   delete window.__CaelianRuntime;
+  delete window.__CaelianThemeEntitlements;
   delete window.Mvu;
   delete window.SillyTavern;
   delete window.eventOn;
@@ -40,6 +41,90 @@ afterEach(async () => {
 });
 
 describe('CaelianKernel integration', () => {
+  it('只在尾巴镇脚本解锁后显示并应用小狗主题', async () => {
+    const databaseName = `caelian-alpha-tail-town-theme-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.theme-test',
+      buildId: 'tail-town-theme-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    expect(kernel.api.getThemeState()).toMatchObject({
+      active: 'default',
+      available: [
+        { id: 'default', locked: false },
+        { id: 'tail-town-dog', locked: true },
+      ],
+    });
+    await expect(
+      kernel.api.execute({
+        id: 'select-locked-tail-town-theme',
+        type: 'settings.update',
+        payload: { uiTheme: 'tail-town-dog' },
+      }),
+    ).resolves.toMatchObject({
+      status: 'rejected',
+      message: '尚未解锁这个界面主题',
+    });
+
+    await kernel.api.navigatePanel('settings');
+    await expect
+      .poll(() => document.querySelectorAll('.theme-card').length)
+      .toBe(2);
+    const lockedTheme = document.querySelector<HTMLButtonElement>(
+      '.theme-card.locked',
+    );
+    expect(lockedTheme?.textContent).toContain('前往尾巴镇领取');
+    lockedTheme?.click();
+    await expect
+      .poll(() =>
+        document.body.textContent?.includes(
+          '需要前往尾巴镇领取并导入专属奖励脚本后',
+        ),
+      )
+      .toBe(true);
+
+    window.__CaelianThemeEntitlements = {
+      version: 1,
+      ids: ['tail-town-dog'],
+    };
+    window.dispatchEvent(
+      new CustomEvent('caelian:theme-entitlements-changed'),
+    );
+    await expect
+      .poll(
+        () =>
+          kernel.api
+            .getThemeState()
+            .available.find((theme) => theme.id === 'tail-town-dog')?.locked,
+      )
+      .toBe(false);
+    await expect(
+      kernel.api.execute({
+        id: 'select-unlocked-tail-town-theme',
+        type: 'settings.update',
+        payload: { uiTheme: 'tail-town-dog' },
+      }),
+    ).resolves.toMatchObject({ status: 'applied' });
+    expect(kernel.api.getThemeState().active).toBe('tail-town-dog');
+    expect(document.body.classList.contains('caelian-theme-tail-town')).toBe(
+      true,
+    );
+    expect(
+      document.body.style.getPropertyValue('--ca-tail-town-launcher-image'),
+    ).toContain('url(');
+    expect(document.body.textContent).toContain('尾巴镇专属');
+
+    await kernel.api.shutdown();
+    expect(document.body.classList.contains('caelian-theme-tail-town')).toBe(
+      false,
+    );
+  });
+
   it('首次领取同行的记忆后弹出旧信纸风格信件，重启不重复弹出', async () => {
     const databaseName = `caelian-alpha-memory-letter-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);

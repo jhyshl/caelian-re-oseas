@@ -82,6 +82,301 @@ html {
   letter-spacing: 0.16em;
 }
 
+/* Tail Town community theme. Image URLs are injected from Vite-built assets. */
+body.caelian-theme-tail-town .caelian-shell-host .shell {
+  --launcher-size: 58px !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .orb {
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent var(--ca-tail-town-launcher-image) center / contain no-repeat !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 8px 10px rgba(107, 67, 27, 0.28)) !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .orb:hover,
+body.caelian-theme-tail-town .caelian-shell-host .orb:focus-visible,
+body.caelian-theme-tail-town .caelian-shell-host .shell.expanded .orb {
+  filter: drop-shadow(0 9px 13px rgba(107, 67, 27, 0.36)) brightness(1.04) !important;
+  transform: scale(1.06) rotate(-2deg) !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .shell.idle:not(.expanded):not(.dragging) .orb {
+  opacity: 0.72 !important;
+  filter: drop-shadow(0 5px 8px rgba(107, 67, 27, 0.2)) saturate(0.92) !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .orb > span {
+  display: none !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .orb > i {
+  right: 5px !important;
+  bottom: 8px !important;
+  width: 9px !important;
+  height: 9px !important;
+  border-color: #fff9e9 !important;
+  background: #f1b444 !important;
+  box-shadow: 0 1px 4px rgba(89, 52, 20, 0.35) !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .orb > i.ready {
+  background: #57bd82 !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .wheel {
+  width: min(304px, calc(100vw - 22px)) !important;
+  padding: 15px !important;
+  border: 1px solid rgba(220, 162, 70, 0.62) !important;
+  border-radius: 24px !important;
+  color: #5c432d !important;
+  background-color: rgba(255, 250, 235, 0.97) !important;
+  background-image:
+    linear-gradient(rgba(255, 250, 235, 0.91), rgba(255, 250, 235, 0.91)),
+    var(--ca-tail-town-paw-pattern) !important;
+  background-size: auto, 330px 330px !important;
+  box-shadow: 0 19px 48px rgba(97, 60, 27, 0.28), inset 0 1px rgba(255, 255, 255, 0.88) !important;
+  backdrop-filter: blur(16px) !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .shell.docked-right .wheel {
+  right: 0 !important;
+  left: auto !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .shell.docked-left .wheel {
+  right: auto !important;
+  left: 0 !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .wheel-header {
+  margin: -2px -1px 5px !important;
+  padding: 5px 6px 12px !important;
+  border-bottom: 1px dashed rgba(201, 133, 42, 0.32) !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .wheel-header span {
+  color: #aa6b20 !important;
+  font-family: "Noto Serif SC", Georgia, serif !important;
+  letter-spacing: 0.08em !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .wheel-header small {
+  color: #9b7c5e !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .order-trigger,
+body.caelian-theme-tail-town .caelian-shell-host .page-controls > button {
+  border-color: rgba(207, 145, 54, 0.33) !important;
+  color: #8a6847 !important;
+  background: rgba(255, 255, 255, 0.56) !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .wheel-grid {
+  gap: 8px !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .wheel-grid button {
+  min-height: 78px !important;
+  gap: 3px !important;
+  padding: 7px 3px 6px !important;
+  border: 1px solid rgba(215, 172, 105, 0.52) !important;
+  border-radius: 16px !important;
+  color: #72533a !important;
+  background: rgba(255, 253, 246, 0.78) !important;
+  box-shadow: 0 3px 9px rgba(120, 77, 35, 0.08), inset 0 1px rgba(255, 255, 255, 0.9) !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .wheel-grid button:hover:not(:disabled),
+body.caelian-theme-tail-town .caelian-shell-host .wheel-grid button:focus-visible {
+  border-color: #df9b35 !important;
+  color: #9b5d18 !important;
+  background: #fff4cf !important;
+  box-shadow: 0 7px 16px rgba(154, 96, 32, 0.18) !important;
+  transform: translateY(-1px) !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .wheel-grid button b.theme-menu-icon {
+  width: 45px !important;
+  height: 45px !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .wheel-grid button span {
+  color: inherit !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.04em !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .page-controls > div button {
+  background: #d7c09e !important;
+}
+
+body.caelian-theme-tail-town .caelian-shell-host .page-controls > div button.active {
+  background: #e39b31 !important;
+  box-shadow: 0 0 0 3px rgba(227, 155, 49, 0.17) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host,
+body.caelian-theme-tail-town .caelian-panel-host .ca-backdrop {
+  --ca-bg: #fff8e9 !important;
+  --ca-surface: rgba(255, 253, 247, 0.91) !important;
+  --ca-surface-soft: #f8ecd8 !important;
+  --ca-border: #ead6b7 !important;
+  --ca-border-light: #d9b77d !important;
+  --ca-gold: #c98024 !important;
+  --ca-gold-dark: #9d5d19 !important;
+  --ca-gold-light: #ffd570 !important;
+  --ca-red: #d85a55 !important;
+  --ca-green: #3ba774 !important;
+  --ca-blue: #478ab6 !important;
+  --ca-purple: #9d67b1 !important;
+  --ca-text: #5b4533 !important;
+  --ca-text-bright: #37271d !important;
+  --ca-muted: #987b61 !important;
+  --ca-serif: "Noto Serif SC", Georgia, serif !important;
+  --ca-ui: "Nunito", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-backdrop {
+  background: rgba(87, 58, 34, 0.43) !important;
+  backdrop-filter: blur(7px) saturate(0.88) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-frame {
+  border-color: rgba(211, 154, 66, 0.48) !important;
+  border-radius: 25px !important;
+  color: var(--ca-text) !important;
+  background-color: var(--ca-bg) !important;
+  background-image:
+    linear-gradient(rgba(255, 248, 233, 0.92), rgba(255, 248, 233, 0.92)),
+    var(--ca-tail-town-paw-pattern) !important;
+  background-size: auto, 560px 560px !important;
+  box-shadow: 0 28px 86px rgba(80, 49, 24, 0.38), inset 0 1px rgba(255, 255, 255, 0.94) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-header {
+  border-bottom-color: rgba(203, 139, 42, 0.28) !important;
+  color: #5b3d25 !important;
+  background:
+    radial-gradient(circle at 15% -40%, rgba(255, 225, 122, 0.72), transparent 36%),
+    linear-gradient(135deg, #fff6d8, #f6d79b 50%, #fff1c9) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-brand strong {
+  color: #a96219 !important;
+  text-shadow: 0 1px rgba(255, 255, 255, 0.72) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-brand span {
+  color: rgba(135, 82, 25, 0.64) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-navigation {
+  border-color: rgba(205, 150, 67, 0.22) !important;
+  background: linear-gradient(180deg, rgba(255, 250, 236, 0.96), rgba(246, 231, 207, 0.96)) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-nav-button {
+  color: #92765c !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-nav-button:hover {
+  color: #72491f !important;
+  background: rgba(224, 158, 57, 0.09) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-nav-button.active {
+  border-color: #d8902f !important;
+  color: #a45f17 !important;
+  background: linear-gradient(90deg, rgba(255, 211, 112, 0.24), rgba(255, 244, 213, 0.3)) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-page {
+  background-color: rgba(255, 248, 233, 0.72) !important;
+  background-image:
+    linear-gradient(rgba(255, 248, 233, 0.91), rgba(255, 248, 233, 0.91)),
+    var(--ca-tail-town-paw-pattern) !important;
+  background-size: auto, 520px 520px !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-section {
+  border-color: rgba(219, 185, 133, 0.72) !important;
+  border-radius: 18px !important;
+  color: var(--ca-text) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.84), rgba(255, 249, 234, 0.76)) !important;
+  box-shadow: 0 8px 24px rgba(116, 74, 34, 0.08), inset 0 1px rgba(255, 255, 255, 0.92) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-section-title {
+  border-bottom-color: rgba(204, 139, 43, 0.25) !important;
+  color: #b16a1c !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-button,
+body.caelian-theme-tail-town .caelian-panel-host .ca-header-button {
+  border-color: #dcc39a !important;
+  border-radius: 12px !important;
+  color: #72533b !important;
+  background: rgba(255, 255, 255, 0.66) !important;
+  box-shadow: 0 2px 6px rgba(108, 66, 27, 0.06) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-button:hover:not(:disabled),
+body.caelian-theme-tail-town .caelian-panel-host .ca-header-button:hover {
+  border-color: #d99632 !important;
+  color: #9f5e18 !important;
+  background: #fff4d5 !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .ca-button.primary {
+  border-color: #c88422 !important;
+  color: #5d3814 !important;
+  background: linear-gradient(135deg, #ffe596, #efb64e) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host :is(input, textarea, select) {
+  border-color: #dfc7a0 !important;
+  color: #543e2c !important;
+  background: rgba(255, 255, 255, 0.78) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host :is(input, textarea, select):focus {
+  border-color: #d79531 !important;
+  outline-color: rgba(215, 149, 49, 0.22) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host ::-webkit-scrollbar-thumb {
+  border-radius: 999px !important;
+  background: rgba(186, 127, 51, 0.34) !important;
+}
+
+@media (max-width: 759px) {
+  body.caelian-theme-tail-town .caelian-panel-host .ca-frame {
+    border-radius: 0 !important;
+  }
+
+  body.caelian-theme-tail-town .caelian-panel-host .ca-header {
+    min-height: 58px !important;
+  }
+
+  body.caelian-theme-tail-town .caelian-panel-host .ca-navigation {
+    box-shadow: 0 -5px 18px rgba(112, 72, 33, 0.08) !important;
+  }
+
+  body.caelian-theme-tail-town .caelian-panel-host .ca-page,
+  body.caelian-theme-tail-town .caelian-panel-host .ca-frame--battle .ca-page {
+    padding-left: max(11px, env(safe-area-inset-left)) !important;
+    padding-right: max(11px, env(safe-area-inset-right)) !important;
+  }
+
+  body.caelian-theme-tail-town .caelian-panel-host .ca-section {
+    border-radius: 14px !important;
+  }
+}
+
 #caelian-demo-status {
   margin-top: 24px;
   padding: 12px 14px;

@@ -4,6 +4,7 @@ import type {
   QuestTrackerState,
   RuntimeInfo,
 } from '@/domain/types';
+import type { CaelianThemeState } from '@/themes/types';
 
 export interface KernelEventMap {
   'runtime.ready': RuntimeInfo;
@@ -34,6 +35,7 @@ export interface KernelEventMap {
     trackerState: QuestTrackerState | 'none';
   };
   'quest.submission-changed': { pending: boolean };
+  'theme.changed': CaelianThemeState;
   'achievement.unlocked': AchievementUnlockNotice;
 }
 

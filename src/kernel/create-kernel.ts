@@ -88,6 +88,17 @@ import {
   formatStoryBattleResult,
   parseStoryBattleStart,
 } from '@/battle/story-bridge';
+import {
+  applyTheme,
+  clearAppliedTheme,
+  listAvailableThemes,
+  subscribeThemeEntitlements,
+  themeIsAvailable,
+} from '@/themes/theme-manager';
+import type {
+  CaelianThemeId,
+  CaelianThemeState,
+} from '@/themes/types';
 
 const SURVEY_POLL_INTERVAL_MS = 2 * 60 * 1_000;
 
@@ -149,6 +160,7 @@ export class CaelianKernel {
   private readonly handledStoryBattleFloors = new Set<string>();
   private readonly missingQuestJudgeFloors = new Set<string>();
   private legalQuestItemCache?: Array<{ itemId: string; itemName: string }>;
+  private activeTheme: CaelianThemeId = 'default';
 
   constructor(options: KernelOptions) {
     this.channel = options.channel;
@@ -218,6 +230,13 @@ export class CaelianKernel {
         }),
       );
       await this.activateCurrentProfile();
+      await this.syncThemeFromSettings(false);
+      this.stateDisposers.push(
+        subscribeThemeEntitlements(
+          this.adapter.host,
+          () => void this.syncThemeFromSettings(true),
+        ),
+      );
       await this.ingestMvuNarrative();
       await this.initializeWorldbook();
       await this.syncQuestContext();
@@ -288,6 +307,17 @@ export class CaelianKernel {
     }
     try {
       const type = this.commandType(command);
+      const requestedTheme = this.requestedTheme(command);
+      if (
+        requestedTheme &&
+        !themeIsAvailable(this.adapter.host, requestedTheme)
+      ) {
+        return {
+          id: this.commandId(command),
+          status: 'rejected',
+          message: '尚未解锁这个界面主题',
+        };
+      }
       const battleMayResolveQuest =
         type?.startsWith('battle.') === true &&
         ![
@@ -301,6 +331,13 @@ export class CaelianKernel {
           ? (await this.repository.snapshot(this.profileId)).battle
           : null;
       const result = await this.repository.execute(this.profileId, command);
+      if (
+        result.status === 'applied' &&
+        type === 'settings.update' &&
+        requestedTheme
+      ) {
+        await this.syncThemeFromSettings(true);
+      }
       if (result.status === 'applied' && type === 'player.create') {
         await this.syncAchievementPatches();
         await this.syncProjection();
@@ -456,6 +493,21 @@ export class CaelianKernel {
       ...this.questJudge,
       evaluating: this.questJudgeClient?.isEvaluating() ?? false,
     };
+  }
+
+  getThemeState(): CaelianThemeState {
+    return {
+      active: this.activeTheme,
+      available: listAvailableThemes(this.adapter.host),
+    };
+  }
+
+  private async syncThemeFromSettings(emit: boolean): Promise<void> {
+    if (!this.profileId) return;
+    const snapshot = await this.repository.snapshot(this.profileId);
+    const state = applyTheme(this.adapter.host, snapshot.settings.uiTheme);
+    this.activeTheme = state.active;
+    if (emit) await this.events.emit('theme.changed', state);
   }
 
   cancelQuestJudge(): boolean {
@@ -839,6 +891,7 @@ export class CaelianKernel {
     await Promise.all([...this.pendingTavernUpdates]);
     await this.adapter.setQuestContext('');
     for (const dispose of this.stateDisposers.splice(0)) dispose();
+    clearAppliedTheme(this.adapter.host);
     this.db.close();
     this.status = 'stopped';
     await this.events.emit('runtime.stopped', this.getRuntimeInfo());
@@ -1547,6 +1600,7 @@ export class CaelianKernel {
       buildId: this.buildId,
       bridgeApi: 1,
       getRuntimeInfo: () => this.getRuntimeInfo(),
+      getThemeState: () => this.getThemeState(),
       execute: (command) => this.execute(command),
       query: (name) => this.query(name),
       openPanel: (panel) => this.panels.open(panel),
@@ -1602,6 +1656,7 @@ export class CaelianKernel {
   private createPanelApi(): PanelContext['api'] {
     return {
       getRuntimeInfo: () => this.getRuntimeInfo(),
+      getThemeState: () => this.getThemeState(),
       execute: (command) => this.execute(command),
       query: (name) => this.query(name),
       openPanel: (panel) => this.panels.open(panel),
@@ -2027,6 +2082,20 @@ export class CaelianKernel {
       return String(input.type);
     }
     return undefined;
+  }
+
+  private requestedTheme(input: unknown): CaelianThemeId | undefined {
+    if (!input || typeof input !== 'object' || !('payload' in input)) {
+      return undefined;
+    }
+    const payload = input.payload;
+    if (!payload || typeof payload !== 'object' || !('uiTheme' in payload)) {
+      return undefined;
+    }
+    return payload.uiTheme === 'default' ||
+      payload.uiTheme === 'tail-town-dog'
+      ? payload.uiTheme
+      : undefined;
   }
 
   private notifyRuntime(

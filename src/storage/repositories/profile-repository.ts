@@ -145,6 +145,7 @@ export class ProfileRepository {
       ...profileSettings,
       preserveAdventureSave: global.preserveAdventureSave,
       sharedProfileId: global.sharedProfileId,
+      uiTheme: profileSettings.uiTheme ?? 'default',
     };
   }
 
@@ -153,12 +154,19 @@ export class ProfileRepository {
     changes: {
       preserveAdventureSave?: boolean;
       battleDifficulty?: 'easy' | 'normal' | 'hard' | 'hell';
+      uiTheme?: import('@/themes/types').CaelianThemeId;
     },
   ): Promise<void> {
     const now = Date.now();
     if (changes.battleDifficulty !== undefined) {
       await this.db.settings.update(profileId, {
         battleDifficulty: changes.battleDifficulty,
+        updatedAt: now,
+      });
+    }
+    if (changes.uiTheme !== undefined) {
+      await this.db.settings.update(profileId, {
+        uiTheme: changes.uiTheme,
         updatedAt: now,
       });
     }

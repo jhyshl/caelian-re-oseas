@@ -36,6 +36,7 @@ import type {
   RegionWorldbookOverview,
   RegionWorldbookSyncResult,
 } from '@/worldbook/region-switcher';
+import type { CaelianThemeState } from '@/themes/types';
 
 export interface QuestJudgeStatus {
   configured: boolean;
@@ -145,6 +146,7 @@ export interface CaelianPublicApi {
   readonly buildId: string;
   readonly bridgeApi: 1;
   getRuntimeInfo(): RuntimeInfo;
+  getThemeState(): CaelianThemeState;
   execute(command: unknown): Promise<CommandResult>;
   query<K extends QueryName>(name: K): Promise<QueryResultMap[K]>;
   openPanel(panel: PanelName): Promise<void>;
@@ -242,6 +244,7 @@ export type PanelApi = Pick<
   | 'performTrackedQuestAction'
   | 'completeTrackedQuest'
   | 'getRuntimeInfo'
+  | 'getThemeState'
   | 'setUserInput'
   | 'notify'
   | 'confirm'

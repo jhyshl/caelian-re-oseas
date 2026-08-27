@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CAELIAN_THEME_IDS } from '@/themes/types';
 
 const commandBase = {
   id: z.string().min(1).max(160),
@@ -440,6 +441,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
         battleDifficulty: z
           .enum(['easy', 'normal', 'hard', 'hell'])
           .optional(),
+        uiTheme: z.enum(CAELIAN_THEME_IDS).optional(),
       })
       .refine((value) => Object.keys(value).length > 0, {
         message: '至少需要修改一个设置字段',

@@ -10,6 +10,12 @@ declare const tavern_events: Record<string, unknown> | undefined;
 interface Window {
   Caelian?: import('./kernel/public-api').CaelianPublicApi;
   CaelianWorkshopExtensions?: import('./workshop').WorkshopExtensionApi;
+  __CaelianThemeEntitlements?:
+    | string[]
+    | {
+        version?: number;
+        ids?: unknown[];
+      };
   __CaelianRuntime?: unknown;
   Mvu?: MvuLike;
   SillyTavern?: {

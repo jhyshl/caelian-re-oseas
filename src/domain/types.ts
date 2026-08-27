@@ -844,6 +844,7 @@ export interface SettingsRecord {
   preserveAdventureSave: boolean;
   sharedProfileId?: string;
   battleDifficulty: 'easy' | 'normal' | 'hard' | 'hell';
+  uiTheme: import('@/themes/types').CaelianThemeId;
   updatedAt: number;
 }
 

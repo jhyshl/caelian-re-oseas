@@ -9,6 +9,15 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.50',
+    label: 'Alpha 50',
+    releasedAt: '2026-08-27',
+    changes: [
+      '设置新增“界面主题”：默认保留欧西亚斯经典主题；社区专属主题会以锁定卡片展示，并提示前往对应社区领取奖励脚本。',
+      '新增尾巴镇专属“小狗主题”，可随时切换或恢复默认；悬浮骨头、快捷菜单图标与狗爪底纹随线上构建加载，不在奖励脚本内保存图片资产。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.49',
     label: 'Alpha 49',
     releasedAt: '2026-08-26',

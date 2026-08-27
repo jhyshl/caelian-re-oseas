@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import type { GameSnapshot, SettingsRecord } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import type { QuestJudgeModel } from '@/quests/judge-client';
+import type { CaelianThemeOption } from '@/themes/types';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
@@ -14,6 +15,9 @@ const draft = ref<Pick<SettingsRecord, 'preserveAdventureSave' | 'battleDifficul
 });
 const notice = ref('');
 const saving = ref(false);
+const themeSaving = ref(false);
+const themeState = ref(props.context.api.getThemeState());
+let disposeTheme: (() => void) | undefined;
 const contentSyncing = ref(false);
 const managedContentAutoUpdate = ref(
   props.context.api.getManagedContentAutoUpdate(),
@@ -48,6 +52,38 @@ async function save() {
   notice.value = draft.value.preserveAdventureSave
     ? '设置已保存。之后新建或切换聊天会继续使用当前冒险存档。'
     : '设置已保存。之后新建聊天会创建独立冒险存档。';
+}
+
+async function selectTheme(theme: CaelianThemeOption) {
+  if (theme.locked) {
+    notice.value = '需要前往尾巴镇领取并导入专属奖励脚本后，才能使用小狗主题。';
+    props.context.api.notify({
+      kind: 'info',
+      title: '小狗主题尚未解锁',
+      description: '请前往尾巴镇领取专属奖励脚本，导入后此主题会自动解锁。',
+      duration: 6_000,
+    });
+    return;
+  }
+  if (themeSaving.value || themeState.value.active === theme.id) return;
+  themeSaving.value = true;
+  notice.value = '';
+  const result = await props.context.api.execute({
+    id: commandId('settings.update-theme'),
+    type: 'settings.update',
+    payload: { uiTheme: theme.id },
+  });
+  themeSaving.value = false;
+  if (result.status === 'rejected') {
+    notice.value = result.message ?? '主题切换失败';
+    return;
+  }
+  themeState.value = props.context.api.getThemeState();
+  notice.value = `已切换为“${
+    themeState.value.available.find(
+      (candidate) => candidate.id === themeState.value.active,
+    )?.name ?? '欧西亚斯经典'
+  }”。`;
 }
 
 async function syncMvu() {
@@ -163,12 +199,17 @@ function clearQuestJudge() {
 }
 
 onMounted(async () => {
+  disposeTheme = props.context.api.on('theme.changed', (state) => {
+    themeState.value = state;
+  });
   snapshot.value = await props.context.api.query('state');
   draft.value = {
     preserveAdventureSave: snapshot.value.settings.preserveAdventureSave,
     battleDifficulty: snapshot.value.settings.battleDifficulty,
   };
 });
+
+onBeforeUnmount(() => disposeTheme?.());
 </script>
 
 <template>
@@ -188,6 +229,48 @@ onMounted(async () => {
         <button type="button" class="ca-button" @click="context.api.openPanel('diagnostics')">
           打开诊断
         </button>
+      </section>
+
+      <section class="ca-section theme-settings">
+        <div class="theme-heading">
+          <div>
+            <h2 class="ca-section-title">界面主题</h2>
+            <p>专属社区脚本只负责解锁主题；图片由当前 Alpha 构建在线加载。</p>
+          </div>
+          <span>{{ themeState.available.length }} 个主题</span>
+        </div>
+        <div class="theme-grid" role="radiogroup" aria-label="界面主题">
+          <button
+            v-for="theme in themeState.available"
+            :key="theme.id"
+            type="button"
+            class="theme-card"
+            :class="{
+              active: themeState.active === theme.id,
+              locked: theme.locked,
+            }"
+            role="radio"
+            :aria-checked="themeState.active === theme.id"
+            :disabled="themeSaving"
+            @click="selectTheme(theme)"
+          >
+            <span class="theme-preview" :class="{ artwork: theme.previewUrl }">
+              <img v-if="theme.previewUrl" :src="theme.previewUrl" alt="" />
+              <b v-else>∞</b>
+            </span>
+            <span class="theme-copy">
+              <strong>{{ theme.name }}</strong>
+              <small>{{ theme.description }}</small>
+            </span>
+            <em>{{
+              themeState.active === theme.id
+                ? '使用中'
+                : theme.locked
+                  ? '前往尾巴镇领取'
+                  : theme.badge
+            }}</em>
+          </button>
+        </div>
       </section>
 
       <section class="ca-section judge-settings">
@@ -423,11 +506,123 @@ onMounted(async () => {
 
 .settings-title p,
 .setting-row span,
-.boundary-grid p {
+.boundary-grid p,
+.theme-heading p {
   margin: 0;
   color: var(--ca-muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.theme-settings {
+  display: grid;
+  gap: 13px;
+}
+
+.theme-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.theme-heading > span {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--ca-border);
+  border-radius: 999px;
+  color: var(--ca-muted);
+  font-size: 9px;
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.theme-card {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  min-height: 82px;
+  padding: 10px 11px;
+  border: 1px solid var(--ca-border);
+  border-radius: 14px;
+  color: var(--ca-text);
+  background: var(--ca-surface-soft);
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-card:hover:not(:disabled),
+.theme-card.active {
+  border-color: var(--ca-gold);
+  background: color-mix(in srgb, var(--ca-gold) 9%, var(--ca-surface-soft));
+}
+
+.theme-card.active {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ca-gold) 18%, transparent);
+}
+
+.theme-card.locked:not(:disabled) {
+  border-style: dashed;
+  opacity: 0.78;
+}
+
+.theme-card.locked:hover:not(:disabled) {
+  opacity: 1;
+}
+
+.theme-preview {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--ca-border-light);
+  border-radius: 17px;
+  color: var(--ca-gold-light);
+  background: var(--ca-bg);
+  font: 700 31px/1 Georgia, serif;
+}
+
+.theme-preview.artwork {
+  background: linear-gradient(145deg, #fff5cf, #f6c567);
+}
+
+.theme-preview img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+
+.theme-copy {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.theme-copy strong {
+  color: var(--ca-text-bright);
+  font-size: 13px;
+}
+
+.theme-copy small {
+  color: var(--ca-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.theme-card em {
+  align-self: flex-start;
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: var(--ca-gold);
+  background: color-mix(in srgb, var(--ca-gold) 10%, transparent);
+  font: normal 8px/1.3 inherit;
+  white-space: nowrap;
 }
 
 .setting-row {
@@ -628,7 +823,8 @@ onMounted(async () => {
 
   .boundary-grid,
   .runtime-grid,
-  .judge-form {
+  .judge-form,
+  .theme-grid {
     grid-template-columns: 1fr;
   }
 

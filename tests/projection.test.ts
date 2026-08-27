@@ -133,6 +133,7 @@ const snapshot: GameSnapshot = {
     profileId: 'profile:test',
     preserveAdventureSave: false,
     battleDifficulty: 'normal',
+    uiTheme: 'default',
     updatedAt: 1,
   },
 };

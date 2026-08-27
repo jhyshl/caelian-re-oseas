@@ -23,6 +23,7 @@ import {
   normalizeLauncherOrder,
   prioritizeLauncherPanels,
 } from '@/modules/shell/launcher-order';
+import { themeMenuIconUrl } from '@/themes/theme-manager';
 
 const props = defineProps<{ context: PanelContext }>();
 
@@ -46,7 +47,9 @@ const pageIndex = ref(0);
 const pageDirection = ref<-1 | 1>(1);
 const ordering = ref(false);
 const pendingSubmission = ref(false);
+const themeState = ref(props.context.api.getThemeState());
 let disposeSubmission: (() => void) | undefined;
+let disposeTheme: (() => void) | undefined;
 
 let idleTimer: number | undefined;
 let activationTimer: number | undefined;
@@ -166,6 +169,11 @@ const launcherLabel = computed(() => {
     ? '关闭 Re∞：欧西亚斯冒险者面板'
     : '打开或拖动 Re∞：欧西亚斯悬浮入口；双击查看凯利安状态';
 });
+
+function themeIconStyle(panel: PanelName): Record<string, string> | undefined {
+  const url = themeMenuIconUrl(themeState.value.active, panel);
+  return url ? { '--ca-theme-menu-icon': `url("${url}")` } : undefined;
+}
 
 function hostWindow(): Window {
   return props.context.document.defaultView ?? window;
@@ -632,6 +640,9 @@ onMounted(() => {
     prior?.();
     disposeTracking();
   };
+  disposeTheme = props.context.api.on('theme.changed', (state) => {
+    themeState.value = state;
+  });
 });
 
 onUnmounted(() => {
@@ -639,6 +650,7 @@ onUnmounted(() => {
   clearIdleTimer();
   clearActivationTimer();
   disposeSubmission?.();
+  disposeTheme?.();
   props.context.document.removeEventListener(
     'pointerdown',
     handleOutsidePointerDown,
@@ -718,7 +730,10 @@ onUnmounted(() => {
               "
               @click="open(item.panel)"
             >
-              <b>{{ item.icon }}</b>
+              <b
+                :class="{ 'theme-menu-icon': themeIconStyle(item.panel) }"
+                :style="themeIconStyle(item.panel)"
+              >{{ item.icon }}</b>
               <span>{{ item.label }}</span>
             </button>
           </div>
@@ -1029,6 +1044,20 @@ onUnmounted(() => {
 .wheel-grid button b {
   font-size: 19px;
   font-weight: 400;
+}
+
+.wheel-grid button b.theme-menu-icon {
+  display: block;
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+  background-image: var(--ca-theme-menu-icon);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  color: transparent;
+  font-size: 0;
+  filter: drop-shadow(0 2px 2px rgba(98, 62, 24, 0.13));
 }
 
 .wheel-grid button span {

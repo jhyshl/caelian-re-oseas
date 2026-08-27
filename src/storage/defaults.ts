@@ -110,6 +110,7 @@ export function defaultSettings(
     profileId,
     preserveAdventureSave: false,
     battleDifficulty: 'normal',
+    uiTheme: 'default',
     updatedAt: now,
   };
 }
@@ -124,6 +125,7 @@ export function defaultGlobalSettings(
     preserveAdventureSave,
     sharedProfileId: undefined,
     battleDifficulty: 'normal',
+    uiTheme: 'default',
     updatedAt: now,
   };
 }
