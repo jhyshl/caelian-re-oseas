@@ -56,6 +56,8 @@ describe('release notes', () => {
     expect(latestText).toContain('小狗主题');
     expect(latestText).toContain('冒险者邮箱');
     expect(latestText).toContain('狗爪');
+    expect(latestText).toContain('旅程主题');
+    expect(latestText).toContain('九宫格切片');
     expect(releases.some((release) => release.label.startsWith('Alpha'))).toBe(
       false,
     );
