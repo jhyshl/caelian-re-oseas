@@ -930,6 +930,51 @@ const tailTownThemeScript = {
   },
 };
 
+const journeyThemeUnlockScript = `(function unlockCaelianJourneyTheme() {
+  'use strict';
+  const root = (() => {
+    for (const candidate of [window.top, window.parent, window]) {
+      try {
+        if (candidate && candidate.document) return candidate;
+      } catch {}
+    }
+    return window;
+  })();
+  const key = '__CaelianThemeEntitlements';
+  const current = root[key];
+  const existing = Array.isArray(current)
+    ? current
+    : current && typeof current === 'object' && Array.isArray(current.ids)
+      ? current.ids
+      : [];
+  const ids = Array.from(new Set([...existing, 'journey-ticket']));
+  root[key] = { version: 1, ids };
+  try {
+    root.dispatchEvent(new root.CustomEvent(
+      'caelian:theme-entitlements-changed',
+      { detail: { id: 'journey-ticket' } },
+    ));
+  } catch {}
+})();`;
+
+const journeyThemeScript = {
+  type: 'script',
+  enabled: true,
+  name: '旅程专属奖励 · 旅程主题',
+  id: '18b99716-a47c-4fa7-8d56-a430648bfc63',
+  content: journeyThemeUnlockScript,
+  info: '导入后在凯利安设置的“界面主题”中解锁旅程主题。主题图片由当前线上构建加载，脚本本身不包含图片或本地资产。',
+  button: {
+    enabled: true,
+    buttons: [],
+  },
+  data: {},
+  export_with: {
+    data: true,
+    button: true,
+  },
+};
+
 await mkdir(path.join(distRoot, 'tavern-helper'), { recursive: true });
 await writeFile(
   path.join(distRoot, 'tavern-helper', `caelian-${channel}.json`),
@@ -952,6 +997,12 @@ await writeFile(
 await writeFile(
   path.join(distRoot, 'tavern-helper', 'caelian-tail-town-theme.json'),
   `${JSON.stringify(tailTownThemeScript, null, 2)}\n`,
+  'utf8',
+);
+
+await writeFile(
+  path.join(distRoot, 'tavern-helper', 'caelian-journey-theme.json'),
+  `${JSON.stringify(journeyThemeScript, null, 2)}\n`,
   'utf8',
 );
 

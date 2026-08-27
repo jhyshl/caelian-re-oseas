@@ -41,7 +41,7 @@ afterEach(async () => {
 });
 
 describe('CaelianKernel integration', () => {
-  it('只在尾巴镇脚本解锁后显示并应用小狗主题', async () => {
+  it('只在对应社区脚本解锁后应用小狗与旅程主题', async () => {
     const databaseName = `caelian-alpha-tail-town-theme-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
     const kernel = createKernel({
@@ -58,6 +58,7 @@ describe('CaelianKernel integration', () => {
       available: [
         { id: 'default', locked: false },
         { id: 'tail-town-dog', locked: true },
+        { id: 'journey-ticket', locked: true },
       ],
     });
     await expect(
@@ -74,7 +75,19 @@ describe('CaelianKernel integration', () => {
     await kernel.api.navigatePanel('settings');
     await expect
       .poll(() => document.querySelectorAll('.theme-card').length)
-      .toBe(2);
+      .toBe(3);
+    const journeyLockedTheme = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('.theme-card.locked'),
+    ).find((button) => button.textContent?.includes('旅程主题'));
+    expect(journeyLockedTheme?.textContent).toContain('前往旅程领取');
+    journeyLockedTheme?.click();
+    await expect
+      .poll(() =>
+        document.body.textContent?.includes(
+          '需要前往旅程社区领取并导入专属奖励脚本后',
+        ),
+      )
+      .toBe(true);
     const lockedTheme = document.querySelector<HTMLButtonElement>(
       '.theme-card.locked',
     );
@@ -119,8 +132,52 @@ describe('CaelianKernel integration', () => {
     ).toContain('url(');
     expect(document.body.textContent).toContain('尾巴镇专属');
 
+    window.__CaelianThemeEntitlements = {
+      version: 1,
+      ids: ['tail-town-dog', 'journey-ticket'],
+    };
+    window.dispatchEvent(
+      new CustomEvent('caelian:theme-entitlements-changed'),
+    );
+    await expect
+      .poll(
+        () =>
+          kernel.api
+            .getThemeState()
+            .available.find((theme) => theme.id === 'journey-ticket')?.locked,
+      )
+      .toBe(false);
+    await expect(
+      kernel.api.execute({
+        id: 'select-unlocked-journey-theme',
+        type: 'settings.update',
+        payload: { uiTheme: 'journey-ticket' },
+      }),
+    ).resolves.toMatchObject({ status: 'applied' });
+    expect(kernel.api.getThemeState().active).toBe('journey-ticket');
+    expect(document.body.classList.contains('caelian-theme-tail-town')).toBe(
+      false,
+    );
+    expect(document.body.classList.contains('caelian-theme-journey')).toBe(
+      true,
+    );
+    expect(
+      document.body.style.getPropertyValue('--ca-journey-launcher-ticket'),
+    ).toContain('url(');
+    expect(
+      document.body.style.getPropertyValue('--ca-journey-launcher-stub'),
+    ).toContain('url(');
+    expect(
+      kernel.api
+        .getThemeState()
+        .available.find((theme) => theme.id === 'journey-ticket')?.badge,
+    ).toBe('旅程专属');
+
     await kernel.api.shutdown();
     expect(document.body.classList.contains('caelian-theme-tail-town')).toBe(
+      false,
+    );
+    expect(document.body.classList.contains('caelian-theme-journey')).toBe(
       false,
     );
   });

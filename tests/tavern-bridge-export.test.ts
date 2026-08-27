@@ -59,6 +59,61 @@ describe('Tavern Helper Alpha bridge export', () => {
     expect(events).toEqual(['caelian:theme-entitlements-changed']);
   });
 
+  it('exports a lightweight Journey theme entitlement that preserves other rewards', async () => {
+    await execFileAsync(process.execPath, ['scripts/export-tavern-helper.mjs'], {
+      cwd: root,
+    });
+    const reward = JSON.parse(
+      await readFile(
+        path.join(
+          root,
+          'dist',
+          'tavern-helper',
+          'caelian-journey-theme.json',
+        ),
+        'utf8',
+      ),
+    ) as { name: string; content: string; info: string };
+    const events: Array<{ type: string; detail?: unknown }> = [];
+    class TestCustomEvent {
+      constructor(
+        readonly type: string,
+        readonly init?: { detail?: unknown },
+      ) {}
+    }
+    const host = {
+      document: {},
+      __CaelianThemeEntitlements: {
+        version: 1,
+        ids: ['tail-town-dog'],
+      },
+      dispatchEvent: (event: TestCustomEvent) => {
+        events.push({ type: event.type, detail: event.init?.detail });
+        return true;
+      },
+      CustomEvent: TestCustomEvent,
+    } as Record<string, unknown>;
+    host.parent = host;
+    host.top = host;
+
+    vm.runInNewContext(reward.content, { window: host, Set, Array });
+
+    expect(reward.name).toContain('旅程专属奖励');
+    expect(reward.content).not.toMatch(/data:image|localStorage|indexedDB/i);
+    expect(reward.content).not.toMatch(/\.(png|webp|jpe?g)/i);
+    expect(reward.info).toContain('线上构建加载');
+    expect(host.__CaelianThemeEntitlements).toEqual({
+      version: 1,
+      ids: ['tail-town-dog', 'journey-ticket'],
+    });
+    expect(events).toEqual([
+      {
+        type: 'caelian:theme-entitlements-changed',
+        detail: { id: 'journey-ticket' },
+      },
+    ]);
+  });
+
   it('exports a valid receiver with independent public update sources', async () => {
     await execFileAsync(process.execPath, ['scripts/export-tavern-helper.mjs'], {
       cwd: root,

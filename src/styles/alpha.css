@@ -767,6 +767,1962 @@ body.caelian-theme-tail-town .release-footer button {
   }
 }
 
+/* Journey community theme. The launcher becomes a validated ticket stub when open. */
+body.caelian-theme-journey .caelian-shell-host .shell {
+  --launcher-size: 76px !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .orb {
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent var(--ca-journey-launcher-ticket) center / contain no-repeat !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 9px 12px rgba(10, 44, 91, 0.38)) !important;
+  transform: rotate(-2deg) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .shell.expanded .orb {
+  background-image: var(--ca-journey-launcher-stub) !important;
+  filter: drop-shadow(0 8px 11px rgba(10, 44, 91, 0.42)) brightness(1.04) !important;
+  transform: scale(0.94) rotate(2deg) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .orb:hover,
+body.caelian-theme-journey .caelian-shell-host .orb:focus-visible {
+  filter: drop-shadow(0 11px 16px rgba(10, 44, 91, 0.48)) brightness(1.06) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .shell.idle:not(.expanded):not(.dragging) .orb {
+  opacity: 0.68 !important;
+  filter: drop-shadow(0 6px 9px rgba(10, 44, 91, 0.24)) saturate(0.9) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .orb > span {
+  display: none !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .orb > i {
+  right: 9px !important;
+  bottom: 11px !important;
+  width: 8px !important;
+  height: 8px !important;
+  border-color: #edf7ff !important;
+  background: #d8b36a !important;
+  box-shadow: 0 1px 4px rgba(6, 31, 65, 0.48) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .orb > i.ready {
+  background: #65c9ac !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel {
+  width: min(318px, calc(100vw - 18px)) !important;
+  padding: 17px 18px !important;
+  border: 2px solid rgba(35, 102, 174, 0.72) !important;
+  border-radius: 5px !important;
+  color: #183b68 !important;
+  background-color: #edf7ff !important;
+  background-image:
+    linear-gradient(rgba(238, 248, 255, 0.84), rgba(238, 248, 255, 0.84)),
+    var(--ca-journey-pattern) !important;
+  background-position: center !important;
+  background-size: auto, 540px 540px !important;
+  box-shadow:
+    0 20px 54px rgba(7, 38, 80, 0.38),
+    inset 0 0 0 4px rgba(255, 255, 255, 0.62),
+    inset 0 0 0 5px rgba(44, 113, 183, 0.24) !important;
+  backdrop-filter: blur(16px) !important;
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(50% - 10px), calc(100% - 8px) 50%, 100% calc(50% + 10px), 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px), 0 calc(50% + 10px), 8px 50%, 0 calc(50% - 10px), 0 10px) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-header {
+  margin: -1px 0 7px !important;
+  padding: 4px 7px 13px !important;
+  border-bottom: 1px dashed rgba(31, 91, 154, 0.46) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-header span {
+  color: #164d88 !important;
+  font-family: "Noto Serif SC", Georgia, serif !important;
+  letter-spacing: 0.13em !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-header small {
+  color: #7189a4 !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .order-trigger,
+body.caelian-theme-journey .caelian-shell-host .page-controls > button {
+  border: 1px dashed rgba(31, 91, 154, 0.42) !important;
+  border-radius: 3px !important;
+  color: #315e8d !important;
+  background: rgba(255, 255, 255, 0.56) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid {
+  gap: 7px !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button {
+  min-height: 62px !important;
+  border: 1px solid rgba(43, 106, 171, 0.42) !important;
+  border-radius: 3px !important;
+  color: #31577f !important;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.76), rgba(218, 237, 252, 0.68)) !important;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.62) !important;
+  clip-path: polygon(5px 0, calc(100% - 5px) 0, 100% 5px, 100% calc(100% - 5px), calc(100% - 5px) 100%, 5px 100%, 0 calc(100% - 5px), 0 5px) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button:hover:not(:disabled),
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button:focus-visible {
+  border-color: #1e69b7 !important;
+  color: #174f89 !important;
+  background: linear-gradient(135deg, #f9fdff, #cfe9fb) !important;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.82), 0 6px 14px rgba(18, 72, 127, 0.17) !important;
+  transform: translateY(-1px) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button b {
+  color: #b78d48 !important;
+  text-shadow: 0 1px rgba(255, 255, 255, 0.8) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button span {
+  color: inherit !important;
+  font-size: 9px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .page-controls > div button {
+  background: #a9bfd4 !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .page-controls > div button.active {
+  background: #2467a7 !important;
+  box-shadow: 0 0 0 3px rgba(36, 103, 167, 0.14) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host,
+body.caelian-theme-journey .caelian-panel-host .ca-backdrop {
+  --ca-bg: #eaf5fd !important;
+  --ca-surface: rgba(248, 252, 255, 0.92) !important;
+  --ca-surface-soft: #dcecf8 !important;
+  --ca-border: #a8c5df !important;
+  --ca-border-light: #6e9dca !important;
+  --ca-gold: #b58a43 !important;
+  --ca-gold-dark: #87642f !important;
+  --ca-gold-light: #e7c987 !important;
+  --ca-red: #b85562 !important;
+  --ca-green: #3c957b !important;
+  --ca-blue: #266aab !important;
+  --ca-purple: #6d69a8 !important;
+  --ca-text: #27496b !important;
+  --ca-text-bright: #123354 !important;
+  --ca-muted: #708aa2 !important;
+  --ca-serif: "Noto Serif SC", Georgia, serif !important;
+  --ca-ui: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-backdrop {
+  background: rgba(8, 35, 72, 0.48) !important;
+  backdrop-filter: blur(8px) saturate(0.82) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-frame {
+  border: 2px solid rgba(28, 91, 157, 0.66) !important;
+  border-radius: 4px !important;
+  color: var(--ca-text) !important;
+  background-color: #eaf5fd !important;
+  background-image:
+    linear-gradient(rgba(236, 247, 254, 0.77), rgba(236, 247, 254, 0.77)),
+    var(--ca-journey-pattern) !important;
+  background-size: auto, 720px 720px !important;
+  box-shadow:
+    0 30px 90px rgba(5, 31, 67, 0.46),
+    inset 0 0 0 5px rgba(255, 255, 255, 0.58),
+    inset 0 0 0 6px rgba(40, 105, 171, 0.22) !important;
+  clip-path: polygon(13px 0, calc(100% - 13px) 0, 100% 13px, 100% calc(50% - 11px), calc(100% - 9px) 50%, 100% calc(50% + 11px), 100% calc(100% - 13px), calc(100% - 13px) 100%, 13px 100%, 0 calc(100% - 13px), 0 calc(50% + 11px), 9px 50%, 0 calc(50% - 11px), 0 13px) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-header {
+  border-bottom: 1px dashed rgba(30, 91, 154, 0.43) !important;
+  color: #173d65 !important;
+  background:
+    radial-gradient(circle at 78% 0, rgba(214, 235, 252, 0.78), transparent 32%),
+    linear-gradient(135deg, rgba(247, 252, 255, 0.96), rgba(199, 226, 246, 0.95)) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-brand strong {
+  color: #1d5b98 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-brand span {
+  color: rgba(32, 82, 131, 0.6) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-navigation {
+  border-color: rgba(35, 96, 157, 0.25) !important;
+  background: linear-gradient(180deg, rgba(238, 248, 255, 0.96), rgba(211, 231, 246, 0.96)) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-nav-button {
+  color: #6a849d !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-nav-button:hover {
+  color: #245985 !important;
+  background: rgba(38, 106, 171, 0.08) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-nav-button.active {
+  border-color: #2e74b5 !important;
+  color: #1e5f9e !important;
+  background: linear-gradient(90deg, rgba(173, 214, 245, 0.34), rgba(239, 248, 255, 0.24)) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-page {
+  background-color: rgba(228, 242, 252, 0.62) !important;
+  background-image:
+    linear-gradient(rgba(231, 244, 253, 0.75), rgba(231, 244, 253, 0.75)),
+    var(--ca-journey-pattern) !important;
+  background-size: auto, 660px 660px !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-section,
+body.caelian-theme-journey .caelian-panel-host .mail-layout,
+body.caelian-theme-journey .caelian-panel-host :is(.identity-card, .guild-card, .rank-panel, .profession-status),
+body.caelian-theme-journey .caelian-panel-host .theme-card,
+body.caelian-theme-journey .caelian-panel-host :is(.recipe-detail, .deck-builder, .card-workspace),
+body.caelian-theme-journey .caelian-panel-host :is(.question, .release-card, .receipt-list article) {
+  border-radius: 3px !important;
+  clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(50% - 7px), calc(100% - 5px) 50%, 100% calc(50% + 7px), 100% calc(100% - 7px), calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 calc(50% + 7px), 5px 50%, 0 calc(50% - 7px), 0 7px) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-section {
+  border-color: rgba(67, 119, 169, 0.48) !important;
+  color: var(--ca-text) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(215, 235, 249, 0.72)) !important;
+  box-shadow:
+    0 9px 24px rgba(13, 55, 100, 0.1),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.62) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-section-title {
+  border-bottom: 1px dashed rgba(44, 104, 163, 0.32) !important;
+  color: #1f5d97 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-button,
+body.caelian-theme-journey .caelian-panel-host .ca-header-button {
+  border-color: #a6c4de !important;
+  border-radius: 3px !important;
+  color: #315a82 !important;
+  background: rgba(249, 253, 255, 0.7) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.68) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-button:hover:not(:disabled),
+body.caelian-theme-journey .caelian-panel-host .ca-header-button:hover {
+  border-color: #3478b7 !important;
+  color: #174f87 !important;
+  background: #e1f1fc !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-button.primary {
+  border-color: #2f72b1 !important;
+  color: #f7fbff !important;
+  background: linear-gradient(135deg, #377ebd, #1d548b) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(input, textarea, select) {
+  border-color: #a5c3dc !important;
+  border-radius: 3px !important;
+  color: #24496c !important;
+  background: rgba(252, 254, 255, 0.82) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(input, textarea, select):focus {
+  border-color: #3478b7 !important;
+  outline-color: rgba(52, 120, 183, 0.2) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host ::-webkit-scrollbar-thumb {
+  border-radius: 999px !important;
+  background: rgba(42, 99, 155, 0.36) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .mail-layout {
+  border-color: rgba(42, 102, 163, 0.52) !important;
+  background: rgba(239, 249, 255, 0.82) !important;
+  box-shadow: 0 15px 36px rgba(9, 49, 91, 0.16) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .mail-list {
+  border-right: 1px dashed rgba(42, 102, 163, 0.36) !important;
+  background: rgba(200, 225, 244, 0.58) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .mail-list button {
+  border-bottom: 1px dashed rgba(42, 102, 163, 0.26) !important;
+  color: #58728a !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .mail-list button:hover,
+body.caelian-theme-journey .caelian-panel-host .mail-list button.active {
+  color: #163e66 !important;
+  background: rgba(247, 252, 255, 0.82) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .mail-list button.active {
+  box-shadow: inset 4px 0 #2f76b6 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .mail-list i {
+  color: #8ba7bf !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .letter {
+  color: #264866 !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(150, 201, 238, 0.22), transparent 38%),
+    rgba(246, 252, 255, 0.68) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .letter h2,
+body.caelian-theme-journey .caelian-panel-host .letter dd {
+  color: #173b5d !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .letter-paper {
+  border: 1px dashed rgba(47, 105, 161, 0.24) !important;
+  box-shadow: 0 16px 38px rgba(6, 42, 80, 0.16), inset 0 0 38px rgba(50, 112, 170, 0.05) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .market-grid article {
+  border-color: rgba(71, 125, 174, 0.56) !important;
+  background: linear-gradient(145deg, rgba(253, 255, 255, 0.9), rgba(207, 230, 247, 0.82)) !important;
+  box-shadow: 0 8px 22px rgba(10, 50, 91, 0.12) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .market-grid article.rarity-uncommon {
+  border-left-color: #4f9d7f !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .market-grid article.rarity-rare {
+  border-left-color: #2e78ba !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .market-grid article.rarity-epic {
+  border-left-color: #7765aa !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .market-grid article.rarity-legendary {
+  border-left-color: #b58a43 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .goods-bottom input,
+body.caelian-theme-journey .caelian-panel-host .sell-list article {
+  border-color: #a6c4dd !important;
+  color: #254968 !important;
+  background: rgba(250, 254, 255, 0.78) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater {
+  border: 2px solid rgba(37, 99, 161, 0.7) !important;
+  border-radius: 4px !important;
+  color: #274866 !important;
+  background-color: #eaf5fd !important;
+  background-image:
+    linear-gradient(rgba(233, 246, 254, 0.78), rgba(233, 246, 254, 0.78)),
+    var(--ca-journey-pattern) !important;
+  background-size: auto, 590px 590px !important;
+  box-shadow: 0 24px 66px rgba(6, 38, 76, 0.4), inset 0 0 0 4px rgba(255, 255, 255, 0.55) !important;
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(50% - 9px), calc(100% - 7px) 50%, 100% calc(50% + 9px), 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px), 0 calc(50% + 9px), 7px 50%, 0 calc(50% - 9px), 0 10px) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater header {
+  border-bottom: 1px dashed rgba(39, 100, 160, 0.38) !important;
+  background: linear-gradient(135deg, rgba(247, 252, 255, 0.96), rgba(199, 226, 246, 0.94)) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater header span,
+body.caelian-theme-journey .worldbook-floater .notice {
+  color: #286ca9 !important;
+}
+
+body.caelian-theme-journey .worldbook-floater header h2,
+body.caelian-theme-journey .worldbook-floater .region-list b {
+  color: #173b5d !important;
+}
+
+body.caelian-theme-journey .worldbook-floater header > button,
+body.caelian-theme-journey .worldbook-floater footer button {
+  border-color: #9fbfd9 !important;
+  border-radius: 3px !important;
+  color: #315c83 !important;
+  background: rgba(255, 255, 255, 0.62) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .explanation,
+body.caelian-theme-journey .worldbook-floater .region-list small,
+body.caelian-theme-journey .worldbook-floater .empty {
+  color: #71899f !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-list > button {
+  border-color: rgba(73, 126, 176, 0.58) !important;
+  border-radius: 3px !important;
+  color: #274866 !important;
+  background: rgba(248, 253, 255, 0.8) !important;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.54) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-list > button.on {
+  border-color: rgba(55, 151, 119, 0.62) !important;
+  background: rgba(216, 243, 235, 0.82) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-list > button.mixed {
+  border-color: rgba(181, 138, 67, 0.62) !important;
+  background: rgba(247, 235, 204, 0.76) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-list em {
+  color: #f8fbff !important;
+  background: linear-gradient(135deg, #3d82bf, #1f5d96) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater footer {
+  border-top: 1px dashed rgba(39, 100, 160, 0.3) !important;
+  background: rgba(201, 227, 246, 0.54) !important;
+}
+
+body.caelian-theme-journey :is(.feedback-overlay, .survey-overlay, .release-overlay) {
+  color: #274866 !important;
+  background:
+    radial-gradient(circle at 50% 14%, rgba(126, 184, 226, 0.3), transparent 38%),
+    rgba(7, 33, 68, 0.5) !important;
+  backdrop-filter: blur(8px) saturate(0.86) !important;
+}
+
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog, .release-dialog) {
+  border: 2px solid rgba(37, 99, 161, 0.68) !important;
+  border-radius: 4px !important;
+  color: #274866 !important;
+  background-color: #eaf5fd !important;
+  background-image:
+    linear-gradient(rgba(233, 246, 254, 0.79), rgba(233, 246, 254, 0.79)),
+    var(--ca-journey-pattern) !important;
+  background-size: auto, 680px 680px !important;
+  box-shadow: 0 28px 84px rgba(5, 35, 73, 0.46), inset 0 0 0 5px rgba(255, 255, 255, 0.54) !important;
+  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 12px, 100% calc(50% - 10px), calc(100% - 8px) 50%, 100% calc(50% + 10px), 100% calc(100% - 12px), calc(100% - 12px) 100%, 12px 100%, 0 calc(100% - 12px), 0 calc(50% + 10px), 8px 50%, 0 calc(50% - 10px), 0 12px) !important;
+}
+
+body.caelian-theme-journey :is(.dialog-header, .survey-header, .release-header) {
+  border-bottom: 1px dashed rgba(38, 99, 159, 0.4) !important;
+  background: linear-gradient(135deg, rgba(248, 253, 255, 0.97), rgba(198, 225, 245, 0.95)) !important;
+}
+
+body.caelian-theme-journey .feedback-dialog .dialog-header {
+  margin: -22px -22px 17px !important;
+  padding: 20px 22px 16px !important;
+  border-radius: 0 !important;
+}
+
+body.caelian-theme-journey :is(.dialog-header, .survey-header, .release-header) :is(h1, h2),
+body.caelian-theme-journey .survey-list button strong,
+body.caelian-theme-journey .survey-intro h2,
+body.caelian-theme-journey .question legend strong,
+body.caelian-theme-journey .readonly-summary h3,
+body.caelian-theme-journey .readonly-summary article h4,
+body.caelian-theme-journey .expired-summary h3,
+body.caelian-theme-journey .release-content h2 {
+  color: #173b5d !important;
+}
+
+body.caelian-theme-journey :is(.dialog-header, .survey-header, .release-header) p,
+body.caelian-theme-journey .release-heading p,
+body.caelian-theme-journey .survey-dialog .description,
+body.caelian-theme-journey .survey-list button small,
+body.caelian-theme-journey .readonly-summary :is(time, article small),
+body.caelian-theme-journey .readonly-summary > footer,
+body.caelian-theme-journey .expired-summary p {
+  color: #70879c !important;
+}
+
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog, .release-dialog) :is(.close, .close-button) {
+  border-color: #9dbed8 !important;
+  border-radius: 3px !important;
+  color: #315d85 !important;
+  background: rgba(255, 255, 255, 0.58) !important;
+}
+
+body.caelian-theme-journey .feedback-tabs,
+body.caelian-theme-journey .survey-list {
+  border-color: rgba(42, 101, 160, 0.3) !important;
+  background: rgba(198, 224, 244, 0.56) !important;
+}
+
+body.caelian-theme-journey .feedback-tabs button,
+body.caelian-theme-journey .survey-list button,
+body.caelian-theme-journey .survey-list .refresh {
+  border-color: rgba(73, 126, 176, 0.56) !important;
+  border-radius: 3px !important;
+  color: #58728b !important;
+  background: rgba(248, 253, 255, 0.7) !important;
+}
+
+body.caelian-theme-journey .feedback-tabs button.active,
+body.caelian-theme-journey .survey-list button.selected,
+body.caelian-theme-journey .kind-switch button.active,
+body.caelian-theme-journey .survey-dialog .choice-list label:has(input:checked) {
+  border-color: rgba(43, 108, 171, 0.7) !important;
+  color: #1d5d99 !important;
+  background: rgba(185, 218, 243, 0.62) !important;
+}
+
+body.caelian-theme-journey .survey-content,
+body.caelian-theme-journey .receipt-center {
+  color: #274866 !important;
+  background: rgba(246, 252, 255, 0.4) !important;
+}
+
+body.caelian-theme-journey .question,
+body.caelian-theme-journey .readonly-summary article,
+body.caelian-theme-journey .expired-summary,
+body.caelian-theme-journey .kind-switch button,
+body.caelian-theme-journey .receipt-list article,
+body.caelian-theme-journey .release-card {
+  border-color: rgba(73, 126, 176, 0.58) !important;
+  color: #274866 !important;
+  background: rgba(249, 253, 255, 0.78) !important;
+  box-shadow: 0 7px 19px rgba(7, 43, 81, 0.08) !important;
+}
+
+body.caelian-theme-journey .writing-guide,
+body.caelian-theme-journey .discord-field,
+body.caelian-theme-journey .author-reply,
+body.caelian-theme-journey .privacy-note {
+  border-color: rgba(65, 119, 169, 0.46) !important;
+  color: #466985 !important;
+  background: rgba(204, 229, 246, 0.5) !important;
+}
+
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog) :is(input, textarea, select),
+body.caelian-theme-journey .survey-dialog .choice-list label {
+  border-color: #a2c1da !important;
+  border-radius: 3px !important;
+  color: #24496c !important;
+  background: rgba(252, 254, 255, 0.82) !important;
+}
+
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog) :is(input, textarea)::placeholder {
+  color: #8ba0b3 !important;
+  opacity: 1 !important;
+}
+
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog) :is(.primary-button, .primary),
+body.caelian-theme-journey .release-footer button {
+  border-color: #2c70ae !important;
+  border-radius: 3px !important;
+  color: #f6fbff !important;
+  background: linear-gradient(135deg, #397fbd, #1f5a91) !important;
+  box-shadow: 0 5px 15px rgba(14, 67, 119, 0.2) !important;
+}
+
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog) :is(.secondary-button, .secondary) {
+  border-color: #a2c1da !important;
+  border-radius: 3px !important;
+  color: #315a82 !important;
+  background: rgba(255, 255, 255, 0.68) !important;
+}
+
+body.caelian-theme-journey .release-list {
+  background: rgba(246, 252, 255, 0.32) !important;
+}
+
+body.caelian-theme-journey .release-card.current {
+  border-color: rgba(43, 108, 171, 0.72) !important;
+  background: rgba(197, 226, 247, 0.72) !important;
+}
+
+body.caelian-theme-journey .version-rail {
+  color: #6d879f !important;
+  background: rgba(182, 213, 237, 0.44) !important;
+}
+
+body.caelian-theme-journey .current .version-rail {
+  color: #1e5e99 !important;
+  background: rgba(80, 145, 202, 0.24) !important;
+}
+
+body.caelian-theme-journey .release-content :is(time, code),
+body.caelian-theme-journey .release-footer p {
+  color: #72899e !important;
+}
+
+body.caelian-theme-journey .release-content ol {
+  color: #466781 !important;
+}
+
+body.caelian-theme-journey .release-footer {
+  background: linear-gradient(transparent, rgba(234, 245, 253, 0.98) 24%) !important;
+}
+
+@media (max-width: 759px) {
+  body.caelian-theme-journey .caelian-shell-host .shell {
+    --launcher-size: 66px !important;
+  }
+
+  body.caelian-theme-journey .caelian-shell-host .wheel {
+    width: min(300px, calc(100vw - 12px)) !important;
+    max-height: calc(100dvh - 76px) !important;
+    padding: 14px 15px !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host {
+    padding: 0 !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-frame {
+    border-width: 0 !important;
+    border-radius: 0 !important;
+    clip-path: none !important;
+    box-shadow: inset 0 0 0 3px rgba(36, 101, 165, 0.22) !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-page,
+  body.caelian-theme-journey .caelian-panel-host .ca-frame--battle .ca-page {
+    padding-left: max(10px, env(safe-area-inset-left)) !important;
+    padding-right: max(10px, env(safe-area-inset-right)) !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-header {
+    min-height: 58px !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-navigation {
+    box-shadow: 0 -5px 18px rgba(8, 45, 84, 0.12) !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-section,
+  body.caelian-theme-journey .caelian-panel-host .mail-layout,
+  body.caelian-theme-journey .caelian-panel-host :is(.identity-card, .guild-card, .rank-panel, .profession-status),
+  body.caelian-theme-journey .caelian-panel-host .theme-card,
+  body.caelian-theme-journey .caelian-panel-host :is(.recipe-detail, .deck-builder, .card-workspace),
+  body.caelian-theme-journey .caelian-panel-host :is(.question, .release-card, .receipt-list article) {
+    clip-path: polygon(5px 0, calc(100% - 5px) 0, 100% 5px, 100% calc(100% - 5px), calc(100% - 5px) 100%, 5px 100%, 0 calc(100% - 5px), 0 5px) !important;
+  }
+
+  body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog, .release-dialog),
+  body.caelian-theme-journey .worldbook-floater {
+    border-width: 1px !important;
+    clip-path: none !important;
+  }
+}
+
+/* Journey concept board correction: midnight ticket stock, aged-gold linework and cobalt selections. */
+body.caelian-theme-journey {
+  color-scheme: dark;
+}
+
+body.caelian-theme-journey .caelian-shell-host .shell {
+  --launcher-size: 98px !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .orb {
+  width: 70px !important;
+  height: 96px !important;
+  margin-left: 14px !important;
+  clip-path: none !important;
+  background: transparent var(--ca-journey-launcher-ticket) center / contain no-repeat !important;
+  background-size: contain !important;
+  filter: drop-shadow(0 10px 16px rgba(0, 4, 11, 0.68)) saturate(0.82) brightness(0.76) !important;
+  transform: rotate(-1deg) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .shell.expanded .orb {
+  width: 74px !important;
+  height: 94px !important;
+  margin-left: 12px !important;
+  clip-path: none !important;
+  background-image: var(--ca-journey-launcher-stub) !important;
+  background-size: contain !important;
+  filter: drop-shadow(0 9px 14px rgba(0, 4, 11, 0.72)) saturate(0.78) brightness(0.72) !important;
+  transform: scale(0.9) rotate(1deg) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .orb:hover,
+body.caelian-theme-journey .caelian-shell-host .orb:focus-visible {
+  filter: drop-shadow(0 12px 18px rgba(0, 4, 11, 0.78)) saturate(0.94) brightness(0.9) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .shell.idle:not(.expanded):not(.dragging) .orb {
+  opacity: 0.74 !important;
+  filter: drop-shadow(0 7px 11px rgba(0, 4, 11, 0.58)) saturate(0.72) brightness(0.67) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .orb > i {
+  right: 13px !important;
+  bottom: 14px !important;
+  width: 7px !important;
+  height: 7px !important;
+  border-color: #071523 !important;
+  background: #bda475 !important;
+  box-shadow: 0 0 0 1px rgba(222, 199, 154, 0.72), 0 0 7px rgba(190, 155, 91, 0.48) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .orb > i.ready {
+  background: #56a18c !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel {
+  position: absolute !important;
+  width: min(368px, calc(100vw - 16px)) !important;
+  min-height: 228px !important;
+  padding: 35px 45px 34px !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #ddd4c4 !important;
+  background-color: #071827 !important;
+  background-image:
+    var(--ca-journey-menu-frame),
+    linear-gradient(rgba(5, 20, 34, 0.92), rgba(6, 22, 37, 0.94)),
+    var(--ca-journey-pattern) !important;
+  background-position: center, center, center !important;
+  background-size: 100% 100%, auto, 520px 520px !important;
+  box-shadow:
+    0 22px 58px rgba(0, 5, 13, 0.72),
+    inset 0 0 34px rgba(0, 0, 0, 0.28) !important;
+  backdrop-filter: blur(14px) saturate(0.82) !important;
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px), 0 10px) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-header {
+  position: absolute !important;
+  inset: 9px 42px auto !important;
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 0 5px !important;
+  border-bottom: 1px solid rgba(173, 147, 103, 0.33) !important;
+  text-align: center !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-header > div {
+  display: block !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-header span {
+  color: #d6c09a !important;
+  font-family: "Noto Serif SC", "Songti SC", Georgia, serif !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.16em !important;
+  text-shadow: 0 1px 2px #000 !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-header small {
+  display: none !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .order-trigger {
+  position: absolute !important;
+  right: -25px !important;
+  bottom: -193px !important;
+  z-index: 2 !important;
+  min-width: 66px !important;
+  height: 22px !important;
+  gap: 3px !important;
+  padding: 0 7px !important;
+  border: 1px solid rgba(171, 145, 100, 0.56) !important;
+  border-radius: 3px !important;
+  color: #baaa8b !important;
+  background: rgba(4, 18, 31, 0.9) !important;
+  font-size: 11px !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .order-trigger em {
+  font-size: 8px !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 6px !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-page-viewport {
+  min-height: 148px !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button {
+  min-height: 70px !important;
+  gap: 0 !important;
+  padding: 5px 2px 4px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #d8cfbf !important;
+  background-color: rgba(4, 18, 31, 0.4) !important;
+  background-image: var(--ca-journey-menu-cell) !important;
+  background-position: center !important;
+  background-size: 100% 100% !important;
+  box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.18) !important;
+  clip-path: none !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button:hover:not(:disabled),
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button:focus-visible {
+  color: #f0dfbd !important;
+  background-color: rgba(20, 61, 101, 0.66) !important;
+  box-shadow: inset 0 0 0 1px rgba(209, 184, 137, 0.68), 0 0 15px rgba(28, 87, 151, 0.24) !important;
+  transform: translateY(-1px) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button b.theme-menu-icon {
+  width: 42px !important;
+  height: 42px !important;
+  margin: -2px 0 -1px !important;
+  border-radius: 5px !important;
+  background-position: var(--ca-theme-menu-icon-position) !important;
+  background-size: 300% 200% !important;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.72)) saturate(0.88) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button span {
+  color: #d8cfbf !important;
+  font-family: "Noto Serif SC", "Songti SC", Georgia, serif !important;
+  font-size: 10px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.12em !important;
+  text-shadow: 0 1px 2px #000 !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .page-controls {
+  position: absolute !important;
+  inset: auto 70px 10px !important;
+  display: flex !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  margin: 0 !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .page-controls > button {
+  position: absolute !important;
+  top: -104px !important;
+  width: 28px !important;
+  height: 58px !important;
+  border: 0 !important;
+  color: #c7ad7f !important;
+  background: transparent !important;
+  font: 34px/1 Georgia, serif !important;
+  text-shadow: 0 0 7px rgba(199, 173, 127, 0.34) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .page-controls > button:first-child {
+  left: -58px !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .page-controls > button:last-child {
+  right: -58px !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .page-controls > div {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  counter-reset: journey-page !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .page-controls > div button {
+  counter-increment: journey-page !important;
+  width: 17px !important;
+  height: 17px !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 0 !important;
+  border-radius: 50% !important;
+  color: #bbae98 !important;
+  background: transparent !important;
+  font: 9px/1 Georgia, serif !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .page-controls > div button::before {
+  content: counter(journey-page) !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .page-controls > div button.active {
+  color: #f1e6d3 !important;
+  background: #235fae !important;
+  box-shadow: 0 0 0 1px rgba(92, 145, 211, 0.7), 0 0 10px rgba(37, 95, 174, 0.54) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host,
+body.caelian-theme-journey .caelian-panel-host .ca-backdrop {
+  --ca-bg: #061321 !important;
+  --ca-surface: rgba(9, 27, 45, 0.96) !important;
+  --ca-surface-soft: #0b2136 !important;
+  --ca-border: #5e523e !important;
+  --ca-border-light: #8f7955 !important;
+  --ca-gold: #c5aa79 !important;
+  --ca-gold-dark: #8b734e !important;
+  --ca-gold-light: #e0c797 !important;
+  --ca-red: #b95c66 !important;
+  --ca-green: #4d9d84 !important;
+  --ca-blue: #2c70c1 !important;
+  --ca-purple: #756fa2 !important;
+  --ca-text: #cfc8bb !important;
+  --ca-text-bright: #eee5d5 !important;
+  --ca-muted: #8e8a82 !important;
+  --ca-serif: "Noto Serif SC", "Songti SC", Georgia, serif !important;
+  --ca-ui: "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-backdrop {
+  background: rgba(0, 6, 15, 0.72) !important;
+  backdrop-filter: blur(7px) saturate(0.78) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-frame {
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: var(--ca-text) !important;
+  background-color: #071725 !important;
+  background-image:
+    var(--ca-journey-menu-frame),
+    linear-gradient(rgba(5, 18, 31, 0.93), rgba(5, 20, 34, 0.96)),
+    var(--ca-journey-pattern) !important;
+  background-position: center, center, center !important;
+  background-size: 100% 100%, auto, 720px 720px !important;
+  box-shadow: 0 28px 90px rgba(0, 4, 12, 0.78), inset 0 0 50px rgba(0, 0, 0, 0.3) !important;
+  clip-path: polygon(9px 0, calc(100% - 9px) 0, 100% 9px, 100% calc(100% - 9px), calc(100% - 9px) 100%, 9px 100%, 0 calc(100% - 9px), 0 9px) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-header {
+  border-bottom: 1px solid rgba(167, 141, 96, 0.44) !important;
+  color: #e3dac9 !important;
+  background: linear-gradient(180deg, rgba(10, 33, 53, 0.98), rgba(6, 21, 36, 0.97)) !important;
+  box-shadow: inset 0 -1px rgba(0, 0, 0, 0.48) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-brand strong,
+body.caelian-theme-journey .caelian-panel-host .ca-section-title {
+  color: #d6c09a !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-brand span {
+  color: rgba(197, 176, 138, 0.58) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-navigation {
+  border-color: rgba(153, 129, 87, 0.45) !important;
+  background: linear-gradient(180deg, rgba(5, 20, 34, 0.98), rgba(4, 16, 28, 0.99)) !important;
+  box-shadow: inset 0 1px rgba(215, 188, 139, 0.08) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-nav-button {
+  color: #9d9587 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-nav-button:hover {
+  color: #ded2bc !important;
+  background: rgba(38, 86, 139, 0.22) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-nav-button.active {
+  border-color: #3c7ac0 !important;
+  color: #efe4cf !important;
+  background: linear-gradient(180deg, rgba(31, 91, 165, 0.82), rgba(15, 56, 105, 0.88)) !important;
+  box-shadow: inset 0 0 0 1px rgba(114, 161, 215, 0.28) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-page {
+  color: var(--ca-text) !important;
+  background-color: rgba(4, 15, 27, 0.78) !important;
+  background-image:
+    linear-gradient(rgba(4, 17, 29, 0.74), rgba(4, 17, 29, 0.78)),
+    var(--ca-journey-pattern) !important;
+  background-size: auto, 680px 680px !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(
+  .ca-section,
+  .mail-layout,
+  .identity-card,
+  .guild-card,
+  .rank-panel,
+  .profession-status,
+  .theme-card,
+  .recipe-detail,
+  .deck-builder,
+  .card-workspace,
+  .question,
+  .release-card,
+  .receipt-list article
+) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: var(--ca-text) !important;
+  background-color: rgba(8, 28, 46, 0.9) !important;
+  background-image:
+    var(--ca-journey-section-frame),
+    linear-gradient(145deg, rgba(10, 35, 57, 0.92), rgba(5, 20, 35, 0.96)) !important;
+  background-position: center !important;
+  background-size: 100% 100%, auto !important;
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.2), 0 8px 24px rgba(0, 4, 11, 0.2) !important;
+  clip-path: polygon(6px 0, calc(100% - 6px) 0, 100% 6px, 100% calc(100% - 6px), calc(100% - 6px) 100%, 6px 100%, 0 calc(100% - 6px), 0 6px) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-section-title {
+  border-bottom-color: rgba(171, 145, 100, 0.36) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-section {
+  padding: 26px 24px 24px !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-section > :first-child {
+  margin-top: 0 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(.ca-button, .ca-header-button) {
+  border: 1px solid rgba(156, 132, 92, 0.7) !important;
+  border-radius: 2px !important;
+  color: #c9bea9 !important;
+  background: rgba(5, 20, 34, 0.84) !important;
+  box-shadow: inset 0 0 0 1px rgba(222, 195, 145, 0.06) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(.ca-button, .ca-header-button):hover:not(:disabled) {
+  border-color: #c3a873 !important;
+  color: #f0dfbd !important;
+  background: rgba(18, 54, 89, 0.92) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-button.primary {
+  border-color: #a78d60 !important;
+  color: #f1e4cb !important;
+  background: linear-gradient(180deg, #286bb8, #174f92) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(input, textarea, select),
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog) :is(input, textarea, select) {
+  border: 1px solid rgba(139, 119, 86, 0.6) !important;
+  border-radius: 2px !important;
+  color: #ddd4c4 !important;
+  background: rgba(3, 15, 27, 0.86) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(input, textarea, select):focus,
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog) :is(input, textarea, select):focus {
+  border-color: #397ac5 !important;
+  outline-color: rgba(57, 122, 197, 0.25) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host ::-webkit-scrollbar-thumb,
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog, .release-dialog) ::-webkit-scrollbar-thumb {
+  border-radius: 0 !important;
+  background: rgba(168, 142, 96, 0.5) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .mail-layout {
+  background-color: rgba(5, 18, 31, 0.96) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .mail-list {
+  border-right: 1px solid rgba(156, 132, 92, 0.44) !important;
+  background: rgba(3, 14, 25, 0.76) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .mail-list button {
+  border-bottom: 1px solid rgba(129, 109, 77, 0.3) !important;
+  color: #9e978a !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .mail-list button:hover,
+body.caelian-theme-journey .caelian-panel-host .mail-list button.active {
+  color: #ece0c9 !important;
+  background: rgba(22, 59, 96, 0.7) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .mail-list button.active {
+  box-shadow: inset 4px 0 #2b70be !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .letter {
+  color: #d7cebe !important;
+  background: rgba(6, 21, 35, 0.72) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .letter h2,
+body.caelian-theme-journey .caelian-panel-host .letter dd {
+  color: #e6dac4 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .letter-paper {
+  border: 1px solid rgba(157, 130, 84, 0.42) !important;
+  color: #30281f !important;
+  background: #d8d0c2 !important;
+  box-shadow: 0 16px 38px rgba(0, 3, 9, 0.4), inset 0 0 34px rgba(74, 55, 31, 0.1) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .market-grid article,
+body.caelian-theme-journey .caelian-panel-host .sell-list article {
+  color: #d2c9b9 !important;
+  background-color: rgba(7, 25, 42, 0.94) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .market-grid article.rarity-uncommon { box-shadow: inset 3px 0 #4f9d7f !important; }
+body.caelian-theme-journey .caelian-panel-host .market-grid article.rarity-rare { box-shadow: inset 3px 0 #347fc7 !important; }
+body.caelian-theme-journey .caelian-panel-host .market-grid article.rarity-epic { box-shadow: inset 3px 0 #796bad !important; }
+body.caelian-theme-journey .caelian-panel-host .market-grid article.rarity-legendary { box-shadow: inset 3px 0 #c2a46b !important; }
+
+body.caelian-theme-journey .worldbook-floater,
+body.caelian-theme-journey :is(
+  .feedback-dialog,
+  .survey-dialog,
+  .release-dialog,
+  .profession-dialog,
+  .square-dialog,
+  .workshop-dialog,
+  .poem-dialog,
+  .memory-dialog,
+  .submission-dialog,
+  .order-dialog,
+  .battle-choice-panel
+) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #d1c8b9 !important;
+  background-color: #071725 !important;
+  background-image:
+    var(--ca-journey-menu-frame),
+    linear-gradient(rgba(5, 19, 32, 0.95), rgba(5, 20, 34, 0.97)),
+    var(--ca-journey-pattern) !important;
+  background-position: center !important;
+  background-size: 100% 100%, auto, 680px 680px !important;
+  box-shadow: 0 28px 84px rgba(0, 4, 12, 0.78), inset 0 0 46px rgba(0, 0, 0, 0.25) !important;
+  clip-path: polygon(9px 0, calc(100% - 9px) 0, 100% 9px, 100% calc(100% - 9px), calc(100% - 9px) 100%, 9px 100%, 0 calc(100% - 9px), 0 9px) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater header,
+body.caelian-theme-journey :is(.dialog-header, .survey-header, .release-header) {
+  border-bottom: 1px solid rgba(164, 139, 95, 0.42) !important;
+  background: linear-gradient(180deg, rgba(9, 31, 50, 0.98), rgba(5, 19, 32, 0.96)) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater header span,
+body.caelian-theme-journey .worldbook-floater .notice {
+  color: #c9a967 !important;
+}
+
+body.caelian-theme-journey .worldbook-floater header h2,
+body.caelian-theme-journey .worldbook-floater .region-list b,
+body.caelian-theme-journey :is(.dialog-header, .survey-header, .release-header) :is(h1, h2),
+body.caelian-theme-journey .survey-intro h2,
+body.caelian-theme-journey .question legend strong,
+body.caelian-theme-journey .release-content h2 {
+  color: #e7ddcb !important;
+}
+
+body.caelian-theme-journey .worldbook-floater :is(.explanation, .region-list small, .empty),
+body.caelian-theme-journey :is(.dialog-header, .survey-header, .release-header) p,
+body.caelian-theme-journey .survey-dialog .description,
+body.caelian-theme-journey .survey-list button small,
+body.caelian-theme-journey .release-heading p {
+  color: #918d84 !important;
+}
+
+body.caelian-theme-journey .worldbook-floater :is(header > button, footer button),
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog, .release-dialog) :is(.close, .close-button) {
+  border: 1px solid rgba(150, 127, 90, 0.66) !important;
+  border-radius: 2px !important;
+  color: #c4b99f !important;
+  background: rgba(4, 17, 29, 0.86) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-list > button,
+body.caelian-theme-journey :is(.feedback-tabs button, .survey-list button, .survey-list .refresh),
+body.caelian-theme-journey :is(.question, .readonly-summary article, .expired-summary, .kind-switch button, .receipt-list article, .release-card),
+body.caelian-theme-journey .survey-dialog .choice-list label {
+  border: 1px solid rgba(124, 108, 80, 0.56) !important;
+  border-radius: 2px !important;
+  color: #c9c0b1 !important;
+  background: rgba(5, 19, 32, 0.82) !important;
+  box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.14) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-list > button.on {
+  border-color: rgba(74, 151, 126, 0.74) !important;
+  background: rgba(18, 62, 55, 0.72) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-list > button.mixed {
+  border-color: rgba(183, 153, 99, 0.72) !important;
+  background: rgba(65, 49, 25, 0.64) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-list em,
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog) :is(.primary-button, .primary),
+body.caelian-theme-journey .release-footer button {
+  border-color: #9d855b !important;
+  border-radius: 2px !important;
+  color: #f2e5cb !important;
+  background: linear-gradient(180deg, #2d71bc, #174d8c) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater footer,
+body.caelian-theme-journey .release-footer {
+  border-top: 1px solid rgba(150, 127, 90, 0.36) !important;
+  background: rgba(4, 16, 28, 0.94) !important;
+}
+
+body.caelian-theme-journey :is(.feedback-overlay, .survey-overlay, .release-overlay) {
+  color: #d1c8b9 !important;
+  background: rgba(0, 5, 13, 0.78) !important;
+  backdrop-filter: blur(8px) saturate(0.78) !important;
+}
+
+body.caelian-theme-journey :is(
+  .profession-backdrop,
+  .order-dialog-backdrop,
+  .poem-overlay,
+  .memory-overlay,
+  .submission-overlay,
+  .battle-choice-overlay
+) {
+  background: rgba(0, 5, 13, 0.76) !important;
+  backdrop-filter: blur(7px) saturate(0.78) !important;
+}
+
+body.caelian-theme-journey :is(
+  .profession-dialog,
+  .square-dialog,
+  .workshop-dialog,
+  .poem-dialog,
+  .memory-dialog,
+  .submission-dialog,
+  .order-dialog,
+  .battle-choice-panel
+) :is(h1, h2, h3, strong) {
+  color: #e5dac6 !important;
+}
+
+body.caelian-theme-journey :is(
+  .profession-dialog,
+  .square-dialog,
+  .workshop-dialog,
+  .submission-dialog,
+  .order-dialog,
+  .battle-choice-panel
+) :is(button, article, .name-field, .profession-detail) {
+  border-color: rgba(145, 123, 86, 0.58) !important;
+}
+
+body.caelian-theme-journey :is(
+  .profession-dialog,
+  .square-dialog,
+  .workshop-dialog,
+  .submission-dialog,
+  .order-dialog,
+  .battle-choice-panel
+) :is(button.selected, button:hover:not(:disabled)) {
+  border-color: #3d7cc3 !important;
+  background-color: rgba(22, 63, 106, 0.72) !important;
+}
+
+body.caelian-theme-journey .feedback-tabs,
+body.caelian-theme-journey .survey-list,
+body.caelian-theme-journey :is(.survey-content, .receipt-center, .release-list) {
+  border-color: rgba(142, 120, 84, 0.38) !important;
+  color: #cfc6b6 !important;
+  background: rgba(3, 14, 25, 0.7) !important;
+}
+
+body.caelian-theme-journey .feedback-tabs button.active,
+body.caelian-theme-journey .survey-list button.selected,
+body.caelian-theme-journey .kind-switch button.active,
+body.caelian-theme-journey .survey-dialog .choice-list label:has(input:checked),
+body.caelian-theme-journey .release-card.current {
+  border-color: #3978bf !important;
+  color: #eee1c9 !important;
+  background: rgba(24, 68, 116, 0.72) !important;
+}
+
+body.caelian-theme-journey :is(.writing-guide, .discord-field, .author-reply, .privacy-note) {
+  border-color: rgba(125, 107, 79, 0.5) !important;
+  color: #aaa293 !important;
+  background: rgba(11, 31, 49, 0.72) !important;
+}
+
+body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog) :is(input, textarea)::placeholder {
+  color: #777d82 !important;
+}
+
+body.caelian-theme-journey .version-rail {
+  color: #999082 !important;
+  background: rgba(9, 29, 47, 0.9) !important;
+}
+
+body.caelian-theme-journey .current .version-rail {
+  color: #d9c18f !important;
+  background: rgba(28, 66, 105, 0.76) !important;
+}
+
+body.caelian-theme-journey .release-content :is(time, code),
+body.caelian-theme-journey .release-footer p,
+body.caelian-theme-journey .release-content ol {
+  color: #918b80 !important;
+}
+
+@media (max-width: 759px) {
+  body.caelian-theme-journey .caelian-shell-host .shell {
+    --launcher-size: 84px !important;
+  }
+
+  body.caelian-theme-journey .caelian-shell-host .wheel {
+    width: min(350px, calc(100vw - 8px)) !important;
+    min-height: 218px !important;
+    max-height: calc(100dvh - 88px) !important;
+    padding: 34px 39px 32px !important;
+  }
+
+  body.caelian-theme-journey .caelian-shell-host .wheel-grid button {
+    min-height: 66px !important;
+  }
+
+  body.caelian-theme-journey .caelian-shell-host .wheel-page-viewport {
+    min-height: 140px !important;
+  }
+
+  body.caelian-theme-journey .caelian-shell-host .order-trigger {
+    right: -19px !important;
+    bottom: -184px !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host {
+    padding: 0 !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-frame {
+    border: 0 !important;
+    border-radius: 0 !important;
+    background-size: 100% 100%, auto, 560px 560px !important;
+    box-shadow: inset 0 0 0 1px rgba(183, 155, 105, 0.36) !important;
+    clip-path: none !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-page,
+  body.caelian-theme-journey .caelian-panel-host .ca-frame--battle .ca-page {
+    padding-left: max(9px, env(safe-area-inset-left)) !important;
+    padding-right: max(9px, env(safe-area-inset-right)) !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-section {
+    padding: 20px 16px 18px !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-header {
+    min-height: 58px !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-navigation {
+    box-shadow: 0 -5px 20px rgba(0, 4, 11, 0.56), inset 0 1px rgba(184, 155, 105, 0.34) !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host :is(
+    .ca-section,
+    .mail-layout,
+    .identity-card,
+    .guild-card,
+    .rank-panel,
+    .profession-status,
+    .theme-card,
+    .recipe-detail,
+    .deck-builder,
+    .card-workspace,
+    .question,
+    .release-card,
+    .receipt-list article
+  ) {
+    clip-path: polygon(4px 0, calc(100% - 4px) 0, 100% 4px, 100% calc(100% - 4px), calc(100% - 4px) 100%, 4px 100%, 0 calc(100% - 4px), 0 4px) !important;
+  }
+
+  body.caelian-theme-journey :is(.feedback-dialog, .survey-dialog, .release-dialog),
+  body.caelian-theme-journey .worldbook-floater {
+    background-size: 100% 100%, auto, 560px 560px !important;
+    clip-path: none !important;
+  }
+}
+
+/* Journey rendering repair: real alpha cutouts, nine-slice borders and safe content areas. */
+body.caelian-theme-journey .caelian-shell-host .wheel {
+  border: 1px solid transparent !important;
+  border-image-source: var(--ca-journey-menu-frame) !important;
+  border-image-slice: 88 96 !important;
+  border-image-width: 28px !important;
+  border-image-repeat: stretch !important;
+  border-radius: 0 !important;
+  background-color: #071827 !important;
+  background-image:
+    linear-gradient(rgba(5, 20, 34, 0.94), rgba(6, 22, 37, 0.96)),
+    var(--ca-journey-pattern) !important;
+  background-position: center, center !important;
+  background-size: auto, 520px 520px !important;
+  -webkit-mask: none !important;
+  mask: none !important;
+  clip-path: polygon(17px 0, calc(100% - 17px) 0, 100% 17px, 100% calc(100% - 17px), calc(100% - 17px) 100%, 17px 100%, 0 calc(100% - 17px), 0 17px) !important;
+  image-rendering: auto !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-header,
+body.caelian-theme-journey .caelian-shell-host .wheel-page-viewport,
+body.caelian-theme-journey .caelian-shell-host .page-controls {
+  z-index: 1 !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .order-trigger {
+  right: 3px !important;
+  bottom: -188px !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button {
+  min-width: 0 !important;
+  border: 1px solid transparent !important;
+  border-image-source: var(--ca-journey-menu-cell) !important;
+  border-image-slice: 92 !important;
+  border-image-width: 10px !important;
+  border-image-repeat: stretch !important;
+  background-color: rgba(4, 18, 31, 0.72) !important;
+  background-image: linear-gradient(rgba(7, 25, 41, 0.88), rgba(4, 17, 30, 0.92)) !important;
+  background-size: auto !important;
+  clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(100% - 7px), calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 7px) !important;
+  image-rendering: auto !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button b.theme-menu-icon {
+  width: 44px !important;
+  height: 44px !important;
+  margin: -2px auto -2px !important;
+  justify-self: center !important;
+  align-self: center !important;
+  border-radius: 0 !important;
+  background-position: center !important;
+  background-size: contain !important;
+  background-repeat: no-repeat !important;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.62)) saturate(0.86) !important;
+  image-rendering: auto !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button span {
+  width: 100% !important;
+  overflow: hidden !important;
+  text-align: center !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-frame {
+  border: 1px solid transparent !important;
+  border-image-source: var(--ca-journey-menu-frame) !important;
+  border-image-slice: 88 96 !important;
+  border-image-width: 28px !important;
+  border-image-repeat: stretch !important;
+  background-color: #071725 !important;
+  background-image:
+    linear-gradient(rgba(5, 18, 31, 0.95), rgba(5, 20, 34, 0.97)),
+    var(--ca-journey-pattern) !important;
+  background-position: center, center !important;
+  background-size: auto, 720px 720px !important;
+  -webkit-mask: none !important;
+  mask: none !important;
+  clip-path: polygon(18px 0, calc(100% - 18px) 0, 100% 18px, 100% calc(100% - 18px), calc(100% - 18px) 100%, 18px 100%, 0 calc(100% - 18px), 0 18px) !important;
+  image-rendering: auto !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(
+  .ca-section,
+  .mail-layout,
+  .identity-card,
+  .guild-card,
+  .rank-panel,
+  .profession-status,
+  .theme-card,
+  .recipe-detail,
+  .deck-builder,
+  .card-workspace,
+  .question,
+  .release-card,
+  .receipt-list article
+) {
+  min-width: 0 !important;
+  border: 1px solid transparent !important;
+  border-image-source: var(--ca-journey-section-frame) !important;
+  border-image-slice: 74 80 !important;
+  border-image-width: 18px !important;
+  border-image-repeat: stretch !important;
+  background-color: rgba(8, 28, 46, 0.92) !important;
+  background-image: linear-gradient(145deg, rgba(10, 35, 57, 0.93), rgba(5, 20, 35, 0.97)) !important;
+  background-position: center !important;
+  background-size: auto !important;
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px), 0 10px) !important;
+  image-rendering: auto !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-section {
+  padding: 32px 28px 26px !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-section-title {
+  min-width: 0 !important;
+  flex-wrap: wrap !important;
+  padding-inline: 2px !important;
+  line-height: 1.3 !important;
+  overflow-wrap: anywhere !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-section-title small {
+  margin-left: auto !important;
+  white-space: nowrap !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(
+  .deck-header,
+  .inventory-head,
+  .crafting-head,
+  .consumable-heading,
+  .recipe-title,
+  .saved-builds > header,
+  .guild-card > header,
+  .identity-card > header
+) > * {
+  min-width: 0 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(
+  .deck-header,
+  .inventory-head,
+  .crafting-head,
+  .consumable-heading,
+  .saved-builds > header
+) {
+  flex-wrap: wrap !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(
+  .deck-header h1,
+  .deck-header p,
+  .inventory-head h1,
+  .inventory-head p,
+  .crafting-head h1,
+  .crafting-head p,
+  .recipe-title h2,
+  .ca-section-title,
+  .recipe-list strong,
+  .recipe-list small
+) {
+  max-width: 100% !important;
+  overflow-wrap: anywhere !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(
+  .card-grid,
+  .collection-list,
+  .crafting-layout,
+  .recipe-list,
+  .recipe-detail,
+  .item-grid,
+  .consumable-grid,
+  .equipment-list,
+  .loadout-grid,
+  .guild-layout,
+  .guild-card
+) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .crafting-layout {
+  grid-template-columns: minmax(220px, 0.82fr) minmax(0, 1.18fr) !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .recipe-list > button {
+  min-width: 0 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .recipe-list > button > span {
+  min-width: 0 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(input, textarea, select) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-nav-icon.theme-nav-icon {
+  background-position: center !important;
+  background-size: contain !important;
+  background-repeat: no-repeat !important;
+  image-rendering: auto !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .rank-panel {
+  border: 0 !important;
+  border-left: 1px solid rgba(153, 129, 87, 0.45) !important;
+  border-image: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+}
+
+body.caelian-theme-journey :is(
+  .worldbook-floater,
+  .feedback-dialog,
+  .survey-dialog,
+  .release-dialog,
+  .profession-dialog,
+  .square-dialog,
+  .workshop-dialog,
+  .poem-dialog,
+  .memory-dialog,
+  .submission-dialog,
+  .order-dialog,
+  .battle-choice-panel
+) {
+  min-width: 0 !important;
+  border: 1px solid transparent !important;
+  border-image-source: var(--ca-journey-menu-frame) !important;
+  border-image-slice: 88 96 !important;
+  border-image-width: 28px !important;
+  border-image-repeat: stretch !important;
+  border-radius: 0 !important;
+  background-color: #071725 !important;
+  background-image:
+    linear-gradient(rgba(5, 18, 31, 0.96), rgba(5, 20, 34, 0.98)),
+    var(--ca-journey-pattern) !important;
+  background-position: center, center !important;
+  background-size: auto, 640px 640px !important;
+  clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% calc(100% - 14px), calc(100% - 14px) 100%, 14px 100%, 0 calc(100% - 14px), 0 14px) !important;
+  image-rendering: auto !important;
+}
+
+@media (max-width: 980px) {
+  body.caelian-theme-journey .caelian-panel-host .crafting-layout {
+    grid-template-columns: minmax(190px, 0.72fr) minmax(0, 1.28fr) !important;
+  }
+}
+
+@media (max-width: 759px) {
+  body.caelian-theme-journey .caelian-shell-host .wheel {
+    border-image-width: 24px !important;
+  }
+
+  body.caelian-theme-journey .caelian-shell-host .order-trigger {
+    right: 3px !important;
+    bottom: -181px !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-frame {
+    border: 0 !important;
+    border-image-source: none !important;
+    -webkit-mask: none !important;
+    mask: none !important;
+    background-image:
+      linear-gradient(rgba(5, 18, 31, 0.96), rgba(5, 20, 34, 0.98)),
+      var(--ca-journey-pattern) !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-section {
+    padding: 25px 18px 21px !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host :is(
+    .ca-section,
+    .mail-layout,
+    .identity-card,
+    .guild-card,
+    .rank-panel,
+    .profession-status,
+    .theme-card,
+    .recipe-detail,
+    .deck-builder,
+    .card-workspace,
+    .question,
+    .release-card,
+    .receipt-list article
+  ) {
+    border-image-width: 14px !important;
+    clip-path: polygon(7px 0, calc(100% - 7px) 0, 100% 7px, 100% calc(100% - 7px), calc(100% - 7px) 100%, 7px 100%, 0 calc(100% - 7px), 0 7px) !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .crafting-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .rank-panel {
+    border-left: 0 !important;
+    border-top: 1px solid rgba(153, 129, 87, 0.45) !important;
+  }
+
+  body.caelian-theme-journey :is(
+    .worldbook-floater,
+    .feedback-dialog,
+    .survey-dialog,
+    .release-dialog,
+    .profession-dialog,
+    .square-dialog,
+    .workshop-dialog,
+    .poem-dialog,
+    .memory-dialog,
+    .submission-dialog,
+    .order-dialog,
+    .battle-choice-panel
+  ) {
+    border-image-width: 18px !important;
+    clip-path: none !important;
+  }
+}
+
+/* Journey final fit pass: keep painted paper inside the real ticket silhouette. */
+body.caelian-theme-journey .caelian-shell-host .wheel {
+  isolation: isolate !important;
+  overflow: visible !important;
+  border: 1px solid transparent !important;
+  border-image-source: var(--ca-journey-menu-frame) !important;
+  border-image-slice: 88 96 fill !important;
+  border-image-width: 28px !important;
+  border-image-outset: 0 !important;
+  border-image-repeat: stretch !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  clip-path: none !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel::before {
+  content: none !important;
+  display: none !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .wheel-grid button {
+  border: 1px solid transparent !important;
+  border-image-source: var(--ca-journey-menu-cell) !important;
+  border-image-slice: 92 fill !important;
+  border-image-width: 10px !important;
+  border-image-outset: 0 !important;
+  border-image-repeat: stretch !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .order-trigger {
+  right: 14px !important;
+  bottom: -174px !important;
+}
+
+body.caelian-theme-journey .caelian-shell-host .page-controls > div button.active {
+  color: #071523 !important;
+  background: #c2a05f !important;
+  box-shadow:
+    0 0 0 1px #e1c98f,
+    0 0 9px rgba(194, 160, 95, 0.42) !important;
+}
+
+body.caelian-theme-journey:has(.caelian-panel-host .ca-frame) .caelian-shell-host .shell {
+  display: none !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-frame,
+body.caelian-theme-journey :is(
+  .worldbook-floater,
+  .feedback-dialog,
+  .survey-dialog,
+  .release-dialog,
+  .profession-dialog,
+  .square-dialog,
+  .workshop-dialog,
+  .poem-dialog,
+  .memory-dialog,
+  .submission-dialog,
+  .order-dialog,
+  .battle-choice-panel
+) {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-frame {
+  position: relative !important;
+  isolation: isolate !important;
+  padding: 14px !important;
+  border: 1px solid transparent !important;
+  border-image-source: var(--ca-journey-menu-frame) !important;
+  border-image-slice: 88 96 fill !important;
+  border-image-width: 28px !important;
+  border-image-outset: 0 !important;
+  border-image-repeat: stretch !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-frame::before {
+  content: none !important;
+  display: none !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .ca-frame > * {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(.ca-header, .ca-navigation, .ca-page) {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host :is(
+  .ca-section,
+  .mail-layout,
+  .identity-card,
+  .guild-card,
+  .rank-panel,
+  .profession-status,
+  .theme-card,
+  .recipe-detail,
+  .deck-builder,
+  .card-workspace,
+  .question,
+  .release-card,
+  .receipt-list article
+) {
+  border: 1px solid transparent !important;
+  border-image-source: var(--ca-journey-section-frame) !important;
+  border-image-slice: 74 80 fill !important;
+  border-image-width: 18px !important;
+  border-image-outset: 0 !important;
+  border-image-repeat: stretch !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  clip-path: none !important;
+}
+
+body.caelian-theme-journey :is(
+  .worldbook-floater,
+  .feedback-dialog,
+  .survey-dialog,
+  .release-dialog,
+  .profession-dialog,
+  .square-dialog,
+  .workshop-dialog,
+  .poem-dialog,
+  .memory-dialog,
+  .submission-dialog,
+  .order-dialog,
+  .battle-choice-panel
+) {
+  border: 1px solid transparent !important;
+  border-image-source: var(--ca-journey-menu-frame) !important;
+  border-image-slice: 88 96 fill !important;
+  border-image-width: 28px !important;
+  border-image-outset: 0 !important;
+  border-image-repeat: stretch !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  clip-path: none !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .guild-card .rank-panel {
+  min-width: 142px !important;
+  padding: 8px 12px 8px 22px !important;
+  border: 0 !important;
+  border-left: 1px solid rgba(153, 129, 87, 0.45) !important;
+  border-image: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  clip-path: none !important;
+  text-align: right !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .guild-card .rank-panel :is(small, strong, span) {
+  position: static !important;
+  margin: 0 !important;
+  line-height: 1.25 !important;
+  white-space: nowrap !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .crafting-tabs {
+  position: relative !important;
+  z-index: 3 !important;
+  margin-bottom: 20px !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .crafting-layout {
+  align-items: start !important;
+  gap: 18px !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .crafting-layout > .ca-section + .ca-section {
+  margin-top: 0 !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .recipe-list {
+  scroll-padding-top: 34px !important;
+}
+
+body.caelian-theme-journey .caelian-panel-host .recipe-list > .ca-section-title {
+  position: sticky !important;
+  top: -1px !important;
+  z-index: 2 !important;
+  margin-top: 0 !important;
+  padding: 2px 2px 9px !important;
+  background: linear-gradient(180deg, #092239 82%, rgba(9, 34, 57, 0)) !important;
+}
+
+@media (max-width: 759px) {
+  body.caelian-theme-journey .caelian-panel-host .ca-frame {
+    padding: 8px !important;
+    border: 1px solid transparent !important;
+    border-image-source: var(--ca-journey-menu-frame) !important;
+    border-image-slice: 88 96 fill !important;
+    border-image-width: 18px !important;
+    border-image-outset: 0 !important;
+    border-image-repeat: stretch !important;
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+    background: transparent !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .ca-frame::before {
+    display: none !important;
+  }
+
+  body.caelian-theme-journey .caelian-panel-host .guild-card .rank-panel {
+    min-width: 0 !important;
+    padding: 12px 0 0 !important;
+    border-left: 0 !important;
+    border-top: 1px solid rgba(153, 129, 87, 0.45) !important;
+    text-align: left !important;
+  }
+}
+
 #caelian-demo-status {
   margin-top: 24px;
   padding: 12px 14px;

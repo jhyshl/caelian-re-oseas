@@ -9,6 +9,16 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.52',
+    label: 'Alpha 52',
+    releasedAt: '2026-08-27',
+    changes: [
+      '新增旅程社区专属“旅程主题”：完整车票悬浮入口、检票后快捷菜单、星轨底纹与蓝金票券界面同时适配电脑和手机；所有装饰边框均使用九宫格切片，缩放时不再拉伸模糊。',
+      '旅程主题在设置中始终可见，未导入专属酒馆助手奖励脚本时会提示前往旅程领取；脚本只负责解锁验证，主题图片继续由线上构建加载。',
+      '修复旅程主题在快捷菜单、协会、合成台、牌组与多类弹窗中的边框溢色、错位和内容溢出；战斗怪物、战斗卡牌、物品与地图保持原有无额外图片资产的表现。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.51',
     label: 'Alpha 51',
     releasedAt: '2026-08-27',

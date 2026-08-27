@@ -17,6 +17,29 @@ import releaseNotesIcon from '@/assets/themes/tail-town/release-notes.png';
 import settingsIcon from '@/assets/themes/tail-town/settings.png';
 import surveysIcon from '@/assets/themes/tail-town/surveys.png';
 import worldbookIcon from '@/assets/themes/tail-town/worldbook.png';
+import journeyPattern from '@/assets/themes/journey/journey-pattern-v2.png';
+import journeyTicket from '@/assets/themes/journey/launcher-ticket-transparent.png';
+import journeyTicketStub from '@/assets/themes/journey/launcher-stub-transparent.png';
+import journeyMenuCell from '@/assets/themes/journey/menu-cell-alpha.png';
+import journeyMenuFrame from '@/assets/themes/journey/menu-frame-alpha.png';
+import journeyAchievementsIcon from '@/assets/themes/journey/icons-rgba/achievements.png';
+import journeyAffinityIcon from '@/assets/themes/journey/icons-rgba/affinity.png';
+import journeyBattleIcon from '@/assets/themes/journey/icons-rgba/battle.png';
+import journeyCardSquareIcon from '@/assets/themes/journey/icons-rgba/card-square.png';
+import journeyCharacterIcon from '@/assets/themes/journey/icons-rgba/character.png';
+import journeyCraftingIcon from '@/assets/themes/journey/icons-rgba/crafting.png';
+import journeyDeckIcon from '@/assets/themes/journey/icons-rgba/deck.png';
+import journeyFeedbackIcon from '@/assets/themes/journey/icons-rgba/feedback.png';
+import journeyGuildIcon from '@/assets/themes/journey/icons-rgba/guild.png';
+import journeyInventoryIcon from '@/assets/themes/journey/icons-rgba/inventory.png';
+import journeyMailboxIcon from '@/assets/themes/journey/icons-rgba/mailbox.png';
+import journeyMapIcon from '@/assets/themes/journey/icons-rgba/map.png';
+import journeyMarketIcon from '@/assets/themes/journey/icons-rgba/market.png';
+import journeyReleaseNotesIcon from '@/assets/themes/journey/icons-rgba/release-notes.png';
+import journeySettingsIcon from '@/assets/themes/journey/icons-rgba/settings.png';
+import journeySurveysIcon from '@/assets/themes/journey/icons-rgba/surveys.png';
+import journeyWorldbookIcon from '@/assets/themes/journey/icons-rgba/worldbook.png';
+import journeySectionFrame from '@/assets/themes/journey/section-frame-alpha.png';
 import type { PanelName } from '@/kernel/public-api';
 import type {
   CaelianThemeId,
@@ -27,8 +50,12 @@ import type {
 export const THEME_ENTITLEMENTS_EVENT =
   'caelian:theme-entitlements-changed';
 export const TAIL_TOWN_THEME_ID = 'tail-town-dog' as const;
+export const JOURNEY_THEME_ID = 'journey-ticket' as const;
 
-const THEME_BODY_CLASSES = ['caelian-theme-tail-town'] as const;
+const THEME_BODY_CLASSES = [
+  'caelian-theme-tail-town',
+  'caelian-theme-journey',
+] as const;
 const TAIL_TOWN_ICON_URLS: Readonly<Partial<Record<PanelName, string>>> = {
   character: characterIcon,
   affinity: affinityIcon,
@@ -48,6 +75,33 @@ const TAIL_TOWN_ICON_URLS: Readonly<Partial<Record<PanelName, string>>> = {
   surveys: surveysIcon,
   'release-notes': releaseNotesIcon,
 };
+interface ThemeMenuIconAsset {
+  position?: string;
+  url: string;
+}
+
+const JOURNEY_ICON_ASSETS: Readonly<
+  Partial<Record<PanelName, ThemeMenuIconAsset>>
+> = {
+  character: { url: journeyCharacterIcon },
+  affinity: { url: journeyAffinityIcon },
+  deck: { url: journeyDeckIcon },
+  'card-square': { url: journeyCardSquareIcon },
+  inventory: { url: journeyInventoryIcon },
+  crafting: { url: journeyCraftingIcon },
+  guild: { url: journeyGuildIcon },
+  mailbox: { url: journeyMailboxIcon },
+  market: { url: journeyMarketIcon },
+  map: { url: journeyMapIcon },
+  worldbook: { url: journeyWorldbookIcon },
+  battle: { url: journeyBattleIcon },
+  achievements: { url: journeyAchievementsIcon },
+  settings: { url: journeySettingsIcon },
+  feedback: { url: journeyFeedbackIcon },
+  diagnostics: { url: journeyFeedbackIcon },
+  surveys: { url: journeySurveysIcon },
+  'release-notes': { url: journeyReleaseNotesIcon },
+};
 
 const DEFAULT_THEME: CaelianThemeOption = {
   id: 'default',
@@ -64,6 +118,27 @@ const TAIL_TOWN_THEME: CaelianThemeOption = {
   badge: '尾巴镇专属',
   locked: true,
   previewUrl: launcherBone,
+  unlockPrompt: {
+    badge: '前往尾巴镇领取',
+    notice: '需要前往尾巴镇领取并导入专属奖励脚本后，才能使用小狗主题。',
+    title: '小狗主题尚未解锁',
+    description: '请前往尾巴镇领取专属奖励脚本，导入后此主题会自动解锁。',
+  },
+};
+
+const JOURNEY_THEME: CaelianThemeOption = {
+  id: JOURNEY_THEME_ID,
+  name: '旅程主题',
+  description: '以蓝色车票、星轨与远行印记装点冒险界面。',
+  badge: '旅程专属',
+  locked: true,
+  previewUrl: journeyTicket,
+  unlockPrompt: {
+    badge: '前往旅程领取',
+    notice: '需要前往旅程社区领取并导入专属奖励脚本后，才能使用旅程主题。',
+    title: '旅程主题尚未解锁',
+    description: '请前往旅程社区领取专属奖励脚本，导入后此主题会自动解锁。',
+  },
 };
 
 function entitlementIds(host: Window): Set<string> {
@@ -81,10 +156,17 @@ function entitlementIds(host: Window): Set<string> {
 }
 
 export function listAvailableThemes(host: Window): CaelianThemeOption[] {
-  const tailTownUnlocked = entitlementIds(host).has(TAIL_TOWN_THEME_ID);
+  const entitlements = entitlementIds(host);
   return [
     { ...DEFAULT_THEME },
-    { ...TAIL_TOWN_THEME, locked: !tailTownUnlocked },
+    {
+      ...TAIL_TOWN_THEME,
+      locked: !entitlements.has(TAIL_TOWN_THEME_ID),
+    },
+    {
+      ...JOURNEY_THEME,
+      locked: !entitlements.has(JOURNEY_THEME_ID),
+    },
   ];
 }
 
@@ -118,6 +200,7 @@ export function applyTheme(
   const body = host.document.body;
   if (body) {
     body.classList.remove(...THEME_BODY_CLASSES);
+    clearThemeAssets(body);
     body.dataset.caelianTheme = active;
     if (active === TAIL_TOWN_THEME_ID) {
       body.classList.add('caelian-theme-tail-town');
@@ -129,9 +212,32 @@ export function applyTheme(
         '--ca-tail-town-paw-pattern',
         cssUrl(pawPattern),
       );
-    } else {
-      body.style.removeProperty('--ca-tail-town-launcher-image');
-      body.style.removeProperty('--ca-tail-town-paw-pattern');
+    } else if (active === JOURNEY_THEME_ID) {
+      body.classList.add('caelian-theme-journey');
+      body.style.setProperty(
+        '--ca-journey-launcher-ticket',
+        cssUrl(journeyTicket),
+      );
+      body.style.setProperty(
+        '--ca-journey-launcher-stub',
+        cssUrl(journeyTicketStub),
+      );
+      body.style.setProperty(
+        '--ca-journey-pattern',
+        cssUrl(journeyPattern),
+      );
+      body.style.setProperty(
+        '--ca-journey-menu-frame',
+        cssUrl(journeyMenuFrame),
+      );
+      body.style.setProperty(
+        '--ca-journey-menu-cell',
+        cssUrl(journeyMenuCell),
+      );
+      body.style.setProperty(
+        '--ca-journey-section-frame',
+        cssUrl(journeySectionFrame),
+      );
     }
   }
   return { active, available: listAvailableThemes(host) };
@@ -142,17 +248,30 @@ export function clearAppliedTheme(host: Window): void {
   if (!body) return;
   body.classList.remove(...THEME_BODY_CLASSES);
   delete body.dataset.caelianTheme;
-  body.style.removeProperty('--ca-tail-town-launcher-image');
-  body.style.removeProperty('--ca-tail-town-paw-pattern');
+  clearThemeAssets(body);
 }
 
-export function themeMenuIconUrl(
+function clearThemeAssets(body: HTMLElement): void {
+  body.style.removeProperty('--ca-tail-town-launcher-image');
+  body.style.removeProperty('--ca-tail-town-paw-pattern');
+  body.style.removeProperty('--ca-journey-launcher-ticket');
+  body.style.removeProperty('--ca-journey-launcher-stub');
+  body.style.removeProperty('--ca-journey-pattern');
+  body.style.removeProperty('--ca-journey-menu-frame');
+  body.style.removeProperty('--ca-journey-menu-cell');
+  body.style.removeProperty('--ca-journey-section-frame');
+}
+
+export function themeMenuIconAsset(
   theme: CaelianThemeId,
   panel: PanelName,
-): string | undefined {
-  return theme === TAIL_TOWN_THEME_ID
-    ? TAIL_TOWN_ICON_URLS[panel]
-    : undefined;
+): ThemeMenuIconAsset | undefined {
+  if (theme === TAIL_TOWN_THEME_ID) {
+    const url = TAIL_TOWN_ICON_URLS[panel];
+    return url ? { url } : undefined;
+  }
+  if (theme === JOURNEY_THEME_ID) return JOURNEY_ICON_ASSETS[panel];
+  return undefined;
 }
 
 export function subscribeThemeEntitlements(

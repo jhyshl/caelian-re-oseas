@@ -2093,7 +2093,8 @@ export class CaelianKernel {
       return undefined;
     }
     return payload.uiTheme === 'default' ||
-      payload.uiTheme === 'tail-town-dog'
+      payload.uiTheme === 'tail-town-dog' ||
+      payload.uiTheme === 'journey-ticket'
       ? payload.uiTheme
       : undefined;
   }

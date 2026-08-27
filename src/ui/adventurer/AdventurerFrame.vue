@@ -1,5 +1,10 @@
 <script setup lang="ts">
+import { onMounted, onUnmounted, ref } from 'vue';
 import type { PanelContext, PanelName } from '@/kernel/public-api';
+import {
+  JOURNEY_THEME_ID,
+  themeMenuIconAsset,
+} from '@/themes/theme-manager';
 
 const props = withDefaults(
   defineProps<{
@@ -26,10 +31,27 @@ const navigation: Array<{
   { id: 'guild', icon: '⚔', label: '协会' },
 ];
 
+const activeTheme = ref(props.context.api.getThemeState().active);
+let disposeTheme: (() => void) | undefined;
+
+function navigationIconStyle(panel: PanelName): Record<string, string> | undefined {
+  if (activeTheme.value !== JOURNEY_THEME_ID) return undefined;
+  const asset = themeMenuIconAsset(activeTheme.value, panel);
+  return asset ? { '--ca-theme-nav-icon': `url("${asset.url}")` } : undefined;
+}
+
 function navigate(panel: PanelName) {
   if (panel === props.active) return;
   void props.context.api.navigatePanel(panel);
 }
+
+onMounted(() => {
+  disposeTheme = props.context.api.on('theme.changed', (state) => {
+    activeTheme.value = state.active;
+  });
+});
+
+onUnmounted(() => disposeTheme?.());
 </script>
 
 <template>
@@ -65,7 +87,11 @@ function navigate(panel: PanelName) {
           :aria-current="item.id === active ? 'page' : undefined"
           @click="navigate(item.id)"
         >
-          <span class="ca-nav-icon">{{ item.icon }}</span>
+          <span
+            class="ca-nav-icon"
+            :class="{ 'theme-nav-icon': navigationIconStyle(item.id) }"
+            :style="navigationIconStyle(item.id)"
+          >{{ item.icon }}</span>
           <span>{{ item.label }}</span>
         </button>
       </nav>
@@ -243,6 +269,16 @@ function navigate(panel: PanelName) {
   text-align: center;
 }
 
+.ca-nav-icon.theme-nav-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  background: var(--ca-theme-nav-icon) center / contain no-repeat;
+  color: transparent;
+  font-size: 0;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.55));
+}
+
 .ca-page {
   grid-area: page;
   min-width: 0;
@@ -343,6 +379,13 @@ function navigate(panel: PanelName) {
     font-size: 18px;
   }
 
+
+  .ca-nav-icon.theme-nav-icon {
+    width: 27px;
+    height: 27px;
+    flex-basis: 27px;
+  }
+
   .ca-page {
     padding: 16px 18px 28px;
   }
@@ -425,6 +468,12 @@ function navigate(panel: PanelName) {
   .ca-nav-icon {
     width: auto;
     font-size: 16px;
+  }
+
+  .ca-nav-icon.theme-nav-icon {
+    width: 25px;
+    height: 25px;
+    flex-basis: 25px;
   }
 
   .ca-page {

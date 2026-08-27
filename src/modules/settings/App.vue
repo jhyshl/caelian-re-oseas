@@ -56,11 +56,13 @@ async function save() {
 
 async function selectTheme(theme: CaelianThemeOption) {
   if (theme.locked) {
-    notice.value = '需要前往尾巴镇领取并导入专属奖励脚本后，才能使用小狗主题。';
+    const prompt = theme.unlockPrompt;
+    notice.value = prompt?.notice ?? '需要导入对应的社区奖励脚本后才能使用这个主题。';
     props.context.api.notify({
       kind: 'info',
-      title: '小狗主题尚未解锁',
-      description: '请前往尾巴镇领取专属奖励脚本，导入后此主题会自动解锁。',
+      title: prompt?.title ?? '主题尚未解锁',
+      description:
+        prompt?.description ?? '请先导入对应的社区奖励脚本。',
       duration: 6_000,
     });
     return;
@@ -266,7 +268,7 @@ onBeforeUnmount(() => disposeTheme?.());
               themeState.active === theme.id
                 ? '使用中'
                 : theme.locked
-                  ? '前往尾巴镇领取'
+                  ? theme.unlockPrompt?.badge ?? '需要脚本解锁'
                   : theme.badge
             }}</em>
           </button>

@@ -23,7 +23,10 @@ import {
   normalizeLauncherOrder,
   prioritizeLauncherPanels,
 } from '@/modules/shell/launcher-order';
-import { themeMenuIconUrl } from '@/themes/theme-manager';
+import {
+  JOURNEY_THEME_ID,
+  themeMenuIconAsset,
+} from '@/themes/theme-manager';
 
 const props = defineProps<{ context: PanelContext }>();
 
@@ -48,6 +51,9 @@ const pageDirection = ref<-1 | 1>(1);
 const ordering = ref(false);
 const pendingSubmission = ref(false);
 const themeState = ref(props.context.api.getThemeState());
+const wheelTitle = computed(() =>
+  themeState.value.active === JOURNEY_THEME_ID ? '快捷菜单' : 'RE∞ OSEAS',
+);
 let disposeSubmission: (() => void) | undefined;
 let disposeTheme: (() => void) | undefined;
 
@@ -171,8 +177,15 @@ const launcherLabel = computed(() => {
 });
 
 function themeIconStyle(panel: PanelName): Record<string, string> | undefined {
-  const url = themeMenuIconUrl(themeState.value.active, panel);
-  return url ? { '--ca-theme-menu-icon': `url("${url}")` } : undefined;
+  const asset = themeMenuIconAsset(themeState.value.active, panel);
+  return asset
+    ? {
+        '--ca-theme-menu-icon': `url("${asset.url}")`,
+        ...(asset.position
+          ? { '--ca-theme-menu-icon-position': asset.position }
+          : {}),
+      }
+    : undefined;
 }
 
 function hostWindow(): Window {
@@ -700,7 +713,7 @@ onUnmounted(() => {
     >
       <header class="wheel-header">
         <div>
-          <span>RE∞ OSEAS</span>
+          <span>{{ wheelTitle }}</span>
           <small>{{ info.version }} · {{ info.channel }}</small>
         </div>
         <button
