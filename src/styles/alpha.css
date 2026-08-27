@@ -251,9 +251,9 @@ body.caelian-theme-tail-town .caelian-panel-host .ca-frame {
   color: var(--ca-text) !important;
   background-color: var(--ca-bg) !important;
   background-image:
-    linear-gradient(rgba(255, 248, 233, 0.92), rgba(255, 248, 233, 0.92)),
+    linear-gradient(rgba(255, 248, 233, 0.74), rgba(255, 248, 233, 0.74)),
     var(--ca-tail-town-paw-pattern) !important;
-  background-size: auto, 560px 560px !important;
+  background-size: auto, 440px 440px !important;
   box-shadow: 0 28px 86px rgba(80, 49, 24, 0.38), inset 0 1px rgba(255, 255, 255, 0.94) !important;
 }
 
@@ -295,11 +295,11 @@ body.caelian-theme-tail-town .caelian-panel-host .ca-nav-button.active {
 }
 
 body.caelian-theme-tail-town .caelian-panel-host .ca-page {
-  background-color: rgba(255, 248, 233, 0.72) !important;
+  background-color: rgba(255, 248, 233, 0.58) !important;
   background-image:
-    linear-gradient(rgba(255, 248, 233, 0.91), rgba(255, 248, 233, 0.91)),
+    linear-gradient(rgba(255, 248, 233, 0.7), rgba(255, 248, 233, 0.7)),
     var(--ca-tail-town-paw-pattern) !important;
-  background-size: auto, 520px 520px !important;
+  background-size: auto, 420px 420px !important;
 }
 
 body.caelian-theme-tail-town .caelian-panel-host .ca-section {
@@ -351,6 +351,396 @@ body.caelian-theme-tail-town .caelian-panel-host :is(input, textarea, select):fo
 body.caelian-theme-tail-town .caelian-panel-host ::-webkit-scrollbar-thumb {
   border-radius: 999px !important;
   background: rgba(186, 127, 51, 0.34) !important;
+}
+
+/* Tail Town: module-specific surfaces that use their own dark visual system. */
+body.caelian-theme-tail-town .caelian-panel-host .mail-layout {
+  border-color: rgba(205, 145, 56, 0.45) !important;
+  background: rgba(255, 250, 239, 0.86) !important;
+  box-shadow: 0 13px 34px rgba(111, 70, 31, 0.12) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .mail-list {
+  border-right-color: rgba(205, 145, 56, 0.3) !important;
+  background: rgba(249, 226, 190, 0.72) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .mail-list button {
+  border-bottom-color: rgba(205, 145, 56, 0.25) !important;
+  color: #80664e !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .mail-list button:hover,
+body.caelian-theme-tail-town .caelian-panel-host .mail-list button.active {
+  color: #5b3a22 !important;
+  background: rgba(255, 249, 230, 0.86) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .mail-list button.active {
+  box-shadow: inset 4px 0 #df9630 !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .mail-list i {
+  color: #c3a378 !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .letter {
+  color: #5c4330 !important;
+  background:
+    radial-gradient(circle at 100% 0, rgba(255, 207, 104, 0.24), transparent 38%),
+    rgba(255, 251, 241, 0.7) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .letter h2,
+body.caelian-theme-tail-town .caelian-panel-host .letter dd {
+  color: #5b3a22 !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .letter-paper {
+  box-shadow: 0 16px 38px rgba(105, 63, 24, 0.15), inset 0 0 38px rgba(143, 93, 35, 0.05) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .market-grid article {
+  border-color: rgba(210, 169, 110, 0.62) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(250, 232, 201, 0.88)) !important;
+  box-shadow: 0 8px 22px rgba(108, 70, 34, 0.1) !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .market-grid article.rarity-uncommon {
+  border-left-color: #52a879 !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .market-grid article.rarity-rare {
+  border-left-color: #4f91cf !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .market-grid article.rarity-epic {
+  border-left-color: #9b61bc !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .market-grid article.rarity-legendary {
+  border-left-color: #d69931 !important;
+}
+
+body.caelian-theme-tail-town .caelian-panel-host .goods-bottom input,
+body.caelian-theme-tail-town .caelian-panel-host .sell-list article {
+  border-color: #dfc7a0 !important;
+  color: #543e2c !important;
+  background: rgba(255, 255, 255, 0.76) !important;
+}
+
+body.caelian-theme-tail-town .worldbook-floater {
+  border-color: rgba(205, 143, 48, 0.58) !important;
+  color: #5b4533 !important;
+  background-color: #fff7e6 !important;
+  background-image:
+    linear-gradient(rgba(255, 248, 232, 0.8), rgba(255, 248, 232, 0.8)),
+    var(--ca-tail-town-paw-pattern) !important;
+  background-size: auto, 360px 360px !important;
+  box-shadow: 0 24px 64px rgba(80, 50, 25, 0.34), inset 0 1px rgba(255, 255, 255, 0.92) !important;
+}
+
+body.caelian-theme-tail-town .worldbook-floater header {
+  border-bottom-color: rgba(205, 143, 48, 0.3) !important;
+  background: linear-gradient(135deg, rgba(255, 244, 209, 0.96), rgba(244, 210, 151, 0.94)) !important;
+}
+
+body.caelian-theme-tail-town .worldbook-floater header span,
+body.caelian-theme-tail-town .worldbook-floater .notice {
+  color: #ac651a !important;
+}
+
+body.caelian-theme-tail-town .worldbook-floater header h2,
+body.caelian-theme-tail-town .worldbook-floater .region-list b {
+  color: #493224 !important;
+}
+
+body.caelian-theme-tail-town .worldbook-floater header > button,
+body.caelian-theme-tail-town .worldbook-floater footer button {
+  border-color: #d9bb8b !important;
+  color: #7a542f !important;
+  background: rgba(255, 255, 255, 0.64) !important;
+}
+
+body.caelian-theme-tail-town .worldbook-floater .explanation,
+body.caelian-theme-tail-town .worldbook-floater .region-list small,
+body.caelian-theme-tail-town .worldbook-floater .empty {
+  color: #93755b !important;
+}
+
+body.caelian-theme-tail-town .worldbook-floater .region-list > button {
+  border-color: rgba(206, 166, 108, 0.62) !important;
+  color: #5b4533 !important;
+  background: rgba(255, 253, 246, 0.82) !important;
+  box-shadow: 0 4px 12px rgba(104, 68, 32, 0.06) !important;
+}
+
+body.caelian-theme-tail-town .worldbook-floater .region-list > button.on {
+  border-color: rgba(59, 167, 116, 0.55) !important;
+  background: rgba(221, 246, 225, 0.82) !important;
+}
+
+body.caelian-theme-tail-town .worldbook-floater .region-list > button.mixed {
+  border-color: rgba(213, 150, 50, 0.58) !important;
+  background: rgba(255, 238, 194, 0.76) !important;
+}
+
+body.caelian-theme-tail-town .worldbook-floater .region-list em {
+  color: #4e3216 !important;
+  background: linear-gradient(135deg, #ffd96f, #eeb348) !important;
+}
+
+body.caelian-theme-tail-town .worldbook-floater footer {
+  border-top-color: rgba(205, 143, 48, 0.24) !important;
+  background: rgba(250, 230, 195, 0.58) !important;
+}
+
+body.caelian-theme-tail-town :is(.feedback-overlay, .survey-overlay, .release-overlay) {
+  color: #5b4533 !important;
+  background:
+    radial-gradient(circle at 50% 16%, rgba(255, 219, 123, 0.28), transparent 38%),
+    rgba(87, 58, 34, 0.45) !important;
+  backdrop-filter: blur(7px) saturate(0.9) !important;
+}
+
+body.caelian-theme-tail-town :is(.feedback-dialog, .survey-dialog, .release-dialog) {
+  border-color: rgba(205, 143, 48, 0.58) !important;
+  color: #5b4533 !important;
+  background-color: #fff8e9 !important;
+  background-image:
+    linear-gradient(rgba(255, 248, 233, 0.78), rgba(255, 248, 233, 0.78)),
+    var(--ca-tail-town-paw-pattern) !important;
+  background-size: auto, 420px 420px !important;
+  box-shadow: 0 28px 82px rgba(78, 48, 24, 0.4), inset 0 1px rgba(255, 255, 255, 0.95) !important;
+}
+
+body.caelian-theme-tail-town :is(.dialog-header, .survey-header, .release-header) {
+  border-bottom-color: rgba(203, 139, 42, 0.28) !important;
+  background: linear-gradient(135deg, rgba(255, 247, 217, 0.97), rgba(246, 216, 162, 0.95)) !important;
+}
+
+body.caelian-theme-tail-town .feedback-dialog .dialog-header {
+  margin: -22px -22px 17px !important;
+  padding: 20px 22px 16px !important;
+  border-radius: 20px 20px 0 0 !important;
+}
+
+body.caelian-theme-tail-town :is(.dialog-header, .survey-header, .release-header) :is(h1, h2) {
+  color: #493224 !important;
+}
+
+body.caelian-theme-tail-town :is(.dialog-header, .survey-header, .release-header) p,
+body.caelian-theme-tail-town .release-heading p,
+body.caelian-theme-tail-town .survey-dialog .description {
+  color: #8e7057 !important;
+}
+
+body.caelian-theme-tail-town :is(.feedback-dialog, .survey-dialog, .release-dialog) :is(.close, .close-button) {
+  border-color: #d7b98c !important;
+  border-radius: 10px !important;
+  color: #8a6748 !important;
+  background: rgba(255, 255, 255, 0.56) !important;
+}
+
+body.caelian-theme-tail-town .feedback-tabs,
+body.caelian-theme-tail-town .survey-list {
+  border-color: rgba(205, 143, 48, 0.24) !important;
+  background: rgba(248, 227, 190, 0.64) !important;
+}
+
+body.caelian-theme-tail-town .feedback-tabs button,
+body.caelian-theme-tail-town .survey-list button,
+body.caelian-theme-tail-town .survey-list .refresh {
+  border-color: rgba(207, 167, 108, 0.6) !important;
+  color: #80664e !important;
+  background: rgba(255, 253, 246, 0.72) !important;
+}
+
+body.caelian-theme-tail-town .feedback-tabs button.active,
+body.caelian-theme-tail-town .survey-list button.selected {
+  border-color: rgba(211, 143, 39, 0.68) !important;
+  color: #9c5b17 !important;
+  background: rgba(255, 224, 151, 0.58) !important;
+}
+
+body.caelian-theme-tail-town .survey-list button strong,
+body.caelian-theme-tail-town .survey-intro h2,
+body.caelian-theme-tail-town .question legend strong,
+body.caelian-theme-tail-town .readonly-summary h3,
+body.caelian-theme-tail-town .readonly-summary article h4,
+body.caelian-theme-tail-town .expired-summary h3 {
+  color: #4c3627 !important;
+}
+
+body.caelian-theme-tail-town .survey-list button small,
+body.caelian-theme-tail-town .readonly-summary :is(time, article small),
+body.caelian-theme-tail-town .readonly-summary > footer,
+body.caelian-theme-tail-town .expired-summary p {
+  color: #94775f !important;
+}
+
+body.caelian-theme-tail-town .survey-content,
+body.caelian-theme-tail-town .receipt-center {
+  color: #5b4533 !important;
+  background: rgba(255, 252, 242, 0.42) !important;
+}
+
+body.caelian-theme-tail-town .question,
+body.caelian-theme-tail-town .readonly-summary article,
+body.caelian-theme-tail-town .expired-summary,
+body.caelian-theme-tail-town .kind-switch button,
+body.caelian-theme-tail-town .receipt-list article {
+  border-color: rgba(207, 167, 108, 0.62) !important;
+  color: #5b4533 !important;
+  background: rgba(255, 253, 246, 0.8) !important;
+  box-shadow: 0 6px 18px rgba(104, 68, 32, 0.06) !important;
+}
+
+body.caelian-theme-tail-town .feedback-dialog .field > span,
+body.caelian-theme-tail-town .receipt-empty strong,
+body.caelian-theme-tail-town .receipt-list h2 {
+  color: #4c3627 !important;
+}
+
+body.caelian-theme-tail-town .feedback-dialog .field :is(small, em),
+body.caelian-theme-tail-town .receipt-empty,
+body.caelian-theme-tail-town .receipt-list :is(dt, code) {
+  color: #95785f !important;
+}
+
+body.caelian-theme-tail-town .receipt-list dd {
+  color: #6f5642 !important;
+}
+
+body.caelian-theme-tail-town .receipt-list article > header > strong,
+body.caelian-theme-tail-town .feedback-tabs span {
+  color: #765b44 !important;
+  background: rgba(217, 187, 143, 0.42) !important;
+}
+
+body.caelian-theme-tail-town .receipt-status-viewed > header > strong {
+  color: #37658f !important;
+  background: rgba(78, 143, 197, 0.16) !important;
+}
+
+body.caelian-theme-tail-town .receipt-status-resolved > header > strong {
+  color: #31734d !important;
+  background: rgba(64, 154, 99, 0.16) !important;
+}
+
+body.caelian-theme-tail-town .receipt-status-rejected > header > strong {
+  color: #995b3b !important;
+  background: rgba(174, 96, 58, 0.15) !important;
+}
+
+body.caelian-theme-tail-town .kind-switch button.active {
+  border-color: rgba(211, 143, 39, 0.72) !important;
+  color: #9c5b17 !important;
+  background: rgba(255, 224, 151, 0.58) !important;
+}
+
+body.caelian-theme-tail-town .writing-guide,
+body.caelian-theme-tail-town .discord-field,
+body.caelian-theme-tail-town .author-reply,
+body.caelian-theme-tail-town .privacy-note {
+  border-color: rgba(212, 154, 75, 0.42) !important;
+  color: #705741 !important;
+  background: rgba(248, 226, 190, 0.54) !important;
+}
+
+body.caelian-theme-tail-town .writing-guide :is(strong, b),
+body.caelian-theme-tail-town .discord-field > span,
+body.caelian-theme-tail-town .author-reply b {
+  color: #8e541a !important;
+}
+
+body.caelian-theme-tail-town .writing-guide :is(p, li),
+body.caelian-theme-tail-town .discord-field :is(small, em),
+body.caelian-theme-tail-town .privacy-note,
+body.caelian-theme-tail-town .author-reply {
+  color: #8d715a !important;
+}
+
+body.caelian-theme-tail-town :is(.feedback-dialog, .survey-dialog) :is(input, textarea, select),
+body.caelian-theme-tail-town .survey-dialog .choice-list label {
+  border-color: #d9bd92 !important;
+  color: #543e2c !important;
+  background: rgba(255, 255, 255, 0.8) !important;
+}
+
+body.caelian-theme-tail-town :is(.feedback-dialog, .survey-dialog) :is(input, textarea)::placeholder {
+  color: #b09881 !important;
+  opacity: 1 !important;
+}
+
+body.caelian-theme-tail-town .survey-dialog .choice-list label:has(input:checked) {
+  border-color: rgba(211, 143, 39, 0.68) !important;
+  color: #8e541a !important;
+  background: rgba(255, 224, 151, 0.46) !important;
+}
+
+body.caelian-theme-tail-town :is(.feedback-dialog, .survey-dialog) :is(.primary-button, .primary) {
+  border-color: #c88422 !important;
+  color: #52320f !important;
+  background: linear-gradient(135deg, #ffe596, #efb64e) !important;
+}
+
+body.caelian-theme-tail-town :is(.feedback-dialog, .survey-dialog) :is(.secondary-button, .secondary) {
+  border-color: #d9bd92 !important;
+  color: #72533b !important;
+  background: rgba(255, 255, 255, 0.68) !important;
+}
+
+body.caelian-theme-tail-town .release-list {
+  background: rgba(255, 252, 243, 0.35) !important;
+}
+
+body.caelian-theme-tail-town .release-card {
+  border-color: rgba(207, 167, 108, 0.62) !important;
+  background: rgba(255, 253, 246, 0.78) !important;
+  box-shadow: 0 6px 18px rgba(104, 68, 32, 0.055) !important;
+}
+
+body.caelian-theme-tail-town .release-card.current {
+  border-color: rgba(211, 143, 39, 0.7) !important;
+  background: rgba(255, 237, 192, 0.72) !important;
+}
+
+body.caelian-theme-tail-town .version-rail {
+  color: #a4876b !important;
+  background: rgba(238, 207, 158, 0.42) !important;
+}
+
+body.caelian-theme-tail-town .current .version-rail {
+  color: #a45f17 !important;
+  background: rgba(238, 177, 72, 0.28) !important;
+}
+
+body.caelian-theme-tail-town .release-content h2 {
+  color: #4c3627 !important;
+}
+
+body.caelian-theme-tail-town .release-content :is(time, code) {
+  color: #987b62 !important;
+}
+
+body.caelian-theme-tail-town .release-content ol {
+  color: #705844 !important;
+}
+
+body.caelian-theme-tail-town .release-footer {
+  background: linear-gradient(transparent, rgba(255, 248, 233, 0.98) 24%) !important;
+}
+
+body.caelian-theme-tail-town .release-footer p {
+  color: #8d725c !important;
+}
+
+body.caelian-theme-tail-town .release-footer button {
+  border-color: #c88422 !important;
+  color: #52320f !important;
+  background: linear-gradient(135deg, #ffe596, #efb64e) !important;
+  box-shadow: 0 5px 14px rgba(177, 108, 29, 0.18) !important;
 }
 
 @media (max-width: 759px) {

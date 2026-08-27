@@ -9,6 +9,15 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.51',
+    label: 'Alpha 51',
+    releasedAt: '2026-08-27',
+    changes: [
+      '补齐小狗主题在冒险者邮箱、市场商品卡、地区世界书快捷开关、Bug 与意见反馈、调查问卷和版本更新公告中的浅色适配，移除突兀的深色旧面板。',
+      '增强主题背景中狗爪、骨头与红绳纹样的可见度，同时保持卡片、表单和正文区域的阅读对比度。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.50',
     label: 'Alpha 50',
     releasedAt: '2026-08-27',
