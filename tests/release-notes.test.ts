@@ -62,6 +62,9 @@ describe('release notes', () => {
     expect(latestText).toContain('狗爪');
     expect(latestText).toContain('旅程主题');
     expect(latestText).toContain('九宫格切片');
+    expect(latestText).toContain('浏览器本地懒加载');
+    expect(latestText).toContain('战斗卡牌牌面');
+    expect(latestText).toContain('不会把图片或玩家数据上传到额外图床');
     expect(releases.some((release) => release.label.startsWith('Alpha'))).toBe(
       false,
     );
