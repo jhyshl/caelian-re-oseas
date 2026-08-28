@@ -194,13 +194,13 @@ export const ACHIEVEMENT_PATCH_REGISTRY: Record<
         name: '金铲子',
         summary: '如此美味的饭我还能再吃一碗',
         effectText:
-          '进入战斗时有10%的基础概率直接判定为胜利，面对首领时无效',
+          '进入非首领战斗时有10%的基础概率直接判定为胜利；连续9场符合条件的战斗未触发时，第10场必定触发',
         source: '特殊补丁',
         relic: {
           name: '金铲子',
           description:
-            '进入战斗时有10%的基础概率直接判定为胜利，面对首领时无效',
-          effect: { type: 'special_golden_shovel', chance: 0.1 },
+            '进入非首领战斗时有10%的基础概率直接判定为胜利；连续9场符合条件的战斗未触发时，第10场必定触发',
+          effect: { type: 'special_golden_shovel', chance: 0.1, pity: 10 },
           unique: true,
           levelReward: false,
           source: 'special_patch',

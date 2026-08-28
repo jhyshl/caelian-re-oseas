@@ -7,6 +7,7 @@ import type {
   LocalBattleState,
 } from '@/domain/types';
 import { MAGICIAN_BLANK_CARD_ID } from '@/content/catalogs/magician';
+import { cardNameHistoryKey } from '@/battle/card-history';
 
 const battleRules = battleRulesJson as {
   playerAttackScale?: number;
@@ -249,12 +250,22 @@ function conditionMatches(
     case 'last_card_was_spell':
       return state.player.lastCardType === 'spell';
     case 'previous_card_same_name':
-      return Boolean(card && cardId(card) && state.player.lastCardId === cardId(card));
+      return Boolean(
+        card &&
+          (state.player.lastCardName === card.name ||
+            (!state.player.lastCardName &&
+              cardId(card) &&
+              state.player.lastCardId === cardId(card))),
+      );
     case 'same_card_played_this_turn':
       return Boolean(
         card &&
-          cardId(card) &&
-          (state.player.cardsPlayedThisTurn?.[cardId(card)] ?? 0) > 0,
+          ((state.player.cardNamesPlayedThisTurn?.[
+            cardNameHistoryKey(card.name)
+          ] ?? 0) > 0 ||
+            (!state.player.cardNamesPlayedThisTurn &&
+              cardId(card) &&
+              (state.player.cardsPlayedThisTurn?.[cardId(card)] ?? 0) > 0)),
       );
     case 'summon_died_this_battle':
       return (state.player.summonsLost ?? 0) > 0;

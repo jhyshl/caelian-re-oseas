@@ -183,21 +183,21 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     ...commandBase,
     type: z.literal('quest.commission-progress'),
     payload: z.object({
-      questId: z.string().trim().min(1).max(220),
+      questId: z.string().trim().min(1).max(2048),
     }),
   }),
   z.object({
     ...commandBase,
     type: z.literal('quest.commission-complete'),
     payload: z.object({
-      questId: z.string().trim().min(1).max(220),
+      questId: z.string().trim().min(1).max(2048),
     }),
   }),
   z.object({
     ...commandBase,
     type: z.literal('quest.abandon'),
     payload: z.object({
-      questId: z.string().trim().min(1).max(220),
+      questId: z.string().trim().min(1).max(2048),
     }),
   }),
   z.object({
@@ -325,7 +325,9 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       source: z.string().trim().min(1).max(180).optional(),
       storyTriggered: z.boolean().optional().default(false),
       companionPresent: z.boolean().optional().default(false),
-      relatedQuestId: z.string().trim().max(220).optional(),
+      // Managed quest ids include the encoded SillyTavern chat id and can be
+      // substantially longer than user-authored ids.
+      relatedQuestId: z.string().trim().max(2048).optional(),
       workshopTest: z
         .object({
           professionId: z.string().trim().min(1).max(100),
@@ -358,14 +360,14 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     ...commandBase,
     type: z.literal('battle.explore'),
     payload: z.object({
-      relatedQuestId: z.string().trim().max(220).optional(),
+      relatedQuestId: z.string().trim().max(2048).optional(),
     }),
   }),
   z.object({
     ...commandBase,
     type: z.literal('battle.play-card'),
     payload: z.object({
-      battleId: z.string().trim().min(1).max(220),
+      battleId: z.string().trim().min(1).max(2048),
       handIndex: z.number().int().min(0).max(99),
       targetIndex: z.number().int().min(0).max(20).optional(),
       allyTargetId: z.enum(['player', 'caelian']).optional().default('player'),
@@ -375,7 +377,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     ...commandBase,
     type: z.literal('battle.choose-astrology-card'),
     payload: z.object({
-      battleId: z.string().trim().min(1).max(220),
+      battleId: z.string().trim().min(1).max(2048),
       choiceIndex: z.number().int().min(0).max(20),
     }),
   }),
@@ -383,7 +385,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     ...commandBase,
     type: z.literal('battle.use-item'),
     payload: z.object({
-      battleId: z.string().trim().min(1).max(220),
+      battleId: z.string().trim().min(1).max(2048),
       itemId: z.string().trim().min(1).max(180),
       targetIndex: z.number().int().min(0).max(20).optional(),
     }),
@@ -399,35 +401,35 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     ...commandBase,
     type: z.literal('battle.end-turn'),
     payload: z.object({
-      battleId: z.string().trim().min(1).max(220),
+      battleId: z.string().trim().min(1).max(2048),
     }),
   }),
   z.object({
     ...commandBase,
     type: z.literal('battle.discard-hand'),
     payload: z.object({
-      battleId: z.string().trim().min(1).max(220),
+      battleId: z.string().trim().min(1).max(2048),
     }),
   }),
   z.object({
     ...commandBase,
     type: z.literal('battle.surrender'),
     payload: z.object({
-      battleId: z.string().trim().min(1).max(220),
+      battleId: z.string().trim().min(1).max(2048),
     }),
   }),
   z.object({
     ...commandBase,
     type: z.literal('battle.finish'),
     payload: z.object({
-      battleId: z.string().trim().min(1).max(220),
+      battleId: z.string().trim().min(1).max(2048),
     }),
   }),
   z.object({
     ...commandBase,
     type: z.literal('battle.claim-reward'),
     payload: z.object({
-      battleId: z.string().trim().min(1).max(220),
+      battleId: z.string().trim().min(1).max(2048),
       kind: z.enum(['card', 'equipment', 'relic']),
       choiceId: z.string().trim().min(1).max(180).optional(),
     }),

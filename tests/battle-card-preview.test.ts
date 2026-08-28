@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { previewBattleCard } from '@/battle/card-preview';
+import { cardNameHistoryKey } from '@/battle/card-history';
 import type { CardDefinition } from '@/content/types';
 import type {
   BattleCompanionState,
@@ -424,6 +425,72 @@ describe('战斗卡牌预览', () => {
       }),
     );
     expect(previewBattleCard(weaponMaster, repeated, 0).enemyDamage[0]).toBe(10);
+  });
+
+  it('按显示名称预览本轮同名与上一张同名条件', () => {
+    const repeatedByName: CardDefinition = {
+      id: 'custom_echo_current',
+      name: '回声斩',
+      type: 'attack',
+      cost: 1,
+      rarity: 'common',
+      description: '',
+      effects: [
+        {
+          type: 'conditional_group',
+          logic: 'and',
+          conditions: [
+            { type: 'same_card_played_this_turn' },
+            { type: 'previous_card_same_name' },
+          ],
+          then_effects: [{ type: 'damage', value: 9, target: 'enemy' }],
+          else_effects: [{ type: 'damage', value: 2, target: 'enemy' }],
+        },
+      ],
+    };
+    const history = state(
+      player({
+        attack: 0,
+        cardsPlayedThisTurn: { custom_echo_other: 1 },
+        cardNamesPlayedThisTurn: { [cardNameHistoryKey('回声斩')]: 1 },
+        lastCardId: 'custom_echo_other',
+        lastCardName: '回声斩',
+      }),
+    );
+    expect(previewBattleCard(history, repeatedByName, 0).enemyDamage[0]).toBe(9);
+
+    history.player.lastCardName = '佯攻';
+    expect(previewBattleCard(history, repeatedByName, 0).enemyDamage[0]).toBe(2);
+
+    const sameNameOnly: CardDefinition = {
+      ...repeatedByName,
+      id: 'custom_echo_same_only',
+      effects: [
+        {
+          type: 'conditional_group',
+          conditions: [{ type: 'same_card_played_this_turn' }],
+          then_effects: [{ type: 'damage', value: 5, target: 'enemy' }],
+          else_effects: [{ type: 'damage', value: 1, target: 'enemy' }],
+        },
+      ],
+    };
+    expect(previewBattleCard(history, sameNameOnly, 0).enemyDamage[0]).toBe(5);
+
+    const previousNameOnly: CardDefinition = {
+      ...repeatedByName,
+      id: 'custom_echo_previous_only',
+      effects: [
+        {
+          type: 'conditional_group',
+          conditions: [{ type: 'previous_card_same_name' }],
+          then_effects: [{ type: 'damage', value: 7, target: 'enemy' }],
+          else_effects: [{ type: 'damage', value: 2, target: 'enemy' }],
+        },
+      ],
+    };
+    expect(previewBattleCard(history, previousNameOnly, 0).enemyDamage[0]).toBe(2);
+    history.player.lastCardName = '回声斩';
+    expect(previewBattleCard(history, previousNameOnly, 0).enemyDamage[0]).toBe(7);
   });
 
   it('只把 type=spell 当作法术，不再被卡名或职业文字误判', () => {

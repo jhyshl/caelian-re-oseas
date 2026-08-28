@@ -431,11 +431,15 @@ export interface BattlePlayerState {
   lifesteal?: number;
   manualDiscardTurn?: number;
   cardsPlayedThisTurn?: Record<string, number>;
+  /** Display-name history used by same-name conditions; older saves may omit it. */
+  cardNamesPlayedThisTurn?: Record<string, number>;
   abyssEchoBatches?: Array<{ turn: number; value: number }>;
   /** Last elemental affinity played by an Elementalist; non-element cards do not clear it. */
   lastElementalistElement?: string;
   lastCardId?: string;
   lastCardType?: string;
+  /** Display name of the last player-played card; older saves may omit it. */
+  lastCardName?: string;
   summonsLost?: number;
   /** Independently stacked Magician card cases that create blanks on future turns. */
   blankGenerators?: BattleBlankGeneratorState[];

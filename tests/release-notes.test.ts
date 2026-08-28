@@ -8,15 +8,19 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.53');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.54');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.53');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.54');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('浏览器本地懒加载');
-    expect(latestText).toContain('战斗卡牌');
-    expect(latestText).toContain('在线构建地址');
+    expect(latestText).toContain('学院主线最终魔像战');
+    expect(latestText).toContain('本轮使用过同名卡牌');
+    expect(latestText).toContain('第 10 场必定触发');
+    expect(
+      releases.find((release) => release.version === '0.2.0-alpha.53')
+        ?.changes.join('\n'),
+    ).toContain('浏览器本地懒加载');
     expect(
       releases.find((release) => release.version === '0.2.0-alpha.52')
         ?.changes.join('\n'),
@@ -40,10 +44,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.7.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.8.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.8',
       'Beta 1.7',
       'Beta 1.6',
       'Beta 1.5',
@@ -54,17 +59,14 @@ describe('release notes', () => {
       'Beta 1.0',
     ]);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('同名限时召唤物');
-    expect(latestText).toContain('深渊回声');
-    expect(latestText).toContain('中毒×2');
-    expect(latestText).toContain('小狗主题');
-    expect(latestText).toContain('冒险者邮箱');
-    expect(latestText).toContain('狗爪');
-    expect(latestText).toContain('旅程主题');
-    expect(latestText).toContain('九宫格切片');
-    expect(latestText).toContain('浏览器本地懒加载');
-    expect(latestText).toContain('战斗卡牌牌面');
-    expect(latestText).toContain('不会把图片或玩家数据上传到额外图床');
+    expect(latestText).toContain('学院主线最终魔像战');
+    expect(latestText).toContain('上一张使用的是同名卡牌');
+    expect(latestText).toContain('首领战不会消耗保底进度');
+    const beta17Text = releases
+      .find((release) => release.version === '1.7.0-beta.1')
+      ?.changes.join('\n');
+    expect(beta17Text).toContain('同名限时召唤物');
+    expect(beta17Text).toContain('浏览器本地懒加载');
     expect(releases.some((release) => release.label.startsWith('Alpha'))).toBe(
       false,
     );

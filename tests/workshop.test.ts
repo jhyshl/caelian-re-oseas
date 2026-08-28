@@ -82,6 +82,31 @@ describe('旧版创意工坊规则', () => {
     expect(cardScore({ effects: [hpCondition!] })).toBeLessThan(20);
   });
 
+  it('保留两种同名卡牌历史条件并纳入强度折扣', () => {
+    const normalized = normalizeCardEffect({
+      type: 'conditional_group',
+      logic: 'and',
+      conditions: [
+        { type: 'same_card_played_this_turn' },
+        { type: 'previous_card_same_name' },
+      ],
+      then_effects: [{ type: 'damage', value: 20, target: 'enemy' }],
+      else_effects: [{ type: 'shield', value: 2, target: 'self' }],
+    });
+
+    expect(normalized?.conditions).toEqual([
+      expect.objectContaining({
+        type: 'same_card_played_this_turn',
+        discount: 0.78,
+      }),
+      expect.objectContaining({
+        type: 'previous_card_same_name',
+        discount: 0.72,
+      }),
+    ]);
+    expect(cardScore({ effects: [normalized!] })).toBeCloseTo(11.232);
+  });
+
   it('拒绝同一卡牌的重复同类效果', () => {
     expect(() =>
       normalizeWorkshopCard(

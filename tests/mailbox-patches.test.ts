@@ -329,6 +329,79 @@ describe('Achievement patch mailbox', () => {
     ).toBe(true);
   });
 
+  it('金铲子连续九次未触发后第十场保底，首领与未携带不消耗计数', async () => {
+    const { database, repository } = createRepository();
+    const profile = await repository.ensureProfile('patch-battle-shovel-pity');
+    await repository.execute(profile.id, {
+      id: 'patch-battle-shovel-pity-player',
+      type: 'player.create',
+      payload: {
+        name: '金铲子保底测试',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    await repository.syncPatchEntitlements(profile.id, [
+      { id: 'repo-reward', opened: true },
+    ]);
+    const counterId = `${profile.id}:battle.goldenShovelMisses`;
+    const shovelBattle = new BattleRepository(database, () => 0.99);
+    await shovelBattle.prepare();
+
+    await shovelBattle.start(profile.id, {
+      monsterId: 'mon_slime',
+      count: 2,
+    });
+    expect((await repository.snapshot(profile.id)).battle?.state.status).toBe(
+      'ongoing',
+    );
+    expect((await database.achievementCounters.get(counterId))?.value).toBe(1);
+
+    await database.battleSessions.clear();
+    await database.achievementCounters.put({
+      id: counterId,
+      profileId: profile.id,
+      key: 'battle.goldenShovelMisses',
+      value: 9,
+      updatedAt: Date.now(),
+    });
+    await shovelBattle.start(profile.id, {
+      monsterId: 'mon_slime',
+      count: 2,
+    });
+    const guaranteed = (await repository.snapshot(profile.id)).battle!.state;
+    expect(guaranteed.status).toBe('victory');
+    expect(guaranteed.log.some((entry) => entry.text.includes('第 10 场'))).toBe(
+      true,
+    );
+    expect(await database.achievementCounters.get(counterId)).toMatchObject({
+      value: 0,
+      data: { lastTriggered: true, guaranteed: true },
+    });
+
+    await database.battleSessions.clear();
+    await database.achievementCounters.update(counterId, { value: 9 });
+    await shovelBattle.start(profile.id, {
+      monsterId: 'boss_academy_arcane_golem',
+      count: 1,
+    });
+    expect((await repository.snapshot(profile.id)).battle?.state.status).toBe(
+      'ongoing',
+    );
+    expect((await database.achievementCounters.get(counterId))?.value).toBe(9);
+
+    await database.battleSessions.clear();
+    await database.ownedRelics.update(
+      `${profile.id}:special_golden_shovel`,
+      { carried: false },
+    );
+    await shovelBattle.start(profile.id, {
+      monsterId: 'mon_slime',
+      count: 1,
+    });
+    expect((await database.achievementCounters.get(counterId))?.value).toBe(9);
+  });
+
   it('银叉子未携带也能让特产以20%概率半价，并保留第十次保底计数', async () => {
     const { database, repository } = createRepository();
     const profile = await repository.ensureProfile('patch-market-fork');

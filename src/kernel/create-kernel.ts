@@ -13,6 +13,7 @@ import type {
   RuntimeStatus,
 } from '@/domain/types';
 import { EventBus } from '@/kernel/event-bus';
+import { commandId } from '@/kernel/ids';
 import { PanelRegistry } from '@/kernel/panel-registry';
 import type {
   CaelianPublicApi,
@@ -777,7 +778,7 @@ export class CaelianKernel {
         return this.trackedQuestView(profileId, quest, tracker, definition);
       }
       const result = await this.execute({
-        id: `quest-battle:${quest.id}:${action.monsterId}:${Date.now()}`,
+        id: commandId('quest-battle'),
         type: 'battle.start',
         payload: {
           monsterId: action.monsterId,
@@ -1410,7 +1411,7 @@ export class CaelianKernel {
     const battle = (await this.repository.snapshot(this.profileId)).battle;
     if (!battle || battle.state.status === 'ongoing') return false;
     const result = await this.execute({
-      id: `battle-finish-recovery:${battle.id}`,
+      id: `battle-finish-recovery:${this.hashJson(battle.id)}:${battle.updatedAt}`,
       type: 'battle.finish',
       payload: { battleId: battle.id },
     });

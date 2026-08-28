@@ -194,6 +194,8 @@ const CONDITION_DISCOUNTS: Record<string, number> = {
   self_not_full_hp: 0.88,
   has_summon: 0.82,
   no_summon: 0.95,
+  same_card_played_this_turn: 0.78,
+  previous_card_same_name: 0.72,
   spend_mp: 0.74,
   spend_hp: 0.9,
   discard: 0.78,

@@ -32,6 +32,7 @@ import {
   childEffects,
   isBattleUsableEffect,
 } from '@/battle/consumables';
+import { cardNameHistoryKey } from '@/battle/card-history';
 import { createCaelianCompanion } from '@/battle/caelian-companion';
 import {
   aggregateEquipmentStats,
@@ -542,7 +543,8 @@ export class BattleRepository {
       updatedAt: now,
     };
     await this.db.battleSessions.add(session);
-    const specialVictory = this.applyBattleStartRelics(
+    const specialVictory = await this.applyBattleStartRelics(
+      profileId,
       state,
       ownedRelics
         .filter((entry) => entry.carried)
@@ -1014,6 +1016,7 @@ export class BattleRepository {
     state.turn += 1;
     state.phase = 'player';
     state.player.cardsPlayedThisTurn = {};
+    state.player.cardNamesPlayedThisTurn = {};
     if (state.player.subclass === 'arcane_mage') this.resolveChants(state);
     this.syncAbyssEcho(state);
     if (state.player.subclass === 'blacksmith') {
@@ -1424,6 +1427,7 @@ export class BattleRepository {
         this.clamp(player.lifesteal, 0, LIFESTEAL_CAP) +
         Math.max(0, bonus.lifesteal),
       cardsPlayedThisTurn: {},
+      cardNamesPlayedThisTurn: {},
       abyssEchoBatches: [],
       lastElementalistElement: '',
       summonsLost: 0,
@@ -5052,13 +5056,28 @@ export class BattleRepository {
         return state.player.lastCardType === 'spell';
       case 'previous_card_same_name':
         return Boolean(
-          state.player.lastCardId &&
-          this.cards?.[state.player.lastCardId]?.name ===
-            this.activeMechanismCard?.name,
+          this.activeMechanismCard?.name &&
+          (state.player.lastCardName === this.activeMechanismCard.name ||
+            (!state.player.lastCardName &&
+              state.player.lastCardId &&
+              this.cards?.[state.player.lastCardId]?.name ===
+                this.activeMechanismCard.name)),
         );
       case 'same_card_played_this_turn': {
-        const cardId = this.activeMechanismCard?.id ?? '';
-        return (state.player.cardsPlayedThisTurn?.[cardId] ?? 0) > 0;
+        const current = this.activeMechanismCard;
+        if (!current) return false;
+        if (
+          (state.player.cardNamesPlayedThisTurn?.[
+            cardNameHistoryKey(current.name)
+          ] ?? 0) > 0
+        ) {
+          return true;
+        }
+        if (state.player.cardNamesPlayedThisTurn) return false;
+        return Object.entries(state.player.cardsPlayedThisTurn ?? {}).some(
+          ([playedId, count]) =>
+            count > 0 && this.cards?.[playedId]?.name === current.name,
+        );
       }
       case 'summon_died_this_battle':
         return (state.player.summonsLost ?? 0) > 0;
@@ -5420,7 +5439,10 @@ export class BattleRepository {
         this.addClassResource(state, 'hunter_prepare');
       }
     } else if (subclass === 'weapon_master') {
-      if (cardId === 'wmst_stance_reset') state.player.cardsPlayedThisTurn = {};
+      if (cardId === 'wmst_stance_reset') {
+        state.player.cardsPlayedThisTurn = {};
+        state.player.cardNamesPlayedThisTurn = {};
+      }
       if (card.type === 'attack') {
         const counts = (state.player.cardsPlayedThisTurn ??= {});
         counts[cardId] = (counts[cardId] ?? 0) + 1;
@@ -5428,8 +5450,28 @@ export class BattleRepository {
         this.spendEffectCharge(state.player.buffs, 'weapon_master_no_combo');
       }
     }
+    if (cardId !== 'wmst_stance_reset') {
+      if (!state.player.cardNamesPlayedThisTurn) {
+        const migratedCounts: Record<string, number> = {};
+        for (const [playedId, rawCount] of Object.entries(
+          state.player.cardsPlayedThisTurn ?? {},
+        )) {
+          const playedName = this.cards?.[playedId]?.name;
+          const count = Math.max(0, Math.floor(this.number(rawCount)));
+          if (!playedName || count === 0) continue;
+          const historyKey = cardNameHistoryKey(playedName);
+          migratedCounts[historyKey] =
+            (migratedCounts[historyKey] ?? 0) + count;
+        }
+        state.player.cardNamesPlayedThisTurn = migratedCounts;
+      }
+      const nameCounts = state.player.cardNamesPlayedThisTurn;
+      const historyKey = cardNameHistoryKey(card.name);
+      nameCounts[historyKey] = (nameCounts[historyKey] ?? 0) + 1;
+    }
     state.player.lastCardId = cardId;
     state.player.lastCardType = card.type;
+    state.player.lastCardName = card.name;
   }
 
   private cardHasNestedEffect(
@@ -5618,10 +5660,11 @@ export class BattleRepository {
     }
   }
 
-  private applyBattleStartRelics(
+  private async applyBattleStartRelics(
+    profileId: string,
     state: LocalBattleState,
     carriedRelicIds: string[],
-  ): boolean {
+  ): Promise<boolean> {
     const carried = new Set(carriedRelicIds);
     const alive = () => this.aliveEnemies(state);
 
@@ -5682,32 +5725,67 @@ export class BattleRepository {
 
     if (carried.has('special_golden_shovel')) {
       const enemies = alive();
-      const hasBoss = enemies.some((enemy) => {
+      const hasBoss = state.enemies.some((enemy) => {
         const definition = this.monsters?.[enemy.definitionId];
         return definition ? this.isBossMonster(definition) : false;
       });
-      if (!hasBoss && this.random() < 0.1) {
-        for (const enemy of enemies) enemy.hp = 0;
+      if (hasBoss) {
         this.log(
           state,
           'system',
-          '金铲子闪闪发光，战斗直接判定为胜利！',
+          '金铲子遇到首领怪物，没有触发。',
         );
-        this.animation(state, {
-          kind: 'status',
-          sourceSide: 'system',
-          sourceId: 'special_golden_shovel',
-          targetSide: 'enemy',
-          label: '金铲子 · 直接胜利',
+      } else if (enemies.length > 0) {
+        const key = 'battle.goldenShovelMisses';
+        const id = `${profileId}:${key}`;
+        const current = await this.db.achievementCounters.get(id);
+        const misses = Math.max(
+          0,
+          Math.floor(this.number(current?.value)),
+        );
+        const definition = this.relics?.special_golden_shovel;
+        const chance = this.clamp(
+          this.number(definition?.effect?.chance, 0.1),
+          0,
+          1,
+        );
+        const pity = Math.max(
+          1,
+          Math.floor(this.number(definition?.effect?.pity, 10)),
+        );
+        const guaranteed = misses >= pity - 1;
+        const hit = guaranteed || this.random() < chance;
+        await this.db.achievementCounters.put({
+          id,
+          profileId,
+          key,
+          value: hit ? 0 : misses + 1,
+          data: { lastTriggered: hit, guaranteed: hit && guaranteed },
+          updatedAt: Date.now(),
         });
-      } else {
-        this.log(
-          state,
-          'system',
-          hasBoss
-            ? '金铲子遇到首领怪物，没有触发。'
-            : '金铲子轻轻一挥，但这次没有挖到胜利。',
-        );
+        if (hit) {
+          for (const enemy of enemies) enemy.hp = 0;
+          this.log(
+            state,
+            'system',
+            guaranteed
+              ? `金铲子积蓄的好运终于爆发，第 ${pity} 场战斗直接判定为胜利！`
+              : '金铲子闪闪发光，战斗直接判定为胜利！',
+          );
+          this.animation(state, {
+            kind: 'status',
+            sourceSide: 'system',
+            sourceId: 'special_golden_shovel',
+            targetSide: 'enemy',
+            label: '金铲子 · 直接胜利',
+          });
+        } else {
+          this.log(
+            state,
+            'system',
+            '金铲子轻轻一挥，但这次没有挖到胜利。',
+          );
+        }
       }
     }
 

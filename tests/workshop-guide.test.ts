@@ -50,6 +50,9 @@ describe('创意工坊 AI 制作手册', () => {
     );
     expect(guide).toContain('`hand_limit_bonus`：`value × 3`');
     expect(guide).toContain('空白牌仅存在于本场战斗');
+    expect(guide).toContain('`same_card_played_this_turn=0.78`');
+    expect(guide).toContain('`previous_card_same_name=0.72`');
+    expect(guide).toContain('两个同名卡牌条件都以当前正在使用的卡牌名称为准');
 
     expect([29, 30, 58, 90, 130].map(rarityFromScore)).toEqual([
       'common',

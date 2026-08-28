@@ -1426,9 +1426,10 @@ describe('CaelianKernel integration', () => {
         is_user: false,
       },
     ];
+    const longChatId = `academy-golem-test-${'学院剧情存档'.repeat(12)}`;
     window.SillyTavern = {
       getContext: () => ({
-        chatId: 'academy-golem-test-chat',
+        chatId: longChatId,
         name1: '测试冒险者',
         chat,
         setExtensionPrompt: vi.fn(),

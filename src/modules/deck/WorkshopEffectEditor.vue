@@ -145,6 +145,8 @@ const conditions = [
   ['self_not_full_hp', '自身非满生命'],
   ['has_summon', '拥有召唤物'],
   ['no_summon', '没有召唤物'],
+  ['same_card_played_this_turn', '本轮使用过同名卡牌'],
+  ['previous_card_same_name', '上一张使用的是同名卡牌'],
   ['spend_mp', '支付 MP（换取可支配强度）'],
   ['spend_hp', '支付 HP（换取可支配强度）'],
   ['discard', '弃置手牌'],

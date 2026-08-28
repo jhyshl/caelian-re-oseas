@@ -3,6 +3,7 @@ import { loadMonsterCatalog } from '@/content/catalogs/battle';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { BattleRepository } from '@/storage/repositories/battle-repository';
+import { cardNameHistoryKey } from '@/battle/card-history';
 import { GameRepository } from '@/storage/repository';
 import { saveWorkshopPack } from '@/workshop';
 
@@ -1386,6 +1387,164 @@ describe('本地战斗仓库', () => {
         entry.text.includes('支付 5 HP 作为卡牌效果代价'),
       ),
     ).toBe(true);
+  });
+
+  it('让非武器大师职业按名称判定本轮同名牌与上一张同名牌', async () => {
+    const cards = Array.from({ length: 8 }, (_, index) => ({
+      id: `custom_same_name_${index}`,
+      name: index === 0 ? '回声斩' : `历史测试牌${index}`,
+      type: 'attack',
+      cost: 1,
+      effects:
+        index === 0
+          ? [
+              {
+                type: 'conditional_group',
+                conditions: [{ type: 'same_card_played_this_turn' }],
+                then_effects: [{ type: 'damage', value: 5, target: 'enemy' }],
+                else_effects: [{ type: 'damage', value: 1, target: 'enemy' }],
+              },
+            ]
+          : index === 2
+            ? [
+                {
+                  type: 'conditional_group',
+                  conditions: [{ type: 'previous_card_same_name' }],
+                  then_effects: [{ type: 'damage', value: 7, target: 'enemy' }],
+                  else_effects: [{ type: 'damage', value: 2, target: 'enemy' }],
+                },
+              ]
+          : [{ type: 'damage', value: 0, target: 'enemy' }],
+    }));
+    saveWorkshopPack({
+      format: 'caelian_workshop_class_pack',
+      version: 1,
+      packName: '同名历史条件测试包',
+      classes: [
+        {
+          id: 'custom_same_name_class',
+          main: 'freelance',
+          name: '回声测试师',
+          talent: { name: '无', description: '无', effects: [] },
+          cards,
+          cardPool: [...cards, ...cards].map((card) => card.id),
+          starterDeck: Array.from(
+            { length: 15 },
+            (_, index) => cards[index % cards.length]!.id,
+          ),
+        },
+      ],
+    });
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-same-name-condition-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:same-name-condition');
+    await game.execute(profile.id, {
+      id: 'same-name-condition-player-create',
+      type: 'player.create',
+      payload: {
+        name: '同名条件测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    const battles = new BattleRepository(database, () => 0);
+    await battles.prepare();
+    await battles.start(profile.id, {
+      workshopTest: {
+        professionId: 'custom_same_name_class',
+        mechanismIds: [],
+        dummyCount: 1,
+        dummyHp: 1_000,
+        dummyAttack: 0,
+        dummyDefense: 0,
+        dummyInvincible: false,
+        dummyAttackEnabled: false,
+        autoRespawn: false,
+        playerInvincible: true,
+        attributes: {
+          hpMax: 40,
+          mpMax: 30,
+          attack: 0,
+          defense: 0,
+          speed: 0,
+          actionPointsPerTurn: 20,
+        },
+      },
+    });
+    let session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .first())!;
+    session.state.player.hand = [
+      { instanceId: 'same-name:first', cardId: cards[0]!.id },
+      { instanceId: 'same-name:filler', cardId: cards[1]!.id },
+      { instanceId: 'same-name:separated', cardId: cards[0]!.id },
+      { instanceId: 'previous-name:first', cardId: cards[2]!.id },
+      { instanceId: 'previous-name:consecutive', cardId: cards[2]!.id },
+    ];
+    session.state.player.drawPile = [];
+    session.state.player.discardPile = [];
+    session.state.player.ap = 20;
+    session.state.player.apMax = 20;
+    session.state.player.attack = 0;
+    await database.battleSessions.put(session);
+
+    let hpBefore = session.state.enemies[0]!.hp;
+    for (const expectedDamage of [1, 0, 5, 2, 7]) {
+      await battles.playCard(profile.id, {
+        battleId: session.id,
+        handIndex: 0,
+        targetIndex: 0,
+      });
+      session = (await database.battleSessions.get(session.id))!;
+      expect(hpBefore - session.state.enemies[0]!.hp).toBe(expectedDamage);
+      hpBefore = session.state.enemies[0]!.hp;
+    }
+    expect(session.state.player.cardNamesPlayedThisTurn).toMatchObject({
+      [cardNameHistoryKey('回声斩')]: 2,
+      [cardNameHistoryKey('历史测试牌1')]: 1,
+      [cardNameHistoryKey('历史测试牌2')]: 2,
+    });
+    expect(session.state.player.lastCardName).toBe('历史测试牌2');
+
+    await battles.endTurn(profile.id, session.id);
+    session = (await database.battleSessions.get(session.id))!;
+    expect(session.state.player.cardNamesPlayedThisTurn).toEqual({});
+
+    session.state.player.cardsPlayedThisTurn = { [cards[0]!.id]: 1 };
+    session.state.player.cardNamesPlayedThisTurn = undefined;
+    session.state.player.hand = [
+      { instanceId: 'same-name:migration-filler', cardId: cards[1]!.id },
+      { instanceId: 'same-name:migration-check', cardId: cards[0]!.id },
+    ];
+    session.state.player.drawPile = [];
+    session.state.player.discardPile = [];
+    session.state.player.ap = 20;
+    session.state.enemies[0]!.hp = 1_000;
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    session = (await database.battleSessions.get(session.id))!;
+    hpBefore = session.state.enemies[0]!.hp;
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+    session = (await database.battleSessions.get(session.id))!;
+    expect(hpBefore - session.state.enemies[0]!.hp).toBe(5);
+    expect(session.state.player.cardNamesPlayedThisTurn).toMatchObject({
+      [cardNameHistoryKey('回声斩')]: 2,
+      [cardNameHistoryKey('历史测试牌1')]: 1,
+    });
   });
 
   it('开战前按实际持有数量拒绝旧存档中的非法重复卡牌', async () => {

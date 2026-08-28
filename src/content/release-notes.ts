@@ -9,6 +9,16 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.54',
+    label: 'Alpha 54',
+    releasedAt: '2026-08-28',
+    changes: [
+      '修复学院主线最终魔像战在中文或较长聊天名称下点击“迎战”提示输入无效的问题；任务按钮现在会稳定创建并进入对应战斗，旧存档的战斗收尾也可正常恢复。',
+      '创意工坊积木条件组新增“本轮使用过同名卡牌”和“上一张使用的是同名卡牌”：按卡牌名称而非实例编号判断，并适用于全部自制职业。',
+      '金铲子赠送藏品的非首领战直接胜利效果新增保底：连续 9 场符合条件的战斗未触发时，第 10 场必定触发；首领战不会消耗保底进度。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.53',
     label: 'Alpha 53',
     releasedAt: '2026-08-28',
@@ -579,6 +589,16 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 ] as const;
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.8.0-beta.1',
+    label: 'Beta 1.8',
+    releasedAt: '2026-08-28',
+    changes: [
+      '修复学院主线最终魔像战在中文或较长聊天名称下点击“迎战”提示输入无效的问题；任务按钮现在会稳定创建并进入对应战斗，旧存档的战斗收尾也可正常恢复。',
+      '创意工坊积木条件组新增“本轮使用过同名卡牌”和“上一张使用的是同名卡牌”：按卡牌名称而非实例编号判断，并适用于全部自制职业。',
+      '金铲子赠送藏品的非首领战直接胜利效果新增保底：连续 9 场符合条件的战斗未触发时，第 10 场必定触发；首领战不会消耗保底进度。',
+    ],
+  },
   {
     version: '1.7.0-beta.1',
     label: 'Beta 1.7',
