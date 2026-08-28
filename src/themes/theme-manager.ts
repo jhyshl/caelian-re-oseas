@@ -40,6 +40,10 @@ import journeySettingsIcon from '@/assets/themes/journey/icons-rgba/settings.png
 import journeySurveysIcon from '@/assets/themes/journey/icons-rgba/surveys.png';
 import journeyWorldbookIcon from '@/assets/themes/journey/icons-rgba/worldbook.png';
 import journeySectionFrame from '@/assets/themes/journey/section-frame-alpha.png';
+import {
+  loadLocalAssetUrl,
+  resolvedLocalAssetUrl,
+} from '@/assets/local-asset-cache';
 import type { PanelName } from '@/kernel/public-api';
 import type {
   CaelianThemeId,
@@ -49,6 +53,7 @@ import type {
 
 export const THEME_ENTITLEMENTS_EVENT =
   'caelian:theme-entitlements-changed';
+export const THEME_ASSETS_EVENT = 'caelian:theme-assets-changed';
 export const TAIL_TOWN_THEME_ID = 'tail-town-dog' as const;
 export const JOURNEY_THEME_ID = 'journey-ticket' as const;
 
@@ -102,6 +107,27 @@ const JOURNEY_ICON_ASSETS: Readonly<
   surveys: { url: journeySurveysIcon },
   'release-notes': { url: journeyReleaseNotesIcon },
 };
+
+interface ThemeCssAsset {
+  property: string;
+  sourceUrl: string;
+}
+
+const TAIL_TOWN_CSS_ASSETS: readonly ThemeCssAsset[] = [
+  { property: '--ca-tail-town-launcher-image', sourceUrl: launcherBone },
+  { property: '--ca-tail-town-paw-pattern', sourceUrl: pawPattern },
+];
+
+const JOURNEY_CSS_ASSETS: readonly ThemeCssAsset[] = [
+  { property: '--ca-journey-launcher-ticket', sourceUrl: journeyTicket },
+  { property: '--ca-journey-launcher-stub', sourceUrl: journeyTicketStub },
+  { property: '--ca-journey-pattern', sourceUrl: journeyPattern },
+  { property: '--ca-journey-menu-frame', sourceUrl: journeyMenuFrame },
+  { property: '--ca-journey-menu-cell', sourceUrl: journeyMenuCell },
+  { property: '--ca-journey-section-frame', sourceUrl: journeySectionFrame },
+];
+
+const themeLoadRevision = new WeakMap<Window, number>();
 
 const DEFAULT_THEME: CaelianThemeOption = {
   id: 'default',
@@ -161,10 +187,12 @@ export function listAvailableThemes(host: Window): CaelianThemeOption[] {
     { ...DEFAULT_THEME },
     {
       ...TAIL_TOWN_THEME,
+      previewUrl: resolvedLocalAssetUrl(launcherBone, host),
       locked: !entitlements.has(TAIL_TOWN_THEME_ID),
     },
     {
       ...JOURNEY_THEME,
+      previewUrl: resolvedLocalAssetUrl(journeyTicket, host),
       locked: !entitlements.has(JOURNEY_THEME_ID),
     },
   ];
@@ -192,6 +220,12 @@ function cssUrl(url: string): string {
   return `url("${url.replaceAll('"', '%22')}")`;
 }
 
+function dispatchThemeAssetsChanged(host: Window): void {
+  const event = host.document.createEvent('CustomEvent');
+  event.initCustomEvent(THEME_ASSETS_EVENT, false, false, undefined);
+  host.dispatchEvent(event);
+}
+
 export function applyTheme(
   host: Window,
   preferred: CaelianThemeId | undefined,
@@ -204,41 +238,10 @@ export function applyTheme(
     body.dataset.caelianTheme = active;
     if (active === TAIL_TOWN_THEME_ID) {
       body.classList.add('caelian-theme-tail-town');
-      body.style.setProperty(
-        '--ca-tail-town-launcher-image',
-        cssUrl(launcherBone),
-      );
-      body.style.setProperty(
-        '--ca-tail-town-paw-pattern',
-        cssUrl(pawPattern),
-      );
     } else if (active === JOURNEY_THEME_ID) {
       body.classList.add('caelian-theme-journey');
-      body.style.setProperty(
-        '--ca-journey-launcher-ticket',
-        cssUrl(journeyTicket),
-      );
-      body.style.setProperty(
-        '--ca-journey-launcher-stub',
-        cssUrl(journeyTicketStub),
-      );
-      body.style.setProperty(
-        '--ca-journey-pattern',
-        cssUrl(journeyPattern),
-      );
-      body.style.setProperty(
-        '--ca-journey-menu-frame',
-        cssUrl(journeyMenuFrame),
-      );
-      body.style.setProperty(
-        '--ca-journey-menu-cell',
-        cssUrl(journeyMenuCell),
-      );
-      body.style.setProperty(
-        '--ca-journey-section-frame',
-        cssUrl(journeySectionFrame),
-      );
     }
+    void hydrateThemeAssets(host, active);
   }
   return { active, available: listAvailableThemes(host) };
 }
@@ -263,15 +266,75 @@ function clearThemeAssets(body: HTMLElement): void {
 }
 
 export function themeMenuIconAsset(
+  host: Window,
   theme: CaelianThemeId,
   panel: PanelName,
 ): ThemeMenuIconAsset | undefined {
   if (theme === TAIL_TOWN_THEME_ID) {
-    const url = TAIL_TOWN_ICON_URLS[panel];
+    const sourceUrl = TAIL_TOWN_ICON_URLS[panel];
+    const url = sourceUrl
+      ? resolvedLocalAssetUrl(sourceUrl, host)
+      : undefined;
     return url ? { url } : undefined;
   }
-  if (theme === JOURNEY_THEME_ID) return JOURNEY_ICON_ASSETS[panel];
+  if (theme === JOURNEY_THEME_ID) {
+    const asset = JOURNEY_ICON_ASSETS[panel];
+    if (!asset) return undefined;
+    const url = resolvedLocalAssetUrl(asset.url, host);
+    return url ? { ...asset, url } : undefined;
+  }
   return undefined;
+}
+
+async function hydrateThemeAssets(
+  host: Window,
+  theme: CaelianThemeId,
+): Promise<void> {
+  const revision = (themeLoadRevision.get(host) ?? 0) + 1;
+  themeLoadRevision.set(host, revision);
+  if (theme === 'default') return;
+
+  const cssAssets = theme === TAIL_TOWN_THEME_ID
+    ? TAIL_TOWN_CSS_ASSETS
+    : JOURNEY_CSS_ASSETS;
+  const iconAssets = theme === TAIL_TOWN_THEME_ID
+    ? Object.values(TAIL_TOWN_ICON_URLS)
+    : Object.values(JOURNEY_ICON_ASSETS).map((asset) => asset.url);
+
+  for (const asset of cssAssets) {
+    const url = await loadLocalAssetUrl(asset.sourceUrl, host);
+    const body = host.document.body;
+    if (
+      themeLoadRevision.get(host) !== revision ||
+      body?.dataset.caelianTheme !== theme
+    ) return;
+    body.style.setProperty(asset.property, cssUrl(url));
+  }
+
+  await Promise.all(iconAssets.map((url) => loadLocalAssetUrl(url, host)));
+  if (
+    themeLoadRevision.get(host) === revision &&
+    host.document.body?.dataset.caelianTheme === theme
+  ) {
+    dispatchThemeAssetsChanged(host);
+  }
+}
+
+export async function prepareThemePreviews(host: Window): Promise<void> {
+  await Promise.all([
+    loadLocalAssetUrl(launcherBone, host),
+    loadLocalAssetUrl(journeyTicket, host),
+  ]);
+  dispatchThemeAssetsChanged(host);
+}
+
+export function subscribeThemeAssets(
+  host: Window,
+  handler: () => void,
+): () => void {
+  const listener = () => handler();
+  host.addEventListener(THEME_ASSETS_EVENT, listener);
+  return () => host.removeEventListener(THEME_ASSETS_EVENT, listener);
 }
 
 export function subscribeThemeEntitlements(

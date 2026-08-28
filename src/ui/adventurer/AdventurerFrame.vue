@@ -3,6 +3,7 @@ import { onMounted, onUnmounted, ref } from 'vue';
 import type { PanelContext, PanelName } from '@/kernel/public-api';
 import {
   JOURNEY_THEME_ID,
+  subscribeThemeAssets,
   themeMenuIconAsset,
 } from '@/themes/theme-manager';
 
@@ -33,10 +34,14 @@ const navigation: Array<{
 
 const activeTheme = ref(props.context.api.getThemeState().active);
 let disposeTheme: (() => void) | undefined;
+let disposeThemeAssets: (() => void) | undefined;
+const themeAssetRevision = ref(0);
 
 function navigationIconStyle(panel: PanelName): Record<string, string> | undefined {
   if (activeTheme.value !== JOURNEY_THEME_ID) return undefined;
-  const asset = themeMenuIconAsset(activeTheme.value, panel);
+  void themeAssetRevision.value;
+  const host = props.context.document.defaultView ?? globalThis.window;
+  const asset = themeMenuIconAsset(host, activeTheme.value, panel);
   return asset ? { '--ca-theme-nav-icon': `url("${asset.url}")` } : undefined;
 }
 
@@ -46,12 +51,19 @@ function navigate(panel: PanelName) {
 }
 
 onMounted(() => {
+  const host = props.context.document.defaultView ?? globalThis.window;
+  disposeThemeAssets = subscribeThemeAssets(host, () => {
+    themeAssetRevision.value += 1;
+  });
   disposeTheme = props.context.api.on('theme.changed', (state) => {
     activeTheme.value = state.active;
   });
 });
 
-onUnmounted(() => disposeTheme?.());
+onUnmounted(() => {
+  disposeTheme?.();
+  disposeThemeAssets?.();
+});
 </script>
 
 <template>

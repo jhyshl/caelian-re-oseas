@@ -25,6 +25,7 @@ import {
 } from '@/modules/shell/launcher-order';
 import {
   JOURNEY_THEME_ID,
+  subscribeThemeAssets,
   themeMenuIconAsset,
 } from '@/themes/theme-manager';
 
@@ -56,6 +57,8 @@ const wheelTitle = computed(() =>
 );
 let disposeSubmission: (() => void) | undefined;
 let disposeTheme: (() => void) | undefined;
+let disposeThemeAssets: (() => void) | undefined;
+const themeAssetRevision = ref(0);
 
 let idleTimer: number | undefined;
 let activationTimer: number | undefined;
@@ -177,7 +180,12 @@ const launcherLabel = computed(() => {
 });
 
 function themeIconStyle(panel: PanelName): Record<string, string> | undefined {
-  const asset = themeMenuIconAsset(themeState.value.active, panel);
+  void themeAssetRevision.value;
+  const asset = themeMenuIconAsset(
+    hostWindow(),
+    themeState.value.active,
+    panel,
+  );
   return asset
     ? {
         '--ca-theme-menu-icon': `url("${asset.url}")`,
@@ -628,6 +636,9 @@ function handleResize(): void {
 
 onMounted(() => {
   const win = hostWindow();
+  disposeThemeAssets = subscribeThemeAssets(win, () => {
+    themeAssetRevision.value += 1;
+  });
   props.context.document.addEventListener(
     'pointerdown',
     handleOutsidePointerDown,
@@ -664,6 +675,7 @@ onUnmounted(() => {
   clearActivationTimer();
   disposeSubmission?.();
   disposeTheme?.();
+  disposeThemeAssets?.();
   props.context.document.removeEventListener(
     'pointerdown',
     handleOutsidePointerDown,

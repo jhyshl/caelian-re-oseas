@@ -9,6 +9,16 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.53',
+    label: 'Alpha 53',
+    releasedAt: '2026-08-28',
+    changes: [
+      '主题图片改为浏览器本地懒加载：只有启用专属主题时才下载界面资源，进入设置页时才加载主题预览；首次下载后会保存到玩家当前浏览器的本地资源库，之后优先从本地读取。',
+      '战斗卡牌的攻击、防御、法术、技能与召唤底图改为进入战斗模块后按需读取，并与主题图片共用本地二进制缓存，减少重复进入页面时的等待和图片空白。',
+      '本地资源缓存不写入 MVU 或角色存档；浏览器禁止存储、容量不足或资源请求失败时会自动回退到当前 Alpha 的在线构建地址，过期缓存会自动清理。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.52',
     label: 'Alpha 52',
     releasedAt: '2026-08-27',

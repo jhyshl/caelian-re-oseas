@@ -127,9 +127,11 @@ describe('CaelianKernel integration', () => {
     expect(document.body.classList.contains('caelian-theme-tail-town')).toBe(
       true,
     );
-    expect(
-      document.body.style.getPropertyValue('--ca-tail-town-launcher-image'),
-    ).toContain('url(');
+    await expect
+      .poll(() =>
+        document.body.style.getPropertyValue('--ca-tail-town-launcher-image'),
+      )
+      .toContain('url(');
     expect(document.body.textContent).toContain('尾巴镇专属');
 
     window.__CaelianThemeEntitlements = {
@@ -161,12 +163,16 @@ describe('CaelianKernel integration', () => {
     expect(document.body.classList.contains('caelian-theme-journey')).toBe(
       true,
     );
-    expect(
-      document.body.style.getPropertyValue('--ca-journey-launcher-ticket'),
-    ).toContain('url(');
-    expect(
-      document.body.style.getPropertyValue('--ca-journey-launcher-stub'),
-    ).toContain('url(');
+    await expect
+      .poll(() =>
+        document.body.style.getPropertyValue('--ca-journey-launcher-ticket'),
+      )
+      .toContain('url(');
+    await expect
+      .poll(() =>
+        document.body.style.getPropertyValue('--ca-journey-launcher-stub'),
+      )
+      .toContain('url(');
     expect(
       kernel.api
         .getThemeState()

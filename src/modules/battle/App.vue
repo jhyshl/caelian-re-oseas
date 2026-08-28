@@ -45,8 +45,10 @@ import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import MeterBar from '@/ui/adventurer/MeterBar.vue';
 import { readWorkshopMechanisms } from '@/workshop-mechanisms';
 import {
+  type BattleCardFaceType,
   battleCardFaceType,
   battleCardFaceUrl,
+  loadBattleCardFaceUrls,
 } from '@/modules/battle/card-face';
 import {
   MAGICIAN_BLANK_CARD_ID,
@@ -98,6 +100,7 @@ const hitTargetKey = ref('');
 const glowTargetKey = ref('');
 const animationCaption = ref('');
 const floatingEffects = ref<FloatingEffect[]>([]);
+const localCardFaceUrls = ref<Readonly<Record<BattleCardFaceType, string>>>();
 let disposeStateListener: (() => void) | undefined;
 let dragSession: CardDragSession | null = null;
 let suppressCardClick = false;
@@ -986,6 +989,9 @@ function cardStyle(index: number, total: number, cardId: string) {
   const compactStep = total > 1 ? Math.min(35, 250 / (total - 1)) : 0;
   const narrowStep = total > 1 ? Math.min(35, 130 / (total - 1)) : 0;
   const definition = cardDefinition(cardId);
+  const faceUrl = localCardFaceUrls.value
+    ? battleCardFaceUrl(definition?.type, localCardFaceUrls.value)
+    : undefined;
   return {
     '--card-x': `${offset * 54}px`,
     '--card-x-mobile': `${offset * 35}px`,
@@ -994,7 +1000,7 @@ function cardStyle(index: number, total: number, cardId: string) {
     '--card-rot': `${offset * 1.8}deg`,
     '--card-rot-mobile': `${offset * 2.1}deg`,
     '--card-z': String(20 + index),
-    '--card-face': `url("${battleCardFaceUrl(definition?.type)}")`,
+    '--card-face': faceUrl ? `url("${faceUrl}")` : 'none',
   };
 }
 
@@ -1731,6 +1737,11 @@ async function claimReward(
 }
 
 onMounted(async () => {
+  void loadBattleCardFaceUrls(
+    props.context.document.defaultView ?? globalThis.window,
+  ).then((urls) => {
+    localCardFaceUrls.value = urls;
+  });
   [
     snapshot.value,
     monsters.value,

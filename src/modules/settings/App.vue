@@ -4,6 +4,10 @@ import type { GameSnapshot, SettingsRecord } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import type { QuestJudgeModel } from '@/quests/judge-client';
+import {
+  prepareThemePreviews,
+  subscribeThemeAssets,
+} from '@/themes/theme-manager';
 import type { CaelianThemeOption } from '@/themes/types';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
@@ -18,6 +22,7 @@ const saving = ref(false);
 const themeSaving = ref(false);
 const themeState = ref(props.context.api.getThemeState());
 let disposeTheme: (() => void) | undefined;
+let disposeThemeAssets: (() => void) | undefined;
 const contentSyncing = ref(false);
 const managedContentAutoUpdate = ref(
   props.context.api.getManagedContentAutoUpdate(),
@@ -201,6 +206,11 @@ function clearQuestJudge() {
 }
 
 onMounted(async () => {
+  const host = props.context.document.defaultView ?? globalThis.window;
+  disposeThemeAssets = subscribeThemeAssets(host, () => {
+    themeState.value = props.context.api.getThemeState();
+  });
+  void prepareThemePreviews(host);
   disposeTheme = props.context.api.on('theme.changed', (state) => {
     themeState.value = state;
   });
@@ -211,7 +221,10 @@ onMounted(async () => {
   };
 });
 
-onBeforeUnmount(() => disposeTheme?.());
+onBeforeUnmount(() => {
+  disposeTheme?.();
+  disposeThemeAssets?.();
+});
 </script>
 
 <template>
@@ -237,7 +250,7 @@ onBeforeUnmount(() => disposeTheme?.());
         <div class="theme-heading">
           <div>
             <h2 class="ca-section-title">界面主题</h2>
-            <p>专属社区脚本只负责解锁主题；图片由当前 Alpha 构建在线加载。</p>
+            <p>专属社区脚本只负责解锁主题；图片首次按需下载，之后从玩家本地缓存读取。</p>
           </div>
           <span>{{ themeState.available.length }} 个主题</span>
         </div>
@@ -257,7 +270,7 @@ onBeforeUnmount(() => disposeTheme?.());
             @click="selectTheme(theme)"
           >
             <span class="theme-preview" :class="{ artwork: theme.previewUrl }">
-              <img v-if="theme.previewUrl" :src="theme.previewUrl" alt="" />
+              <img v-if="theme.previewUrl" :src="theme.previewUrl" alt="" loading="lazy" />
               <b v-else>∞</b>
             </span>
             <span class="theme-copy">

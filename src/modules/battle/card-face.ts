@@ -3,6 +3,7 @@ import defenseFace from '@/assets/battle/cards/card_defense.webp';
 import skillFace from '@/assets/battle/cards/card_skill.webp';
 import spellFace from '@/assets/battle/cards/card_spell.webp';
 import summonFace from '@/assets/battle/cards/card_summon.webp';
+import { loadLocalAssetUrl } from '@/assets/local-asset-cache';
 
 export type BattleCardFaceType =
   | 'attack'
@@ -19,6 +20,18 @@ export const BATTLE_CARD_FACE_URLS: Readonly<Record<BattleCardFaceType, string>>
   summon: summonFace,
 };
 
+export async function loadBattleCardFaceUrls(
+  host: Window,
+): Promise<Readonly<Record<BattleCardFaceType, string>>> {
+  const entries = await Promise.all(
+    Object.entries(BATTLE_CARD_FACE_URLS).map(async ([type, sourceUrl]) => [
+      type,
+      await loadLocalAssetUrl(sourceUrl, host),
+    ] as const),
+  );
+  return Object.fromEntries(entries) as Record<BattleCardFaceType, string>;
+}
+
 export function battleCardFaceType(type: string | undefined): BattleCardFaceType {
   switch (type?.trim().toLowerCase()) {
     case 'attack':
@@ -34,6 +47,9 @@ export function battleCardFaceType(type: string | undefined): BattleCardFaceType
   }
 }
 
-export function battleCardFaceUrl(type: string | undefined): string {
-  return BATTLE_CARD_FACE_URLS[battleCardFaceType(type)];
+export function battleCardFaceUrl(
+  type: string | undefined,
+  urls: Readonly<Record<BattleCardFaceType, string>> = BATTLE_CARD_FACE_URLS,
+): string {
+  return urls[battleCardFaceType(type)];
 }
