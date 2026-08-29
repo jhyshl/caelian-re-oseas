@@ -8,15 +8,18 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.54');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.55');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.54');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.55');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('学院主线最终魔像战');
-    expect(latestText).toContain('本轮使用过同名卡牌');
-    expect(latestText).toContain('第 10 场必定触发');
+    expect(latestText).toContain('悬浮入口消失');
+    expect(latestText).toContain('保留最后 1 点生命');
+    expect(
+      releases.find((release) => release.version === '0.2.0-alpha.54')
+        ?.changes.join('\n'),
+    ).toContain('第 10 场必定触发');
     expect(
       releases.find((release) => release.version === '0.2.0-alpha.53')
         ?.changes.join('\n'),
@@ -62,6 +65,8 @@ describe('release notes', () => {
     expect(latestText).toContain('学院主线最终魔像战');
     expect(latestText).toContain('上一张使用的是同名卡牌');
     expect(latestText).toContain('首领战不会消耗保底进度');
+    expect(latestText).toContain('悬浮入口消失');
+    expect(latestText).toContain('治疗牌会先完成治疗');
     const beta17Text = releases
       .find((release) => release.version === '1.7.0-beta.1')
       ?.changes.join('\n');

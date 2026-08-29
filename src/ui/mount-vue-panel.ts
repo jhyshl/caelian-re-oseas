@@ -46,7 +46,10 @@ export function mountVuePanel(
   }
 
   return () => {
-    app.unmount();
-    host.remove();
+    try {
+      app.unmount();
+    } finally {
+      host.remove();
+    }
   };
 }

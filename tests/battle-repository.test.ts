@@ -1620,6 +1620,125 @@ describe('本地战斗仓库', () => {
     expect(current.state.player.hp).toBe(1);
   });
 
+  it('在普通牌无法支付完整烧血时原子拒绝，并允许恰好保留 1HP 的边界', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'blood-burn-card-hp-gate',
+      'holy_knight',
+    );
+    session.state.player.hpMax = 100;
+    session.state.player.hp = 2;
+    session.state.player.ap = session.state.player.apMax;
+    session.state.player.hand = [
+      { instanceId: 'blood-burn-normal-card', cardId: 'hk_lumen_slash' },
+    ];
+    session.state.player.discardPile = [];
+    session.state.player.buffs.blood_burn = {
+      value: 20,
+      turns: 5,
+      stacks: 1,
+    };
+    session.state.enemies[0]!.hp = 1_000;
+    session.state.enemies[0]!.hpMax = 1_000;
+    await database.battleSessions.put(session);
+    const before = structuredClone(session.state);
+
+    await expect(
+      battles.playCard(profile.id, {
+        battleId: session.id,
+        handIndex: 0,
+        targetIndex: 0,
+      }),
+    ).rejects.toThrow('烧血结算后必须至少保留 1HP');
+
+    let current = (await database.battleSessions.get(session.id))!;
+    expect(current.state).toEqual(before);
+
+    current.state.player.hp = 3;
+    await database.battleSessions.put(current);
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+
+    current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.hp).toBe(1);
+    expect(current.state.player.hand).toHaveLength(0);
+    expect(current.state.player.discardPile).toEqual([
+      { instanceId: 'blood-burn-normal-card', cardId: 'hk_lumen_slash' },
+    ]);
+    expect(current.state.status).toBe('ongoing');
+  });
+
+  it('让治疗自己的卡牌先恢复生命再结算烧血', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'blood-burn-heal-first',
+      'priest',
+    );
+    session.state.player.hpMax = 100;
+    session.state.player.hp = 1;
+    session.state.player.ap = session.state.player.apMax;
+    session.state.player.hand = [
+      { instanceId: 'blood-burn-heal-card', cardId: 'pr_heal' },
+    ];
+    session.state.player.buffs.blood_burn = {
+      value: 20,
+      turns: 5,
+      stacks: 1,
+    };
+    session.state.enemies[0]!.hp = 1_000;
+    session.state.enemies[0]!.hpMax = 1_000;
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+      allyTargetId: 'player',
+    });
+
+    const current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.hp).toBe(13);
+    expect(current.state.player.hand).toHaveLength(0);
+    expect(current.state.status).toBe('ongoing');
+  });
+
+  it('低血时不允许借治疗凯利安绕过玩家自身的烧血门槛', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'blood-burn-companion-heal-gate',
+      'priest',
+      () => 0.99,
+      true,
+    );
+    session.state.player.hpMax = 100;
+    session.state.player.hp = 2;
+    session.state.player.ap = session.state.player.apMax;
+    session.state.player.hand = [
+      { instanceId: 'blood-burn-companion-heal', cardId: 'pr_heal' },
+    ];
+    session.state.player.buffs.blood_burn = {
+      value: 20,
+      turns: 5,
+      stacks: 1,
+    };
+    await database.battleSessions.put(session);
+
+    await expect(
+      battles.playCard(profile.id, {
+        battleId: session.id,
+        handIndex: 0,
+        targetIndex: 0,
+        allyTargetId: 'caelian',
+      }),
+    ).rejects.toThrow('烧血结算后必须至少保留 1HP');
+
+    const current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.hp).toBe(2);
+    expect(current.state.player.hand).toEqual([
+      { instanceId: 'blood-burn-companion-heal', cardId: 'pr_heal' },
+    ]);
+  });
+
   it('把三张“中毒层数翻倍”牌按乘法结算而不是中毒 +2', async () => {
     const { database, profile, battles, session } = await createStartedBattle(
       'poison-double',

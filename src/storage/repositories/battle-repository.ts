@@ -35,6 +35,12 @@ import {
 import { cardNameHistoryKey } from '@/battle/card-history';
 import { createCaelianCompanion } from '@/battle/caelian-companion';
 import {
+  bloodBurnAction,
+  bloodBurnCardUnavailableReason,
+  cardHealsPlayerBeforeBloodBurn,
+  type BloodBurnAction,
+} from '@/battle/blood-burn';
+import {
   aggregateEquipmentStats,
   scaleEquipmentStatsByStars,
 } from '@/equipment-stats';
@@ -602,6 +608,11 @@ export class BattleRepository {
       state,
       input.targetIndex ?? state.selectedTarget,
     );
+    const allyTargetId = input.allyTargetId ?? 'player';
+    const healBeforeBloodBurn = cardHealsPlayerBeforeBloodBurn(
+      card,
+      allyTargetId,
+    );
     const cardTags = Array.isArray(card.tags) ? card.tags.map(String) : [];
     this.activeMechanismCard = {
       id: cardInstance.cardId,
@@ -624,6 +635,13 @@ export class BattleRepository {
       mpCost = this.clamp(this.number(beforeCard.mpCost, mpCost), 0, 999_999);
       if (state.player.ap < cost) throw new Error('行动点不足');
       if (state.player.mp < mpCost) throw new Error('魔力不足');
+      const pendingBloodBurn = bloodBurnAction(state.player);
+      const bloodBurnUnavailable = bloodBurnCardUnavailableReason(
+        state.player,
+        card,
+        allyTargetId,
+      );
+      if (bloodBurnUnavailable) throw new Error(bloodBurnUnavailable);
 
       state.player.ap -= cost;
       state.player.mp -= mpCost;
@@ -632,7 +650,6 @@ export class BattleRepository {
       state.player.hand.splice(input.handIndex, 1);
       state.player.discardPile.push(cardInstance);
       this.log(state, 'player', `使用「${card.name}」`);
-      const allyTargetId = input.allyTargetId ?? 'player';
       const cardTarget = this.cardUsesFriendlyTarget(card)
         ? this.cardFriendlyTargets(state, 'ally', allyTargetId)[0]
         : undefined;
@@ -649,10 +666,17 @@ export class BattleRepository {
         cardInstanceId: cardInstance.instanceId,
         label: card.name,
       });
-      this.triggerBloodBurnAction(state, state.player, '打牌');
-      if (state.player.hp <= 0) {
-        await this.finishBattle(session, 'defeat');
-        return;
+      if (!healBeforeBloodBurn) {
+        this.triggerBloodBurnAction(
+          state,
+          state.player,
+          '打牌',
+          pendingBloodBurn,
+        );
+        if (state.player.hp <= 0) {
+          await this.finishBattle(session, 'defeat');
+          return;
+        }
       }
       if (
         state.player.subclass === 'vampire_hunter' &&
@@ -681,6 +705,14 @@ export class BattleRepository {
         targetIndex,
         allyTargetId,
       );
+      if (healBeforeBloodBurn) {
+        this.triggerBloodBurnAction(
+          state,
+          state.player,
+          '打牌',
+          pendingBloodBurn,
+        );
+      }
       this.updateClassResourcesAfterCard(state, card, cardInstance.cardId);
       this.recordBossMechanicCard(state, card.type);
       this.runWorkshopMechanisms(state, 'after_card', {
@@ -6653,16 +6685,15 @@ export class BattleRepository {
     state: LocalBattleState,
     target: Combatant,
     actionLabel: string,
+    action: BloodBurnAction | null = bloodBurnAction(target),
   ): void {
-    if (!target.buffs.blood_burn) return;
-    const amount = Math.max(1, Math.floor(target.hpMax * 0.02));
-    const stacks = Math.max(1, target.buffs.blood_burn.stacks ?? 1);
-    for (let stack = 1; stack <= stacks && target.hp > 1; stack += 1) {
+    if (!action) return;
+    for (let stack = 1; stack <= action.stacks && target.hp > 1; stack += 1) {
       this.directHpLoss(
         state,
         target,
-        amount,
-        `烧血·${actionLabel}（${stack}/${stacks}）`,
+        action.amountPerStack,
+        `烧血·${actionLabel}（${stack}/${action.stacks}）`,
         1,
       );
     }

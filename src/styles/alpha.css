@@ -2535,7 +2535,7 @@ body.caelian-theme-journey .caelian-shell-host .page-controls > div button.activ
     0 0 9px rgba(194, 160, 95, 0.42) !important;
 }
 
-body.caelian-theme-journey:has(.caelian-panel-host .ca-frame) .caelian-shell-host .shell {
+body.caelian-theme-journey .caelian-shell-host.caelian-page-panel-open .shell {
   display: none !important;
 }
 

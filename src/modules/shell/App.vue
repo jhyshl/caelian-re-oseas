@@ -4,10 +4,12 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type { PanelContext, PanelName } from '@/kernel/public-api';
 import {
   clampLauncherPosition,
-  launcherSizeForViewport,
+  JOURNEY_DOCK_PEEK,
+  launcherFootprintForViewport,
   resolveLauncherDrop,
   retractLauncherPosition,
   type DockSide,
+  type LauncherFootprint,
   type LauncherPlacement,
   type LauncherPosition,
   type ViewportRect,
@@ -36,8 +38,10 @@ const IDLE_DELAY = 3000;
 const DRAG_THRESHOLD = 5;
 const DOUBLE_ACTIVATION_DELAY = 280;
 
+const themeState = ref(props.context.api.getThemeState());
 const viewport = ref(readViewport());
-const launcherSize = ref(launcherSizeForViewport(viewport.value.width));
+const launcherFootprint = ref(readLauncherFootprint(viewport.value.width));
+const launcherSize = computed(() => launcherFootprint.value.width);
 const initialPlacement = readStoredPlacement() ?? defaultPlacement();
 const position = ref(initialPlacement.position);
 const dockSide = ref<DockSide>(initialPlacement.dockSide);
@@ -51,13 +55,13 @@ const pageIndex = ref(0);
 const pageDirection = ref<-1 | 1>(1);
 const ordering = ref(false);
 const pendingSubmission = ref(false);
-const themeState = ref(props.context.api.getThemeState());
 const wheelTitle = computed(() =>
   themeState.value.active === JOURNEY_THEME_ID ? '快捷菜单' : 'RE∞ OSEAS',
 );
 let disposeSubmission: (() => void) | undefined;
 let disposeTheme: (() => void) | undefined;
 let disposeThemeAssets: (() => void) | undefined;
+let disposePanelClosed: (() => void) | undefined;
 const themeAssetRevision = ref(0);
 
 let idleTimer: number | undefined;
@@ -138,8 +142,11 @@ const renderedPosition = computed(() => {
     return retractLauncherPosition(
       position.value,
       viewport.value,
-      launcherSize.value,
+      launcherFootprint.value,
       dockSide.value,
+      themeState.value.active === JOURNEY_THEME_ID
+        ? JOURNEY_DOCK_PEEK
+        : undefined,
     );
   }
   return position.value;
@@ -152,8 +159,8 @@ const shellStyle = computed<Record<string, string>>(() => ({
 }));
 
 const wheelClasses = computed(() => {
-  const centerX = position.value.x + launcherSize.value / 2;
-  const centerY = position.value.y + launcherSize.value / 2;
+  const centerX = position.value.x + launcherFootprint.value.width / 2;
+  const centerY = position.value.y + launcherFootprint.value.height / 2;
   const viewportCenterX =
     viewport.value.offsetLeft + viewport.value.width / 2;
   const viewportCenterY =
@@ -248,16 +255,31 @@ function readViewport(): ViewportRect {
   };
 }
 
+function readLauncherFootprint(width: number): LauncherFootprint {
+  return launcherFootprintForViewport(
+    width,
+    themeState.value.active === JOURNEY_THEME_ID,
+  );
+}
+
 function defaultPlacement(): LauncherPlacement {
-  const size = launcherSize.value;
+  const footprint = launcherFootprint.value;
   return {
     position: clampLauncherPosition(
       {
-        x: viewport.value.offsetLeft + viewport.value.width - size - 22,
-        y: viewport.value.offsetTop + viewport.value.height - size - 126,
+        x:
+          viewport.value.offsetLeft +
+          viewport.value.width -
+          footprint.width -
+          22,
+        y:
+          viewport.value.offsetTop +
+          viewport.value.height -
+          footprint.height -
+          126,
       },
       viewport.value,
-      size,
+      footprint,
     ),
     dockSide: null,
   };
@@ -282,7 +304,7 @@ function readStoredPlacement(): LauncherPlacement | null {
     const restored = clampLauncherPosition(
       { x, y },
       viewport.value,
-      launcherSize.value,
+      launcherFootprint.value,
     );
     if (storedDockSide) {
       const snapped = resolveLauncherDrop(
@@ -294,7 +316,7 @@ function readStoredPlacement(): LauncherPlacement | null {
           y: restored.y,
         },
         viewport.value,
-        launcherSize.value,
+        launcherFootprint.value,
       );
       return { position: snapped.position, dockSide: storedDockSide };
     }
@@ -538,7 +560,7 @@ function handlePointerMove(event: PointerEvent): void {
         y: session.origin.y + deltaY,
       },
       viewport.value,
-      launcherSize.value,
+      launcherFootprint.value,
     );
   }
   event.preventDefault();
@@ -560,7 +582,7 @@ function handlePointerUp(event: PointerEvent): void {
     const settled = resolveLauncherDrop(
       position.value,
       viewport.value,
-      launcherSize.value,
+      launcherFootprint.value,
     );
     position.value = settled.position;
     dockSide.value = settled.dockSide;
@@ -610,11 +632,11 @@ function handleOutsidePointerDown(event: Event): void {
 
 function handleResize(): void {
   viewport.value = readViewport();
-  launcherSize.value = launcherSizeForViewport(viewport.value.width);
+  launcherFootprint.value = readLauncherFootprint(viewport.value.width);
   const clamped = clampLauncherPosition(
     position.value,
     viewport.value,
-    launcherSize.value,
+    launcherFootprint.value,
   );
   if (dockSide.value) {
     position.value = resolveLauncherDrop(
@@ -626,7 +648,7 @@ function handleResize(): void {
         y: clamped.y,
       },
       viewport.value,
-      launcherSize.value,
+      launcherFootprint.value,
     ).position;
   } else {
     position.value = clamped;
@@ -666,6 +688,12 @@ onMounted(() => {
   };
   disposeTheme = props.context.api.on('theme.changed', (state) => {
     themeState.value = state;
+    handleResize();
+  });
+  disposePanelClosed = props.context.api.on('panel.closed', ({ panel }) => {
+    if (panel === 'shell') return;
+    wake();
+    scheduleIdle();
   });
 });
 
@@ -676,6 +704,7 @@ onUnmounted(() => {
   disposeSubmission?.();
   disposeTheme?.();
   disposeThemeAssets?.();
+  disposePanelClosed?.();
   props.context.document.removeEventListener(
     'pointerdown',
     handleOutsidePointerDown,

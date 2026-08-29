@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampLauncherPosition,
+  JOURNEY_DOCK_PEEK,
+  launcherFootprintForViewport,
   resolveLauncherDrop,
   retractLauncherPosition,
   type ViewportRect,
@@ -49,5 +51,25 @@ describe('floating launcher placement', () => {
         54,
       ),
     ).toEqual({ x: 18, y: 668 });
+  });
+
+  it('uses the full Journey ticket footprint and keeps a usable docked edge', () => {
+    const ticket = launcherFootprintForViewport(viewport.width, true);
+    expect(ticket).toEqual({ width: 84, height: 96 });
+
+    const docked = resolveLauncherDrop({ x: 390, y: 700 }, viewport, ticket);
+    expect(docked).toEqual({
+      position: { x: 300, y: 618 },
+      dockSide: 'right',
+    });
+    expect(
+      retractLauncherPosition(
+        docked.position,
+        viewport,
+        ticket,
+        'right',
+        JOURNEY_DOCK_PEEK,
+      ),
+    ).toEqual({ x: 348, y: 618 });
   });
 });

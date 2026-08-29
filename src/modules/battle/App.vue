@@ -23,6 +23,7 @@ import {
   isBattleUsableItem,
 } from '@/battle/consumables';
 import { previewBattleCard } from '@/battle/card-preview';
+import { bloodBurnCardUnavailableReason } from '@/battle/blood-burn';
 import type {
   BattleAnimationEvent,
   BattleEnemyState,
@@ -563,6 +564,13 @@ const selectedCard = computed(() => {
 const selectedCardDefinition = computed(() =>
   selectedCard.value ? cards.value[selectedCard.value.cardId] : undefined,
 );
+const selectedCardUnavailableReason = computed(() => {
+  const card = selectedCard.value;
+  const index = selectedHandIndex.value;
+  return card && index !== null
+    ? cardUnavailableReason(card.cardId, index)
+    : '';
+});
 const activePreviewHandIndex = computed(
   () => previewHandIndex.value ?? selectedHandIndex.value,
 );
@@ -934,6 +942,12 @@ function cardUnavailableReason(cardId: string, handIndex?: number) {
   if (player.mp < effectiveCardMpCost(definition)) {
     return '魔力不足。';
   }
+  const bloodBurnUnavailable = bloodBurnCardUnavailableReason(
+    player,
+    definition,
+    selectedAllyTarget.value ?? 'player',
+  );
+  if (bloodBurnUnavailable) return bloodBurnUnavailable;
   if (
     player.chants.length >= 3 &&
     cardContainsEffectTypes(definition, new Set(['chant', 'copy_chant']))
@@ -1618,6 +1632,10 @@ async function exploreBattle() {
 
 async function playSelectedCard() {
   if (!battle.value || selectedHandIndex.value === null) return;
+  if (selectedCardUnavailableReason.value) {
+    notice.value = selectedCardUnavailableReason.value;
+    return;
+  }
   await playCardAt(selectedHandIndex.value, selectedTarget.value);
 }
 
@@ -2360,7 +2378,8 @@ onUnmounted(() => {
         <button
           type="button"
           class="play-selected-floating"
-          :disabled="busy || !selectedCard"
+          :disabled="busy || !selectedCard || Boolean(selectedCardUnavailableReason)"
+          :title="selectedCardUnavailableReason || undefined"
           @click="playSelectedCard"
         >
           <span>打出</span>

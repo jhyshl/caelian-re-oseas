@@ -52,11 +52,23 @@ const gamePanels = new Set<PanelName>([
 export class PanelRegistry {
   private readonly mounted = new Map<PanelName, () => void>();
   private readonly opening = new Map<PanelName, Promise<void>>();
+  private readonly panelHostObserver?: MutationObserver;
 
   constructor(
     private readonly context: PanelContext,
     private readonly events: EventBus,
-  ) {}
+  ) {
+    const HostMutationObserver =
+      this.context.document.defaultView?.MutationObserver;
+    if (!HostMutationObserver) return;
+
+    this.panelHostObserver = new HostMutationObserver(() => {
+      this.syncShellPagePanelState();
+    });
+    this.panelHostObserver.observe(this.context.document.body, {
+      childList: true,
+    });
+  }
 
   async open(panel: PanelName): Promise<void> {
     const mounted = this.mounted.get(panel);
@@ -74,6 +86,7 @@ export class PanelRegistry {
         // The host is already gone; deleting the stale registry entry is enough.
       }
       this.mounted.delete(panel);
+      this.syncShellPagePanelState();
     }
     const inFlight = this.opening.get(panel);
     if (inFlight) return inFlight;
@@ -85,14 +98,24 @@ export class PanelRegistry {
         `[data-caelian-panel="${panel}"]`,
       );
       if (!host?.isConnected) {
-        unmount();
+        try {
+          unmount();
+        } finally {
+          this.syncShellPagePanelState();
+        }
         throw new Error(`面板 ${panel} 挂载后未进入可见文档`);
       }
       this.mounted.set(panel, unmount);
+      this.syncShellPagePanelState();
       await this.events.emit('panel.opened', { panel });
-    })().finally(() => {
-      this.opening.delete(panel);
-    });
+    })()
+      .catch((error: unknown) => {
+        this.syncShellPagePanelState();
+        throw error;
+      })
+      .finally(() => {
+        this.opening.delete(panel);
+      });
 
     this.opening.set(panel, task);
     return task;
@@ -102,9 +125,13 @@ export class PanelRegistry {
     await this.opening.get(panel);
     const unmount = this.mounted.get(panel);
     if (!unmount) return;
-    unmount();
-    this.mounted.delete(panel);
-    await this.events.emit('panel.closed', { panel });
+    try {
+      unmount();
+    } finally {
+      this.mounted.delete(panel);
+      this.syncShellPagePanelState();
+      await this.events.emit('panel.closed', { panel });
+    }
   }
 
   async navigate(panel: PanelName): Promise<void> {
@@ -121,6 +148,27 @@ export class PanelRegistry {
   }
 
   async closeAll(): Promise<void> {
-    await Promise.all([...this.mounted.keys()].map((panel) => this.close(panel)));
+    try {
+      await Promise.all(
+        [...this.mounted.keys()].map((panel) => this.close(panel)),
+      );
+    } finally {
+      this.panelHostObserver?.disconnect();
+      this.syncShellPagePanelState();
+    }
+  }
+
+  private syncShellPagePanelState(): void {
+    const shellHost = this.context.document.querySelector<HTMLElement>(
+      '.caelian-shell-host',
+    );
+    if (!shellHost) return;
+
+    const pagePanelOpen = Boolean(
+      this.context.document.querySelector(
+        '.caelian-panel-host:not(.caelian-shell-host) .ca-frame',
+      ),
+    );
+    shellHost.classList.toggle('caelian-page-panel-open', pagePanelOpen);
   }
 }

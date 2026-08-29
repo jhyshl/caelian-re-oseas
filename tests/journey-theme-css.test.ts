@@ -20,7 +20,12 @@ describe('Journey theme coverage', () => {
     expect(css).toContain('border-image-slice: 92 fill');
     expect(css).toContain('border-image-slice: 74 80 fill');
     expect(css).toContain('backdrop-filter: none');
-    expect(css).toContain(':has(.caelian-panel-host .ca-frame)');
+    expect(css).toContain(
+      '.caelian-shell-host.caelian-page-panel-open .shell',
+    );
+    expect(css).not.toContain(
+      'body.caelian-theme-journey:has(.caelian-panel-host .ca-frame)',
+    );
     expect(css).toContain('.guild-card .rank-panel');
     expect(css).toContain('.crafting-layout > .ca-section + .ca-section');
     expect(css).not.toContain('.enemy-card');

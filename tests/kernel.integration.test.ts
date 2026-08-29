@@ -29,6 +29,7 @@ afterEach(async () => {
   delete window.tavern_events;
   delete (window as unknown as Record<string, unknown>).TavernHelper;
   localStorage.removeItem('caelian_launcher_order_v1');
+  localStorage.removeItem('caelian_floating_wheel_position_v2');
   localStorage.removeItem('caelian_quest_judge_preferences_v1');
   sessionStorage.removeItem('caelian_quest_judge_api_key_session_v1');
   localStorage.removeItem(avatarPreferenceKey('caelian'));
@@ -610,16 +611,43 @@ describe('CaelianKernel integration', () => {
     expect(
       document.querySelector('[data-caelian-panel="shell"]'),
     ).not.toBeNull();
+    const shellHost = document.querySelector<HTMLElement>(
+      '[data-caelian-panel="shell"]',
+    );
+    expect(shellHost?.classList.contains('caelian-page-panel-open')).toBe(false);
 
     await kernel.api.openPanel('inventory');
     expect(
       document.querySelector('[data-caelian-panel="inventory"]'),
     ).not.toBeNull();
+    expect(shellHost?.classList.contains('caelian-page-panel-open')).toBe(true);
 
-    await kernel.api.closePanel('inventory');
+    document
+      .querySelector('[data-caelian-panel="inventory"]')
+      ?.remove();
+    await expect
+      .poll(() =>
+        shellHost?.classList.contains('caelian-page-panel-open'),
+      )
+      .toBe(false);
+
+    await kernel.api.openPanel('inventory');
+    expect(shellHost?.classList.contains('caelian-page-panel-open')).toBe(true);
+
+    await kernel.api.navigatePanel('character');
     expect(
       document.querySelector('[data-caelian-panel="inventory"]'),
     ).toBeNull();
+    expect(
+      document.querySelector('[data-caelian-panel="character"]'),
+    ).not.toBeNull();
+    expect(shellHost?.classList.contains('caelian-page-panel-open')).toBe(true);
+
+    await kernel.api.closePanel('character');
+    expect(
+      document.querySelector('[data-caelian-panel="character"]'),
+    ).toBeNull();
+    expect(shellHost?.classList.contains('caelian-page-panel-open')).toBe(false);
 
     await kernel.api.openPanel('feedback');
     const feedbackHost = document.querySelector(
@@ -635,6 +663,36 @@ describe('CaelianKernel integration', () => {
 
     await kernel.api.shutdown();
     expect(document.querySelector('[data-caelian-panel]')).toBeNull();
+  });
+
+  it('关闭任意面板后立即唤醒已贴边收起的悬浮入口', async () => {
+    const databaseName = `caelian-alpha-launcher-wake-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    localStorage.setItem(
+      'caelian_floating_wheel_position_v2',
+      JSON.stringify({ x: 330, y: 520, dockSide: 'right' }),
+    );
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'launcher-wake-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    const shell = document.querySelector<HTMLElement>(
+      '.caelian-shell-host .shell',
+    );
+    expect(shell?.classList.contains('retracted')).toBe(true);
+
+    await kernel.api.openPanel('feedback');
+    await kernel.api.closePanel('feedback');
+    await expect
+      .poll(() => shell?.classList.contains('retracted'))
+      .toBe(false);
+
+    await kernel.api.shutdown();
   });
 
   it('玩家面板和凯利安状态栏显示酒馆当前头像', async () => {
