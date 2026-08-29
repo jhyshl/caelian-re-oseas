@@ -43,7 +43,7 @@ export interface AchievementPatchReward {
     summary: string;
     effectText: string;
     source: string;
-    relic: RelicDefinition;
+    relic?: RelicDefinition;
   };
 }
 
@@ -210,6 +210,56 @@ export const ACHIEVEMENT_PATCH_REGISTRY: Record<
       },
     },
   },
+  'bug-feedback-reward': {
+    id: 'bug-feedback-reward',
+    eventAchievementId: 'ach_bug_hunting',
+    windowFlag: '__CAELIAN_BUG_FEEDBACK_REWARD_V1__',
+    activationStorageKeys: [
+      'caelian_bug_feedback_reward_v1_claimed',
+      'caelian_bug_feedback_reward_v1_letter_opened',
+      'caelian_bug_feedback_reward_v1_reward_granted',
+    ],
+    openedStorageKeys: [
+      'caelian_bug_feedback_reward_v1_claimed',
+      'caelian_bug_feedback_reward_v1_letter_opened',
+      'caelian_bug_feedback_reward_v1_reward_granted',
+    ],
+    achievement: {
+      id: 'ach_bug_hunting',
+      name: '抓虫中……',
+      star: 5,
+      condition: '只能通过该邮件获得。',
+      description: '或许需要一瓶杀虫剂？',
+      category: 'special',
+      hidden: false,
+      special: true,
+      patchOnly: true,
+      source: 'bug_feedback_patch',
+    },
+    mail: {
+      id: 'mail_bug_hunting',
+      source: 'achievement-patch',
+      title: '来自欧西亚斯的感谢信',
+      preview: '一封来自欧西亚斯的感谢信件',
+      sender: '欧西亚斯',
+      body: [
+        '感谢你反馈的bug，是你忍受我的这一坨屎山代码并不断地反馈让欧西亚斯变得更加完善与美好。感谢你的支持与信任，愿与君共勉。',
+      ],
+      rewardText:
+        '获得金币500，特殊藏品：神秘虫子；成就：抓虫中……',
+      achievementId: 'ach_bug_hunting',
+    },
+    reward: {
+      gold: 500,
+      collectible: {
+        id: 'special_mysterious_bug',
+        name: '神秘虫子',
+        summary: 'X﹏X被抓到了',
+        effectText: '仅作为特殊藏品展示，不进入可携带藏品背包。',
+        source: '特殊补丁：抓虫中……',
+      },
+    },
+  },
   'old-timer': {
     id: 'old-timer',
     eventAchievementId: 'ach_launch_old_timer',
@@ -324,16 +374,12 @@ export const PATCH_ACHIEVEMENT_DEFINITIONS = Object.fromEntries(
 ) as Record<string, AchievementDefinition>;
 
 export const PATCH_RELIC_DEFINITIONS = Object.fromEntries(
-  ACHIEVEMENT_PATCHES.flatMap((patch) =>
-    patch.reward.collectible
-      ? [
-          [
-            patch.reward.collectible.id,
-            patch.reward.collectible.relic,
-          ] as const,
-        ]
-      : [],
-  ),
+  ACHIEVEMENT_PATCHES.flatMap((patch) => {
+    const collectible = patch.reward.collectible;
+    return collectible?.relic
+      ? [[collectible.id, collectible.relic] as const]
+      : [];
+  }),
 ) as Record<string, RelicDefinition>;
 
 export const MAIL_CATALOG = Object.fromEntries([

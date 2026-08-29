@@ -885,6 +885,7 @@ export interface GameSnapshot {
   cards: OwnedCardRecord[];
   decks: DeckRecord[];
   relics: OwnedRelicRecord[];
+  specialCollectibles: SpecialCollectibleRecord[];
   passives: PassiveTalentRecord[];
   battle: BattleSessionRecord | null;
   achievements: AchievementProgressRecord[];

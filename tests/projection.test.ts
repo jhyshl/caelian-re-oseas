@@ -125,6 +125,7 @@ const snapshot: GameSnapshot = {
   cards: [],
   decks: [],
   relics: [],
+  specialCollectibles: [],
   passives: [],
   battle: null,
   achievements: [],

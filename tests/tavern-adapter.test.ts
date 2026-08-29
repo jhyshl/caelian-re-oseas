@@ -550,6 +550,29 @@ describe('TavernAdapter', () => {
     ).not.toContainEqual(expect.objectContaining({ id: 'memory-together' }));
   });
 
+  it('识别抓虫中信件的导入、开启与历史领取标记', () => {
+    const hostState = window as unknown as Record<string, unknown>;
+    hostState.__CAELIAN_BUG_FEEDBACK_REWARD_V1__ = true;
+    const adapter = new TavernAdapter(window);
+
+    expect(
+      adapter.achievementPatchSignals(new Date(2026, 7, 29, 12, 0, 0)),
+    ).toContainEqual({ id: 'bug-feedback-reward', opened: false });
+
+    localStorage.setItem(
+      'caelian_bug_feedback_reward_v1_letter_opened',
+      '1',
+    );
+    expect(
+      adapter.achievementPatchSignals(new Date(2026, 7, 29, 12, 0, 0)),
+    ).toContainEqual({ id: 'bug-feedback-reward', opened: true });
+
+    localStorage.removeItem(
+      'caelian_bug_feedback_reward_v1_letter_opened',
+    );
+    delete hostState.__CAELIAN_BUG_FEEDBACK_REWARD_V1__;
+  });
+
   it('读取奖励脚本在运行时注册的成就定义', () => {
     const hostState = window as unknown as Record<string, unknown>;
     hostState.ADVENTURER_ACHIEVEMENT_DEFS = {

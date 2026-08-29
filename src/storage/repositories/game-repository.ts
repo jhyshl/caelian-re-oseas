@@ -103,6 +103,7 @@ export class GameRepository {
       cards,
       decks,
       relics,
+      specialCollectibles,
       passives,
       battle,
       achievements,
@@ -124,6 +125,10 @@ export class GameRepository {
       this.db.ownedCards.where('profileId').equals(profileId).toArray(),
       this.db.decks.where('profileId').equals(profileId).toArray(),
       this.db.ownedRelics.where('profileId').equals(profileId).toArray(),
+      this.db.specialCollectibles
+        .where('profileId')
+        .equals(profileId)
+        .toArray(),
       this.db.passiveTalents.where('profileId').equals(profileId).toArray(),
       this.db.battleSessions
         .where('profileId')
@@ -162,6 +167,7 @@ export class GameRepository {
       cards,
       decks,
       relics,
+      specialCollectibles,
       passives,
       battle: battle ?? null,
       achievements,

@@ -8,14 +8,18 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.55');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.56');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.55');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.56');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('悬浮入口消失');
-    expect(latestText).toContain('保留最后 1 点生命');
+    expect(latestText).toContain('特殊成就：抓虫中');
+    expect(latestText).toContain('不可装备的特殊藏品');
+    expect(
+      releases.find((release) => release.version === '0.2.0-alpha.55')
+        ?.changes.join('\n'),
+    ).toContain('保留最后 1 点生命');
     expect(
       releases.find((release) => release.version === '0.2.0-alpha.54')
         ?.changes.join('\n'),
@@ -67,6 +71,8 @@ describe('release notes', () => {
     expect(latestText).toContain('首领战不会消耗保底进度');
     expect(latestText).toContain('悬浮入口消失');
     expect(latestText).toContain('治疗牌会先完成治疗');
+    expect(latestText).toContain('特殊成就：抓虫中');
+    expect(latestText).toContain('不会重复增加金币');
     const beta17Text = releases
       .find((release) => release.version === '1.7.0-beta.1')
       ?.changes.join('\n');

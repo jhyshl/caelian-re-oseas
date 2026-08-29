@@ -3,6 +3,7 @@ import {
   ACHIEVEMENT_PATCH_REGISTRY,
   MEMORY_TOGETHER_ACHIEVEMENT_ID,
   MEMORY_TOGETHER_REWARD_GOLD,
+  PATCH_RELIC_DEFINITIONS,
 } from '@/achievements/patch-registry';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
@@ -150,6 +151,20 @@ describe('Achievement patch mailbox', () => {
         },
       },
     });
+    expect(ACHIEVEMENT_PATCH_REGISTRY['bug-feedback-reward']).toMatchObject({
+      achievement: { id: 'ach_bug_hunting', name: '抓虫中……' },
+      reward: {
+        gold: 500,
+        collectible: {
+          id: 'special_mysterious_bug',
+          name: '神秘虫子',
+          summary: 'X﹏X被抓到了',
+        },
+      },
+    });
+    expect(PATCH_RELIC_DEFINITIONS).not.toHaveProperty(
+      'special_mysterious_bug',
+    );
     expect(ACHIEVEMENT_PATCH_REGISTRY['old-timer']).toMatchObject({
       achievement: { id: 'ach_launch_old_timer', name: '老资历' },
       reward: {
@@ -261,6 +276,70 @@ describe('Achievement patch mailbox', () => {
         (entry) => entry.relicId === 'special_silver_fork',
       ),
     ).toBe(true);
+  });
+
+  it('为已打开的抓虫中信件补发成就与不可装备特殊藏品且保持幂等', async () => {
+    const { database, repository } = createRepository();
+    const profile = await repository.ensureProfile('bug-feedback-reward');
+    const goldBefore = (await repository.snapshot(profile.id)).player.gold;
+
+    const concurrentClaims = await Promise.all([
+      repository.syncPatchEntitlements(profile.id, [
+        { id: 'bug-feedback-reward', opened: true },
+      ]),
+      repository.syncPatchEntitlements(profile.id, [
+        { id: 'bug-feedback-reward', opened: true },
+      ]),
+    ]);
+    expect(
+      concurrentClaims.flatMap((result) => result.claimedRewardIds),
+    ).toEqual(['mail_bug_hunting']);
+
+    const claimed = await repository.snapshot(profile.id);
+    expect(claimed.player.gold).toBe(goldBefore + 500);
+    expect(
+      claimed.achievements.find(
+        (entry) => entry.achievementId === 'ach_bug_hunting',
+      ),
+    ).toMatchObject({ unlocked: true });
+    expect(claimed.specialCollectibles).toContainEqual(
+      expect.objectContaining({
+        collectibleId: 'special_mysterious_bug',
+        name: '神秘虫子',
+        summary: 'X﹏X被抓到了',
+      }),
+    );
+    await expect(
+      database.ownedRelics.get(
+        `${profile.id}:special_mysterious_bug`,
+      ),
+    ).resolves.toBeUndefined();
+    await expect(repository.mailboxState(profile.id)).resolves.toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'mail_bug_hunting',
+          achievementId: 'ach_bug_hunting',
+          rewardClaimedAt: expect.any(Number),
+          unread: false,
+        }),
+      ]),
+    });
+
+    await repository.syncPatchEntitlements(profile.id, [
+      { id: 'bug-feedback-reward', opened: true },
+    ]);
+    expect((await repository.snapshot(profile.id)).player.gold).toBe(
+      goldBefore + 500,
+    );
+    expect(
+      await database.specialCollectibles
+        .where('profileId')
+        .equals(profile.id)
+        .filter(
+          (entry) => entry.collectibleId === 'special_mysterious_bug',
+        )
+        .count(),
+    ).toBe(1);
   });
 
   it('把羽毛笔与金铲子的原始效果接入 Alpha 本地战斗', async () => {

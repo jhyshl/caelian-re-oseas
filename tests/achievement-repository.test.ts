@@ -77,7 +77,7 @@ describe('AchievementRepository integration', () => {
 
   it('保留旧版 95 项并接入内置特殊成就', async () => {
     const definitions = await loadAchievementDefinitions();
-    expect(Object.keys(definitions)).toHaveLength(98);
+    expect(Object.keys(definitions)).toHaveLength(99);
     expect(definitions.ach_re_oseas).toMatchObject({
       name: 'Re∞: 欧西亚斯',
       star: 3,
@@ -91,6 +91,11 @@ describe('AchievementRepository integration', () => {
       name: '同行的记忆',
       star: 5,
       condition: '仅限2026年8月19日领取',
+      patchOnly: true,
+    });
+    expect(definitions.ach_bug_hunting).toMatchObject({
+      name: '抓虫中……',
+      star: 5,
       patchOnly: true,
     });
   });
