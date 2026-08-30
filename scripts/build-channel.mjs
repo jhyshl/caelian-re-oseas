@@ -86,6 +86,45 @@ const version =
   (channel === 'beta'
     ? String(channelConfig.beta.version)
     : nextAlphaVersion(buildId));
+
+function assertCurrentReleaseNote(releaseChannel, releaseVersion) {
+  if (process.env.CAELIAN_REQUIRE_RELEASE_NOTE !== '1') return;
+  if (process.env.CAELIAN_ALLOW_MISSING_RELEASE_NOTE === '1') {
+    console.warn(
+      `Skipping ${releaseChannel} release-note validation for ${releaseVersion}.`,
+    );
+    return;
+  }
+
+  const releaseNotes = readFileSync(
+    path.join(root, 'src', 'content', 'release-notes.ts'),
+    'utf8',
+  );
+  const collectionName =
+    releaseChannel === 'beta' ? 'BETA_RELEASE_NOTES' : 'ALPHA_RELEASE_NOTES';
+  const collectionStart = releaseNotes.indexOf(
+    `export const ${collectionName}`,
+  );
+  const collectionEnd =
+    collectionStart < 0
+      ? -1
+      : releaseNotes.indexOf('] as const;', collectionStart);
+  const firstEntry =
+    collectionStart < 0 || collectionEnd < 0
+      ? null
+      : releaseNotes
+          .slice(collectionStart, collectionEnd)
+          .match(/version:\s*['\"]([^'\"]+)['\"]/);
+  const firstVersion = firstEntry?.[1] ?? null;
+  if (firstVersion !== releaseVersion) {
+    throw new Error(
+      `The first ${releaseChannel} release note is ${firstVersion ?? 'missing'}, but the publishing build is ${releaseVersion}. Add the exact version as the newest entry before publishing.`,
+    );
+  }
+}
+
+assertCurrentReleaseNote(channel, version);
+
 const environment = {
   ...process.env,
   CAELIAN_CHANNEL: channel,

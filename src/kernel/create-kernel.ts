@@ -89,6 +89,7 @@ import {
   formatStoryBattleResult,
   parseStoryBattleStart,
 } from '@/battle/story-bridge';
+import { normalizeRegion } from '@/worldbook/region-switcher';
 import {
   applyTheme,
   clearAppliedTheme,
@@ -116,6 +117,10 @@ interface QuestEvaluationPresentation {
   questId: string;
   transitionAccepted: boolean;
   summary: string;
+  gatheringRequested: boolean;
+  floorId: string;
+  floorLineageHash: string;
+  originRegion: string;
 }
 
 export class CaelianKernel {
@@ -367,6 +372,7 @@ export class CaelianKernel {
         ([
           'inventory.adjust',
           'inventory.use-consumable',
+          'gather.collect',
           'battle.use-item',
           'battle.finish',
         ].includes(type) ||
@@ -382,6 +388,7 @@ export class CaelianKernel {
           'quest.abandon',
           'inventory.adjust',
           'inventory.use-consumable',
+          'gather.collect',
           'battle.use-item',
           'battle.finish',
         ].includes(type) ||
@@ -426,6 +433,11 @@ export class CaelianKernel {
     }
     if (name === 'market') {
       return (await this.repository.marketState(
+        this.profileId,
+      )) as QueryResultMap[K];
+    }
+    if (name === 'gathering') {
+      return (await this.repository.gatheringState(
         this.profileId,
       )) as QueryResultMap[K];
     }
@@ -977,7 +989,16 @@ export class CaelianKernel {
     if (eventName === 'GENERATION_ENDED') {
       const evaluation = await this.evaluateTrackedQuest(payload);
       await this.advanceTrackedQuestFromLocalState();
-      if (evaluation) await this.presentQuestGuidance(evaluation);
+      if (evaluation) {
+        await this.presentQuestGuidance(evaluation);
+        if (evaluation.gatheringRequested) {
+          await this.presentStoryGathering(
+            evaluation.floorId,
+            evaluation.floorLineageHash,
+            evaluation.originRegion,
+          );
+        }
+      }
     }
     await this.syncQuestContext();
     await this.scanCurrentAchievements();
@@ -1254,6 +1275,10 @@ export class CaelianKernel {
         questId: quest.id,
         transitionAccepted: result.decision.accepted,
         summary: result.decision.next.summary,
+        gatheringRequested: result.gatheringRequested,
+        floorId: floor.id,
+        floorLineageHash: floor.lineageHash,
+        originRegion: snapshot.world.region,
       };
     } catch (error) {
       if (isQuestJudgeCancelledError(error)) return undefined;
@@ -1275,6 +1300,47 @@ export class CaelianKernel {
         this.notifications.dismiss(progressBannerId);
       }
     }
+  }
+
+  private async presentStoryGathering(
+    floorId: string,
+    floorLineageHash: string,
+    originRegion: string,
+  ): Promise<void> {
+    if (!this.profileId) return;
+    const floors = await this.adapter.chatFloors();
+    if (
+      !floors?.some(
+        (floor) =>
+          floor.id === floorId && floor.lineageHash === floorLineageHash,
+      )
+    ) {
+      return;
+    }
+
+    const snapshot = await this.repository.snapshot(this.profileId);
+    const expectedRegion = normalizeRegion(originRegion) || originRegion;
+    const currentRegion = normalizeRegion(snapshot.world.region) || snapshot.world.region;
+    if (currentRegion !== expectedRegion || snapshot.battle) return;
+    if (await this.getPendingQuestSubmission()) return;
+
+    const gathering = await this.repository.gatheringState(this.profileId);
+    if (!gathering.availableRegion || gathering.items.length === 0) {
+      this.notifyRuntime(
+        'warning',
+        '当前地区没有已登记的区域特产，系统不会临时生成物品。',
+        '无法开始采集',
+      );
+      return;
+    }
+    if (gathering.regionId !== expectedRegion) return;
+
+    await this.panels.navigate('gathering');
+    this.notifyRuntime(
+      'success',
+      `已打开${gathering.regionId}的采集页面，请选择真实存在的区域特产。`,
+      '可以进行采集',
+    );
   }
 
   private async presentQuestGuidance(

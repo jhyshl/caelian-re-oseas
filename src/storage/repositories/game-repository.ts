@@ -3,6 +3,7 @@ import { domainCommandSchema } from '@/domain/commands';
 import type {
   AchievementSpecialState,
   GameSnapshot,
+  GatheringView,
   MailboxState,
   MarketView,
   ProfileRecord,
@@ -23,6 +24,7 @@ import {
 import { CardRepository } from '@/storage/repositories/card-repository';
 import { CraftingRepository } from '@/storage/repositories/crafting-repository';
 import { InventoryRepository } from '@/storage/repositories/inventory-repository';
+import { GatheringRepository } from '@/storage/repositories/gathering-repository';
 import { MarketRepository } from '@/storage/repositories/market-repository';
 import { NarrativeRepository } from '@/storage/repositories/narrative-repository';
 import { GuildRepository } from '@/storage/repositories/guild-repository';
@@ -48,6 +50,7 @@ export class GameRepository {
   private readonly narrative: NarrativeRepository;
   private readonly achievements: AchievementRepository;
   private readonly market: MarketRepository;
+  private readonly gathering: GatheringRepository;
   private readonly questProgress: QuestProgressRepository;
 
   constructor(
@@ -65,6 +68,7 @@ export class GameRepository {
     this.narrative = new NarrativeRepository(db);
     this.achievements = new AchievementRepository(db, events);
     this.market = new MarketRepository(db);
+    this.gathering = new GatheringRepository(db);
     this.questProgress = new QuestProgressRepository(db);
   }
 
@@ -204,6 +208,9 @@ export class GameRepository {
     if (command.type.startsWith('market.')) {
       await this.market.prepare();
     }
+    if (command.type.startsWith('gather.')) {
+      await this.gathering.prepare();
+    }
     if (command.type.startsWith('craft.')) {
       await this.crafting.prepare();
     }
@@ -312,6 +319,10 @@ export class GameRepository {
 
   marketState(profileId: string): Promise<MarketView> {
     return this.market.view(profileId);
+  }
+
+  gatheringState(profileId: string): Promise<GatheringView> {
+    return this.gathering.view(profileId);
   }
 
   bindQuestFloor(
@@ -538,6 +549,8 @@ export class GameRepository {
           profileId,
           command.payload.instanceId,
         );
+      case 'gather.collect':
+        return this.gathering.collect(profileId, command.payload);
       case 'battle.start':
         return this.battles.start(profileId, command.payload);
       case 'battle.explore':
@@ -601,6 +614,7 @@ export class GameRepository {
       this.db.achievementCounters,
       this.db.mailRecords,
       this.db.marketStates,
+      this.db.gatheringStates,
       this.db.settings,
       this.db.commandInbox,
       this.db.eventLog,

@@ -124,6 +124,7 @@ const primary: Array<{ panel: PanelName; icon: string; label: string }> = [
   { panel: 'guild', icon: '⚔', label: '协会' },
   { panel: 'mailbox', icon: '✉', label: '邮箱' },
   { panel: 'market', icon: '¤', label: '集市' },
+  { panel: 'gathering', icon: '♧', label: '采集' },
   { panel: 'map', icon: '⌖', label: '地图' },
   { panel: 'worldbook', icon: '▤', label: '世界书' },
   { panel: 'battle', icon: '✹', label: '战斗' },

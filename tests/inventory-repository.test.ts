@@ -16,6 +16,43 @@ afterEach(async () => {
 });
 
 describe('InventoryRepository', () => {
+  it('准备完整物品目录后可以使用真实采集消耗品并扣减背包数量', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-inventory-gather-consumable-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('chat:inventory-gather-consumable');
+    const inventory = new InventoryRepository(database);
+    await inventory.prepare();
+
+    await database.playerStates.update(profile.id, {
+      created: true,
+      mp: 4,
+    });
+    await database.inventoryStacks.put({
+      id: `${profile.id}:学院薄荷`,
+      profileId: profile.id,
+      itemId: '学院薄荷',
+      name: '学院薄荷',
+      quantity: 2,
+      updatedAt: Date.now(),
+    });
+
+    await inventory.useConsumable(profile.id, '学院薄荷');
+
+    expect(await database.playerStates.get(profile.id)).toMatchObject({
+      mp: 7,
+    });
+    expect(
+      await database.inventoryStacks.get(`${profile.id}:学院薄荷`),
+    ).toMatchObject({
+      itemId: '学院薄荷',
+      quantity: 1,
+    });
+  });
+
   it('换装和卸装只截断超出新有效上限的当前值，不给低血角色补血', async () => {
     const database = new CaelianDatabase(
       'alpha',

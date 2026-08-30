@@ -581,6 +581,7 @@ describe('CaelianKernel integration', () => {
       'guild',
       'mailbox',
       'market',
+      'gathering',
       'map',
       'worldbook',
       'battle',
@@ -1371,6 +1372,54 @@ describe('CaelianKernel integration', () => {
     await repeatedKernel.api.shutdown();
   });
 
+  it('当前 Alpha 公告有内容，未匹配版号手动打开时回退到最近历史', async () => {
+    const currentDatabaseName = `caelian-alpha-current-release-${crypto.randomUUID()}`;
+    databaseNames.push(currentDatabaseName);
+    const currentKernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.58',
+      buildId: 'current-release-test-build',
+      databaseName: currentDatabaseName,
+      sourceWindow: window,
+    });
+
+    await currentKernel.initialize();
+    const currentAnnouncement = document.querySelector(
+      '[data-caelian-panel="release-notes"]',
+    );
+    expect(currentAnnouncement?.textContent).toContain('Alpha 58');
+    expect(currentAnnouncement?.textContent).toContain('集市商品卡');
+    expect(currentAnnouncement?.textContent).toContain('当前版本');
+    await currentKernel.api.shutdown();
+
+    const unmatchedDatabaseName = `caelian-alpha-unmatched-release-${crypto.randomUUID()}`;
+    databaseNames.push(unmatchedDatabaseName);
+    const unmatchedKernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.59',
+      buildId: 'unmatched-release-test-build',
+      databaseName: unmatchedDatabaseName,
+      sourceWindow: window,
+    });
+
+    await unmatchedKernel.initialize();
+    expect(
+      document.querySelector('[data-caelian-panel="release-notes"]'),
+    ).toBeNull();
+    await unmatchedKernel.api.openPanel('release-notes');
+    const historicalAnnouncement = document.querySelector(
+      '[data-caelian-panel="release-notes"]',
+    );
+    expect(historicalAnnouncement?.textContent).toContain(
+      '当前构建 0.2.0-alpha.59 暂无独立公告',
+    );
+    expect(historicalAnnouncement?.textContent).toContain('Alpha 58');
+    expect(
+      historicalAnnouncement?.querySelector('.current-badge'),
+    ).toBeNull();
+    await unmatchedKernel.api.shutdown();
+  });
+
   it('Beta 使用独立运行通道并只展示 Beta 公告', async () => {
     const databaseName = `caelian-beta-release-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
@@ -1988,7 +2037,7 @@ describe('CaelianKernel integration', () => {
     textarea.remove();
   });
 
-  it('只在生成完成后判定，并在删除楼层时保留已确认节点', async () => {
+  it('只在生成完成后判定，复用任务判定打开采集页，并在删除楼层时保留已确认节点', async () => {
     const databaseName = `caelian-alpha-quest-floor-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
     const handlers = new Map<unknown, (...args: unknown[]) => void>();
@@ -2051,6 +2100,7 @@ describe('CaelianKernel integration', () => {
       confidence: 0.96,
       evidence: ['玩家明确答应，并和芙萝拉准备前往城郊。'],
       summary: '花已经卖完，玩家答应陪芙萝拉去采花。',
+      gatheringRequested: true,
     };
     const fetchMock = vi.spyOn(window, 'fetch').mockImplementation(
       async (input) => {
@@ -2110,6 +2160,7 @@ describe('CaelianKernel integration', () => {
       { mes: '好，我陪你去采花。', is_user: true },
       { mes: '芙萝拉开心地点头，收好花篮准备出发。', is_user: false },
     );
+    const inventoryBeforeGathering = await kernel.api.query('inventory');
     handlers.get('character-message-rendered')?.(1);
     await new Promise((resolve) => window.setTimeout(resolve, 40));
     expect(
@@ -2130,6 +2181,17 @@ describe('CaelianKernel integration', () => {
         { timeout: 3000 },
       )
       .toBe('flora-selling-flowers');
+    await expect
+      .poll(() => kernel.api.listOpenPanels(), { timeout: 3000 })
+      .toContain('gathering');
+    expect(await kernel.api.query('inventory')).toEqual(
+      inventoryBeforeGathering,
+    );
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('judge.example'),
+      ),
+    ).toHaveLength(1);
     await expect
       .poll(
         () =>
@@ -2171,5 +2233,114 @@ describe('CaelianKernel integration', () => {
     await kernel.api.shutdown();
     fetchMock.mockRestore();
     textarea.remove();
+  });
+});
+
+describe('剧情采集判定', () => {
+  async function setupUntrackedGatheringScenario(userMessage: string) {
+    const databaseName =
+      `caelian-alpha-story-gathering-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return { stop: () => handlers.delete(event) };
+    });
+    window.tavern_events = {
+      GENERATION_ENDED: 'generation-ended',
+    };
+    const chat: Array<{ mes: string; is_user: boolean }> = [
+      {
+        mes: userMessage,
+        is_user: true,
+      },
+      {
+        mes: '你走进城郊的草丛，开始仔细寻找可用的材料。',
+        is_user: false,
+      },
+    ];
+    window.SillyTavern = {
+      getContext: () => ({
+        chatId: 'story-gathering-untracked',
+        name1: '采集测试员',
+        chat,
+        setExtensionPrompt: vi.fn(),
+      }),
+    };
+    const fetchMock = vi.spyOn(window, 'fetch').mockImplementation(
+      async (input) => {
+        if (String(input).includes('judge.example')) {
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({ gatheringRequested: true }),
+                  },
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        return new Response(null, { status: 404 });
+      },
+    );
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'story-gathering-untracked-build',
+      databaseName,
+      sourceWindow: window,
+    });
+    await kernel.initialize();
+    await kernel.api.execute({
+      id: 'create-story-gathering-untracked',
+      type: 'player.create',
+      payload: {
+        name: '采集测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    kernel.api.configureQuestJudge({
+      endpoint: 'https://judge.example/v1/chat/completions',
+      model: 'judge-model',
+    });
+    const gatheringRequests = () =>
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('judge.example'),
+      );
+    return {
+      fetchMock,
+      gatheringRequests,
+      handlers,
+      kernel,
+    };
+  }
+
+  it('无追踪任务时即使玩家明确采集拾取，也不调用副 API 或打开采集页', async () => {
+    const harness = await setupUntrackedGatheringScenario(
+      '我现在采集并拾取附近的区域特产。',
+    );
+    const inventoryBefore = await harness.kernel.api.query('inventory');
+
+    expect(await harness.kernel.api.getTrackedQuest()).toBeNull();
+    harness.handlers.get('generation-ended')?.(1);
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+
+    expect(harness.gatheringRequests()).toHaveLength(0);
+    expect(
+      document.querySelector('[data-caelian-panel="gathering"]'),
+    ).toBeNull();
+    expect(await harness.kernel.api.query('inventory')).toEqual(
+      inventoryBefore,
+    );
+
+    await harness.kernel.api.shutdown();
+    harness.fetchMock.mockRestore();
   });
 });

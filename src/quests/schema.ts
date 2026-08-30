@@ -469,6 +469,7 @@ export const questJudgeResultSchema = z
     confidence: z.number().min(0).max(1),
     evidence: z.array(z.string().trim().min(1).max(500)).max(8),
     summary: z.string().trim().min(1).max(2_000),
+    gatheringRequested: z.boolean().optional(),
     giftItems: z.array(questJudgeGiftSchema).max(20).optional(),
     requiredItemSubmission: questJudgeGiftSchema.nullable().optional(),
   })

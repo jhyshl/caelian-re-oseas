@@ -83,6 +83,27 @@ describe('Journey theme coverage', () => {
     expect(manager).not.toContain('assets/themes/journey/monsters/');
   });
 
+  it('clears the obsolete light market gradient before applying dark Journey text', async () => {
+    const css = await readFile('src/styles/alpha.css', 'utf8');
+    const obsoleteLightMarket = css.indexOf(
+      'background: linear-gradient(145deg, rgba(253, 255, 255, 0.9), rgba(207, 230, 247, 0.82)) !important;',
+    );
+    const darkMarketSelector = css.lastIndexOf(
+      'body.caelian-theme-journey .caelian-panel-host .market-grid article,',
+    );
+    const darkMarketRule = css.slice(
+      darkMarketSelector,
+      css.indexOf('}', darkMarketSelector) + 1,
+    );
+
+    expect(obsoleteLightMarket).toBeGreaterThan(-1);
+    expect(darkMarketSelector).toBeGreaterThan(obsoleteLightMarket);
+    expect(darkMarketRule).toContain(
+      'background: rgba(7, 25, 42, 0.94) !important;',
+    );
+    expect(darkMarketRule).not.toContain('background-color:');
+  });
+
   it('ships true-alpha PNG launchers, frames and menu icons', async () => {
     for (const asset of [
       'src/assets/themes/journey/launcher-ticket-transparent.png',

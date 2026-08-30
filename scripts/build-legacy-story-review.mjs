@@ -28,6 +28,19 @@ const beat = (id, title, purpose, completionGate) => ({
   },
 });
 
+const normalizeSourceText = (index, text) => {
+  if (index !== 109) return text;
+  return text
+    .replace(
+      '玩家每次明确采集圣心百合时，AI可以按采集物规则把“圣心百合”加入玩家背包。目标是圣心百合 8 朵。',
+      '玩家本轮明确进行采集圣心百合的行动时，副 API 应返回采集判定，并由本地系统直接打开采集页。圣心百合只能由玩家在采集页执行领取后进入背包；AI 不得直接添加、赠送或虚构采集数量。目标是圣心百合 8 朵。',
+    )
+    .replace(
+      '当玩家背包中圣心百合达到8朵，或剧情明确采够8朵时，尼尔出现：',
+      '当玩家通过本地采集页领取、且背包中的圣心百合达到8朵时，尼尔出现：',
+    );
+};
+
 const scene = (id, title, locations, beats) => ({ id, title, locations, beats });
 const stage = (number, id, title, primarySourceEntries, scenes, supplementSourceEntries = []) => ({
   number,
@@ -477,7 +490,7 @@ const storylines = [
       stage(2, 'outskirts-lilies', '采集八朵圣心百合', [109], [scene('outskirts-lily-slope', '城郊百合坡', ['城郊', '幽光森林'], [
         beat('flora-travel-outskirts', '前往城郊', '实际描写离开商业区前往城郊，不瞬移。', '玩家已抵达城郊。'),
         beat('flora-find-slope', '找到百合坡', '呈现阳光、风与适合圣心百合生长的坡地。', '百合坡已被找到。'),
-        beat('flora-gather-eight-lilies', '只采盛开的花', '每次明确采集由本地规则增加一至三朵，只摘盛开花朵，未满八朵不得进入墓园阶段。', '本地背包圣心百合数量至少八朵。'),
+        beat('flora-gather-eight-lilies', '只采盛开的花', '玩家本轮明确进行采集时，由副 API 判定并打开本地采集页；玩家只能在采集页领取现有区域特产“圣心百合”，AI 不得直接向背包添加物品。', '玩家在本地采集页领取后，背包圣心百合数量至少八朵。'),
         beat('flora-neil-arrives', '尼尔出现', '采足八朵后，提着东西的尼尔出现并向玩家道谢。', '数量门槛满足后尼尔已登场。'),
         beat('flora-memorial-invitation', '得知梅娅忌日', '尼尔说明今天是梅娅忌日，并邀请玩家同行去墓园；拒绝可进入后期 B 结局。', '玩家答应同行，或明确拒绝并完成 B 线收束。'),
       ])]),
@@ -503,7 +516,7 @@ const entryRecord = (index) => {
   return {
     entry: index,
     comment: entry.comment ?? entry.name ?? '',
-    exactText: String(entry.content ?? ''),
+    exactText: normalizeSourceText(index, String(entry.content ?? '')),
   };
 };
 

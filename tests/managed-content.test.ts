@@ -199,6 +199,16 @@ describe('ManagedContentUpdater', () => {
     expect(output?.content).toContain('/caelian/narrative/');
     expect(output).toMatchObject({ enabled: true, insertion_order: 200 });
 
+    const gathering = normalized.find(
+      (entry) => entry.name === '采集物系统',
+    );
+    expect(gathering?.content).toContain('本地脚本会直接打开采集页面');
+    expect(gathering?.content).toContain(
+      '无追踪任务的日常对话不会为采集额外调用副 API',
+    );
+    expect(gathering?.content).toContain('禁止创造新采集物');
+    expect(gathering?.content).not.toContain('每次建议获得1~3个物品');
+
     const manifest = JSON.parse(
       readFileSync(
         path.resolve('public/managed-content/alpha.json'),
@@ -212,14 +222,14 @@ describe('ManagedContentUpdater', () => {
         mutation?: { action: string };
       }>;
     };
-    expect(manifest.revision).toBe('2026-08-13.1');
+    expect(manifest.revision).toBe('2026-08-30.1');
     expect(manifest.target.worldbookNames).toEqual(
       expect.arrayContaining([
         '孔雀开屏你说你看不见alpha',
         '孔雀开屏你说你看不见beta',
       ]),
     );
-    expect(manifest.operations).toHaveLength(7);
+    expect(manifest.operations).toHaveLength(8);
     expect(
       manifest.operations.filter(
         (operation) => operation.target.kind === 'character-script',
@@ -233,7 +243,7 @@ describe('ManagedContentUpdater', () => {
       manifest.operations.filter(
         (operation) => operation.target.kind === 'worldbook-upsert-entry',
       ),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
   });
 
   it('发布清单可在最新版角色卡上幂等执行且不产生额外改动', async () => {

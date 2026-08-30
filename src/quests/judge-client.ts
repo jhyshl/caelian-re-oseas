@@ -6,7 +6,6 @@ import {
   questJudgeResultSchema,
   type QuestJudgeResult,
 } from '@/quests/schema';
-
 export interface QuestJudgeEvaluation {
   result: QuestJudgeResult;
   rawResponse: string;
@@ -170,6 +169,17 @@ export class OpenAiCompatibleQuestJudgeClient
   async evaluate(
     input: QuestJudgePromptInput,
   ): Promise<QuestJudgeEvaluation> {
+    const content = await this.requestMessages(buildQuestJudgeMessages(input));
+    const parsed = parseJsonObject(content);
+    return {
+      result: questJudgeResultSchema.parse(normalizeJudgeResult(parsed)),
+      rawResponse: content,
+    };
+  }
+
+  private async requestMessages(
+    messages: Array<{ role: 'system' | 'user'; content: string }>,
+  ): Promise<string> {
     const endpoint = resolveChatEndpoint(this.config.endpoint);
     const model = this.config.model.trim();
     if (!endpoint || !model) throw new Error('副 API 地址和模型不能为空');
@@ -184,7 +194,6 @@ export class OpenAiCompatibleQuestJudgeClient
       this.config.timeoutMs ?? 30_000,
     );
     try {
-      const messages = buildQuestJudgeMessages(input);
       const responsesApi = isResponsesEndpoint(endpoint);
       const response = await this.fetcher(endpoint, {
         method: 'POST',
@@ -228,11 +237,7 @@ export class OpenAiCompatibleQuestJudgeClient
         throw new Error('副 API 没有返回可解析的文本');
       }
       if (content.length > 20_000) throw new Error('副 API 返回内容过长');
-      const parsed = parseJsonObject(content);
-      return {
-        result: questJudgeResultSchema.parse(normalizeJudgeResult(parsed)),
-        rawResponse: content,
-      };
+      return content;
     } catch (error) {
       if (request.controller.signal.aborted) {
         if (request.cancelledByPlayer) {
@@ -366,6 +371,7 @@ function normalizeJudgeResult(value: unknown): unknown {
     .slice(0, 8);
   const confidenceValue = Number(source.confidence);
   const summary = firstText(source.summary, evidence[0]).slice(0, 2_000);
+  const gatheringRequested = booleanValue(source.gatheringRequested);
   const giftItems = normalizeJudgeItems(source.giftItems, 20);
   const requiredItemSubmission = normalizeJudgeItems(
     source.requiredItemSubmission ? [source.requiredItemSubmission] : [],
@@ -386,6 +392,7 @@ function normalizeJudgeResult(value: unknown): unknown {
       : 0,
     evidence,
     summary: summary || '本轮没有确认新的任务进度。',
+    gatheringRequested,
     giftItems,
     requiredItemSubmission:
       progress === 'transition' ? requiredItemSubmission : null,

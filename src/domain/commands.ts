@@ -303,6 +303,14 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...commandBase,
+    type: z.literal('gather.collect'),
+    payload: z.object({
+      listingKey: z.string().trim().min(1).max(260),
+      quantity: z.number().int().min(1).max(20).default(1),
+    }),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal('market.sell-item'),
     payload: z.object({
       itemId: z.string().trim().min(1).max(180),

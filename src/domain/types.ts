@@ -789,6 +789,50 @@ export interface MarketView {
   sellEquipment: MarketSellEquipment[];
 }
 
+export type GatheringAction = 'gather' | 'search';
+
+export interface GatheringItem {
+  listingKey: string;
+  itemId: string;
+  name: string;
+  description: string;
+  category: string;
+  rarity: string;
+  action: GatheringAction;
+  actionLabel: string;
+  initialStock: number;
+  remaining: number;
+  ownedCount: number;
+}
+
+export type GatheringItemView = GatheringItem;
+
+export interface GatheringStockItem {
+  listingKey: string;
+  itemId: string;
+  initialStock: number;
+  remaining: number;
+}
+
+export interface GatheringState {
+  id: string;
+  profileId: string;
+  regionId: string;
+  refreshKey: string;
+  version: 1;
+  items: GatheringStockItem[];
+  updatedAt: number;
+}
+
+export interface GatheringView {
+  regionId: string;
+  location: string;
+  refreshKey: string;
+  nextRefreshAt: number;
+  availableRegion: boolean;
+  items: GatheringItem[];
+}
+
 export interface CraftingDraftRecord {
   id: string;
   profileId: string;

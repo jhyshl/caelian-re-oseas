@@ -3,19 +3,30 @@ import {
   ALPHA_RELEASE_NOTES,
   BETA_RELEASE_NOTES,
   releaseAnnouncementId,
+  releaseHistoryFor,
   releaseNotesFor,
 } from '@/content/release-notes';
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.56');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.58');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.56');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.58');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('特殊成就：抓虫中');
-    expect(latestText).toContain('不可装备的特殊藏品');
+    expect(latestText).toContain('只剩标题和按钮');
+    expect(latestText).toContain('集市商品卡');
+    const alpha57Text =
+      releases
+        .find((release) => release.version === '0.2.0-alpha.57')
+        ?.changes.join('\n') ?? '';
+    expect(alpha57Text).toContain('边框拖拽缩放');
+    expect(alpha57Text).toContain('地区世界书快捷条目');
+    expect(
+      releases.find((release) => release.version === '0.2.0-alpha.56')
+        ?.changes.join('\n'),
+    ).toContain('不可装备的特殊藏品');
     expect(
       releases.find((release) => release.version === '0.2.0-alpha.55')
         ?.changes.join('\n'),
@@ -51,10 +62,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.8.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.9.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.9',
       'Beta 1.8',
       'Beta 1.7',
       'Beta 1.6',
@@ -66,13 +78,20 @@ describe('release notes', () => {
       'Beta 1.0',
     ]);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('学院主线最终魔像战');
-    expect(latestText).toContain('上一张使用的是同名卡牌');
-    expect(latestText).toContain('首领战不会消耗保底进度');
-    expect(latestText).toContain('悬浮入口消失');
-    expect(latestText).toContain('治疗牌会先完成治疗');
-    expect(latestText).toContain('特殊成就：抓虫中');
-    expect(latestText).toContain('不会重复增加金币');
+    expect(latestText).toContain('快捷菜单新增“采集”');
+    expect(latestText).toContain('无追踪任务的日常对话不会额外调用副 API');
+    expect(latestText).toContain('边框拖拽缩放');
+    expect(latestText).toContain('地区世界书快捷条目');
+    const beta18Text = releases
+      .find((release) => release.version === '1.8.0-beta.1')
+      ?.changes.join('\n');
+    expect(beta18Text).toContain('学院主线最终魔像战');
+    expect(beta18Text).toContain('上一张使用的是同名卡牌');
+    expect(beta18Text).toContain('首领战不会消耗保底进度');
+    expect(beta18Text).toContain('悬浮入口消失');
+    expect(beta18Text).toContain('治疗牌会先完成治疗');
+    expect(beta18Text).toContain('特殊成就：抓虫中');
+    expect(beta18Text).toContain('不会重复增加金币');
     const beta17Text = releases
       .find((release) => release.version === '1.7.0-beta.1')
       ?.changes.join('\n');
@@ -85,6 +104,19 @@ describe('release notes', () => {
 
   it('不会为没有公告内容的构建触发窗口', () => {
     expect(releaseNotesFor('alpha', '0.1.0-alpha.test')).toEqual([]);
+  });
+
+  it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.59')[0]?.version).toBe(
+      '0.2.0-alpha.58',
+    );
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
+      '0.2.0-alpha.44',
+    );
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
+      '0.2.0-alpha.58',
+    );
+    expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });
 
   it('为每个版本生成稳定且互不相同的已读标记', () => {

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "channel": "alpha",
-  "revision": "2026-08-13.1",
+  "revision": "2026-08-30.1",
   "target": {
     "characterName": "凯利安",
     "worldbookNames": [
@@ -16,7 +16,7 @@
   },
   "sourceCard": {
     "url": "https://jhyshl.github.io/caelian-re-oseas/managed-content/cards/caelian-alpha-mvu-v3.json",
-    "sha256": "e06ed02bfc65b54a5a810c2b421668d7b98e197b0cb8e002dbfaf42ed81bf14d"
+    "sha256": "3b930b5b7e7d320fc1da30be149db682c31643623696d39a1c92989b7650f9f5"
   },
   "operations": [
     {
@@ -277,6 +277,61 @@
           "position": 4,
           "exclude_recursion": false,
           "display_index": 60,
+          "probability": 100,
+          "useProbability": true,
+          "depth": 0,
+          "selectiveLogic": 0,
+          "outlet_name": "",
+          "group": "",
+          "group_override": false,
+          "group_weight": 100,
+          "prevent_recursion": false,
+          "delay_until_recursion": false,
+          "scan_depth": null,
+          "match_whole_words": null,
+          "use_group_scoring": false,
+          "case_sensitive": null,
+          "automation_id": "",
+          "role": 0,
+          "vectorized": false,
+          "sticky": null,
+          "cooldown": null,
+          "delay": null,
+          "match_persona_description": false,
+          "match_character_description": false,
+          "match_character_personality": false,
+          "match_character_depth_prompt": false,
+          "match_scenario": false,
+          "match_creator_notes": false,
+          "triggers": [],
+          "ignore_budget": false
+        }
+      }
+    },
+    {
+      "id": "2026-08-07.mvu-guidance.entry-6",
+      "target": {
+        "kind": "worldbook-upsert-entry",
+        "entryNames": [
+          "采集物系统"
+        ]
+      },
+      "entry": {
+        "uid": 0,
+        "name": "采集物系统",
+        "content": "---\n采集物系统:\n  说明: 区域特产、每日库存与玩家背包全部由浏览器本地采集页面管理，不写入 MVU。\n  规则:\n    - 玩家本轮明确进行采集、采药、挖矿、打捞、搜寻或拾取区域特产时，正文只描写开始行动、寻找采集点或发现可交互资源，不得宣布已经获得物品或数量。\n    - 只有当前存在追踪中的剧情任务、且本轮原本就会进行任务副 API 判定时，副 API 才会同时判断本轮是否属于采集行动；判断成立时本地脚本会直接打开采集页面，由玩家亲自选择并领取。无追踪任务的日常对话不会为采集额外调用副 API。\n    - 实际物品只能来自当前地区的下列现有数据库条目；禁止创造新采集物、改写名称、跨地区发放，或把采集物作为剧情赠礼直接加入背包。\n    - 每种区域特产的本地库存每日零点刷新为10~20个；同一种特产可以合理分布在多个地区，具体剩余数量只以本地页面为准。\n    - 玩家只是路过、提及、观察、回忆或计划以后采集，或只有 NPC 在采集时，不得视为玩家本轮采集。\n    - 不要创建或更新 玩家.背包、caelian.state.player.inventory 或其他替代背包变量。实际入库、使用、合成和交易均由本地系统执行。\n  地区采集物:\n    圣德里安学院: 学院薄荷、晨露花、空玻璃瓶、魔法粉尘\n    伊拉亚城: 城郊药草、治愈苔、空玻璃瓶、幽灯草、帕德里湖水珠、圣心百合\n    索拉维亚: 圣心百合、祈祷绷带、日光树脂、空玻璃瓶\n    奈亚索斯城: 海盐珍珠草、潮汐贝壳、蓝珊瑚碎、空玻璃瓶\n    艾瑟拉森林: 月露草、蓝晶花、古树新芽、藤蔓纤维、幽灯草\n    炉心城: 煤晶粉、铜齿轮、蒸汽冷凝水、空玻璃瓶\n    银月之城: 银月草、血蔷薇花瓣、月露草、夜光菇\n    远古圣山: 龙息草、圣山雪莲、金鳞砂、日光树脂\n    极北之地: 极寒苔、黑潮残片、冰晶花、夜光菇\n    阿必塞海: 深海荧藻、海渊盐晶、蓝珊瑚碎、潮汐贝壳",
+        "keys": [],
+        "secondary_keys": [],
+        "constant": true,
+        "selective": false,
+        "insertion_order": 100,
+        "enabled": true,
+        "position": "after_char",
+        "use_regex": false,
+        "extra": {
+          "position": 4,
+          "exclude_recursion": false,
+          "display_index": 61,
           "probability": 100,
           "useProbability": true,
           "depth": 0,

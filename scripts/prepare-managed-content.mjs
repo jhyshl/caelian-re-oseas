@@ -19,6 +19,19 @@ const sourceCard =
 const publicRoot = path.join(root, 'public', 'managed-content');
 const publicCard = path.join(publicRoot, 'cards', 'caelian-alpha-mvu-v3.json');
 const publicManifest = path.join(publicRoot, 'alpha.json');
+const gatheringItemsByRegion = JSON.parse(
+  await readFile(
+    path.join(
+      root,
+      'src',
+      'content',
+      'generated',
+      'world',
+      'gather-items-by-region.json',
+    ),
+    'utf8',
+  ),
+);
 const deliveryRoot = path.dirname(sourceCard);
 const deliveryWorldbookRoot = path.join(deliveryRoot, '世界书与变量文件');
 const characterName = '凯利安';
@@ -76,6 +89,23 @@ const battleEntry = entries.find((entry) =>
 if (!battleEntry) throw new Error('The managed story battle rule was not found.');
 battleEntry.content = updateStoryBattleRules(String(battleEntry.content ?? ''));
 
+const gatheringGuidanceContent = [
+  '---',
+  '采集物系统:',
+  '  说明: 区域特产、每日库存与玩家背包全部由浏览器本地采集页面管理，不写入 MVU。',
+  '  规则:',
+  '    - 玩家本轮明确进行采集、采药、挖矿、打捞、搜寻或拾取区域特产时，正文只描写开始行动、寻找采集点或发现可交互资源，不得宣布已经获得物品或数量。',
+  '    - 只有当前存在追踪中的剧情任务、且本轮原本就会进行任务副 API 判定时，副 API 才会同时判断本轮是否属于采集行动；判断成立时本地脚本会直接打开采集页面，由玩家亲自选择并领取。无追踪任务的日常对话不会为采集额外调用副 API。',
+  '    - 实际物品只能来自当前地区的下列现有数据库条目；禁止创造新采集物、改写名称、跨地区发放，或把采集物作为剧情赠礼直接加入背包。',
+  '    - 每种区域特产的本地库存每日零点刷新为10~20个；同一种特产可以合理分布在多个地区，具体剩余数量只以本地页面为准。',
+  '    - 玩家只是路过、提及、观察、回忆或计划以后采集，或只有 NPC 在采集时，不得视为玩家本轮采集。',
+  '    - 不要创建或更新 玩家.背包、caelian.state.player.inventory 或其他替代背包变量。实际入库、使用、合成和交易均由本地系统执行。',
+  '  地区采集物:',
+  ...Object.entries(gatheringItemsByRegion).map(
+    ([region, itemIds]) => `    ${region}: ${itemIds.join('、')}`,
+  ),
+].join('\n');
+
 const canonicalEntries = [
   normalizeEntry({
     aliases: ['initvar', '[initvar]变量初始化勿开'],
@@ -132,6 +162,17 @@ const canonicalEntries = [
     depth: 0,
     displayIndex: 60,
   }),
+  normalizeEntry({
+    aliases: ['采集物系统'],
+    name: '采集物系统',
+    content: gatheringGuidanceContent,
+    enabled: true,
+    order: 100,
+    position: 'after_char',
+    extensionPosition: 4,
+    depth: 0,
+    displayIndex: 61,
+  }),
 ];
 
 card.first_mes = stripLegacyQuestBlocks(card.first_mes);
@@ -184,7 +225,7 @@ const cardSha256 = createHash('sha256').update(cardJson).digest('hex');
 const manifest = {
   schemaVersion: 1,
   channel: 'alpha',
-  revision: '2026-08-13.1',
+  revision: '2026-08-30.1',
   target: {
     characterName,
     worldbookNames: [

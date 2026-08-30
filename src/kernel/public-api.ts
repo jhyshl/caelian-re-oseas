@@ -3,6 +3,7 @@ import type { AchievementDefinition } from '@/content/types';
 import type {
   AchievementSpecialState,
   EventLogRecord,
+  GatheringView,
   GameSnapshot,
   InventoryStackRecord,
   MailboxState,
@@ -94,6 +95,7 @@ export type PanelName =
   | 'inventory'
   | 'crafting'
   | 'market'
+  | 'gathering'
   | 'guild'
   | 'map'
   | 'worldbook'
@@ -113,6 +115,7 @@ export type QueryName =
   | 'state'
   | 'inventory'
   | 'market'
+  | 'gathering'
   | 'events'
   | 'achievement-definitions'
   | 'achievement-special'
@@ -123,6 +126,7 @@ export interface QueryResultMap {
   state: GameSnapshot;
   inventory: InventoryStackRecord[];
   market: MarketView;
+  gathering: GatheringView;
   events: EventLogRecord[];
   'achievement-definitions': Record<string, AchievementDefinition>;
   'achievement-special': AchievementSpecialState;

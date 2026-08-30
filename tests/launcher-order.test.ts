@@ -14,6 +14,32 @@ const available: PanelName[] = [
   'guild',
 ];
 
+const legacyLauncherOrder: PanelName[] = [
+  'character',
+  'affinity',
+  'deck',
+  'card-square',
+  'inventory',
+  'crafting',
+  'guild',
+  'mailbox',
+  'market',
+  'map',
+  'worldbook',
+  'battle',
+  'achievements',
+  'settings',
+  'feedback',
+  'surveys',
+  'release-notes',
+];
+
+const launcherOrderWithGathering: PanelName[] = [
+  ...legacyLauncherOrder.slice(0, 9),
+  'gathering',
+  ...legacyLauncherOrder.slice(9),
+];
+
 describe('Floating launcher order', () => {
   it('保留有效的玩家顺序并把新入口追加到末尾', () => {
     expect(
@@ -47,5 +73,17 @@ describe('Floating launcher order', () => {
       'card-square',
       'inventory',
     ]);
+  });
+
+  it('旧版十七项顺序载入后只在末尾追加一次采集入口', () => {
+    const normalized = normalizeLauncherOrder(
+      legacyLauncherOrder,
+      launcherOrderWithGathering,
+    );
+
+    expect(normalized).toEqual([...legacyLauncherOrder, 'gathering']);
+    expect(
+      normalized.filter((panel) => panel === 'gathering'),
+    ).toHaveLength(1);
   });
 });

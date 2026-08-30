@@ -1872,7 +1872,7 @@ body.caelian-theme-journey .caelian-panel-host .letter-paper {
 body.caelian-theme-journey .caelian-panel-host .market-grid article,
 body.caelian-theme-journey .caelian-panel-host .sell-list article {
   color: #d2c9b9 !important;
-  background-color: rgba(7, 25, 42, 0.94) !important;
+  background: rgba(7, 25, 42, 0.94) !important;
 }
 
 body.caelian-theme-journey .caelian-panel-host .market-grid article.rarity-uncommon { box-shadow: inset 3px 0 #4f9d7f !important; }

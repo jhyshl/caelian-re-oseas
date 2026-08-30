@@ -1,3 +1,4 @@
+import { loadGatherResources } from '@/content/catalogs/inventory';
 import type {
   QuestRecord,
   QuestTrackerRecord,
@@ -45,6 +46,7 @@ export type EvaluateQuestTurnResult =
       decision: QuestTransitionDecision;
       tracker: QuestTrackerRecord;
       giftItems: Array<{ itemId: string; itemName: string; count: number }>;
+      gatheringRequested: boolean;
       questCompleted: boolean;
     };
 
@@ -142,10 +144,14 @@ export class QuestTrackerService {
     const legalItems = new Map(
       (input.legalItems ?? []).map((item) => [item.itemId, item.itemName]),
     );
+    const gatheringRequested = evaluation.result.gatheringRequested ?? false;
+    const gatherResourceIds = new Set(
+      Object.keys(await loadGatherResources()),
+    );
     const giftItems = mergeLegalItems(
       evaluation.result.giftItems ?? [],
       legalItems,
-    );
+    ).filter((item) => !gatherResourceIds.has(item.itemId));
     const requested = evaluation.result.requiredItemSubmission ?? null;
     const requestedName = requested
       ? legalItems.get(requested.itemId)
@@ -199,6 +205,7 @@ export class QuestTrackerService {
       decision,
       tracker,
       giftItems,
+      gatheringRequested,
       questCompleted,
     };
   }
