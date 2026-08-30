@@ -72,12 +72,13 @@ onMounted(async () => {
 
 <template>
   <aside class="worldbook-floater" aria-label="地区世界书快捷开关">
-    <header>
-      <div>
+    <header class="worldbook-header">
+      <div class="worldbook-heading">
         <span>WORLDBOOK</span>
         <h2>地区条目快捷开关</h2>
       </div>
       <button
+        class="worldbook-close"
         type="button"
         aria-label="关闭地区世界书快捷窗"
         @click="context.api.closePanel('worldbook')"
@@ -94,20 +95,22 @@ onMounted(async () => {
         v-for="row in rows"
         :key="row.region.id"
         type="button"
-        :class="row.status.state"
+        :class="['region-row', row.status.state]"
         :disabled="Boolean(busyRegion)"
         @click="toggle(row.status)"
       >
-        <span>
+        <span class="region-copy">
           <b>{{ row.region.name }}</b>
           <small>{{ stateLabel(row.status) }}</small>
         </span>
-        <em>{{ row.status.state === 'on' ? '一键关闭' : '一键开启' }}</em>
+        <em class="region-action">
+          {{ row.status.state === 'on' ? '一键关闭' : '一键开启' }}
+        </em>
       </button>
     </div>
     <div v-else class="empty">没有找到可手动控制的地区条目。</div>
     <p v-if="notice" class="notice">{{ notice }}</p>
-    <footer>
+    <footer class="worldbook-footer">
       <button type="button" :disabled="Boolean(busyRegion)" @click="refresh">
         刷新状态
       </button>

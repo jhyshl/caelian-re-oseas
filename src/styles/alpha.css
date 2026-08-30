@@ -2730,3 +2730,111 @@ body.caelian-theme-journey .caelian-panel-host .recipe-list > .ca-section-title 
   color: #cfe8da;
   background: rgba(66, 130, 97, 0.16);
 }
+
+/* Journey worldbook final fit: keep controls inside the painted frame at every row count. */
+body.caelian-theme-journey .worldbook-floater {
+  --ca-journey-worldbook-frame-inset: 28px;
+  box-sizing: border-box !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  border-image-width: var(--ca-journey-worldbook-frame-inset) !important;
+  padding: var(--ca-journey-worldbook-frame-inset) !important;
+}
+
+body.caelian-theme-journey .worldbook-floater :is(
+  .worldbook-header,
+  .worldbook-footer
+) {
+  min-width: 0 !important;
+  background: transparent !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .worldbook-header {
+  padding: 4px 0 12px !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .worldbook-heading {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .worldbook-heading h2 {
+  max-width: 100% !important;
+  overflow-wrap: anywhere !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .worldbook-close {
+  flex: 0 0 auto !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .explanation {
+  min-width: 0 !important;
+  padding: 11px 0 !important;
+  overflow-wrap: anywhere !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-list {
+  min-width: 0 !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  align-content: start !important;
+  grid-auto-rows: max-content !important;
+  padding: 0 0 12px !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-copy {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-copy :is(b, small) {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .region-action {
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: nowrap !important;
+  text-align: center !important;
+}
+
+body.caelian-theme-journey .worldbook-floater :is(.empty, .notice) {
+  min-width: 0 !important;
+  margin: 0 0 12px !important;
+  overflow-wrap: anywhere !important;
+}
+
+body.caelian-theme-journey .worldbook-floater .worldbook-footer {
+  padding: 10px 0 0 !important;
+}
+
+@media (max-width: 759px) {
+  body.caelian-theme-journey .worldbook-floater {
+    --ca-journey-worldbook-frame-inset: 18px;
+    --ca-journey-worldbook-top: max(
+      66px,
+      calc(env(safe-area-inset-top, 0px) + 8px)
+    );
+    top: var(--ca-journey-worldbook-top) !important;
+    right: max(8px, env(safe-area-inset-right, 0px)) !important;
+    left: max(8px, env(safe-area-inset-left, 0px)) !important;
+    width: auto !important;
+    max-height: calc(
+      100dvh - var(--ca-journey-worldbook-top) -
+        max(8px, env(safe-area-inset-bottom, 0px))
+    ) !important;
+  }
+}

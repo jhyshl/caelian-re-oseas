@@ -1,6 +1,6 @@
 <script setup lang="ts">
-/* global Event, HTMLElement, MouseEvent, Node, PointerEvent, TouchEvent, Window, window */
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+/* global DOMRect, Event, HTMLElement, MouseEvent, Node, PointerEvent, TouchEvent, Window, window */
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import type { PanelContext, PanelName } from '@/kernel/public-api';
 import {
   clampLauncherPosition,
@@ -19,6 +19,16 @@ import {
   launcherPageDirection,
   paginateLauncherItems,
 } from '@/modules/shell/launcher-pagination';
+import {
+  launcherResizeAnchor,
+  launcherResizeHandleAtPoint,
+  launcherScaleFromPointer,
+  LAUNCHER_MENU_SCALE_STORAGE_KEY,
+  maxLauncherMenuScaleForViewport,
+  normalizeLauncherMenuScale,
+  type LauncherMenuGrowth,
+  type LauncherResizeHandle,
+} from '@/modules/shell/launcher-resize';
 import LauncherOrderDialog from '@/modules/shell/LauncherOrderDialog.vue';
 import {
   LAUNCHER_ORDER_STORAGE_KEY,
@@ -37,19 +47,26 @@ const STORAGE_KEY = 'caelian_floating_wheel_position_v2';
 const IDLE_DELAY = 3000;
 const DRAG_THRESHOLD = 5;
 const DOUBLE_ACTIVATION_DELAY = 280;
+const MOUSE_RESIZE_EDGE = 9;
+const TOUCH_RESIZE_EDGE = 18;
 
 const themeState = ref(props.context.api.getThemeState());
 const viewport = ref(readViewport());
 const launcherFootprint = ref(readLauncherFootprint(viewport.value.width));
 const launcherSize = computed(() => launcherFootprint.value.width);
+const preferredMenuScale = ref(readStoredMenuScale());
+const menuScale = ref(preferredMenuScale.value);
 const initialPlacement = readStoredPlacement() ?? defaultPlacement();
 const position = ref(initialPlacement.position);
 const dockSide = ref<DockSide>(initialPlacement.dockSide);
 const expanded = ref(false);
 const dragging = ref(false);
+const resizing = ref(false);
+const resizeCursor = ref<'' | 'ew' | 'ns' | 'nwse' | 'nesw'>('');
 const idle = ref(false);
 const retracted = ref(initialPlacement.dockSide !== null);
 const shellElement = ref<HTMLElement | null>(null);
+const wheelElement = ref<HTMLElement | null>(null);
 const info = computed(() => props.context.api.getRuntimeInfo());
 const pageIndex = ref(0);
 const pageDirection = ref<-1 | 1>(1);
@@ -82,6 +99,18 @@ let dragSession:
       startDockSide: DockSide;
       moved: boolean;
       wasExpanded: boolean;
+    }
+  | undefined;
+let resizeSession:
+  | {
+      pointerId: number;
+      handle: LauncherResizeHandle;
+      anchor: { x: number; y: number };
+      startPointer: { x: number; y: number };
+      startScale: number;
+      startPreferredScale: number;
+      maxScale: number;
+      captureTarget: HTMLElement;
     }
   | undefined;
 
@@ -174,6 +203,15 @@ const wheelClasses = computed(() => {
   };
 });
 
+const wheelGrowth = computed<LauncherMenuGrowth>(() => ({
+  horizontal: wheelClasses.value['opens-right'] ? 'right' : 'left',
+  vertical: wheelClasses.value['opens-down'] ? 'bottom' : 'top',
+}));
+
+const wheelStyle = computed<Record<string, string>>(() => ({
+  '--launcher-menu-scale': menuScale.value.toFixed(4),
+}));
+
 const launcherLabel = computed(() => {
   if (dragging.value) return '正在移动 Re∞：欧西亚斯悬浮入口';
   if (dockSide.value) {
@@ -224,6 +262,27 @@ function persistLauncherOrder(): void {
     hostWindow().localStorage.setItem(
       LAUNCHER_ORDER_STORAGE_KEY,
       JSON.stringify(launcherOrder.value),
+    );
+  } catch {
+    // Local storage may be unavailable in privacy-restricted webviews.
+  }
+}
+
+function readStoredMenuScale(): number {
+  try {
+    return normalizeLauncherMenuScale(
+      hostWindow().localStorage.getItem(LAUNCHER_MENU_SCALE_STORAGE_KEY),
+    );
+  } catch {
+    return normalizeLauncherMenuScale(undefined);
+  }
+}
+
+function persistMenuScale(): void {
+  try {
+    hostWindow().localStorage.setItem(
+      LAUNCHER_MENU_SCALE_STORAGE_KEY,
+      preferredMenuScale.value.toFixed(4),
     );
   } catch {
     // Local storage may be unavailable in privacy-restricted webviews.
@@ -376,13 +435,36 @@ function recordActivity(): void {
   if (!expanded.value) scheduleIdle();
 }
 
+function fitMenuScaleToViewport(): void {
+  const wheel = wheelElement.value;
+  if (!expanded.value || !wheel || resizing.value) return;
+  const rect = wheel.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    menuScale.value = preferredMenuScale.value;
+    return;
+  }
+  const maxScale = maxLauncherMenuScaleForViewport(
+    rect,
+    menuScale.value,
+    viewport.value,
+    wheelGrowth.value,
+  );
+  menuScale.value = Math.min(preferredMenuScale.value, maxScale);
+}
+
+function scheduleMenuScaleFit(): void {
+  void nextTick(() => fitMenuScaleToViewport());
+}
+
 function openWheel(): void {
   wake();
   if (pageIndex.value >= launcherPages.value.length) pageIndex.value = 0;
   expanded.value = true;
+  scheduleMenuScaleFit();
 }
 
 function closeWheel(): void {
+  finishResizeSession(true);
   ordering.value = false;
   orderDraft.value = [];
   expanded.value = false;
@@ -498,7 +580,7 @@ function goToPage(target: number): void {
 }
 
 function handleWheelTouchStart(event: TouchEvent): void {
-  if (ordering.value) return;
+  if (ordering.value || resizing.value) return;
   const touch = event.changedTouches.item(0);
   if (!touch) return;
   swipeStart = { x: touch.clientX, y: touch.clientY };
@@ -506,7 +588,7 @@ function handleWheelTouchStart(event: TouchEvent): void {
 }
 
 function handleWheelTouchEnd(event: TouchEvent): void {
-  if (ordering.value) return;
+  if (ordering.value || resizing.value) return;
   const start = swipeStart;
   swipeStart = undefined;
   const touch = event.changedTouches.item(0);
@@ -516,6 +598,177 @@ function handleWheelTouchEnd(event: TouchEvent): void {
     touch.clientY - start.y,
   );
   if (direction) changePage(direction);
+}
+
+function resizeCursorForHandle(
+  handle: LauncherResizeHandle | null,
+): '' | 'ew' | 'ns' | 'nwse' | 'nesw' {
+  if (!handle) return '';
+  if (handle === 'left' || handle === 'right') return 'ew';
+  if (handle === 'top' || handle === 'bottom') return 'ns';
+  return handle === 'top-left' || handle === 'bottom-right'
+    ? 'nwse'
+    : 'nesw';
+}
+
+function resizeHandleForPointer(
+  event: PointerEvent,
+  rect: DOMRect,
+): LauncherResizeHandle | null {
+  const pointerType = event.pointerType || 'mouse';
+  const resolved = launcherResizeHandleAtPoint(
+    rect,
+    { x: event.clientX, y: event.clientY },
+    wheelGrowth.value,
+    pointerType === 'touch' ? TOUCH_RESIZE_EDGE : MOUSE_RESIZE_EDGE,
+  );
+  if (pointerType !== 'touch' || !resolved) return resolved;
+  if (resolved === 'top' || resolved === 'bottom') return null;
+  return resolved.includes('-') ? wheelGrowth.value.horizontal : resolved;
+}
+
+function handleWheelPointerHover(event: PointerEvent): void {
+  if (resizing.value || event.pointerType === 'touch') return;
+  const wheel = wheelElement.value;
+  if (!wheel) return;
+  if (event.target !== wheel) {
+    resizeCursor.value = '';
+    return;
+  }
+  const rect = wheel.getBoundingClientRect();
+  resizeCursor.value = resizeCursorForHandle(
+    pointerHitsVerticalScrollbar(wheel, event, rect)
+      ? null
+      : resizeHandleForPointer(event, rect),
+  );
+}
+
+function handleWheelPointerLeave(): void {
+  if (!resizing.value) resizeCursor.value = '';
+}
+
+function pointerHitsVerticalScrollbar(
+  wheel: HTMLElement,
+  event: PointerEvent,
+  rect: DOMRect,
+): boolean {
+  if (
+    wheel.scrollHeight <= wheel.clientHeight ||
+    wheel.offsetWidth <= 0 ||
+    rect.width <= 0
+  ) {
+    return false;
+  }
+  const renderedGutter =
+    ((wheel.offsetWidth - wheel.clientWidth) / wheel.offsetWidth) *
+    rect.width;
+  return renderedGutter > 0 && event.clientX >= rect.right - renderedGutter;
+}
+
+function handleResizePointerDown(event: PointerEvent): void {
+  if (resizeSession) return;
+  if (event.button !== 0 && event.pointerType !== 'touch') return;
+  const wheel = wheelElement.value;
+  if (!wheel) return;
+  // Only the wheel's own painted border/padding is a resize surface. Child
+  // controls remain fully clickable even when they sit inside the touch slop.
+  if (event.target !== wheel) return;
+  const rect = wheel.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  if (pointerHitsVerticalScrollbar(wheel, event, rect)) return;
+  const handle = resizeHandleForPointer(event, rect);
+  if (!handle) return;
+
+  const captureTarget = wheel;
+  resizeSession = {
+    pointerId: event.pointerId,
+    handle,
+    anchor: launcherResizeAnchor(rect, handle),
+    startPointer: { x: event.clientX, y: event.clientY },
+    startScale: menuScale.value,
+    startPreferredScale: preferredMenuScale.value,
+    maxScale: maxLauncherMenuScaleForViewport(
+      rect,
+      menuScale.value,
+      viewport.value,
+      wheelGrowth.value,
+    ),
+    captureTarget,
+  };
+  resizing.value = true;
+  resizeCursor.value = resizeCursorForHandle(handle);
+  swipeStart = undefined;
+  clearActivationTimer();
+  wake();
+  try {
+    captureTarget.setPointerCapture(event.pointerId);
+  } catch {
+    // Pointer capture is optional in embedded mobile webviews.
+  }
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function handleResizePointerMove(event: PointerEvent): void {
+  const session = resizeSession;
+  if (!session || event.pointerId !== session.pointerId) return;
+  const nextScale = launcherScaleFromPointer({
+    handle: session.handle,
+    anchor: session.anchor,
+    startPointer: session.startPointer,
+    currentPointer: { x: event.clientX, y: event.clientY },
+    startScale: session.startScale,
+    maxScale: session.maxScale,
+  });
+  preferredMenuScale.value = nextScale;
+  menuScale.value = nextScale;
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function finishResizeSession(restore: boolean): void {
+  const session = resizeSession;
+  if (!session) return;
+  if (restore) {
+    menuScale.value = session.startScale;
+    preferredMenuScale.value = session.startPreferredScale;
+  }
+  resizeSession = undefined;
+  resizing.value = false;
+  resizeCursor.value = '';
+  try {
+    session.captureTarget.releasePointerCapture(session.pointerId);
+  } catch {
+    // Pointer capture is optional in embedded mobile webviews.
+  }
+}
+
+function handleResizePointerUp(event: PointerEvent): void {
+  const session = resizeSession;
+  if (!session || event.pointerId !== session.pointerId) return;
+  finishResizeSession(false);
+  preferredMenuScale.value = menuScale.value;
+  persistMenuScale();
+  scheduleMenuScaleFit();
+  recordActivity();
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function handleResizePointerCancel(event: PointerEvent): void {
+  const session = resizeSession;
+  if (!session || event.pointerId !== session.pointerId) return;
+  finishResizeSession(true);
+  scheduleMenuScaleFit();
+  recordActivity();
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function handleResizeWindowBlur(): void {
+  if (!resizeSession) return;
+  finishResizeSession(true);
+  scheduleMenuScaleFit();
 }
 
 function handlePointerDown(event: PointerEvent): void {
@@ -654,6 +907,7 @@ function handleResize(): void {
     position.value = clamped;
   }
   persistPlacement();
+  scheduleMenuScaleFit();
 }
 
 onMounted(() => {
@@ -666,7 +920,23 @@ onMounted(() => {
     handleOutsidePointerDown,
     { passive: true },
   );
+  props.context.document.addEventListener(
+    'pointermove',
+    handleResizePointerMove,
+    { capture: true, passive: false },
+  );
+  props.context.document.addEventListener(
+    'pointerup',
+    handleResizePointerUp,
+    { capture: true, passive: false },
+  );
+  props.context.document.addEventListener(
+    'pointercancel',
+    handleResizePointerCancel,
+    { capture: true, passive: false },
+  );
   win.addEventListener('resize', handleResize);
+  win.addEventListener('blur', handleResizeWindowBlur);
   win.visualViewport?.addEventListener('resize', handleResize);
   win.visualViewport?.addEventListener('scroll', handleResize);
   scheduleIdle();
@@ -699,6 +969,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   const win = hostWindow();
+  finishResizeSession(true);
   clearIdleTimer();
   clearActivationTimer();
   disposeSubmission?.();
@@ -709,7 +980,23 @@ onUnmounted(() => {
     'pointerdown',
     handleOutsidePointerDown,
   );
+  props.context.document.removeEventListener(
+    'pointermove',
+    handleResizePointerMove,
+    true,
+  );
+  props.context.document.removeEventListener(
+    'pointerup',
+    handleResizePointerUp,
+    true,
+  );
+  props.context.document.removeEventListener(
+    'pointercancel',
+    handleResizePointerCancel,
+    true,
+  );
   win.removeEventListener('resize', handleResize);
+  win.removeEventListener('blur', handleResizeWindowBlur);
   win.visualViewport?.removeEventListener('resize', handleResize);
   win.visualViewport?.removeEventListener('scroll', handleResize);
 });
@@ -733,6 +1020,7 @@ onUnmounted(() => {
     :class="{
       expanded,
       dragging,
+      resizing,
       idle,
       retracted,
       'docked-left': dockSide === 'left',
@@ -746,9 +1034,18 @@ onUnmounted(() => {
   >
     <div
       v-if="expanded"
+      ref="wheelElement"
       class="wheel"
-      :class="wheelClasses"
+      :class="[
+        wheelClasses,
+        { resizing },
+        resizeCursor ? `resize-cursor-${resizeCursor}` : undefined,
+      ]"
+      :style="wheelStyle"
       role="menu"
+      @pointerdown.capture="handleResizePointerDown"
+      @pointermove="handleWheelPointerHover"
+      @pointerleave="handleWheelPointerLeave"
       @touchstart.passive="handleWheelTouchStart"
       @touchend.passive="handleWheelTouchEnd"
     >
@@ -958,6 +1255,7 @@ onUnmounted(() => {
 }
 
 .wheel {
+  --launcher-menu-scale: 1;
   position: absolute;
   width: min(288px, calc(100vw - 24px));
   max-height: calc(100vh - 84px);
@@ -971,8 +1269,51 @@ onUnmounted(() => {
     rgba(13, 15, 20, 0.97);
   box-shadow: 0 18px 55px rgba(0, 0, 0, 0.58);
   backdrop-filter: blur(14px);
-  touch-action: auto;
+  touch-action: pan-y;
+  transform: scale(var(--launcher-menu-scale));
+  transform-origin: center;
+  will-change: transform;
   animation: wheel-in 0.18s ease-out;
+}
+
+.wheel.opens-right.opens-down {
+  transform-origin: top left;
+}
+
+.wheel.opens-left.opens-down {
+  transform-origin: top right;
+}
+
+.wheel.opens-right.opens-up {
+  transform-origin: bottom left;
+}
+
+.wheel.opens-left.opens-up {
+  transform-origin: bottom right;
+}
+
+.wheel.resizing {
+  animation: none;
+}
+
+.wheel.resize-cursor-ew,
+.wheel.resize-cursor-ew * {
+  cursor: ew-resize !important;
+}
+
+.wheel.resize-cursor-ns,
+.wheel.resize-cursor-ns * {
+  cursor: ns-resize !important;
+}
+
+.wheel.resize-cursor-nwse,
+.wheel.resize-cursor-nwse * {
+  cursor: nwse-resize !important;
+}
+
+.wheel.resize-cursor-nesw,
+.wheel.resize-cursor-nesw * {
+  cursor: nesw-resize !important;
 }
 
 .wheel.opens-left {
@@ -1180,11 +1521,9 @@ onUnmounted(() => {
 @keyframes wheel-in {
   from {
     opacity: 0;
-    transform: scale(0.94);
   }
   to {
     opacity: 1;
-    transform: scale(1);
   }
 }
 

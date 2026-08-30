@@ -7,6 +7,7 @@ import { initialQuestProgress } from '@/quests/state-machine';
 import { CaelianDatabase } from '@/storage/database';
 import { avatarPreferenceKey } from '@/ui/avatar-preferences';
 import { SAVED_DECKS_STORAGE_KEY } from '@/saved-decks';
+import { LAUNCHER_MENU_SCALE_STORAGE_KEY } from '@/modules/shell/launcher-resize';
 
 const databaseNames: string[] = [];
 const defaultFetch = window.fetch;
@@ -30,6 +31,7 @@ afterEach(async () => {
   delete (window as unknown as Record<string, unknown>).TavernHelper;
   localStorage.removeItem('caelian_launcher_order_v1');
   localStorage.removeItem('caelian_floating_wheel_position_v2');
+  localStorage.removeItem(LAUNCHER_MENU_SCALE_STORAGE_KEY);
   localStorage.removeItem('caelian_quest_judge_preferences_v1');
   sessionStorage.removeItem('caelian_quest_judge_api_key_session_v1');
   localStorage.removeItem(avatarPreferenceKey('caelian'));
@@ -590,6 +592,134 @@ describe('CaelianKernel integration', () => {
     ]);
 
     await kernel.api.shutdown();
+  });
+
+  it('可从菜单外侧边框等比缩放快捷菜单并恢复保存的尺寸', async () => {
+    const databaseName = `caelian-alpha-launcher-resize-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const createLauncherKernel = () =>
+      createKernel({
+        channel: 'alpha',
+        version: '0.2.0-alpha.test',
+        buildId: 'launcher-resize-test-build',
+        databaseName,
+        sourceWindow: window,
+      });
+    const firstKernel = createLauncherKernel();
+
+    await firstKernel.initialize();
+    document
+      .querySelector<HTMLButtonElement>('.caelian-shell-host .orb')
+      ?.click();
+    await expect
+      .poll(() =>
+        document.querySelector<HTMLElement>('.caelian-shell-host .wheel'),
+      )
+      .not.toBeNull();
+    const wheel = document.querySelector<HTMLElement>(
+      '.caelian-shell-host .wheel',
+    );
+    expect(wheel).not.toBeNull();
+    vi.spyOn(wheel!, 'getBoundingClientRect').mockReturnValue({
+      x: 100,
+      y: 100,
+      left: 100,
+      top: 100,
+      right: 400,
+      bottom: 320,
+      width: 300,
+      height: 220,
+      toJSON: () => ({}),
+    } as DOMRect);
+    const growsLeft = wheel?.classList.contains('opens-left');
+    const startX = growsLeft ? 100 : 400;
+    const enlargedX = growsLeft ? 40 : 460;
+    Object.defineProperties(wheel!, {
+      setPointerCapture: {
+        configurable: true,
+        value: vi.fn(() => {
+          throw new Error('pointer capture is unavailable');
+        }),
+      },
+      releasePointerCapture: {
+        configurable: true,
+        value: vi.fn(() => {
+          throw new Error('pointer capture is unavailable');
+        }),
+      },
+    });
+    const dispatchResizePointer = (
+      type: string,
+      clientX: number,
+      pointerType: 'mouse' | 'touch' = 'mouse',
+      target: EventTarget = wheel!,
+    ) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientX,
+        clientY: 210,
+      });
+      Object.defineProperties(event, {
+        pointerId: { value: 71 },
+        pointerType: { value: pointerType },
+      });
+      target.dispatchEvent(event);
+    };
+
+    const outerButton = wheel?.querySelector<HTMLButtonElement>(
+      '.wheel-grid button',
+    );
+    expect(outerButton).not.toBeNull();
+    dispatchResizePointer('pointerdown', startX, 'touch', outerButton!);
+    dispatchResizePointer('pointermove', enlargedX, 'touch', document);
+    expect(wheel?.style.getPropertyValue('--launcher-menu-scale')).toBe(
+      '1.0000',
+    );
+    expect(wheel?.classList.contains('resizing')).toBe(false);
+
+    dispatchResizePointer('pointerdown', startX);
+    dispatchResizePointer('pointermove', enlargedX, 'mouse', document);
+    await expect
+      .poll(() =>
+        wheel?.style.getPropertyValue('--launcher-menu-scale'),
+      )
+      .toBe('1.2000');
+    expect(wheel?.classList.contains('resizing')).toBe(true);
+    dispatchResizePointer('pointercancel', enlargedX, 'mouse', document);
+    await expect
+      .poll(() =>
+        wheel?.style.getPropertyValue('--launcher-menu-scale'),
+      )
+      .toBe('1.0000');
+    expect(localStorage.getItem(LAUNCHER_MENU_SCALE_STORAGE_KEY)).toBeNull();
+
+    dispatchResizePointer('pointerdown', startX, 'touch');
+    dispatchResizePointer('pointermove', enlargedX, 'touch', document);
+    dispatchResizePointer('pointerup', enlargedX, 'touch', document);
+    await expect
+      .poll(() =>
+        localStorage.getItem(LAUNCHER_MENU_SCALE_STORAGE_KEY),
+      )
+      .toBe('1.2000');
+    expect(wheel?.classList.contains('resizing')).toBe(false);
+    await firstKernel.api.shutdown();
+
+    const restoredKernel = createLauncherKernel();
+    await restoredKernel.initialize();
+    document
+      .querySelector<HTMLButtonElement>('.caelian-shell-host .orb')
+      ?.click();
+    await expect
+      .poll(() =>
+        document
+          .querySelector<HTMLElement>('.caelian-shell-host .wheel')
+          ?.style.getPropertyValue('--launcher-menu-scale'),
+      )
+      .toBe('1.2000');
+
+    await restoredKernel.api.shutdown();
   });
 
   it('初始化本地档案，并按需挂载和卸载独立 Vue 面板', async () => {
