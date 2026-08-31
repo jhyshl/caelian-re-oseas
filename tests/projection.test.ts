@@ -71,12 +71,13 @@ const snapshot: GameSnapshot = {
     id: 'profile:test:caelian',
     profileId: 'profile:test',
     characterId: 'caelian',
-    affinity: 35,
+    affinity: 175.5,
+    pendingAffinityDelta: 0,
     mood: '平静',
     location: '伊拉亚城-集市',
     clothing: '白色暗纹衬衫',
     innerThought: '他开始值得信任了。',
-    relationshipStage: '熟人',
+    relationshipStage: '伙伴',
     updatedAt: 1,
   },
   guild: {
@@ -153,10 +154,10 @@ describe('createAiProjection', () => {
     expect(projection.state.player.name).toBe('凯利安');
     expect(projection.state.world.location).toBe('伊拉亚城-集市');
     expect(projection.state.guild.activeQuests).toHaveLength(1);
-    expect(projection.state.companion.relationshipStage).toBe('熟人');
+    expect(projection.state.companion.relationshipStage).toBe('伙伴');
     expect(projection.narrative).toMatchObject({
       companion: {
-        affinity: 35,
+        affinity: 175.5,
         innerThought: '他开始值得信任了。',
       },
       world: {

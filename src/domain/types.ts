@@ -855,6 +855,7 @@ export interface SocialProgressRecord {
   profileId: string;
   characterId: string;
   affinity: number;
+  pendingAffinityDelta: number;
   mood: string;
   location: string;
   clothing: string;
@@ -894,6 +895,37 @@ export interface SettingsRecord {
   battleDifficulty: 'easy' | 'normal' | 'hard' | 'hell';
   uiTheme: import('@/themes/types').CaelianThemeId;
   updatedAt: number;
+}
+
+export interface SocialGiftOption {
+  itemId: string;
+  name: string;
+  quantity: number;
+  price: number;
+  tags: string[];
+  affinityDelta: number;
+}
+
+export interface SocialFeedOption {
+  itemId: string;
+  name: string;
+  quantity: number;
+  result: 'like' | 'dislike';
+  category: 'specialty' | 'consumable' | 'feedable';
+  source: string;
+  tags: string[];
+}
+
+export interface SocialInviteRegionOption {
+  regionId: string;
+  name: string;
+  places: Array<{ name: string; description: string }>;
+}
+
+export interface SocialInteractionOptions {
+  gifts: SocialGiftOption[];
+  feeds: SocialFeedOption[];
+  inviteRegions: SocialInviteRegionOption[];
 }
 
 export interface ContentVersionRecord {

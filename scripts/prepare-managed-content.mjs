@@ -51,6 +51,14 @@ const legacyQuestWorldbookIds = new Set([
   'ae5e5d48-fd68-4b91-9d26-df7808270437',
   'cot-universal-task-guard-v1',
 ]);
+const affinityEntryRanges = new Map([
+  ['凯利安_阶段01_陌生人', '好感度0-100'],
+  ['凯利安_阶段02_伙伴', '好感度101-250'],
+  ['凯利安_阶段03_暧昧对象', '好感度251-400'],
+  ['凯利安_阶段04_恋人', '好感度401-499'],
+  ['凯利安_阶段05_伴侣', '好感度500'],
+]);
+const romanceGuardEntryName = '💞禁止默认浪漫倾向（防万人迷和一见钟情）';
 
 const card = JSON.parse(await readFile(sourceCard, 'utf8'));
 if (card.name !== characterName || card.data?.name !== characterName) {
@@ -75,6 +83,7 @@ const entries = card.data?.character_book?.entries;
 if (!Array.isArray(entries)) {
   throw new Error('The bound character book is missing.');
 }
+updateAffinityStageEntries(entries);
 const retainedEntries = entries.filter(
   (entry) => !legacyQuestWorldbookIds.has(entry.uid ?? entry.id),
 );
@@ -201,13 +210,26 @@ if (!String(card.data.character_version ?? '').includes(versionTag)) {
 
 const operations = [
   {
-    id: '2026-08-07.mvu-guidance.schema-rebuild',
+    id: '2026-08-31.affinity-500.schema-rebuild',
     target: { kind: 'character-script', scriptId: MVU_SCHEMA_SCRIPT_ID },
     mutation: { action: 'replace-entire', content: mvuSchemaContent },
   },
   ...canonicalEntries.map(({ aliases, entry }, index) => ({
-    id: `2026-08-07.mvu-guidance.entry-${index + 1}`,
+    id:
+      entry.comment === '阶段控制器'
+        ? '2026-08-31.affinity-500.phase-controller'
+        : entry.comment === '[mvu_update]变量更新规则'
+          ? '2026-08-31.affinity-500.variable-rules'
+          : `2026-08-07.mvu-guidance.entry-${index + 1}`,
     target: { kind: 'worldbook-upsert-entry', entryNames: aliases },
+    entry: toManagedEntry(entry),
+  })),
+  ...affinityManagedEntries(entries).map((entry, index) => ({
+    id: `2026-08-31.affinity-500.relationship-entry-${index + 1}`,
+    target: {
+      kind: 'worldbook-upsert-entry',
+      entryNames: [String(entry.comment ?? entry.name ?? '')],
+    },
     entry: toManagedEntry(entry),
   })),
   {
@@ -225,7 +247,7 @@ const cardSha256 = createHash('sha256').update(cardJson).digest('hex');
 const manifest = {
   schemaVersion: 1,
   channel: 'alpha',
-  revision: '2026-08-30.1',
+  revision: '2026-08-31.1',
   target: {
     characterName,
     worldbookNames: [
@@ -296,6 +318,37 @@ console.log(
     2,
   ),
 );
+
+function updateAffinityStageEntries(worldbookEntries) {
+  for (const entry of worldbookEntries) {
+    const name = String(entry.comment ?? entry.name ?? '');
+    const range = affinityEntryRanges.get(name);
+    if (range) {
+      entry.content = String(entry.content ?? '').replace(
+        /好感度(?:0-20|21-50|51-80|81-99|100\+)/,
+        range,
+      );
+    }
+    if (name === romanceGuardEntryName) {
+      entry.content = String(entry.content ?? '').replace(
+        '好感度低于50',
+        '好感度低于251',
+      );
+    }
+  }
+}
+
+function affinityManagedEntries(worldbookEntries) {
+  const names = [...affinityEntryRanges.keys(), romanceGuardEntryName];
+  return names.map((name) => {
+    const entry = worldbookEntries.find(
+      (candidate) =>
+        String(candidate.comment ?? candidate.name ?? '') === name,
+    );
+    if (!entry) throw new Error(`The affinity worldbook entry is missing: ${name}`);
+    return entry;
+  });
+}
 
 function normalizeEntry(config) {
   const matches = entries.filter((entry) =>
@@ -442,8 +495,10 @@ function toManagedEntry(entry) {
     uid: 0,
     name: entry.comment,
     content: entry.content,
-    keys: [],
-    secondary_keys: [],
+    keys: Array.isArray(entry.keys) ? entry.keys : [],
+    secondary_keys: Array.isArray(entry.secondary_keys)
+      ? entry.secondary_keys
+      : [],
     constant: entry.constant,
     selective: entry.selective,
     insertion_order: entry.insertion_order,

@@ -141,7 +141,8 @@ export function achievementCategory(id: string): AchievementCategory {
 }
 
 const TARGETS: Record<string, number> = {
-  ach_caelian_affection_100: 100,
+  // Keep the legacy ID for existing saves; the full-affinity target is now 500.
+  ach_caelian_affection_100: 500,
   ach_caelian_gift_first: 1,
   ach_caelian_gift_10: 10,
   ach_caelian_gift_50: 50,

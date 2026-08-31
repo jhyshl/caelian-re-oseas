@@ -157,6 +157,10 @@ export class AchievementRepository {
     return [...merged.values()];
   }
 
+  async prepareDefinitions(): Promise<void> {
+    await this.loadDefinitions();
+  }
+
   async listDefinitions(): Promise<Record<string, AchievementDefinition>> {
     const builtIn = await this.loadDefinitions();
     const stored = await this.db.achievementCounters
@@ -618,7 +622,7 @@ export class AchievementRepository {
             'caelian.giftFavor',
             Math.max(0, Number(payload.favor ?? 0)),
           );
-          await this.markDailySocial('gift');
+          await this.markDailySocial(profileId, 'gift');
           if (/特产|specialty/i.test(payload.category ?? '')) {
             await this.unlock('ach_caelian_gift_specialty');
           }
@@ -630,7 +634,7 @@ export class AchievementRepository {
       case 'caelian.invite':
         if (payload.success !== false) {
           await this.incrementCounter('caelian.invite', 1);
-          await this.markDailySocial('invite');
+          await this.markDailySocial(profileId, 'invite');
           if (payload.region) {
             const visited = await this.counter(`travel.region.${payload.region}`);
             if (visited.value <= 0) {
@@ -640,16 +644,16 @@ export class AchievementRepository {
         }
         break;
       case 'trelao.pet':
-        await this.incrementCounter('trelao.pet', 1);
         if (payload.success === false || payload.positive === false) {
           await this.unlock('ach_trelao_pet_reject_first');
           await this.setCounter('trelao.petStreak', 0);
         } else {
+          await this.incrementCounter('trelao.pet', 1);
           await this.incrementCounter('trelao.petStreak', 1);
         }
         break;
       case 'trelao.feed':
-        await this.recordTrelaoFeed(payload);
+        await this.recordTrelaoFeed(profileId, payload);
         break;
       case 'battle.consumable-heal':
         await this.unlock('ach_consumable_heal_hp');
@@ -1032,11 +1036,12 @@ export class AchievementRepository {
   }
 
   private async recordTrelaoFeed(
+    profileId: string,
     payload: AchievementRecordPayload,
   ): Promise<void> {
     const liked = payload.liked !== false;
     const category = payload.category ?? '';
-    const day = this.todayKey();
+    const day = await this.interactionDayKey(profileId);
     if (liked) {
       await this.incrementCounter('trelao.feedLike', 1);
       await this.incrementCounter('trelao.feedLikeStreak', 1);
@@ -1073,8 +1078,11 @@ export class AchievementRepository {
     }
   }
 
-  private async markDailySocial(kind: 'gift' | 'invite'): Promise<void> {
-    const day = this.todayKey();
+  private async markDailySocial(
+    profileId: string,
+    kind: 'gift' | 'invite',
+  ): Promise<void> {
+    const day = await this.interactionDayKey(profileId);
     await this.setCounter(`caelian.social.${day}.${kind}`, 1);
     const [gift, invite] = await Promise.all([
       this.counter(`caelian.social.${day}.gift`),
@@ -1498,6 +1506,11 @@ export class AchievementRepository {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  }
+
+  private async interactionDayKey(profileId: string): Promise<string> {
+    const gameDate = (await this.db.worldStates.get(profileId))?.gameDate.trim();
+    return gameDate || this.todayKey();
   }
 
   private number(value: unknown): number {

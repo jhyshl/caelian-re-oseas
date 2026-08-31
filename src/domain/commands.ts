@@ -121,7 +121,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       .object({
         companion: z
           .object({
-            affinity: z.number().int().min(0).max(100).optional(),
+            affinity: z.number().multipleOf(0.5).min(0).max(500).optional(),
             mood: z.string().trim().min(1).max(80).optional(),
             location: z.string().trim().min(1).max(120).optional(),
             clothing: z.string().trim().min(1).max(240).optional(),
@@ -159,6 +159,28 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
           Boolean(value.companion || value.world || value.storyFlags),
         { message: '至少需要一个叙事更新' },
       ),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('social.interact'),
+    payload: z.discriminatedUnion('action', [
+      z.object({
+        action: z.literal('caelian.gift'),
+        itemId: z.string().trim().min(1).max(180),
+      }),
+      z.object({
+        action: z.literal('caelian.invite'),
+        regionId: z.string().trim().min(1).max(120),
+        place: z.string().trim().max(120).default(''),
+      }),
+      z.object({
+        action: z.literal('trelao.pet'),
+      }),
+      z.object({
+        action: z.literal('trelao.feed'),
+        itemId: z.string().trim().min(1).max(180),
+      }),
+    ]),
   }),
   z.object({
     ...commandBase,
@@ -465,4 +487,6 @@ export interface CommandResult {
   id: string;
   status: 'applied' | 'duplicate' | 'rejected';
   message?: string;
+  prompt?: string;
+  affinityChanged?: boolean;
 }

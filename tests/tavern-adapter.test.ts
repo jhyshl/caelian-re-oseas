@@ -146,7 +146,7 @@ describe('TavernAdapter', () => {
     delete window.Mvu;
   });
 
-  it('回写只读投影时保留 AI 已写入的 narrative', async () => {
+  it('普通投影回写保留变量管理器中的 affinity 与其他 narrative', async () => {
     const replaceMvuData = vi.fn();
     const aiNarrative = {
       companion: {
@@ -197,6 +197,145 @@ describe('TavernAdapter', () => {
         gameTime: '10:30',
         weather: '多云',
       },
+    });
+  });
+
+  it('authoritativeAffinity 仅回填本地 affinity，并保留其他 AI narrative', async () => {
+    const replaceMvuData = vi.fn();
+    const localProjection: AiProjection = {
+      ...projection,
+      narrative: {
+        ...projection.narrative,
+        companion: {
+          ...projection.narrative.companion,
+          affinity: 36.5,
+          mood: '本地不应覆盖',
+          location: '本地不应覆盖',
+          clothing: '本地不应覆盖',
+          innerThought: '本地不应覆盖',
+        },
+      },
+    };
+    const aiNarrative = {
+      companion: {
+        affinity: 28,
+        mood: '安心',
+        location: '中央广场',
+        clothing: '学院制服',
+        innerThought: '他今天似乎很高兴。',
+      },
+      world: {
+        region: '伊拉亚城',
+        place: '中央广场',
+        location: '伊拉亚城-中央广场',
+        gameDate: '新圣约历1385-09-02',
+        gameTime: '10:30',
+        weather: '多云',
+      },
+      storyFlags: { 玩家保留标记: true },
+    };
+    window.Mvu = {
+      getMvuData: () => ({
+        stat_data: {
+          caelian: {
+            ...projection,
+            narrative: aiNarrative,
+          },
+        },
+      }),
+      replaceMvuData,
+    };
+    const adapter = new TavernAdapter(window);
+
+    await adapter.writeProjection(localProjection, {
+      authoritativeAffinity: true,
+    });
+
+    const next = replaceMvuData.mock.calls[0]?.[0] as {
+      stat_data: { caelian: AiProjection };
+    };
+    expect(next.stat_data.caelian.narrative).toEqual({
+      ...aiNarrative,
+      companion: {
+        ...aiNarrative.companion,
+        affinity: 36.5,
+      },
+    });
+  });
+
+  it('authoritativeAffinity 回填时保留 0.5 好感度精度', async () => {
+    const replaceMvuData = vi.fn();
+    const localProjection: AiProjection = {
+      ...projection,
+      narrative: {
+        ...projection.narrative,
+        companion: {
+          ...projection.narrative.companion,
+          affinity: 0.5,
+        },
+      },
+    };
+    window.Mvu = {
+      getMvuData: () => ({
+        stat_data: {
+          caelian: {
+            narrative: {
+              companion: {
+                ...projection.narrative.companion,
+                affinity: 0,
+              },
+            },
+          },
+        },
+      }),
+      replaceMvuData,
+    };
+    const adapter = new TavernAdapter(window);
+
+    await adapter.writeProjection(localProjection, {
+      authoritativeAffinity: true,
+    });
+
+    const next = replaceMvuData.mock.calls[0]?.[0] as {
+      stat_data: { caelian: AiProjection };
+    };
+    expect(next.stat_data.caelian.narrative.companion.affinity).toBe(0.5);
+  });
+
+  it('authoritativeAffinity 在 MVU 尚无 narrative 时创建最小好感字段', async () => {
+    const replaceMvuData = vi.fn();
+    const localProjection: AiProjection = {
+      ...projection,
+      narrative: {
+        ...projection.narrative,
+        companion: {
+          ...projection.narrative.companion,
+          affinity: 12.5,
+        },
+      },
+    };
+    window.Mvu = {
+      getMvuData: () => ({
+        stat_data: {
+          unrelated_system: { keep: true },
+        },
+      }),
+      replaceMvuData,
+    };
+    const adapter = new TavernAdapter(window);
+
+    await adapter.writeProjection(localProjection, {
+      authoritativeAffinity: true,
+    });
+
+    const next = replaceMvuData.mock.calls[0]?.[0] as {
+      stat_data: Record<string, unknown> & {
+        caelian: AiProjection;
+      };
+    };
+    expect(next.stat_data.unrelated_system).toEqual({ keep: true });
+    expect(next.stat_data.caelian.narrative).toEqual({
+      companion: { affinity: 12.5 },
     });
   });
 

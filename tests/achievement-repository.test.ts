@@ -34,6 +34,55 @@ afterEach(async () => {
 });
 
 describe('AchievementRepository integration', () => {
+  it('按游戏内日期统计赠礼、邀约和特莱奥投喂的当日进度', async () => {
+    const { repository, database } = createRepository();
+    const profile = await repository.ensureProfile('social-game-date');
+    const gameDate = '新圣约历1385-09-07';
+    await database.worldStates.update(profile.id, {
+      gameDate,
+      updatedAt: Date.now(),
+    });
+    await database.inventoryStacks.put({
+      id: `${profile.id}:精制面包`,
+      profileId: profile.id,
+      itemId: '精制面包',
+      name: '精制面包',
+      quantity: 1,
+      updatedAt: Date.now(),
+    });
+
+    await repository.execute(profile.id, {
+      id: 'game-date-gift',
+      type: 'social.interact',
+      payload: { action: 'caelian.gift', itemId: '精制面包' },
+    });
+    await repository.execute(profile.id, {
+      id: 'game-date-invite',
+      type: 'social.interact',
+      payload: {
+        action: 'caelian.invite',
+        regionId: 'academy',
+        place: '正门',
+      },
+    });
+    await repository.execute(profile.id, {
+      id: 'game-date-feed-achievement',
+      type: 'achievement.record',
+      payload: { event: 'trelao.feed', liked: true },
+    });
+
+    const counterKeys = (await database.achievementCounters.toArray()).map(
+      (record) => record.key,
+    );
+    expect(counterKeys).toEqual(
+      expect.arrayContaining([
+        `caelian.social.${gameDate}.gift`,
+        `caelian.social.${gameDate}.invite`,
+        `trelao.feedLike.daily.${gameDate}`,
+      ]),
+    );
+  });
+
   it('江海有声特殊赠礼只发放一次并同步金币、材料与可用药瓶', async () => {
     const { repository } = createRepository();
     const profile = await repository.ensureProfile('creator-gift');
@@ -117,6 +166,18 @@ describe('AchievementRepository integration', () => {
       type: 'narrative.update',
       payload: {
         companion: { affinity: 100 },
+      },
+    });
+    expect(
+      (await repository.snapshot(second.id)).achievements.find(
+        (record) => record.achievementId === 'ach_caelian_affection_100',
+      ),
+    ).toMatchObject({ unlocked: false, progress: 100 });
+    await repository.execute(first.id, {
+      id: 'affinity-500',
+      type: 'narrative.update',
+      payload: {
+        companion: { affinity: 500 },
       },
     });
 

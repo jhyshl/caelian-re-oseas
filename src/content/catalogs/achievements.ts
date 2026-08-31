@@ -29,6 +29,9 @@ export async function loadAchievementDefinitions() {
         {
           ...definition,
           id,
+          ...(id === 'ach_caelian_affection_100'
+            ? { condition: '凯利安好感度首次到达500' }
+            : {}),
           category: definition.category ?? achievementCategory(id),
         },
       ]),

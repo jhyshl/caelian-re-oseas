@@ -12,6 +12,7 @@ import type {
   QuestRecord,
   QuestTrackerRecord,
   RuntimeInfo,
+  SocialInteractionOptions,
 } from '@/domain/types';
 import type { KernelEventMap } from '@/kernel/event-bus';
 import type {
@@ -116,6 +117,7 @@ export type QueryName =
   | 'inventory'
   | 'market'
   | 'gathering'
+  | 'social-interactions'
   | 'events'
   | 'achievement-definitions'
   | 'achievement-special'
@@ -127,6 +129,7 @@ export interface QueryResultMap {
   inventory: InventoryStackRecord[];
   market: MarketView;
   gathering: GatheringView;
+  'social-interactions': SocialInteractionOptions;
   events: EventLogRecord[];
   'achievement-definitions': Record<string, AchievementDefinition>;
   'achievement-special': AchievementSpecialState;

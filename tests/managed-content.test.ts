@@ -156,6 +156,7 @@ describe('ManagedContentUpdater', () => {
     expect(schema).not.toContain('.passthrough(');
     expect(schema).not.toContain('.strict(');
     expect(schema).toContain('registerMvuSchema(Schema);');
+    expect(schema).toContain('_.clamp(Math.round(value * 2) / 2, 0, 500)');
 
     const initvar = normalized.find(
       (entry) => entry.name === '[initvar]变量初始化勿开',
@@ -166,6 +167,9 @@ describe('ManagedContentUpdater', () => {
       (entry) => entry.name === '[mvu_update]变量更新规则',
     )?.content;
     expect(rules).toContain('stat_data.caelian.narrative');
+    expect(rules).toContain('range: 0~500');
+    expect(rules).toContain('调整 ±1~5');
+    expect(rules).toContain('重大情感事件可以调整 ±6~10');
     for (const legacyRule of [
       '变量更新规则 v2.6',
       '主线任务更新规则',
@@ -179,6 +183,32 @@ describe('ManagedContentUpdater', () => {
     ]) {
       expect(rules).not.toContain(legacyRule);
     }
+
+    const phaseController = normalized.find(
+      (entry) => entry.name === '阶段控制器',
+    )?.content;
+    expect(phaseController).toContain('kailianFavor >= 500');
+    expect(phaseController).toContain('kailianFavor >= 401');
+    expect(phaseController).toContain('kailianFavor >= 251');
+    expect(phaseController).toContain('kailianFavor >= 101');
+
+    for (const [name, range] of [
+      ['凯利安_阶段01_陌生人', '好感度0-100'],
+      ['凯利安_阶段02_伙伴', '好感度101-250'],
+      ['凯利安_阶段03_暧昧对象', '好感度251-400'],
+      ['凯利安_阶段04_恋人', '好感度401-499'],
+      ['凯利安_阶段05_伴侣', '好感度500'],
+    ]) {
+      expect(normalized.find((entry) => entry.name === name)?.content).toContain(
+        range,
+      );
+    }
+    expect(
+      normalized.find(
+        (entry) =>
+          entry.name === '💞禁止默认浪漫倾向（防万人迷和一见钟情）',
+      )?.content,
+    ).toContain('好感度低于251');
 
     const variableList = normalized.find(
       (entry) => entry.name === '变量列表',
@@ -218,18 +248,29 @@ describe('ManagedContentUpdater', () => {
       revision: string;
       target: { worldbookNames: string[] };
       operations: Array<{
+        id: string;
         target: { kind: string };
         mutation?: { action: string };
       }>;
     };
-    expect(manifest.revision).toBe('2026-08-30.1');
+    expect(manifest.revision).toBe('2026-08-31.1');
     expect(manifest.target.worldbookNames).toEqual(
       expect.arrayContaining([
         '孔雀开屏你说你看不见alpha',
         '孔雀开屏你说你看不见beta',
       ]),
     );
-    expect(manifest.operations).toHaveLength(8);
+    expect(manifest.operations).toHaveLength(14);
+    expect(new Set(manifest.operations.map((operation) => operation.id)).size).toBe(
+      manifest.operations.length,
+    );
+    expect(manifest.operations.map((operation) => operation.id)).toEqual(
+      expect.arrayContaining([
+        '2026-08-31.affinity-500.schema-rebuild',
+        '2026-08-31.affinity-500.phase-controller',
+        '2026-08-31.affinity-500.variable-rules',
+      ]),
+    );
     expect(
       manifest.operations.filter(
         (operation) => operation.target.kind === 'character-script',
@@ -243,7 +284,7 @@ describe('ManagedContentUpdater', () => {
       manifest.operations.filter(
         (operation) => operation.target.kind === 'worldbook-upsert-entry',
       ),
-    ).toHaveLength(7);
+    ).toHaveLength(13);
   });
 
   it('发布清单可在最新版角色卡上幂等执行且不产生额外改动', async () => {

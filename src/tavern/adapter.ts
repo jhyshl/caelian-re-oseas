@@ -400,7 +400,10 @@ export class TavernAdapter {
     }
   }
 
-  async writeProjection(projection: AiProjection): Promise<boolean> {
+  async writeProjection(
+    projection: AiProjection,
+    options: { authoritativeAffinity?: boolean } = {},
+  ): Promise<boolean> {
     const mvu = this.resolveMvuApi();
     if (!mvu || !this.hasMvu()) return false;
 
@@ -430,9 +433,14 @@ export class TavernAdapter {
         ? normalizeNarrativePatch(extracted)
         : {};
       nextCaelian.narrative = {
-        ...(sanitized.companion
-          ? { companion: sanitized.companion }
-          : {}),
+        companion: {
+          ...(sanitized.companion ?? {}),
+          // Only an interaction that actually changed affinity may override
+          // the variable manager. Ordinary projection writes keep AI values.
+          ...(options.authoritativeAffinity
+            ? { affinity: projection.narrative.companion.affinity }
+            : {}),
+        },
         ...(sanitized.world ? { world: sanitized.world } : {}),
         ...(Object.prototype.hasOwnProperty.call(
           currentNarrative,
@@ -446,6 +454,12 @@ export class TavernAdapter {
               ),
             }
           : {}),
+      };
+    } else if (options.authoritativeAffinity) {
+      nextCaelian.narrative = {
+        companion: {
+          affinity: projection.narrative.companion.affinity,
+        },
       };
     } else if (!isLegacyMigration) {
       delete nextCaelian.narrative;

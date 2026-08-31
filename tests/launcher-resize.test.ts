@@ -14,7 +14,9 @@ import {
 
 describe('launcher menu resizing', () => {
   it('applies one root transform so visuals and pointer hit boxes share a scale', async () => {
-    const component = await readFile('src/modules/shell/App.vue', 'utf8');
+    const component = (
+      await readFile('src/modules/shell/App.vue', 'utf8')
+    ).replace(/\r\n/g, '\n');
 
     expect(component).toContain(
       'transform: scale(var(--launcher-menu-scale));',

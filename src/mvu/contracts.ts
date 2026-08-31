@@ -9,6 +9,14 @@ import type {
 
 export const MVU_SCHEMA_VERSION = 3 as const;
 export const MVU_OWNER = 'caelian-alpha' as const;
+export const AFFINITY_MAX = 500;
+
+export const RELATIONSHIP_MILESTONES = [
+  { threshold: 101, label: '伙伴' },
+  { threshold: 251, label: '暧昧对象' },
+  { threshold: 401, label: '恋人' },
+  { threshold: 500, label: '伴侣' },
+] as const;
 
 export const LEGACY_STAT_DATA_KEYS = [
   '世界',
@@ -51,10 +59,10 @@ export function defaultMvuNarrative(): MvuNarrativeState {
 }
 
 export function relationshipStage(affinity: number): string {
-  if (affinity >= 100) return '伴侣';
-  if (affinity >= 81) return '恋人';
-  if (affinity >= 51) return '暧昧对象';
-  if (affinity >= 21) return '熟人';
+  if (affinity >= 500) return '伴侣';
+  if (affinity >= 401) return '恋人';
+  if (affinity >= 251) return '暧昧对象';
+  if (affinity >= 101) return '伙伴';
   return '陌生人';
 }
 
@@ -274,7 +282,8 @@ function assignWorldText<K extends keyof MvuNarrativeWorldState>(
 }
 
 function clampAffinity(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value)));
+  const clamped = Math.max(0, Math.min(AFFINITY_MAX, value));
+  return Math.round(clamped * 2) / 2;
 }
 
 function cleanKey(value: string): string {

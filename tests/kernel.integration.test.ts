@@ -1136,7 +1136,7 @@ describe('CaelianKernel integration', () => {
           },
         },
         凯利安: {
-          好感度: 42,
+          好感度: 142.6,
           情绪: '期待',
           当前位置: '伊拉亚城',
           衣着: '学院制服',
@@ -1167,12 +1167,12 @@ describe('CaelianKernel integration', () => {
     await kernel.initialize();
     const state = await kernel.api.query('state');
     expect(state.social).toMatchObject({
-      affinity: 42,
+      affinity: 142.5,
       mood: '期待',
       location: '伊拉亚城',
       clothing: '学院制服',
       innerThought: '这名冒险者或许值得继续观察。',
-      relationshipStage: '熟人',
+      relationshipStage: '伙伴',
     });
     expect(state.storyFlags).toEqual([
       expect.objectContaining({ key: '初次相遇', value: true }),
@@ -1190,7 +1190,7 @@ describe('CaelianKernel integration', () => {
       },
       narrative: {
         companion: {
-          affinity: 42,
+          affinity: 142.5,
         },
         storyFlags: {
           初次相遇: true,
@@ -1275,7 +1275,7 @@ describe('CaelianKernel integration', () => {
     );
     directlyEditedCaelian.narrative = {
       companion: {
-        affinity: 64,
+        affinity: 364.5,
         mood: '变量管理器已保存',
         location: '学院钟楼',
         clothing: '白色暗纹衬衫',
@@ -1312,11 +1312,12 @@ describe('CaelianKernel integration', () => {
       .toContain('重新打开状态页后应当显示这一段。');
     const directlyEditedState = await kernel.api.query('state');
     expect(directlyEditedState.social).toMatchObject({
-      affinity: 64,
+      affinity: 364.5,
       mood: '变量管理器已保存',
       location: '学院钟楼',
       clothing: '白色暗纹衬衫',
       innerThought: '重新打开状态页后应当显示这一段。',
+      relationshipStage: '暧昧对象',
     });
     expect(directlyEditedState.world).toMatchObject({
       place: '学院钟楼',
@@ -1330,6 +1331,153 @@ describe('CaelianKernel integration', () => {
     expect(replaceMvuData).toHaveBeenCalledTimes(
       writesBeforeManagerEdit,
     );
+
+    await kernel.api.shutdown();
+  });
+
+  it('MVU 暂不可用时持久保留赠礼增量，恢复后合并当前变量并核验清账', async () => {
+    const databaseName = `caelian-alpha-pending-affinity-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'pending-affinity-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    await kernel.api.execute({
+      id: 'pending-affinity-add-gift',
+      type: 'inventory.adjust',
+      payload: { itemId: '精制面包', name: '精制面包', delta: 1 },
+    });
+    await expect(
+      kernel.api.execute({
+        id: 'pending-affinity-gift',
+        type: 'social.interact',
+        payload: { action: 'caelian.gift', itemId: '精制面包' },
+      }),
+    ).resolves.toMatchObject({ status: 'applied', affinityChanged: true });
+    expect((await kernel.api.query('state')).social).toMatchObject({
+      affinity: 0.5,
+      pendingAffinityDelta: 0.5,
+    });
+
+    let mvuData: Record<string, unknown> = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            companion: {
+              affinity: 7.5,
+              mood: '变量管理器恢复',
+            },
+          },
+        },
+      },
+    };
+    const replaceMvuData = vi.fn((next: Record<string, unknown>) => {
+      mvuData = next;
+    });
+    window.Mvu = {
+      getMvuData: () => mvuData,
+      replaceMvuData,
+    };
+
+    await expect(kernel.api.refreshNarrativeFromMvu()).resolves.toBe(true);
+    expect((await kernel.api.query('state')).social).toMatchObject({
+      affinity: 8,
+      pendingAffinityDelta: 0,
+      mood: '变量管理器恢复',
+    });
+    expect(replaceMvuData).toHaveBeenCalled();
+    expect(
+      (((mvuData.stat_data as Record<string, unknown>).caelian as {
+        narrative: { companion: { affinity: number } };
+      }).narrative.companion.affinity),
+    ).toBe(8);
+
+    await kernel.api.shutdown();
+  });
+
+  it('生成期间拒绝赠礼且不扣物，完成 MVU 导入后恢复赠礼', async () => {
+    const databaseName = `caelian-alpha-generation-gift-lock-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return { stop: () => handlers.delete(event) };
+    });
+    window.tavern_events = {
+      GENERATE_BEFORE_COMBINE_PROMPTS: 'generation-started',
+      GENERATION_ENDED: 'generation-ended',
+    };
+    let mvuData: Record<string, unknown> = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            companion: { affinity: 0 },
+          },
+        },
+      },
+    };
+    window.Mvu = {
+      getMvuData: () => mvuData,
+      replaceMvuData: (next) => {
+        mvuData = next;
+      },
+    };
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'generation-gift-lock-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    await kernel.api.execute({
+      id: 'generation-gift-add-item',
+      type: 'inventory.adjust',
+      payload: { itemId: '精制面包', name: '精制面包', delta: 1 },
+    });
+
+    handlers.get('generation-started')?.();
+    await expect(
+      kernel.api.execute({
+        id: 'generation-gift-attempt',
+        type: 'social.interact',
+        payload: { action: 'caelian.gift', itemId: '精制面包' },
+      }),
+    ).resolves.toMatchObject({
+      status: 'rejected',
+      message: '当前回复仍在生成，请等待生成结束后再赠礼',
+    });
+    expect(await kernel.api.query('inventory')).toContainEqual(
+      expect.objectContaining({ itemId: '精制面包', quantity: 1 }),
+    );
+    expect((await kernel.api.query('state')).social).toMatchObject({
+      affinity: 0,
+      pendingAffinityDelta: 0,
+    });
+
+    handlers.get('generation-ended')?.();
+    await expect
+      .poll(() =>
+        kernel.api.execute({
+          id: 'generation-gift-attempt',
+          type: 'social.interact',
+          payload: { action: 'caelian.gift', itemId: '精制面包' },
+        }),
+      )
+      .toMatchObject({ status: 'applied', affinityChanged: true });
+    expect(await kernel.api.query('inventory')).not.toContainEqual(
+      expect.objectContaining({ itemId: '精制面包' }),
+    );
+    expect((await kernel.api.query('state')).social).toMatchObject({
+      affinity: 0.5,
+      pendingAffinityDelta: 0,
+    });
 
     await kernel.api.shutdown();
   });
@@ -1377,7 +1525,7 @@ describe('CaelianKernel integration', () => {
     databaseNames.push(currentDatabaseName);
     const currentKernel = createKernel({
       channel: 'alpha',
-      version: '0.2.0-alpha.58',
+      version: '0.2.0-alpha.59',
       buildId: 'current-release-test-build',
       databaseName: currentDatabaseName,
       sourceWindow: window,
@@ -1387,8 +1535,8 @@ describe('CaelianKernel integration', () => {
     const currentAnnouncement = document.querySelector(
       '[data-caelian-panel="release-notes"]',
     );
-    expect(currentAnnouncement?.textContent).toContain('Alpha 58');
-    expect(currentAnnouncement?.textContent).toContain('集市商品卡');
+    expect(currentAnnouncement?.textContent).toContain('Alpha 59');
+    expect(currentAnnouncement?.textContent).toContain('好感度上限');
     expect(currentAnnouncement?.textContent).toContain('当前版本');
     await currentKernel.api.shutdown();
 
@@ -1396,7 +1544,7 @@ describe('CaelianKernel integration', () => {
     databaseNames.push(unmatchedDatabaseName);
     const unmatchedKernel = createKernel({
       channel: 'alpha',
-      version: '0.2.0-alpha.59',
+      version: '0.2.0-alpha.60',
       buildId: 'unmatched-release-test-build',
       databaseName: unmatchedDatabaseName,
       sourceWindow: window,
@@ -1411,9 +1559,9 @@ describe('CaelianKernel integration', () => {
       '[data-caelian-panel="release-notes"]',
     );
     expect(historicalAnnouncement?.textContent).toContain(
-      '当前构建 0.2.0-alpha.59 暂无独立公告',
+      '当前构建 0.2.0-alpha.60 暂无独立公告',
     );
-    expect(historicalAnnouncement?.textContent).toContain('Alpha 58');
+    expect(historicalAnnouncement?.textContent).toContain('Alpha 59');
     expect(
       historicalAnnouncement?.querySelector('.current-badge'),
     ).toBeNull();

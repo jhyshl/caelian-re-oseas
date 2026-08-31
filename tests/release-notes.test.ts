@@ -9,14 +9,20 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.58');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.59');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.58');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.59');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('只剩标题和按钮');
-    expect(latestText).toContain('集市商品卡');
+    expect(latestText).toContain('好感度上限从 100 提升到 500');
+    expect(latestText).toContain('赠礼与邀约');
+    const alpha58Text =
+      releases
+        .find((release) => release.version === '0.2.0-alpha.58')
+        ?.changes.join('\n') ?? '';
+    expect(alpha58Text).toContain('只剩标题和按钮');
+    expect(alpha58Text).toContain('集市商品卡');
     const alpha57Text =
       releases
         .find((release) => release.version === '0.2.0-alpha.57')
@@ -107,14 +113,14 @@ describe('release notes', () => {
   });
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
-    expect(releaseHistoryFor('alpha', '0.2.0-alpha.59')[0]?.version).toBe(
-      '0.2.0-alpha.58',
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.60')[0]?.version).toBe(
+      '0.2.0-alpha.59',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.58',
+      '0.2.0-alpha.59',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });

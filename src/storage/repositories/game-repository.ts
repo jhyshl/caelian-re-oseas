@@ -27,6 +27,11 @@ import { InventoryRepository } from '@/storage/repositories/inventory-repository
 import { GatheringRepository } from '@/storage/repositories/gathering-repository';
 import { MarketRepository } from '@/storage/repositories/market-repository';
 import { NarrativeRepository } from '@/storage/repositories/narrative-repository';
+import {
+  normalizePendingAffinityDelta,
+  SocialInteractionRepository,
+  type SocialInteractionOutcome,
+} from '@/storage/repositories/social-interaction-repository';
 import { GuildRepository } from '@/storage/repositories/guild-repository';
 import { PlayerRepository } from '@/storage/repositories/player-repository';
 import { ProfileRepository } from '@/storage/repositories/profile-repository';
@@ -37,6 +42,12 @@ import {
   type BindQuestFloorInput,
   type QuestFloorRollbackResult,
 } from '@/storage/repositories/quest-progress-repository';
+import { relationshipStage } from '@/mvu/contracts';
+
+type CommandApplicationResult = Pick<
+  SocialInteractionOutcome,
+  'message' | 'prompt' | 'affinityChanged'
+>;
 
 export class GameRepository {
   private readonly profiles: ProfileRepository;
@@ -51,11 +62,13 @@ export class GameRepository {
   private readonly achievements: AchievementRepository;
   private readonly market: MarketRepository;
   private readonly gathering: GatheringRepository;
+  private readonly socialInteractions: SocialInteractionRepository;
   private readonly questProgress: QuestProgressRepository;
 
   constructor(
     private readonly db: CaelianDatabase,
     private readonly events: EventBus,
+    dependencies: { random?: () => number } = {},
   ) {
     this.profiles = new ProfileRepository(db);
     this.players = new PlayerRepository(db);
@@ -69,6 +82,10 @@ export class GameRepository {
     this.achievements = new AchievementRepository(db, events);
     this.market = new MarketRepository(db);
     this.gathering = new GatheringRepository(db);
+    this.socialInteractions = new SocialInteractionRepository(
+      db,
+      dependencies.random,
+    );
     this.questProgress = new QuestProgressRepository(db);
   }
 
@@ -161,7 +178,13 @@ export class GameRepository {
       world,
       regionAccess,
       storyFlags,
-      social,
+      social: {
+        ...social,
+        pendingAffinityDelta: normalizePendingAffinityDelta(
+          social.pendingAffinityDelta,
+        ),
+        relationshipStage: relationshipStage(social.affinity),
+      },
       guild,
       quests,
       questHistory,
@@ -211,6 +234,10 @@ export class GameRepository {
     if (command.type.startsWith('gather.')) {
       await this.gathering.prepare();
     }
+    if (command.type === 'social.interact') {
+      await this.socialInteractions.prepare();
+      await this.achievements.prepareDefinitions();
+    }
     if (command.type.startsWith('craft.')) {
       await this.crafting.prepare();
     }
@@ -227,7 +254,7 @@ export class GameRepository {
         if (await this.db.commandInbox.get(command.id)) {
           return { id: command.id, status: 'duplicate' };
         }
-        await this.applyCommand(profileId, command);
+        const application = await this.applyCommand(profileId, command);
         const now = Date.now();
         await this.db.commandInbox.add({
           id: command.id,
@@ -242,7 +269,11 @@ export class GameRepository {
           createdAt: now,
         });
         await this.db.profiles.update(profileId, { updatedAt: now });
-        return { id: command.id, status: 'applied' };
+        return {
+          id: command.id,
+          status: 'applied',
+          ...application,
+        };
       },
     );
 
@@ -323,6 +354,24 @@ export class GameRepository {
 
   gatheringState(profileId: string): Promise<GatheringView> {
     return this.gathering.view(profileId);
+  }
+
+  socialInteractionOptions(profileId: string) {
+    return this.socialInteractions.options(profileId);
+  }
+
+  pendingAffinityDelta(profileId: string): Promise<number> {
+    return this.socialInteractions.pendingAffinityDelta(profileId);
+  }
+
+  acknowledgePendingAffinityDelta(
+    profileId: string,
+    acknowledgedDelta: number,
+  ): Promise<number> {
+    return this.socialInteractions.acknowledgePendingAffinityDelta(
+      profileId,
+      acknowledgedDelta,
+    );
   }
 
   bindQuestFloor(
@@ -460,7 +509,7 @@ export class GameRepository {
   private async applyCommand(
     profileId: string,
     command: DomainCommand,
-  ): Promise<void> {
+  ): Promise<void | CommandApplicationResult> {
     switch (command.type) {
       case 'player.create':
         return this.players.create(profileId, command.payload);
@@ -482,6 +531,23 @@ export class GameRepository {
         return this.world.move(profileId, command.payload);
       case 'narrative.update':
         return this.narrative.update(profileId, command.payload);
+      case 'social.interact': {
+        const outcome = await this.socialInteractions.interact(
+          profileId,
+          command.payload,
+        );
+        await this.achievements.recordExternal(
+          profileId,
+          outcome.achievement,
+        );
+        return {
+          message: outcome.message,
+          ...(outcome.prompt ? { prompt: outcome.prompt } : {}),
+          ...(outcome.affinityChanged
+            ? { affinityChanged: true }
+            : {}),
+        };
+      }
       case 'quest.accept':
         return this.guild.acceptCommission(profileId, command.payload);
       case 'quest.commission-progress':
@@ -593,6 +659,7 @@ export class GameRepository {
       this.db.playerStates,
       this.db.statAllocations,
       this.db.worldStates,
+      this.db.regionAccess,
       this.db.storyFlags,
       this.db.socialProgress,
       this.db.guildStates,
