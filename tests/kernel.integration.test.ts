@@ -500,15 +500,16 @@ describe('CaelianKernel integration', () => {
     activate();
 
     await expect
-      .poll(() =>
-        document.querySelector('[data-caelian-panel="affinity"]'),
+      .poll(
+        () =>
+          document.querySelector('[data-caelian-panel="affinity"]')
+            ?.textContent,
+        { timeout: 3000 },
       )
-      .not.toBeNull();
+      .toContain('凯利安状态栏');
     expect(
       document.querySelector('[data-caelian-panel="character"]'),
     ).toBeNull();
-    expect(document.body.textContent).toContain('凯利安状态栏');
-
     await kernel.api.shutdown();
   });
 
@@ -2250,10 +2251,14 @@ describe('CaelianKernel integration', () => {
       summary: '花已经卖完，玩家答应陪芙萝拉去采花。',
       gatheringRequested: true,
     };
+    let releaseJudgeResponse!: () => void;
+    const judgeResponseGate = new Promise<void>((resolve) => {
+      releaseJudgeResponse = resolve;
+    });
     const fetchMock = vi.spyOn(window, 'fetch').mockImplementation(
       async (input) => {
         if (String(input).includes('judge.example')) {
-          await new Promise((resolve) => window.setTimeout(resolve, 120));
+          await judgeResponseGate;
           return new Response(
               JSON.stringify({
                 choices: [
@@ -2319,8 +2324,18 @@ describe('CaelianKernel integration', () => {
     handlers.get('generation-ended')?.(1);
 
     await expect
+      .poll(
+        () =>
+          fetchMock.mock.calls.filter(([input]) =>
+            String(input).includes('judge.example'),
+          ).length,
+        { timeout: 3000 },
+      )
+      .toBe(1);
+    await expect
       .poll(() => document.body.textContent, { timeout: 3000 })
       .toContain('正在推进剧情');
+    releaseJudgeResponse();
 
     await expect
       .poll(
