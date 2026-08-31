@@ -3,6 +3,7 @@ import type { AchievementDefinition } from '@/content/types';
 import type {
   AchievementSpecialState,
   EventLogRecord,
+  GatheringView,
   GameSnapshot,
   InventoryStackRecord,
   MailboxState,
@@ -11,6 +12,7 @@ import type {
   QuestRecord,
   QuestTrackerRecord,
   RuntimeInfo,
+  SocialInteractionOptions,
 } from '@/domain/types';
 import type { KernelEventMap } from '@/kernel/event-bus';
 import type {
@@ -94,6 +96,7 @@ export type PanelName =
   | 'inventory'
   | 'crafting'
   | 'market'
+  | 'gathering'
   | 'guild'
   | 'map'
   | 'worldbook'
@@ -113,6 +116,8 @@ export type QueryName =
   | 'state'
   | 'inventory'
   | 'market'
+  | 'gathering'
+  | 'social-interactions'
   | 'events'
   | 'achievement-definitions'
   | 'achievement-special'
@@ -123,6 +128,8 @@ export interface QueryResultMap {
   state: GameSnapshot;
   inventory: InventoryStackRecord[];
   market: MarketView;
+  gathering: GatheringView;
+  'social-interactions': SocialInteractionOptions;
   events: EventLogRecord[];
   'achievement-definitions': Record<string, AchievementDefinition>;
   'achievement-special': AchievementSpecialState;

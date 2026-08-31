@@ -7,6 +7,7 @@ import { initialQuestProgress } from '@/quests/state-machine';
 import { CaelianDatabase } from '@/storage/database';
 import { avatarPreferenceKey } from '@/ui/avatar-preferences';
 import { SAVED_DECKS_STORAGE_KEY } from '@/saved-decks';
+import { LAUNCHER_MENU_SCALE_STORAGE_KEY } from '@/modules/shell/launcher-resize';
 
 const databaseNames: string[] = [];
 const defaultFetch = window.fetch;
@@ -30,6 +31,7 @@ afterEach(async () => {
   delete (window as unknown as Record<string, unknown>).TavernHelper;
   localStorage.removeItem('caelian_launcher_order_v1');
   localStorage.removeItem('caelian_floating_wheel_position_v2');
+  localStorage.removeItem(LAUNCHER_MENU_SCALE_STORAGE_KEY);
   localStorage.removeItem('caelian_quest_judge_preferences_v1');
   sessionStorage.removeItem('caelian_quest_judge_api_key_session_v1');
   localStorage.removeItem(avatarPreferenceKey('caelian'));
@@ -579,6 +581,7 @@ describe('CaelianKernel integration', () => {
       'guild',
       'mailbox',
       'market',
+      'gathering',
       'map',
       'worldbook',
       'battle',
@@ -590,6 +593,134 @@ describe('CaelianKernel integration', () => {
     ]);
 
     await kernel.api.shutdown();
+  });
+
+  it('可从菜单外侧边框等比缩放快捷菜单并恢复保存的尺寸', async () => {
+    const databaseName = `caelian-alpha-launcher-resize-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const createLauncherKernel = () =>
+      createKernel({
+        channel: 'alpha',
+        version: '0.2.0-alpha.test',
+        buildId: 'launcher-resize-test-build',
+        databaseName,
+        sourceWindow: window,
+      });
+    const firstKernel = createLauncherKernel();
+
+    await firstKernel.initialize();
+    document
+      .querySelector<HTMLButtonElement>('.caelian-shell-host .orb')
+      ?.click();
+    await expect
+      .poll(() =>
+        document.querySelector<HTMLElement>('.caelian-shell-host .wheel'),
+      )
+      .not.toBeNull();
+    const wheel = document.querySelector<HTMLElement>(
+      '.caelian-shell-host .wheel',
+    );
+    expect(wheel).not.toBeNull();
+    vi.spyOn(wheel!, 'getBoundingClientRect').mockReturnValue({
+      x: 100,
+      y: 100,
+      left: 100,
+      top: 100,
+      right: 400,
+      bottom: 320,
+      width: 300,
+      height: 220,
+      toJSON: () => ({}),
+    } as DOMRect);
+    const growsLeft = wheel?.classList.contains('opens-left');
+    const startX = growsLeft ? 100 : 400;
+    const enlargedX = growsLeft ? 40 : 460;
+    Object.defineProperties(wheel!, {
+      setPointerCapture: {
+        configurable: true,
+        value: vi.fn(() => {
+          throw new Error('pointer capture is unavailable');
+        }),
+      },
+      releasePointerCapture: {
+        configurable: true,
+        value: vi.fn(() => {
+          throw new Error('pointer capture is unavailable');
+        }),
+      },
+    });
+    const dispatchResizePointer = (
+      type: string,
+      clientX: number,
+      pointerType: 'mouse' | 'touch' = 'mouse',
+      target: EventTarget = wheel!,
+    ) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        clientX,
+        clientY: 210,
+      });
+      Object.defineProperties(event, {
+        pointerId: { value: 71 },
+        pointerType: { value: pointerType },
+      });
+      target.dispatchEvent(event);
+    };
+
+    const outerButton = wheel?.querySelector<HTMLButtonElement>(
+      '.wheel-grid button',
+    );
+    expect(outerButton).not.toBeNull();
+    dispatchResizePointer('pointerdown', startX, 'touch', outerButton!);
+    dispatchResizePointer('pointermove', enlargedX, 'touch', document);
+    expect(wheel?.style.getPropertyValue('--launcher-menu-scale')).toBe(
+      '1.0000',
+    );
+    expect(wheel?.classList.contains('resizing')).toBe(false);
+
+    dispatchResizePointer('pointerdown', startX);
+    dispatchResizePointer('pointermove', enlargedX, 'mouse', document);
+    await expect
+      .poll(() =>
+        wheel?.style.getPropertyValue('--launcher-menu-scale'),
+      )
+      .toBe('1.2000');
+    expect(wheel?.classList.contains('resizing')).toBe(true);
+    dispatchResizePointer('pointercancel', enlargedX, 'mouse', document);
+    await expect
+      .poll(() =>
+        wheel?.style.getPropertyValue('--launcher-menu-scale'),
+      )
+      .toBe('1.0000');
+    expect(localStorage.getItem(LAUNCHER_MENU_SCALE_STORAGE_KEY)).toBeNull();
+
+    dispatchResizePointer('pointerdown', startX, 'touch');
+    dispatchResizePointer('pointermove', enlargedX, 'touch', document);
+    dispatchResizePointer('pointerup', enlargedX, 'touch', document);
+    await expect
+      .poll(() =>
+        localStorage.getItem(LAUNCHER_MENU_SCALE_STORAGE_KEY),
+      )
+      .toBe('1.2000');
+    expect(wheel?.classList.contains('resizing')).toBe(false);
+    await firstKernel.api.shutdown();
+
+    const restoredKernel = createLauncherKernel();
+    await restoredKernel.initialize();
+    document
+      .querySelector<HTMLButtonElement>('.caelian-shell-host .orb')
+      ?.click();
+    await expect
+      .poll(() =>
+        document
+          .querySelector<HTMLElement>('.caelian-shell-host .wheel')
+          ?.style.getPropertyValue('--launcher-menu-scale'),
+      )
+      .toBe('1.2000');
+
+    await restoredKernel.api.shutdown();
   });
 
   it('初始化本地档案，并按需挂载和卸载独立 Vue 面板', async () => {
@@ -1005,7 +1136,7 @@ describe('CaelianKernel integration', () => {
           },
         },
         凯利安: {
-          好感度: 42,
+          好感度: 142.6,
           情绪: '期待',
           当前位置: '伊拉亚城',
           衣着: '学院制服',
@@ -1036,12 +1167,12 @@ describe('CaelianKernel integration', () => {
     await kernel.initialize();
     const state = await kernel.api.query('state');
     expect(state.social).toMatchObject({
-      affinity: 42,
+      affinity: 142.5,
       mood: '期待',
       location: '伊拉亚城',
       clothing: '学院制服',
       innerThought: '这名冒险者或许值得继续观察。',
-      relationshipStage: '熟人',
+      relationshipStage: '伙伴',
     });
     expect(state.storyFlags).toEqual([
       expect.objectContaining({ key: '初次相遇', value: true }),
@@ -1059,7 +1190,7 @@ describe('CaelianKernel integration', () => {
       },
       narrative: {
         companion: {
-          affinity: 42,
+          affinity: 142.5,
         },
         storyFlags: {
           初次相遇: true,
@@ -1144,7 +1275,7 @@ describe('CaelianKernel integration', () => {
     );
     directlyEditedCaelian.narrative = {
       companion: {
-        affinity: 64,
+        affinity: 364.5,
         mood: '变量管理器已保存',
         location: '学院钟楼',
         clothing: '白色暗纹衬衫',
@@ -1181,11 +1312,12 @@ describe('CaelianKernel integration', () => {
       .toContain('重新打开状态页后应当显示这一段。');
     const directlyEditedState = await kernel.api.query('state');
     expect(directlyEditedState.social).toMatchObject({
-      affinity: 64,
+      affinity: 364.5,
       mood: '变量管理器已保存',
       location: '学院钟楼',
       clothing: '白色暗纹衬衫',
       innerThought: '重新打开状态页后应当显示这一段。',
+      relationshipStage: '暧昧对象',
     });
     expect(directlyEditedState.world).toMatchObject({
       place: '学院钟楼',
@@ -1199,6 +1331,153 @@ describe('CaelianKernel integration', () => {
     expect(replaceMvuData).toHaveBeenCalledTimes(
       writesBeforeManagerEdit,
     );
+
+    await kernel.api.shutdown();
+  });
+
+  it('MVU 暂不可用时持久保留赠礼增量，恢复后合并当前变量并核验清账', async () => {
+    const databaseName = `caelian-alpha-pending-affinity-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'pending-affinity-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    await kernel.api.execute({
+      id: 'pending-affinity-add-gift',
+      type: 'inventory.adjust',
+      payload: { itemId: '精制面包', name: '精制面包', delta: 1 },
+    });
+    await expect(
+      kernel.api.execute({
+        id: 'pending-affinity-gift',
+        type: 'social.interact',
+        payload: { action: 'caelian.gift', itemId: '精制面包' },
+      }),
+    ).resolves.toMatchObject({ status: 'applied', affinityChanged: true });
+    expect((await kernel.api.query('state')).social).toMatchObject({
+      affinity: 0.5,
+      pendingAffinityDelta: 0.5,
+    });
+
+    let mvuData: Record<string, unknown> = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            companion: {
+              affinity: 7.5,
+              mood: '变量管理器恢复',
+            },
+          },
+        },
+      },
+    };
+    const replaceMvuData = vi.fn((next: Record<string, unknown>) => {
+      mvuData = next;
+    });
+    window.Mvu = {
+      getMvuData: () => mvuData,
+      replaceMvuData,
+    };
+
+    await expect(kernel.api.refreshNarrativeFromMvu()).resolves.toBe(true);
+    expect((await kernel.api.query('state')).social).toMatchObject({
+      affinity: 8,
+      pendingAffinityDelta: 0,
+      mood: '变量管理器恢复',
+    });
+    expect(replaceMvuData).toHaveBeenCalled();
+    expect(
+      (((mvuData.stat_data as Record<string, unknown>).caelian as {
+        narrative: { companion: { affinity: number } };
+      }).narrative.companion.affinity),
+    ).toBe(8);
+
+    await kernel.api.shutdown();
+  });
+
+  it('生成期间拒绝赠礼且不扣物，完成 MVU 导入后恢复赠礼', async () => {
+    const databaseName = `caelian-alpha-generation-gift-lock-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return { stop: () => handlers.delete(event) };
+    });
+    window.tavern_events = {
+      GENERATE_BEFORE_COMBINE_PROMPTS: 'generation-started',
+      GENERATION_ENDED: 'generation-ended',
+    };
+    let mvuData: Record<string, unknown> = {
+      stat_data: {
+        caelian: {
+          narrative: {
+            companion: { affinity: 0 },
+          },
+        },
+      },
+    };
+    window.Mvu = {
+      getMvuData: () => mvuData,
+      replaceMvuData: (next) => {
+        mvuData = next;
+      },
+    };
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'generation-gift-lock-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    await kernel.api.execute({
+      id: 'generation-gift-add-item',
+      type: 'inventory.adjust',
+      payload: { itemId: '精制面包', name: '精制面包', delta: 1 },
+    });
+
+    handlers.get('generation-started')?.();
+    await expect(
+      kernel.api.execute({
+        id: 'generation-gift-attempt',
+        type: 'social.interact',
+        payload: { action: 'caelian.gift', itemId: '精制面包' },
+      }),
+    ).resolves.toMatchObject({
+      status: 'rejected',
+      message: '当前回复仍在生成，请等待生成结束后再赠礼',
+    });
+    expect(await kernel.api.query('inventory')).toContainEqual(
+      expect.objectContaining({ itemId: '精制面包', quantity: 1 }),
+    );
+    expect((await kernel.api.query('state')).social).toMatchObject({
+      affinity: 0,
+      pendingAffinityDelta: 0,
+    });
+
+    handlers.get('generation-ended')?.();
+    await expect
+      .poll(() =>
+        kernel.api.execute({
+          id: 'generation-gift-attempt',
+          type: 'social.interact',
+          payload: { action: 'caelian.gift', itemId: '精制面包' },
+        }),
+      )
+      .toMatchObject({ status: 'applied', affinityChanged: true });
+    expect(await kernel.api.query('inventory')).not.toContainEqual(
+      expect.objectContaining({ itemId: '精制面包' }),
+    );
+    expect((await kernel.api.query('state')).social).toMatchObject({
+      affinity: 0.5,
+      pendingAffinityDelta: 0,
+    });
 
     await kernel.api.shutdown();
   });
@@ -1239,6 +1518,54 @@ describe('CaelianKernel integration', () => {
       'achievement-letter',
     ]);
     await repeatedKernel.api.shutdown();
+  });
+
+  it('当前 Alpha 公告有内容，未匹配版号手动打开时回退到最近历史', async () => {
+    const currentDatabaseName = `caelian-alpha-current-release-${crypto.randomUUID()}`;
+    databaseNames.push(currentDatabaseName);
+    const currentKernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.59',
+      buildId: 'current-release-test-build',
+      databaseName: currentDatabaseName,
+      sourceWindow: window,
+    });
+
+    await currentKernel.initialize();
+    const currentAnnouncement = document.querySelector(
+      '[data-caelian-panel="release-notes"]',
+    );
+    expect(currentAnnouncement?.textContent).toContain('Alpha 59');
+    expect(currentAnnouncement?.textContent).toContain('好感度上限');
+    expect(currentAnnouncement?.textContent).toContain('当前版本');
+    await currentKernel.api.shutdown();
+
+    const unmatchedDatabaseName = `caelian-alpha-unmatched-release-${crypto.randomUUID()}`;
+    databaseNames.push(unmatchedDatabaseName);
+    const unmatchedKernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.60',
+      buildId: 'unmatched-release-test-build',
+      databaseName: unmatchedDatabaseName,
+      sourceWindow: window,
+    });
+
+    await unmatchedKernel.initialize();
+    expect(
+      document.querySelector('[data-caelian-panel="release-notes"]'),
+    ).toBeNull();
+    await unmatchedKernel.api.openPanel('release-notes');
+    const historicalAnnouncement = document.querySelector(
+      '[data-caelian-panel="release-notes"]',
+    );
+    expect(historicalAnnouncement?.textContent).toContain(
+      '当前构建 0.2.0-alpha.60 暂无独立公告',
+    );
+    expect(historicalAnnouncement?.textContent).toContain('Alpha 59');
+    expect(
+      historicalAnnouncement?.querySelector('.current-badge'),
+    ).toBeNull();
+    await unmatchedKernel.api.shutdown();
   });
 
   it('Beta 使用独立运行通道并只展示 Beta 公告', async () => {
@@ -1858,7 +2185,7 @@ describe('CaelianKernel integration', () => {
     textarea.remove();
   });
 
-  it('只在生成完成后判定，并在删除楼层时保留已确认节点', async () => {
+  it('只在生成完成后判定，复用任务判定打开采集页，并在删除楼层时保留已确认节点', async () => {
     const databaseName = `caelian-alpha-quest-floor-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
     const handlers = new Map<unknown, (...args: unknown[]) => void>();
@@ -1921,6 +2248,7 @@ describe('CaelianKernel integration', () => {
       confidence: 0.96,
       evidence: ['玩家明确答应，并和芙萝拉准备前往城郊。'],
       summary: '花已经卖完，玩家答应陪芙萝拉去采花。',
+      gatheringRequested: true,
     };
     const fetchMock = vi.spyOn(window, 'fetch').mockImplementation(
       async (input) => {
@@ -1980,6 +2308,7 @@ describe('CaelianKernel integration', () => {
       { mes: '好，我陪你去采花。', is_user: true },
       { mes: '芙萝拉开心地点头，收好花篮准备出发。', is_user: false },
     );
+    const inventoryBeforeGathering = await kernel.api.query('inventory');
     handlers.get('character-message-rendered')?.(1);
     await new Promise((resolve) => window.setTimeout(resolve, 40));
     expect(
@@ -2000,6 +2329,17 @@ describe('CaelianKernel integration', () => {
         { timeout: 3000 },
       )
       .toBe('flora-selling-flowers');
+    await expect
+      .poll(() => kernel.api.listOpenPanels(), { timeout: 3000 })
+      .toContain('gathering');
+    expect(await kernel.api.query('inventory')).toEqual(
+      inventoryBeforeGathering,
+    );
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('judge.example'),
+      ),
+    ).toHaveLength(1);
     await expect
       .poll(
         () =>
@@ -2041,5 +2381,114 @@ describe('CaelianKernel integration', () => {
     await kernel.api.shutdown();
     fetchMock.mockRestore();
     textarea.remove();
+  });
+});
+
+describe('剧情采集判定', () => {
+  async function setupUntrackedGatheringScenario(userMessage: string) {
+    const databaseName =
+      `caelian-alpha-story-gathering-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const handlers = new Map<unknown, (...args: unknown[]) => void>();
+    window.eventOn = vi.fn((event, handler) => {
+      handlers.set(event, handler);
+      return { stop: () => handlers.delete(event) };
+    });
+    window.tavern_events = {
+      GENERATION_ENDED: 'generation-ended',
+    };
+    const chat: Array<{ mes: string; is_user: boolean }> = [
+      {
+        mes: userMessage,
+        is_user: true,
+      },
+      {
+        mes: '你走进城郊的草丛，开始仔细寻找可用的材料。',
+        is_user: false,
+      },
+    ];
+    window.SillyTavern = {
+      getContext: () => ({
+        chatId: 'story-gathering-untracked',
+        name1: '采集测试员',
+        chat,
+        setExtensionPrompt: vi.fn(),
+      }),
+    };
+    const fetchMock = vi.spyOn(window, 'fetch').mockImplementation(
+      async (input) => {
+        if (String(input).includes('judge.example')) {
+          return new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: JSON.stringify({ gatheringRequested: true }),
+                  },
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+        return new Response(null, { status: 404 });
+      },
+    );
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.test',
+      buildId: 'story-gathering-untracked-build',
+      databaseName,
+      sourceWindow: window,
+    });
+    await kernel.initialize();
+    await kernel.api.execute({
+      id: 'create-story-gathering-untracked',
+      type: 'player.create',
+      payload: {
+        name: '采集测试员',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    kernel.api.configureQuestJudge({
+      endpoint: 'https://judge.example/v1/chat/completions',
+      model: 'judge-model',
+    });
+    const gatheringRequests = () =>
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).includes('judge.example'),
+      );
+    return {
+      fetchMock,
+      gatheringRequests,
+      handlers,
+      kernel,
+    };
+  }
+
+  it('无追踪任务时即使玩家明确采集拾取，也不调用副 API 或打开采集页', async () => {
+    const harness = await setupUntrackedGatheringScenario(
+      '我现在采集并拾取附近的区域特产。',
+    );
+    const inventoryBefore = await harness.kernel.api.query('inventory');
+
+    expect(await harness.kernel.api.getTrackedQuest()).toBeNull();
+    harness.handlers.get('generation-ended')?.(1);
+    await new Promise((resolve) => window.setTimeout(resolve, 180));
+
+    expect(harness.gatheringRequests()).toHaveLength(0);
+    expect(
+      document.querySelector('[data-caelian-panel="gathering"]'),
+    ).toBeNull();
+    expect(await harness.kernel.api.query('inventory')).toEqual(
+      inventoryBefore,
+    );
+
+    await harness.kernel.api.shutdown();
+    harness.fetchMock.mockRestore();
   });
 });

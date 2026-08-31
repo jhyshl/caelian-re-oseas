@@ -157,6 +157,10 @@ export class AchievementRepository {
     return [...merged.values()];
   }
 
+  async prepareDefinitions(): Promise<void> {
+    await this.loadDefinitions();
+  }
+
   async listDefinitions(): Promise<Record<string, AchievementDefinition>> {
     const builtIn = await this.loadDefinitions();
     const stored = await this.db.achievementCounters
@@ -204,37 +208,28 @@ export class AchievementRepository {
       );
       if (patch.claimDate && existingProgress?.unlocked) continue;
       await this.ensurePatchProgress(patch);
-      const now = Date.now();
-      let record = await this.db.mailRecords.get(
-        this.mailRecordId(patch.mail.id),
+      const ensuredMail = await this.ensurePatchMail(
+        patch,
+        signal.opened,
       );
-      if (!record) {
-        record = {
-          id: this.mailRecordId(patch.mail.id),
-          profileId: GLOBAL_ACHIEVEMENT_PROFILE_ID,
-          mailId: patch.mail.id,
-          source: patch.mail.source,
-          receivedAt: now,
-          openedAt: signal.opened ? now : null,
-          rewardClaimedAt: null,
-          updatedAt: now,
-        };
-        await this.db.mailRecords.put(record);
-        if (!patch.silentMailDelivery) {
-          result.receivedMailIds.push(patch.mail.id);
-        }
-      } else if (signal.opened && !record.openedAt) {
-        record = { ...record, openedAt: now, updatedAt: now };
-        await this.db.mailRecords.put(record);
+      let record = ensuredMail.record;
+      if (ensuredMail.created && !patch.silentMailDelivery) {
+        result.receivedMailIds.push(patch.mail.id);
       }
 
       if (signal.opened && !record.rewardClaimedAt) {
-        await this.claimPatchReward(profileId, record, patch);
+        const newlyClaimed = await this.claimPatchReward(
+          profileId,
+          record,
+          patch,
+        );
         await this.unlock(patch.achievement.id);
-        await this.syncCounterProgress('economy.goldGained');
-        result.claimedRewardIds.push(patch.mail.id);
-        if (patch.presentLetterOnClaim) {
-          result.claimedAchievementIds.push(patch.achievement.id);
+        if (newlyClaimed) {
+          await this.syncCounterProgress('economy.goldGained');
+          result.claimedRewardIds.push(patch.mail.id);
+          if (patch.presentLetterOnClaim) {
+            result.claimedAchievementIds.push(patch.achievement.id);
+          }
         }
         record = (await this.db.mailRecords.get(record.id)) ?? record;
       }
@@ -627,7 +622,7 @@ export class AchievementRepository {
             'caelian.giftFavor',
             Math.max(0, Number(payload.favor ?? 0)),
           );
-          await this.markDailySocial('gift');
+          await this.markDailySocial(profileId, 'gift');
           if (/特产|specialty/i.test(payload.category ?? '')) {
             await this.unlock('ach_caelian_gift_specialty');
           }
@@ -639,7 +634,7 @@ export class AchievementRepository {
       case 'caelian.invite':
         if (payload.success !== false) {
           await this.incrementCounter('caelian.invite', 1);
-          await this.markDailySocial('invite');
+          await this.markDailySocial(profileId, 'invite');
           if (payload.region) {
             const visited = await this.counter(`travel.region.${payload.region}`);
             if (visited.value <= 0) {
@@ -649,16 +644,16 @@ export class AchievementRepository {
         }
         break;
       case 'trelao.pet':
-        await this.incrementCounter('trelao.pet', 1);
         if (payload.success === false || payload.positive === false) {
           await this.unlock('ach_trelao_pet_reject_first');
           await this.setCounter('trelao.petStreak', 0);
         } else {
+          await this.incrementCounter('trelao.pet', 1);
           await this.incrementCounter('trelao.petStreak', 1);
         }
         break;
       case 'trelao.feed':
-        await this.recordTrelaoFeed(payload);
+        await this.recordTrelaoFeed(profileId, payload);
         break;
       case 'battle.consumable-heal':
         await this.unlock('ach_consumable_heal_hp');
@@ -1041,11 +1036,12 @@ export class AchievementRepository {
   }
 
   private async recordTrelaoFeed(
+    profileId: string,
     payload: AchievementRecordPayload,
   ): Promise<void> {
     const liked = payload.liked !== false;
     const category = payload.category ?? '';
-    const day = this.todayKey();
+    const day = await this.interactionDayKey(profileId);
     if (liked) {
       await this.incrementCounter('trelao.feedLike', 1);
       await this.incrementCounter('trelao.feedLikeStreak', 1);
@@ -1082,8 +1078,11 @@ export class AchievementRepository {
     }
   }
 
-  private async markDailySocial(kind: 'gift' | 'invite'): Promise<void> {
-    const day = this.todayKey();
+  private async markDailySocial(
+    profileId: string,
+    kind: 'gift' | 'invite',
+  ): Promise<void> {
+    const day = await this.interactionDayKey(profileId);
     await this.setCounter(`caelian.social.${day}.${kind}`, 1);
     const [gift, invite] = await Promise.all([
       this.counter(`caelian.social.${day}.gift`),
@@ -1232,30 +1231,74 @@ export class AchievementRepository {
     profileId: string,
     record: MailRecord,
     patch: AchievementPatchCatalogEntry,
-  ): Promise<void> {
-    const current = await this.db.mailRecords.get(record.id);
-    if (!current) throw new Error('这封补丁邮件尚未送达');
-    if (current.rewardClaimedAt) {
+  ): Promise<boolean> {
+    const newlyClaimed = await this.db.transaction(
+      'rw',
+      [
+        this.db.mailRecords,
+        this.db.playerStates,
+        this.db.achievementCounters,
+        this.db.specialCollectibles,
+        this.db.ownedRelics,
+      ],
+      async () => {
+        const current = await this.db.mailRecords.get(record.id);
+        if (!current) throw new Error('这封补丁邮件尚未送达');
+        if (current.rewardClaimedAt) return false;
+        const player = await this.db.playerStates.get(profileId);
+        if (!player) throw new Error('玩家档案不存在');
+        const now = Date.now();
+        player.gold += patch.reward.gold;
+        player.updatedAt = now;
+        await this.db.playerStates.put(player);
+        await this.incrementCounter(
+          'economy.goldGained',
+          patch.reward.gold,
+        );
+        await this.ensurePatchCollectible(profileId, patch);
+        await this.db.mailRecords.put({
+          ...current,
+          openedAt: current.openedAt ?? now,
+          rewardClaimedAt: now,
+          updatedAt: now,
+        });
+        return true;
+      },
+    );
+    if (!newlyClaimed) {
       await this.ensurePatchCollectible(profileId, patch);
-      await this.unlockSilently(
-        patch.achievement.id,
-        record.openedAt ?? record.receivedAt,
-      );
-      return;
     }
-    const player = await this.db.playerStates.get(profileId);
-    if (!player) throw new Error('玩家档案不存在');
-    const now = Date.now();
-    player.gold += patch.reward.gold;
-    player.updatedAt = now;
-    await this.db.playerStates.put(player);
-    await this.incrementCounter('economy.goldGained', patch.reward.gold);
-    await this.ensurePatchCollectible(profileId, patch);
-    await this.db.mailRecords.put({
-      ...current,
-      openedAt: current.openedAt ?? now,
-      rewardClaimedAt: now,
-      updatedAt: now,
+    return newlyClaimed;
+  }
+
+  private async ensurePatchMail(
+    patch: AchievementPatchCatalogEntry,
+    opened: boolean,
+  ): Promise<{ record: MailRecord; created: boolean }> {
+    return this.db.transaction('rw', this.db.mailRecords, async () => {
+      const id = this.mailRecordId(patch.mail.id);
+      const existing = await this.db.mailRecords.get(id);
+      const now = Date.now();
+      if (existing) {
+        const record =
+          opened && !existing.openedAt
+            ? { ...existing, openedAt: now, updatedAt: now }
+            : existing;
+        if (record !== existing) await this.db.mailRecords.put(record);
+        return { record, created: false };
+      }
+      const record: MailRecord = {
+        id,
+        profileId: GLOBAL_ACHIEVEMENT_PROFILE_ID,
+        mailId: patch.mail.id,
+        source: patch.mail.source,
+        receivedAt: now,
+        openedAt: opened ? now : null,
+        rewardClaimedAt: null,
+        updatedAt: now,
+      };
+      await this.db.mailRecords.put(record);
+      return { record, created: true };
     });
   }
 
@@ -1279,6 +1322,10 @@ export class AchievementRepository {
         new Date(now).toISOString(),
       updatedAt: now,
     });
+    if (!collectible.relic) {
+      await this.db.ownedRelics.delete(id);
+      return;
+    }
     const existingRelic = await this.db.ownedRelics.get(id);
     if (existingRelic) return;
     const carriedCount = await this.db.ownedRelics
@@ -1459,6 +1506,11 @@ export class AchievementRepository {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  }
+
+  private async interactionDayKey(profileId: string): Promise<string> {
+    const gameDate = (await this.db.worldStates.get(profileId))?.gameDate.trim();
+    return gameDate || this.todayKey();
   }
 
   private number(value: unknown): number {

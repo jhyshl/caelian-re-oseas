@@ -249,6 +249,12 @@ describe('任务定义与提示词', () => {
     expect(judgeMessages[0]?.content).toContain(
       '不得仅以“这是主API叙述”为由否定',
     );
+    expect(judgeMessages[0]?.content).toContain(
+      'gatheringRequested=true 只表示应打开本地采集页面',
+    );
+    expect(judgeMessages[0]?.content).toContain(
+      '不得把这些物品写入 giftItems',
+    );
     expect(judgeMessages[1]?.content).not.toContain(
       'inventory-has-eight-lilies',
     );
@@ -390,6 +396,7 @@ describe('副 API 与楼层编排', () => {
       summary: '等待玩家提交材料。',
       giftItems: [
         { itemId: '小血瓶', count: 2 },
+        { itemId: '圣心百合', count: 999 },
         { itemId: '不存在的礼物', count: 99 },
       ],
       requiredItemSubmission: { itemId: '圣心百合', count: 8 },
@@ -435,6 +442,7 @@ describe('副 API 与楼层编排', () => {
       quantity: 2,
     });
     expect(await database.inventoryStacks.get('profile:不存在的礼物')).toBeUndefined();
+    expect(await database.inventoryStacks.get('profile:圣心百合')).toBeUndefined();
 
     const progress = new QuestProgressRepository(database);
     await expect(progress.submitPendingItem('profile', questRecord.id)).rejects.toThrow(
@@ -826,6 +834,7 @@ describe('副 API 与楼层编排', () => {
     expect(evaluation.result).toEqual({
       ...judgeResult,
       questCompleted: false,
+      gatheringRequested: false,
       giftItems: [],
       requiredItemSubmission: null,
     });

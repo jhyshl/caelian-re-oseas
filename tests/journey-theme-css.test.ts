@@ -83,6 +83,27 @@ describe('Journey theme coverage', () => {
     expect(manager).not.toContain('assets/themes/journey/monsters/');
   });
 
+  it('clears the obsolete light market gradient before applying dark Journey text', async () => {
+    const css = await readFile('src/styles/alpha.css', 'utf8');
+    const obsoleteLightMarket = css.indexOf(
+      'background: linear-gradient(145deg, rgba(253, 255, 255, 0.9), rgba(207, 230, 247, 0.82)) !important;',
+    );
+    const darkMarketSelector = css.lastIndexOf(
+      'body.caelian-theme-journey .caelian-panel-host .market-grid article,',
+    );
+    const darkMarketRule = css.slice(
+      darkMarketSelector,
+      css.indexOf('}', darkMarketSelector) + 1,
+    );
+
+    expect(obsoleteLightMarket).toBeGreaterThan(-1);
+    expect(darkMarketSelector).toBeGreaterThan(obsoleteLightMarket);
+    expect(darkMarketRule).toContain(
+      'background: rgba(7, 25, 42, 0.94) !important;',
+    );
+    expect(darkMarketRule).not.toContain('background-color:');
+  });
+
   it('ships true-alpha PNG launchers, frames and menu icons', async () => {
     for (const asset of [
       'src/assets/themes/journey/launcher-ticket-transparent.png',
@@ -97,6 +118,52 @@ describe('Journey theme coverage', () => {
       const png = await readFile(asset);
       expect(png.subarray(1, 4).toString('ascii')).toBe('PNG');
       expect(png[25]).toBe(6);
+    }
+  });
+
+  it('keeps the worldbook quick switcher inside the Journey frame', async () => {
+    const css = await readFile('src/styles/alpha.css', 'utf8');
+    const component = await readFile('src/modules/worldbook/App.vue', 'utf8');
+    const genericFrameRules = css.lastIndexOf(
+      '/* Journey final fit pass: keep painted paper inside the real ticket silhouette. */',
+    );
+    const worldbookFitRules = css.lastIndexOf(
+      '/* Journey worldbook final fit: keep controls inside the painted frame at every row count. */',
+    );
+
+    expect(worldbookFitRules).toBeGreaterThan(genericFrameRules);
+    const fit = css.slice(worldbookFitRules);
+    expect(fit).toContain('--ca-journey-worldbook-frame-inset: 28px');
+    expect(fit).toContain('--ca-journey-worldbook-frame-inset: 18px');
+    expect(fit).toContain(
+      'border-image-width: var(--ca-journey-worldbook-frame-inset) !important',
+    );
+    expect(fit).toContain('grid-template-columns: minmax(0, 1fr) !important');
+    expect(fit).toContain('min-height: 0 !important');
+    expect(fit).toContain('background: transparent !important');
+    expect(fit).toContain('align-content: start !important');
+    expect(fit).toContain('grid-auto-rows: max-content !important');
+    expect(fit).toContain(
+      'grid-template-columns: minmax(0, 1fr) auto !important',
+    );
+    expect(fit).toContain('white-space: nowrap !important');
+    expect(fit).toContain('overflow-wrap: anywhere !important');
+    expect(fit).toContain('env(safe-area-inset-top, 0px)');
+    expect(fit).toContain('env(safe-area-inset-right, 0px)');
+    expect(fit).toContain('env(safe-area-inset-bottom, 0px)');
+    expect(fit).toContain('env(safe-area-inset-left, 0px)');
+    expect(fit).toContain('100dvh - var(--ca-journey-worldbook-top)');
+
+    for (const className of [
+      'worldbook-header',
+      'worldbook-heading',
+      'worldbook-close',
+      'region-row',
+      'region-copy',
+      'region-action',
+      'worldbook-footer',
+    ]) {
+      expect(component).toContain(className);
     }
   });
 });

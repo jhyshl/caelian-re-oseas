@@ -1,7 +1,12 @@
 <script setup lang="ts">
 /* global window */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import type { GameSnapshot } from '@/domain/types';
+import type {
+  GameSnapshot,
+  SocialInteractionOptions,
+  SocialInviteRegionOption,
+} from '@/domain/types';
+import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import {
   AFFINITY_MAX,
@@ -12,11 +17,17 @@ import AdjustableAvatar from '@/ui/AdjustableAvatar.vue';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
+const interactionOptions = ref<SocialInteractionOptions>();
+const interactionScreen = ref<'home' | 'gift' | 'invite' | 'feed'>('home');
+const interactionBusy = ref('');
+const interactionNotice = ref('');
+const interactionError = ref('');
 const characterAvatarUrl = ref('');
 const characterAvatarFallbackUrl = ref('');
 const error = ref('');
 const disposers: Array<() => void> = [];
 let refreshSequence = 0;
+let interactionRefreshSequence = 0;
 let avatarRetryTimer: number | undefined;
 let avatarRetryIndex = 0;
 let avatarDisposed = false;
@@ -50,6 +61,82 @@ async function refreshState(): Promise<void> {
     error.value =
       caught instanceof Error ? caught.message : '凯利安状态读取失败';
   }
+}
+
+async function refreshInteractionOptions(): Promise<void> {
+  const sequence = ++interactionRefreshSequence;
+  try {
+    const next = await props.context.api.query('social-interactions');
+    if (sequence !== interactionRefreshSequence) return;
+    interactionOptions.value = next;
+    interactionError.value = '';
+  } catch (caught) {
+    if (sequence !== interactionRefreshSequence) return;
+    interactionError.value =
+      caught instanceof Error ? caught.message : '互动选项读取失败';
+  }
+}
+
+async function interact(
+  key: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  interactionBusy.value = key;
+  interactionNotice.value = '';
+  interactionError.value = '';
+  try {
+    const result = await props.context.api.execute({
+      id: commandId(`social.${key}`),
+      type: 'social.interact',
+      payload,
+    });
+    if (result.status === 'rejected') {
+      throw new Error(result.message ?? '互动没有成功');
+    }
+    interactionNotice.value =
+      result.message ?? (result.status === 'duplicate' ? '这次互动已经记录过了。' : '互动完成。');
+    await Promise.all([refreshState(), refreshInteractionOptions()]);
+  } catch (caught) {
+    interactionError.value =
+      caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    interactionBusy.value = '';
+  }
+}
+
+function giveGift(itemId: string): Promise<void> {
+  return interact(`gift.${itemId}`, {
+    action: 'caelian.gift',
+    itemId,
+  });
+}
+
+function invite(
+  region: SocialInviteRegionOption,
+  place = '',
+): Promise<void> {
+  return interact(`invite.${region.regionId}.${place || 'region'}`, {
+    action: 'caelian.invite',
+    regionId: region.regionId,
+    place,
+  });
+}
+
+function petTrelao(): Promise<void> {
+  return interact('trelao.pet', { action: 'trelao.pet' });
+}
+
+function feedTrelao(itemId: string): Promise<void> {
+  return interact(`trelao.feed.${itemId}`, {
+    action: 'trelao.feed',
+    itemId,
+  });
+}
+
+function openInteraction(screen: 'home' | 'gift' | 'invite' | 'feed'): void {
+  interactionScreen.value = screen;
+  interactionNotice.value = '';
+  interactionError.value = '';
 }
 
 function clearAvatarRetry(): void {
@@ -96,7 +183,11 @@ async function refreshAvatar(force = false): Promise<void> {
 
 async function refresh(): Promise<void> {
   await props.context.api.refreshNarrativeFromMvu();
-  await Promise.all([refreshState(), refreshAvatar()]);
+  await Promise.all([
+    refreshState(),
+    refreshInteractionOptions(),
+    refreshAvatar(),
+  ]);
 }
 
 function handleCharacterAvatarError(): void {
@@ -115,7 +206,7 @@ onMounted(async () => {
   await refresh();
   disposers.push(
     props.context.api.on('state.changed', async () => {
-      await refreshState();
+      await Promise.all([refreshState(), refreshInteractionOptions()]);
       if (!characterAvatarUrl.value) scheduleAvatarRetry();
     }),
     props.context.api.on('tavern.changed', async ({ event }) => {
@@ -135,6 +226,7 @@ onUnmounted(() => {
   avatarDisposed = true;
   clearAvatarRetry();
   refreshSequence += 1;
+  interactionRefreshSequence += 1;
   for (const dispose of disposers.splice(0)) dispose();
 });
 </script>
@@ -240,6 +332,139 @@ onUnmounted(() => {
           <b>内心想法</b>
           <p>{{ status.innerThought }}</p>
         </article>
+      </section>
+
+      <section class="interaction-panel" aria-label="同行互动">
+        <header class="interaction-heading">
+          <div>
+            <span>COMPANION INTERACTIONS</span>
+            <h2>同行互动</h2>
+          </div>
+          <button
+            v-if="interactionScreen !== 'home'"
+            type="button"
+            class="interaction-back"
+            :disabled="Boolean(interactionBusy)"
+            @click="openInteraction('home')"
+          >
+            返回互动选择
+          </button>
+        </header>
+
+        <p v-if="interactionNotice" class="interaction-notice is-success" role="status">
+          {{ interactionNotice }}
+        </p>
+        <p v-if="interactionError" class="interaction-notice is-error" role="alert">
+          {{ interactionError }}
+        </p>
+
+        <div v-if="!interactionOptions" class="interaction-empty">
+          正在整理背包与已解锁地区……
+        </div>
+
+        <div v-else-if="interactionScreen === 'home'" class="interaction-menu">
+          <button type="button" @click="openInteraction('gift')">
+            <b>赠礼</b>
+            <span>从背包中选择可出售物品</span>
+            <small>{{ interactionOptions.gifts.length }} 件可赠送</small>
+          </button>
+          <button type="button" @click="openInteraction('invite')">
+            <b>邀约</b>
+            <span>邀请凯利安前往已解锁地区</span>
+            <small>{{ interactionOptions.inviteRegions.length }} 个地区可选</small>
+          </button>
+          <button
+            type="button"
+            :disabled="Boolean(interactionBusy)"
+            @click="petTrelao"
+          >
+            <b>抚摸特莱奥</b>
+            <span>试着摸摸这位伟大的圣龙</span>
+            <small>有时它会躲开</small>
+          </button>
+          <button type="button" @click="openInteraction('feed')">
+            <b>投喂特莱奥</b>
+            <span>从背包选择它愿意尝试的食物</span>
+            <small>{{ interactionOptions.feeds.length }} 件可投喂</small>
+          </button>
+        </div>
+
+        <div v-else-if="interactionScreen === 'gift'" class="interaction-list">
+          <p v-if="interactionOptions.gifts.length === 0" class="interaction-empty">
+            背包里暂时没有可出售、可赠送的物品。
+          </p>
+          <article v-for="gift in interactionOptions.gifts" :key="gift.itemId">
+            <div>
+              <b>{{ gift.name }}</b>
+              <span>持有 {{ gift.quantity }} · 参考售价 {{ gift.price }}</span>
+            </div>
+            <em :class="{ negative: gift.affinityDelta < 0 }">
+              好感 {{ gift.affinityDelta > 0 ? '+' : '' }}{{ gift.affinityDelta }}
+            </em>
+            <button
+              type="button"
+              :disabled="Boolean(interactionBusy)"
+              @click="giveGift(gift.itemId)"
+            >
+              {{ interactionBusy === `gift.${gift.itemId}` ? '赠送中…' : '赠送' }}
+            </button>
+          </article>
+        </div>
+
+        <div v-else-if="interactionScreen === 'invite'" class="invite-list">
+          <p v-if="interactionOptions.inviteRegions.length === 0" class="interaction-empty">
+            目前没有符合玩家等级且已解锁的地区。
+          </p>
+          <article
+            v-for="region in interactionOptions.inviteRegions"
+            :key="region.regionId"
+          >
+            <header>
+              <b>{{ region.name }}</b>
+              <button
+                type="button"
+                :disabled="Boolean(interactionBusy)"
+                @click="invite(region)"
+              >
+                邀请前往地区
+              </button>
+            </header>
+            <div v-if="region.places.length" class="place-chips">
+              <button
+                v-for="place in region.places"
+                :key="place.name"
+                type="button"
+                :title="place.description"
+                :disabled="Boolean(interactionBusy)"
+                @click="invite(region, place.name)"
+              >
+                {{ place.name }}
+              </button>
+            </div>
+          </article>
+        </div>
+
+        <div v-else class="interaction-list">
+          <p v-if="interactionOptions.feeds.length === 0" class="interaction-empty">
+            背包里暂时没有适合投喂特莱奥的物品。
+          </p>
+          <article v-for="feed in interactionOptions.feeds" :key="feed.itemId">
+            <div>
+              <b>{{ feed.name }}</b>
+              <span>持有 {{ feed.quantity }} · {{ feed.source }}</span>
+            </div>
+            <em :class="{ negative: feed.result === 'dislike' }">
+              {{ feed.result === 'like' ? '可能喜欢' : '可能讨厌' }}
+            </em>
+            <button
+              type="button"
+              :disabled="Boolean(interactionBusy)"
+              @click="feedTrelao(feed.itemId)"
+            >
+              {{ interactionBusy === `trelao.feed.${feed.itemId}` ? '投喂中…' : '投喂' }}
+            </button>
+          </article>
+        </div>
       </section>
 
       <footer class="data-note">
@@ -459,6 +684,186 @@ onUnmounted(() => {
   overflow-wrap: anywhere;
 }
 
+.interaction-panel {
+  margin-top: 14px;
+  padding: clamp(16px, 2.5vw, 22px);
+  border: 1px solid rgba(212, 168, 67, 0.24);
+  border-radius: 18px;
+  background: rgba(20, 16, 13, 0.62);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.interaction-heading,
+.invite-list article > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.interaction-heading {
+  margin-bottom: 13px;
+}
+
+.interaction-heading span {
+  color: var(--ca-gold);
+  font-size: 8px;
+  letter-spacing: 0.2em;
+}
+
+.interaction-heading h2 {
+  margin: 3px 0 0;
+  color: var(--ca-text-bright);
+  font: 700 19px/1.2 var(--ca-serif);
+}
+
+.interaction-back,
+.interaction-list button,
+.invite-list button {
+  border: 1px solid rgba(212, 168, 67, 0.34);
+  border-radius: 9px;
+  color: #f3d998;
+  background: rgba(212, 168, 67, 0.09);
+  cursor: pointer;
+  font: inherit;
+}
+
+.interaction-back {
+  padding: 7px 10px;
+  font-size: 10px;
+}
+
+.interaction-menu {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.interaction-menu > button {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(212, 168, 67, 0.2);
+  border-radius: 13px;
+  color: var(--ca-text);
+  background:
+    radial-gradient(circle at 100% 0, rgba(212, 168, 67, 0.12), transparent 38%),
+    rgba(255, 255, 255, 0.035);
+  text-align: left;
+  cursor: pointer;
+}
+
+.interaction-menu b,
+.interaction-list b,
+.invite-list b {
+  color: var(--ca-text-bright);
+  font-size: 13px;
+}
+
+.interaction-menu span,
+.interaction-list span {
+  color: var(--ca-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.interaction-menu small {
+  color: #c9a75d;
+  font-size: 9px;
+}
+
+.interaction-list,
+.invite-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(46vh, 440px);
+  overflow: auto;
+  scrollbar-color: rgba(212, 168, 67, 0.35) transparent;
+}
+
+.interaction-list article {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.interaction-list article > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.interaction-list em {
+  color: #8fd1a9;
+  font-size: 9px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.interaction-list em.negative {
+  color: #e59b92;
+}
+
+.interaction-list button,
+.invite-list button {
+  padding: 7px 10px;
+  font-size: 10px;
+}
+
+.interaction-list button:disabled,
+.invite-list button:disabled,
+.interaction-back:disabled,
+.interaction-menu button:disabled {
+  opacity: 0.48;
+  cursor: wait;
+}
+
+.invite-list article {
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.place-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.place-chips button {
+  color: var(--ca-text);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.interaction-notice,
+.interaction-empty {
+  margin: 0 0 11px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  color: var(--ca-muted);
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.interaction-notice.is-success {
+  color: #a9dfbd;
+  background: rgba(65, 155, 103, 0.11);
+}
+
+.interaction-notice.is-error {
+  color: #efb0aa;
+  background: rgba(201, 74, 67, 0.11);
+}
+
 .data-note {
   display: flex;
   align-items: center;
@@ -518,6 +923,23 @@ onUnmounted(() => {
   .status-grid {
     grid-template-columns: 1fr;
     gap: 7px;
+  }
+
+  .interaction-menu {
+    grid-template-columns: 1fr;
+  }
+
+  .interaction-list article {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .interaction-list article > button {
+    grid-column: 1 / 3;
+    width: 100%;
+  }
+
+  .invite-list article > header {
+    align-items: flex-start;
   }
 
   .data-note {

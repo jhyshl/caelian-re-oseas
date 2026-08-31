@@ -9,6 +9,45 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.59',
+    label: 'Alpha 59',
+    releasedAt: '2026-08-31',
+    changes: [
+      '好感度上限从 100 提升到 500，关系阶段同步扩展为陌生人 0～100、伙伴 101～250、暧昧对象 251～400、恋人 401～499、伴侣 500；普通互动 ±1～5、重大事件 ±6～10 的更新规则保持不变，并同步更新变量管理器结构与阶段世界书。',
+      '凯利安状态页新增赠礼与邀约：赠礼只能选择背包中实际拥有且可出售的物品，会按礼物类型增加或减少 0.5 好感并回填变量管理器；邀约只显示玩家已解锁、等级满足且地点确实属于该地区的目的地。',
+      '新增特莱奥抚摸与投喂，保留旧版 8% 躲开概率及饮食偏好反馈；肢体互动动作与五阶段解锁规则已完成，但暂不在前端开放，等待动态立绘完成后再接入。',
+    ],
+  },
+  {
+    version: '0.2.0-alpha.58',
+    label: 'Alpha 58',
+    releasedAt: '2026-08-30',
+    changes: [
+      '快捷菜单新增“采集”：玩家可在当前地区采集、搜寻或拾取现有物品库中的区域特产；每种资源每日零点按档案刷新 10～20 个库存，同一特产可合理分布在多个地区，领取时会再次核对地区、日期和真实物品，禁止剧情或界面临时生成不存在的物品。',
+      '任务副 API 新增本轮采集行动判定：仅在已有追踪任务、本轮原本就要进行任务判定时，同时识别玩家明确执行的采集、搜寻或拾取并自动进入本地采集页；无追踪任务的日常对话不会额外调用副 API，任务剧情中的采集赠礼也会被拦截。同步修正芙萝拉支线为背包圣心百合达到 8 朵后推进。',
+      '新增采集页面并适配小狗与旅程主题、电脑和手机；可选择领取数量，查看今日剩余与背包持有量，并在跨过每日零点时自动刷新。',
+      '修复版本更新公告在实际运行版号缺少对应条目时只剩标题和按钮的问题：补齐 Alpha 57 公告，手动打开未匹配版号的公告时会显示最近的历史记录，发布构建也会校验版号与公告是否同步。',
+      '修复旅程主题集市商品卡残留浅色渐变，导致商品名、价格、库存和说明文字对比度过低的问题；购买与出售卡片现在统一使用可读的深色底图。',
+    ],
+  },
+  {
+    version: '0.2.0-alpha.57',
+    label: 'Alpha 57',
+    releasedAt: '2026-08-30',
+    changes: [
+      '电脑与移动端的快捷菜单新增无调整框的边框拖拽缩放；底图、图标、字体和实际点击区域会随菜单等比缩放，并保存玩家调整后的尺寸。',
+      '修复旅程主题地区世界书快捷条目的界面适配：卡头、单条目、多条目和底部操作区都会收进票券边框，并适配手机安全区与可用高度。',
+    ],
+  },
+  {
+    version: '0.2.0-alpha.56',
+    label: 'Alpha 56',
+    releasedAt: '2026-08-29',
+    changes: [
+      '修复导入并打开“特殊成就：抓虫中……”信件后，当前版本收不到“神秘虫子”和“抓虫中……”成就的问题；已打开过信件的玩家会自动补发，重复加载不会重复增加金币，“神秘虫子”只作为不可装备的特殊藏品显示。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.55',
     label: 'Alpha 55',
     releasedAt: '2026-08-29',
@@ -599,6 +638,19 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '1.9.0-beta.1',
+    label: 'Beta 1.9',
+    releasedAt: '2026-08-30',
+    changes: [
+      '快捷菜单新增“采集”：玩家可在当前地区采集、搜寻或拾取现有物品库中的区域特产；每种资源每日零点按档案刷新 10～20 个库存，同一特产可合理分布在多个地区，领取时会再次核对地区、日期和真实物品。',
+      '任务副 API 只在已有追踪任务、本轮原本就要进行任务判定时顺带识别采集行动并打开本地采集页；无追踪任务的日常对话不会额外调用副 API，剧情也不能直接把采集物作为赠礼发入背包。',
+      '新增采集页面并适配小狗与旅程主题、电脑和手机；可选择领取数量、查看今日剩余与背包持有量，并在跨过每日零点时自动刷新。同步修正芙萝拉支线为背包圣心百合达到 8 朵后推进。',
+      '电脑与移动端的快捷菜单新增无调整框的边框拖拽缩放；底图、图标、字体和实际点击区域会随菜单等比缩放，并保存玩家调整后的尺寸。',
+      '修复旅程主题地区世界书快捷条目的界面适配，以及集市商品卡文字对比度过低的问题；卡头、条目、底部操作区和商品信息现在都能在手机票券边框内清晰显示。',
+      '修复版本更新公告在运行版号缺少对应条目时只剩标题和按钮的问题；手动打开未匹配版号的公告时会显示最近的历史记录，发布构建也会校验版号与公告是否同步。',
+    ],
+  },
+  {
     version: '1.8.0-beta.1',
     label: 'Beta 1.8',
     releasedAt: '2026-08-29',
@@ -608,6 +660,7 @@ export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
       '金铲子赠送藏品的非首领战直接胜利效果新增保底：连续 9 场符合条件的战斗未触发时，第 10 场必定触发；首领战不会消耗保底进度。',
       '修复旅程主题在手机端进入角色、菜单、反馈等界面并关闭后，悬浮入口消失或长时间无法点击的问题；关闭页面后入口会立即恢复，并按票券实际尺寸贴边显示。',
       '修复烧血在低生命时仍可被普通卡牌继续触发并把玩家烧死的问题：烧血始终保留最后 1 点生命，生命不足时普通牌不可使用；治疗牌会先完成治疗，再结算烧血伤害。',
+      '修复导入并打开“特殊成就：抓虫中……”信件后，当前版本收不到“神秘虫子”和“抓虫中……”成就的问题；已打开过信件的玩家会自动补发，重复加载不会重复增加金币，“神秘虫子”只作为不可装备的特殊藏品显示。',
     ],
   },
   {
@@ -744,6 +797,52 @@ export function releaseNotesFor(
   );
   if (currentIndex < 0) return [];
   return releases.slice(currentIndex);
+}
+
+function releaseVersionParts(
+  channel: Exclude<ReleaseChannel, 'release'>,
+  version: string,
+): readonly number[] | null {
+  const match = version.match(
+    /^(\d+)\.(\d+)\.(\d+)-(alpha|beta)\.(\d+)$/,
+  );
+  if (!match || match[4] !== channel) return null;
+  return [match[1], match[2], match[3], match[5]].map(Number);
+}
+
+function compareVersionParts(
+  left: readonly number[],
+  right: readonly number[],
+): number {
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const difference = (left[index] ?? 0) - (right[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+/**
+ * Returns a useful manual history even when a non-release build has no exact
+ * announcement. Automatic announcements must continue using releaseNotesFor()
+ * so an unmatched build is never recorded as having shown a future notice.
+ */
+export function releaseHistoryFor(
+  channel: ReleaseChannel,
+  version: string,
+): readonly ReleaseNote[] {
+  const exact = releaseNotesFor(channel, version);
+  if (exact.length > 0 || channel === 'release') return exact;
+
+  const releases =
+    channel === 'beta' ? BETA_RELEASE_NOTES : ALPHA_RELEASE_NOTES;
+  const requested = releaseVersionParts(channel, version);
+  if (!requested) return releases;
+
+  const nearestIndex = releases.findIndex((release) => {
+    const candidate = releaseVersionParts(channel, release.version);
+    return candidate !== null && compareVersionParts(candidate, requested) <= 0;
+  });
+  return nearestIndex < 0 ? [] : releases.slice(nearestIndex);
 }
 
 export function releaseAnnouncementId(

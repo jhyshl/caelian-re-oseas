@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { loadItemCatalog, loadRelics } from '@/content/catalogs/inventory';
 import type {
   BattleItemDefinition,
@@ -28,6 +28,7 @@ const relics = ref<Record<string, RelicDefinition>>({});
 const tab = ref<'items' | 'consumables' | 'equipment' | 'relics'>('items');
 const notice = ref('');
 const noticeTone = ref<'error' | 'success'>('error');
+const disposers: Array<() => void> = [];
 
 const itemInventory = computed(() =>
   (snapshot.value?.inventory ?? []).filter(
@@ -43,6 +44,14 @@ const consumableInventory = computed(() =>
 const carriedCount = computed(
   () => snapshot.value?.relics.filter((entry) => entry.carried).length ?? 0,
 );
+const specialOnlyCollectibles = computed(() => {
+  const state = snapshot.value;
+  if (!state) return [];
+  const ownedRelicIds = new Set(state.relics.map((entry) => entry.id));
+  return state.specialCollectibles.filter(
+    (entry) => !ownedRelicIds.has(entry.id),
+  );
+});
 const equipped = computed(() => {
   const state = snapshot.value;
   if (!state) return { weapon: undefined, armor: undefined, accessory: undefined };
@@ -193,12 +202,26 @@ async function prepareBattleItem(stack: InventoryStackRecord) {
   }
 }
 
+async function refreshSnapshot(): Promise<void> {
+  snapshot.value = await props.context.api.query('state');
+}
+
 onMounted(async () => {
-  [snapshot.value, items.value, relics.value] = await Promise.all([
+  const [state, itemCatalog, relicCatalog] = await Promise.all([
     props.context.api.query('state'),
     loadItemCatalog(),
     loadRelics(),
   ]);
+  snapshot.value = state;
+  items.value = itemCatalog;
+  relics.value = relicCatalog;
+  for (const event of ['state.changed', 'tavern.changed'] as const) {
+    disposers.push(props.context.api.on(event, refreshSnapshot));
+  }
+});
+
+onUnmounted(() => {
+  for (const dispose of disposers.splice(0)) dispose();
 });
 </script>
 
@@ -406,26 +429,45 @@ onMounted(async () => {
         <p class="relic-note">
           每个档案中的藏品唯一拥有；只有正在携带的藏品会在战斗中生效。
         </p>
-        <div v-if="snapshot.relics.length === 0" class="ca-empty">
+        <div
+          v-if="snapshot.relics.length === 0 && specialOnlyCollectibles.length === 0"
+          class="ca-empty"
+        >
           暂未获得藏品
         </div>
-        <div v-else class="equipment-list">
-          <article v-for="entry in snapshot.relics" :key="entry.id">
-            <i>✦</i>
-            <div>
-              <strong>{{ relics[entry.relicId]?.name ?? entry.relicId }}</strong>
-              <span>{{ relics[entry.relicId]?.description ?? '' }}</span>
-            </div>
-            <button
-              type="button"
-              class="ca-button"
-              :class="{ primary: !entry.carried }"
-              :disabled="!entry.carried && carriedCount >= 5"
-              @click="setCarried(entry.relicId, !entry.carried)"
-            >
-              {{ entry.carried ? '卸下' : '携带' }}
-            </button>
-          </article>
+        <div v-if="specialOnlyCollectibles.length > 0" class="collectible-group">
+          <h3>特殊藏品</h3>
+          <div class="equipment-list">
+            <article v-for="entry in specialOnlyCollectibles" :key="entry.id">
+              <i>✧</i>
+              <div>
+                <strong>{{ entry.name }}</strong>
+                <span>{{ entry.summary }}</span>
+              </div>
+              <small>不可装备</small>
+            </article>
+          </div>
+        </div>
+        <div v-if="snapshot.relics.length > 0" class="collectible-group">
+          <h3 v-if="specialOnlyCollectibles.length > 0">可携带藏品</h3>
+          <div class="equipment-list">
+            <article v-for="entry in snapshot.relics" :key="entry.id">
+              <i>✦</i>
+              <div>
+                <strong>{{ relics[entry.relicId]?.name ?? entry.relicId }}</strong>
+                <span>{{ relics[entry.relicId]?.description ?? '' }}</span>
+              </div>
+              <button
+                type="button"
+                class="ca-button"
+                :class="{ primary: !entry.carried }"
+                :disabled="!entry.carried && carriedCount >= 5"
+                @click="setCarried(entry.relicId, !entry.carried)"
+              >
+                {{ entry.carried ? '卸下' : '携带' }}
+              </button>
+            </article>
+          </div>
         </div>
       </section>
     </template>
@@ -688,6 +730,22 @@ onMounted(async () => {
 .equipment-list {
   display: grid;
   gap: 7px;
+}
+
+.collectible-group + .collectible-group {
+  margin-top: 15px;
+}
+
+.collectible-group h3 {
+  margin: 0 0 8px;
+  color: var(--ca-gold-light);
+  font: 700 13px var(--ca-serif);
+}
+
+.collectible-group article > small {
+  flex: 0 0 auto;
+  color: var(--ca-muted);
+  font-size: 9px;
 }
 
 .relic-note {

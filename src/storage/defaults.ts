@@ -139,6 +139,7 @@ export function defaultSocialProgress(
     profileId,
     characterId: 'caelian',
     affinity: 0,
+    pendingAffinityDelta: 0,
     mood: '平静',
     location: '圣德里安学院',
     clothing: '白色暗纹衬衫搭配红金色马甲',

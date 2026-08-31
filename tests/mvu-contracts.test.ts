@@ -35,7 +35,7 @@ describe('MVU v3 contracts', () => {
     expect(hasLegacyMvuState(legacy)).toBe(true);
     expect(extractMvuNarrativePatch(legacy)).toEqual({
       companion: {
-        affinity: 33,
+        affinity: 32.5,
         mood: '警惕',
         location: '伊拉亚城',
         clothing: '学院制服',
@@ -67,7 +67,7 @@ describe('MVU v3 contracts', () => {
       },
     });
 
-    expect(normalized.companion?.affinity).toBe(100);
+    expect(normalized.companion?.affinity).toBe(500);
     expect(normalized.companion?.mood).toHaveLength(80);
     expect(normalized.companion?.innerThought).toHaveLength(500);
     expect(Object.keys(normalized.storyFlags ?? {})[0]).toHaveLength(80);
@@ -76,19 +76,37 @@ describe('MVU v3 contracts', () => {
   });
 
   it('关系阶段只由本地好感度推导', () => {
-    expect([0, 20, 21, 50, 51, 80, 81, 99, 100].map(relationshipStage)).toEqual(
+    expect(
       [
-        '陌生人',
-        '陌生人',
-        '熟人',
-        '熟人',
-        '暧昧对象',
-        '暧昧对象',
-        '恋人',
-        '恋人',
-        '伴侣',
-      ],
-    );
+        0,
+        100,
+        100.5,
+        101,
+        250,
+        250.5,
+        251,
+        400,
+        400.5,
+        401,
+        499,
+        499.5,
+        500,
+      ].map(relationshipStage),
+    ).toEqual([
+      '陌生人',
+      '陌生人',
+      '陌生人',
+      '伙伴',
+      '伙伴',
+      '伙伴',
+      '暧昧对象',
+      '暧昧对象',
+      '暧昧对象',
+      '恋人',
+      '恋人',
+      '恋人',
+      '伴侣',
+    ]);
   });
 
   it('投影只携带为真的剧情标记', () => {
@@ -98,6 +116,7 @@ describe('MVU v3 contracts', () => {
         profileId: 'profile:test',
         characterId: 'caelian',
         affinity: 10,
+        pendingAffinityDelta: 0,
         mood: '平静',
         location: '圣德里安学院',
         clothing: '学院制服',

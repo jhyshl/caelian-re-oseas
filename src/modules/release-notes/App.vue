@@ -1,13 +1,15 @@
 <script setup lang="ts">
 /* global KeyboardEvent */
 import { onMounted, onUnmounted } from 'vue';
-import { releaseNotesFor } from '@/content/release-notes';
+import { releaseHistoryFor } from '@/content/release-notes';
 import type { PanelContext } from '@/kernel/public-api';
 
 const props = defineProps<{ context: PanelContext }>();
 const runtime = props.context.api.getRuntimeInfo();
-const releases = releaseNotesFor(runtime.channel, runtime.version);
-const currentRelease = releases[0];
+const releases = releaseHistoryFor(runtime.channel, runtime.version);
+const currentRelease = releases.find(
+  (release) => release.version === runtime.version,
+);
 let previousBodyOverflow = '';
 let previousRootOverflow = '';
 
@@ -52,6 +54,10 @@ onUnmounted(() => {
             已更新至 <strong>{{ currentRelease.label }}</strong>
             <code>{{ runtime.version }}</code>
           </p>
+          <p v-else-if="releases.length > 0">
+            当前构建 <code>{{ runtime.version }}</code>
+            暂无独立公告，以下为最近历史公告
+          </p>
         </div>
         <button
           type="button"
@@ -68,7 +74,7 @@ onUnmounted(() => {
           v-for="(release, releaseIndex) in releases"
           :key="release.version"
           class="release-card"
-          :class="{ current: releaseIndex === 0 }"
+          :class="{ current: release.version === runtime.version }"
         >
           <div class="version-rail" aria-hidden="true">
             <span>{{ String(releases.length - releaseIndex).padStart(2, '0') }}</span>
@@ -76,7 +82,10 @@ onUnmounted(() => {
           <div class="release-content">
             <header>
               <div>
-                <span v-if="releaseIndex === 0" class="current-badge">
+                <span
+                  v-if="release.version === runtime.version"
+                  class="current-badge"
+                >
                   当前版本
                 </span>
                 <h2>{{ release.label }}</h2>

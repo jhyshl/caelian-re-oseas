@@ -13,6 +13,7 @@ function social(
     profileId: 'profile:test',
     characterId: 'caelian',
     affinity: 0,
+    pendingAffinityDelta: 0,
     mood: '平静',
     location: '圣德里安学院',
     clothing: '学院制服',
@@ -24,25 +25,25 @@ function social(
 }
 
 describe('凯利安好感度面板视图模型', () => {
-  it('按 MVU v3 的 0–100 契约显示数值和下一关系阶段', () => {
+  it('按 MVU v3 的 0–500 契约显示半点数值和下一关系阶段', () => {
     const view = createAffinityViewModel(
       social({
-        affinity: 52,
+        affinity: 260.5,
         relationshipStage: '暧昧对象',
         innerThought: '也许可以再相信他一点。',
       }),
     );
 
-    expect(AFFINITY_MAX).toBe(100);
+    expect(AFFINITY_MAX).toBe(500);
     expect(view).toMatchObject({
-      affinity: 52,
-      percent: 52,
+      affinity: 260.5,
       relationshipStage: '暧昧对象',
       nextStageLabel: '恋人',
-      nextStageRemaining: 29,
+      nextStageRemaining: 140.5,
       isMaximum: false,
       innerThought: '也许可以再相信他一点。',
     });
+    expect(view.percent).toBeCloseTo(52.1);
   });
 
   it('为旧版状态栏字段提供安全回退，并约束异常好感度', () => {
@@ -58,7 +59,7 @@ describe('凯利安好感度面板视图模型', () => {
     );
 
     expect(view).toMatchObject({
-      affinity: 100,
+      affinity: 500,
       percent: 100,
       relationshipStage: '伴侣',
       mood: '平静',

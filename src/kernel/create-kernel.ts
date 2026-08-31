@@ -89,6 +89,7 @@ import {
   formatStoryBattleResult,
   parseStoryBattleStart,
 } from '@/battle/story-bridge';
+import { normalizeRegion } from '@/worldbook/region-switcher';
 import {
   applyTheme,
   clearAppliedTheme,
@@ -100,6 +101,7 @@ import type {
   CaelianThemeId,
   CaelianThemeState,
 } from '@/themes/types';
+import { clampInteractionAffinity } from '@/social-interaction-rules';
 
 const SURVEY_POLL_INTERVAL_MS = 2 * 60 * 1_000;
 
@@ -116,6 +118,10 @@ interface QuestEvaluationPresentation {
   questId: string;
   transitionAccepted: boolean;
   summary: string;
+  gatheringRequested: boolean;
+  floorId: string;
+  floorLineageHash: string;
+  originRegion: string;
 }
 
 export class CaelianKernel {
@@ -142,6 +148,7 @@ export class CaelianKernel {
   private projectionQueue: Promise<boolean> = Promise.resolve(false);
   private projectionWriteInProgress = false;
   private mvuIngestDepth = 0;
+  private generationActive = false;
   private managedContentTimer?: number;
   private surveyTimer?: number;
   private memoryTogetherLetterPending = false;
@@ -243,9 +250,11 @@ export class CaelianKernel {
       await this.syncQuestContext();
       await this.scanCurrentAchievements();
       this.stateDisposers.push(
-        this.events.on('state.changed', async () => {
+        this.events.on('state.changed', async ({ command }) => {
           if (this.mvuIngestDepth > 0) return;
-          await this.syncProjection();
+          await this.syncProjection({
+            authoritativeAffinity: command.affinityChanged === true,
+          });
         }),
       );
       this.stateDisposers.push(
@@ -308,6 +317,13 @@ export class CaelianKernel {
     }
     try {
       const type = this.commandType(command);
+      if (this.generationActive && this.isCaelianGiftCommand(command)) {
+        return {
+          id: this.commandId(command),
+          status: 'rejected',
+          message: '当前回复仍在生成，请等待生成结束后再赠礼',
+        };
+      }
       const requestedTheme = this.requestedTheme(command);
       if (
         requestedTheme &&
@@ -343,6 +359,19 @@ export class CaelianKernel {
         await this.syncAchievementPatches();
         await this.syncProjection();
       }
+      if (result.status === 'applied' && type === 'social.interact') {
+        if (result.prompt) {
+          const currentInput = this.adapter.currentInputText().trim();
+          const filled = this.adapter.setUserInput(
+            currentInput
+              ? `${currentInput}\n\n${result.prompt}`
+              : result.prompt,
+          );
+          if (!filled) {
+            result.message = `互动已经记录，但没有找到酒馆输入框。请手动发送：${result.prompt}`;
+          }
+        }
+      }
       if (
         result.status === 'applied' &&
         type === 'battle.finish' &&
@@ -367,6 +396,7 @@ export class CaelianKernel {
         ([
           'inventory.adjust',
           'inventory.use-consumable',
+          'gather.collect',
           'battle.use-item',
           'battle.finish',
         ].includes(type) ||
@@ -382,6 +412,7 @@ export class CaelianKernel {
           'quest.abandon',
           'inventory.adjust',
           'inventory.use-consumable',
+          'gather.collect',
           'battle.use-item',
           'battle.finish',
         ].includes(type) ||
@@ -426,6 +457,16 @@ export class CaelianKernel {
     }
     if (name === 'market') {
       return (await this.repository.marketState(
+        this.profileId,
+      )) as QueryResultMap[K];
+    }
+    if (name === 'gathering') {
+      return (await this.repository.gatheringState(
+        this.profileId,
+      )) as QueryResultMap[K];
+    }
+    if (name === 'social-interactions') {
+      return (await this.repository.socialInteractionOptions(
         this.profileId,
       )) as QueryResultMap[K];
     }
@@ -847,24 +888,53 @@ export class CaelianKernel {
     return result;
   }
 
-  async syncProjection(): Promise<boolean> {
+  async syncProjection(
+    options: { authoritativeAffinity?: boolean } = {},
+  ): Promise<boolean> {
     const task = this.projectionQueue
       .catch(() => false)
-      .then(() => this.performProjectionSync());
+      .then(() => this.performProjectionSync(options));
     this.projectionQueue = task;
     return task;
   }
 
-  private async performProjectionSync(): Promise<boolean> {
+  private async performProjectionSync(
+    options: { authoritativeAffinity?: boolean } = {},
+  ): Promise<boolean> {
     if (this.status !== 'ready' || !this.profileId) return false;
-    const snapshot = await this.repository.snapshot(this.profileId);
+    const profileId = this.profileId;
+    const snapshot = await this.repository.snapshot(profileId);
     const projection = createAiProjection(snapshot, this.channel);
+    const pendingAtWrite = snapshot.social.pendingAffinityDelta;
+    const shouldRetryPending =
+      options.authoritativeAffinity === true || pendingAtWrite !== 0;
+    const authoritativeAffinity =
+      !this.generationActive &&
+      pendingAtWrite !== 0 &&
+      shouldRetryPending;
     this.projectionWriteInProgress = true;
     let written: boolean;
     try {
-      written = await this.adapter.writeProjection(projection);
+      try {
+        written = await this.adapter.writeProjection(projection, {
+          authoritativeAffinity,
+        });
+      } catch {
+        // The local command is already committed. Keep its persistent pending
+        // delta and retry later instead of surfacing a false command failure.
+        written = false;
+      }
     } finally {
       this.projectionWriteInProgress = false;
+    }
+    if (
+      authoritativeAffinity &&
+      this.readMvuAffinity() === projection.narrative.companion.affinity
+    ) {
+      await this.repository.acknowledgePendingAffinityDelta(
+        profileId,
+        pendingAtWrite,
+      );
     }
     if (written) {
       await this.events.emit('projection.synced', {
@@ -874,9 +944,19 @@ export class CaelianKernel {
     return written;
   }
 
+  private readMvuAffinity(): number | undefined {
+    const mvuData = this.adapter.readMvuData();
+    if (!mvuData) return undefined;
+    const extracted = extractMvuNarrativePatch(mvuData);
+    return extracted
+      ? normalizeNarrativePatch(extracted).companion?.affinity
+      : undefined;
+  }
+
   async shutdown(): Promise<void> {
     if (this.status === 'stopped') return;
     this.shuttingDown = true;
+    this.generationActive = false;
     this.cancelQuestJudge();
     if (this.surveyTimer !== undefined) {
       this.adapter.host.clearInterval(this.surveyTimer);
@@ -903,7 +983,15 @@ export class CaelianKernel {
     eventName: string,
     payload?: TavernEventPayload,
   ): void {
-    if (eventName === 'CHAT_CHANGED') this.cancelQuestJudge();
+    if (eventName === 'CHAT_CHANGED') {
+      this.cancelQuestJudge();
+      this.generationActive = false;
+    }
+    if (this.isGenerationStartEvent(eventName)) {
+      // Mark synchronously at the adapter callback boundary so a gift cannot
+      // enter its inventory transaction while this update is still queued.
+      this.generationActive = true;
+    }
     const task = this.tavernUpdateQueue
       .catch(() => undefined)
       .then(() => this.handleTavernUpdate(eventName, payload))
@@ -964,7 +1052,17 @@ export class CaelianKernel {
       });
     }
     await this.reconcileQuestFloors(eventName, payload);
-    await this.ingestMvuNarrative();
+    try {
+      await this.ingestMvuNarrative();
+    } finally {
+      if (eventName === 'GENERATION_ENDED') {
+        // Keep gifts locked until the AI-authored MVU value has been ingested.
+        this.generationActive = false;
+      }
+    }
+    if (eventName === 'GENERATION_ENDED') {
+      await this.retryPendingAffinityProjection();
+    }
     if (
       [
         'MESSAGE_RECEIVED',
@@ -977,7 +1075,16 @@ export class CaelianKernel {
     if (eventName === 'GENERATION_ENDED') {
       const evaluation = await this.evaluateTrackedQuest(payload);
       await this.advanceTrackedQuestFromLocalState();
-      if (evaluation) await this.presentQuestGuidance(evaluation);
+      if (evaluation) {
+        await this.presentQuestGuidance(evaluation);
+        if (evaluation.gatheringRequested) {
+          await this.presentStoryGathering(
+            evaluation.floorId,
+            evaluation.floorLineageHash,
+            evaluation.originRegion,
+          );
+        }
+      }
     }
     await this.syncQuestContext();
     await this.scanCurrentAchievements();
@@ -1254,6 +1361,10 @@ export class CaelianKernel {
         questId: quest.id,
         transitionAccepted: result.decision.accepted,
         summary: result.decision.next.summary,
+        gatheringRequested: result.gatheringRequested,
+        floorId: floor.id,
+        floorLineageHash: floor.lineageHash,
+        originRegion: snapshot.world.region,
       };
     } catch (error) {
       if (isQuestJudgeCancelledError(error)) return undefined;
@@ -1275,6 +1386,47 @@ export class CaelianKernel {
         this.notifications.dismiss(progressBannerId);
       }
     }
+  }
+
+  private async presentStoryGathering(
+    floorId: string,
+    floorLineageHash: string,
+    originRegion: string,
+  ): Promise<void> {
+    if (!this.profileId) return;
+    const floors = await this.adapter.chatFloors();
+    if (
+      !floors?.some(
+        (floor) =>
+          floor.id === floorId && floor.lineageHash === floorLineageHash,
+      )
+    ) {
+      return;
+    }
+
+    const snapshot = await this.repository.snapshot(this.profileId);
+    const expectedRegion = normalizeRegion(originRegion) || originRegion;
+    const currentRegion = normalizeRegion(snapshot.world.region) || snapshot.world.region;
+    if (currentRegion !== expectedRegion || snapshot.battle) return;
+    if (await this.getPendingQuestSubmission()) return;
+
+    const gathering = await this.repository.gatheringState(this.profileId);
+    if (!gathering.availableRegion || gathering.items.length === 0) {
+      this.notifyRuntime(
+        'warning',
+        '当前地区没有已登记的区域特产，系统不会临时生成物品。',
+        '无法开始采集',
+      );
+      return;
+    }
+    if (gathering.regionId !== expectedRegion) return;
+
+    await this.panels.navigate('gathering');
+    this.notifyRuntime(
+      'success',
+      `已打开${gathering.regionId}的采集页面，请选择真实存在的区域特产。`,
+      '可以进行采集',
+    );
   }
 
   private async presentQuestGuidance(
@@ -1797,30 +1949,77 @@ export class CaelianKernel {
   private async ingestMvuNarrative(): Promise<boolean> {
     if (!this.profileId) return false;
     const mvuData = this.adapter.readMvuData();
-    if (!mvuData) return false;
+    if (!mvuData) {
+      await this.retryPendingAffinityProjection();
+      return false;
+    }
 
     if (hasLegacyMvuState(mvuData)) {
       await this.repository.archiveLegacyMvu(this.profileId, mvuData);
     }
 
     const extracted = extractMvuNarrativePatch(mvuData);
-    if (!extracted) return false;
-    const patch = normalizeNarrativePatch(extracted);
-    const snapshot = await this.repository.snapshot(this.profileId);
-    const changed = this.changedNarrativePatch(patch, snapshot);
-    if (!changed) return false;
-
-    this.mvuIngestDepth += 1;
-    try {
-      await this.repository.execute(this.profileId, {
-        id: `mvu-narrative:${this.hashJson(this.profileId)}:${snapshot.profile.updatedAt}:${this.hashJson(changed)}`,
-        type: 'narrative.update',
-        payload: changed,
-      });
-    } finally {
-      this.mvuIngestDepth -= 1;
+    if (!extracted) {
+      await this.retryPendingAffinityProjection();
+      return false;
     }
-    return true;
+    const snapshot = await this.repository.snapshot(this.profileId);
+    const patch = this.mergePendingAffinity(
+      normalizeNarrativePatch(extracted),
+      snapshot,
+    );
+    const changed = this.changedNarrativePatch(patch, snapshot);
+    if (changed) {
+      this.mvuIngestDepth += 1;
+      try {
+        await this.repository.execute(this.profileId, {
+          id: `mvu-narrative:${this.hashJson(this.profileId)}:${snapshot.profile.updatedAt}:${this.hashJson(changed)}`,
+          type: 'narrative.update',
+          payload: changed,
+        });
+      } finally {
+        this.mvuIngestDepth -= 1;
+      }
+    }
+    await this.retryPendingAffinityProjection();
+    return Boolean(changed);
+  }
+
+  private mergePendingAffinity(
+    patch: MvuNarrativePatch,
+    snapshot: Awaited<ReturnType<GameRepository['snapshot']>>,
+  ): MvuNarrativePatch {
+    const managerAffinity = patch.companion?.affinity;
+    const pending = snapshot.social.pendingAffinityDelta;
+    if (managerAffinity === undefined || pending === 0) return patch;
+
+    // A verified write may already be visible even though acknowledgement was
+    // interrupted. Do not add the same local delta twice in that case.
+    const affinity =
+      managerAffinity === snapshot.social.affinity
+        ? managerAffinity
+        : clampInteractionAffinity(managerAffinity + pending);
+    return {
+      ...patch,
+      companion: {
+        ...patch.companion,
+        affinity,
+      },
+    };
+  }
+
+  private async retryPendingAffinityProjection(): Promise<boolean> {
+    if (
+      this.status !== 'ready' ||
+      !this.profileId ||
+      this.generationActive
+    ) {
+      return false;
+    }
+    if ((await this.repository.pendingAffinityDelta(this.profileId)) === 0) {
+      return false;
+    }
+    return this.syncProjection({ authoritativeAffinity: true });
   }
 
   private changedNarrativePatch(
@@ -2083,6 +2282,32 @@ export class CaelianKernel {
       return String(input.type);
     }
     return undefined;
+  }
+
+  private isCaelianGiftCommand(input: unknown): boolean {
+    if (
+      !input ||
+      typeof input !== 'object' ||
+      !('type' in input) ||
+      input.type !== 'social.interact' ||
+      !('payload' in input)
+    ) {
+      return false;
+    }
+    const payload = input.payload;
+    return Boolean(
+      payload &&
+        typeof payload === 'object' &&
+        'action' in payload &&
+        payload.action === 'caelian.gift',
+    );
+  }
+
+  private isGenerationStartEvent(eventName: string): boolean {
+    return (
+      eventName === 'GENERATE_BEFORE_COMBINE_PROMPTS' ||
+      eventName === 'GENERATION_AFTER_COMMANDS'
+    );
   }
 
   private requestedTheme(input: unknown): CaelianThemeId | undefined {

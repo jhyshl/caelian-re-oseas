@@ -66,6 +66,7 @@ jobs:
       - run: npm run build:alpha
         env:
           CAELIAN_BUILD_ID: ${{ github.sha }}
+          CAELIAN_REQUIRE_RELEASE_NOTE: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       - uses: actions/upload-pages-artifact@v3
         if: github.event_name != 'pull_request'
         with:

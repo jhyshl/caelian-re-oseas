@@ -11,6 +11,7 @@ import type {
   EquipmentInstanceRecord,
   EquipmentLoadoutRecord,
   EventLogRecord,
+  GatheringState,
   GuildRecord,
   InventoryStackRecord,
   LegacySnapshotRecord,
@@ -41,7 +42,7 @@ import type {
   SurveyTokenRecord,
 } from '@/surveys/types';
 
-export const DATABASE_SCHEMA_VERSION = 8;
+export const DATABASE_SCHEMA_VERSION = 9;
 
 export class CaelianDatabase extends Dexie {
   profiles!: Table<ProfileRecord, string>;
@@ -76,6 +77,7 @@ export class CaelianDatabase extends Dexie {
   achievementCounters!: Table<AchievementCounterRecord, string>;
   mailRecords!: Table<MailRecord, string>;
   marketStates!: Table<MarketStateRecord, string>;
+  gatheringStates!: Table<GatheringState, string>;
   craftingDrafts!: Table<CraftingDraftRecord, string>;
   socialProgress!: Table<SocialProgressRecord, string>;
   tutorialProgress!: Table<TutorialProgressRecord, string>;
@@ -196,5 +198,9 @@ export class CaelianDatabase extends Dexie {
             });
         }
       });
+
+    this.version(9).stores({
+      gatheringStates: 'id, profileId, regionId, refreshKey, updatedAt',
+    });
   }
 }

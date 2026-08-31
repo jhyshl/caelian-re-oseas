@@ -789,6 +789,50 @@ export interface MarketView {
   sellEquipment: MarketSellEquipment[];
 }
 
+export type GatheringAction = 'gather' | 'search';
+
+export interface GatheringItem {
+  listingKey: string;
+  itemId: string;
+  name: string;
+  description: string;
+  category: string;
+  rarity: string;
+  action: GatheringAction;
+  actionLabel: string;
+  initialStock: number;
+  remaining: number;
+  ownedCount: number;
+}
+
+export type GatheringItemView = GatheringItem;
+
+export interface GatheringStockItem {
+  listingKey: string;
+  itemId: string;
+  initialStock: number;
+  remaining: number;
+}
+
+export interface GatheringState {
+  id: string;
+  profileId: string;
+  regionId: string;
+  refreshKey: string;
+  version: 1;
+  items: GatheringStockItem[];
+  updatedAt: number;
+}
+
+export interface GatheringView {
+  regionId: string;
+  location: string;
+  refreshKey: string;
+  nextRefreshAt: number;
+  availableRegion: boolean;
+  items: GatheringItem[];
+}
+
 export interface CraftingDraftRecord {
   id: string;
   profileId: string;
@@ -811,6 +855,7 @@ export interface SocialProgressRecord {
   profileId: string;
   characterId: string;
   affinity: number;
+  pendingAffinityDelta: number;
   mood: string;
   location: string;
   clothing: string;
@@ -852,6 +897,37 @@ export interface SettingsRecord {
   updatedAt: number;
 }
 
+export interface SocialGiftOption {
+  itemId: string;
+  name: string;
+  quantity: number;
+  price: number;
+  tags: string[];
+  affinityDelta: number;
+}
+
+export interface SocialFeedOption {
+  itemId: string;
+  name: string;
+  quantity: number;
+  result: 'like' | 'dislike';
+  category: 'specialty' | 'consumable' | 'feedable';
+  source: string;
+  tags: string[];
+}
+
+export interface SocialInviteRegionOption {
+  regionId: string;
+  name: string;
+  places: Array<{ name: string; description: string }>;
+}
+
+export interface SocialInteractionOptions {
+  gifts: SocialGiftOption[];
+  feeds: SocialFeedOption[];
+  inviteRegions: SocialInviteRegionOption[];
+}
+
 export interface ContentVersionRecord {
   id: string;
   version: string;
@@ -885,6 +961,7 @@ export interface GameSnapshot {
   cards: OwnedCardRecord[];
   decks: DeckRecord[];
   relics: OwnedRelicRecord[];
+  specialCollectibles: SpecialCollectibleRecord[];
   passives: PassiveTalentRecord[];
   battle: BattleSessionRecord | null;
   achievements: AchievementProgressRecord[];

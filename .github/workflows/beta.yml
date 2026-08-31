@@ -72,6 +72,7 @@ jobs:
         env:
           CAELIAN_BUILD_ID: ${{ github.event.workflow_run.head_sha || github.sha }}-beta
           CAELIAN_BETA_RELEASE: '1'
+          CAELIAN_REQUIRE_RELEASE_NOTE: '1'
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

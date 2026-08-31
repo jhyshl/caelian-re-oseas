@@ -72,7 +72,7 @@ export const Schema = z.looseObject({
     narrative: z.looseObject({
       companion: z.looseObject({
         affinity: z.coerce.number()
-          .transform(value => _.clamp(Math.round(value), 0, 100))
+          .transform(value => _.clamp(Math.round(value * 2) / 2, 0, 500))
           .prefault(0),
         mood: z.string().transform(value => value.slice(0, 80)).prefault('平静'),
         location: z.string().transform(value => value.slice(0, 120)).prefault('圣德里安学院'),
@@ -161,7 +161,7 @@ export const variableRulesContent = `---
     companion:
       affinity:
         type: number
-        range: 0~100
+        range: 0~500
         check:
           - 根据玩家在当前场景中对凯利安的行为调整 ±1~5；只有重大情感事件可以调整 ±6~10。
           - 凯利安不在场且无法得知事件时保持原值。
@@ -229,13 +229,13 @@ export const phaseControllerContent = `<%_
 if (typeof kailianFavor === 'undefined') var kailianFavor = getvar('stat_data.caelian.narrative.companion.affinity', { defaults: 0 });
 _%>
 
-<%_ if (kailianFavor >= 100) { _%>
+<%_ if (kailianFavor >= 500) { _%>
 <%- await getwi(null, '凯利安_阶段05_伴侣') %>
-<%_ } else if (kailianFavor >= 81) { _%>
+<%_ } else if (kailianFavor >= 401) { _%>
 <%- await getwi(null, '凯利安_阶段04_恋人') %>
-<%_ } else if (kailianFavor >= 51) { _%>
+<%_ } else if (kailianFavor >= 251) { _%>
 <%- await getwi(null, '凯利安_阶段03_暧昧对象') %>
-<%_ } else if (kailianFavor >= 21) { _%>
+<%_ } else if (kailianFavor >= 101) { _%>
 <%- await getwi(null, '凯利安_阶段02_伙伴') %>
 <%_ } else { _%>
 <%- await getwi(null, '凯利安_阶段01_陌生人') %>

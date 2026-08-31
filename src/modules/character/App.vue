@@ -13,6 +13,7 @@ import {
 } from '@/equipment-stats';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
+import { AFFINITY_MAX } from '@/mvu/contracts';
 import ProfessionDialog from '@/modules/character/ProfessionDialog.vue';
 import {
   equipmentRewardEffect,
@@ -95,7 +96,13 @@ const experiencePercent = computed(() => {
   return Math.round((value.experience / value.experienceToNext) * 100);
 });
 const affinityPercent = computed(() =>
-  Math.max(0, Math.min(100, Math.round(snapshot.value?.social.affinity ?? 0))),
+  Math.max(
+    0,
+    Math.min(
+      100,
+      ((snapshot.value?.social.affinity ?? 0) / AFFINITY_MAX) * 100,
+    ),
+  ),
 );
 const allocationTotal = computed(() => {
   const allocation = snapshot.value?.statAllocations;
@@ -426,7 +433,7 @@ onUnmounted(() => {
           <div>
             <span>好感度</span>
             <strong>{{ snapshot.social.affinity }}</strong>
-            <small>/100</small>
+            <small>/{{ AFFINITY_MAX }}</small>
           </div>
           <i><b :style="{ width: `${affinityPercent}%` }"></b></i>
         </div>

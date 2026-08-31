@@ -6,7 +6,7 @@ import type {
   PlayerRecord,
 } from '@/domain/types';
 import type { BattleItemDefinition, CardEffect } from '@/content/types';
-import { loadBattleItems } from '@/content/catalogs/inventory';
+import { loadItemCatalog } from '@/content/catalogs/inventory';
 import {
   canApplyInventoryConsumable,
   childEffects,
@@ -21,7 +21,7 @@ export class InventoryRepository {
   constructor(private readonly db: CaelianDatabase) {}
 
   async prepare(): Promise<void> {
-    this.items ??= await loadBattleItems();
+    this.items ??= await loadItemCatalog();
   }
 
   async adjust(

@@ -1,19 +1,11 @@
 import type { SocialProgressRecord } from '@/domain/types';
-import { relationshipStage } from '@/mvu/contracts';
+import {
+  AFFINITY_MAX,
+  RELATIONSHIP_MILESTONES,
+  relationshipStage,
+} from '@/mvu/contracts';
 
-export const AFFINITY_MAX = 100;
-
-interface RelationshipMilestone {
-  threshold: number;
-  label: string;
-}
-
-const RELATIONSHIP_MILESTONES: readonly RelationshipMilestone[] = [
-  { threshold: 21, label: '熟人' },
-  { threshold: 51, label: '暧昧对象' },
-  { threshold: 81, label: '恋人' },
-  { threshold: 100, label: '伴侣' },
-];
+export { AFFINITY_MAX } from '@/mvu/contracts';
 
 export interface AffinityViewModel {
   affinity: number;
@@ -38,7 +30,7 @@ export function createAffinityViewModel(
 
   return {
     affinity,
-    percent: affinity,
+    percent: (affinity / AFFINITY_MAX) * 100,
     relationshipStage: relationshipStage(affinity),
     mood: cleanText(social.mood, '平静'),
     location: cleanText(social.location, '圣德里安学院'),
@@ -57,7 +49,8 @@ export function createAffinityViewModel(
 
 function clampAffinity(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(AFFINITY_MAX, Math.round(value)));
+  const clamped = Math.max(0, Math.min(AFFINITY_MAX, value));
+  return Math.round(clamped * 2) / 2;
 }
 
 function cleanText(value: string, fallback: string): string {
