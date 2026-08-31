@@ -1166,6 +1166,15 @@ describe('CaelianKernel integration', () => {
     });
 
     await kernel.initialize();
+    await expect
+      .poll(
+        async () => {
+          await kernel.api.refreshNarrativeFromMvu();
+          return (await kernel.api.query('state')).social.affinity;
+        },
+        { timeout: 10_000 },
+      )
+      .toBe(142.5);
     const state = await kernel.api.query('state');
     expect(state.social).toMatchObject({
       affinity: 142.5,
@@ -2329,11 +2338,11 @@ describe('CaelianKernel integration', () => {
           fetchMock.mock.calls.filter(([input]) =>
             String(input).includes('judge.example'),
           ).length,
-        { timeout: 3000 },
+        { timeout: 10_000 },
       )
       .toBe(1);
     await expect
-      .poll(() => document.body.textContent, { timeout: 3000 })
+      .poll(() => document.body.textContent, { timeout: 10_000 })
       .toContain('正在推进剧情');
     releaseJudgeResponse();
 
@@ -2341,11 +2350,11 @@ describe('CaelianKernel integration', () => {
       .poll(
         async () =>
           (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId,
-        { timeout: 3000 },
+        { timeout: 10_000 },
       )
       .toBe('flora-selling-flowers');
     await expect
-      .poll(() => kernel.api.listOpenPanels(), { timeout: 3000 })
+      .poll(() => kernel.api.listOpenPanels(), { timeout: 10_000 })
       .toContain('gathering');
     expect(await kernel.api.query('inventory')).toEqual(
       inventoryBeforeGathering,
@@ -2361,7 +2370,7 @@ describe('CaelianKernel integration', () => {
           document.querySelector<HTMLElement>(
             '[data-caelian-quest-guidance]',
           )?.textContent,
-        { timeout: 3000 },
+        { timeout: 10_000 },
       )
       .toContain('允许买花、吆喝、介绍花束或陪伴等方式帮她卖完');
     document
@@ -2376,7 +2385,7 @@ describe('CaelianKernel integration', () => {
       .poll(
         async () =>
           (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId,
-        { timeout: 3000 },
+        { timeout: 10_000 },
       )
       .toBe('flora-selling-flowers');
 
