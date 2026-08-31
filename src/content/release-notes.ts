@@ -9,6 +9,14 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.60',
+    label: 'Alpha 60',
+    releasedAt: '2026-08-31',
+    changes: [
+      '修复仍使用旧“变量结构 v2.10”的终端会把凯利安好感度截断到 100 的问题：变量管理器脚本会以新的受管操作重新写入 0～500 校验，并保留同一脚本 ID 直接覆盖旧结构。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.59',
     label: 'Alpha 59',
     releasedAt: '2026-08-31',

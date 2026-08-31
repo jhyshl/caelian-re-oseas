@@ -83,7 +83,7 @@ function createHarness(options: {
       json: async () => manifest,
     })),
   } as unknown as Window;
-  return { host, helper, character, worldbook, storage };
+  return { host, helper, character, worldbook, storage, manifest };
 }
 
 describe('ManagedContentUpdater', () => {
@@ -253,7 +253,7 @@ describe('ManagedContentUpdater', () => {
         mutation?: { action: string };
       }>;
     };
-    expect(manifest.revision).toBe('2026-08-31.1');
+    expect(manifest.revision).toBe('2026-08-31.2');
     expect(manifest.target.worldbookNames).toEqual(
       expect.arrayContaining([
         '孔雀开屏你说你看不见alpha',
@@ -266,7 +266,7 @@ describe('ManagedContentUpdater', () => {
     );
     expect(manifest.operations.map((operation) => operation.id)).toEqual(
       expect.arrayContaining([
-        '2026-08-31.affinity-500.schema-rebuild',
+        '2026-08-31.affinity-500.schema-rebuild-v2-11',
         '2026-08-31.affinity-500.phase-controller',
         '2026-08-31.affinity-500.variable-rules',
       ]),
@@ -446,6 +446,55 @@ describe('ManagedContentUpdater', () => {
       '欧西亚斯 MVU v3 变量规则:\n  只允许写 narrative',
     );
     expect(harness.worldbook[0]?.content).not.toContain('玩家新增世界观');
+  });
+
+  it('新的变量结构操作编号会覆盖已经执行过的旧上限更新', async () => {
+    const harness = createHarness({
+      operations: [
+        {
+          id: '2026-08-31.affinity-500.schema-rebuild',
+          target: {
+            kind: 'character-script',
+            scriptId: 'schema-script',
+          },
+          mutation: {
+            action: 'replace-entire',
+            content: 'const affinity = _.clamp(value, 0, 100);',
+          },
+        },
+      ],
+    });
+
+    const first = await new ManagedContentUpdater(harness.host).sync({
+      force: true,
+    });
+    expect(first).toMatchObject({ applied: 1, skipped: 0, conflicts: [] });
+    expect(
+      harness.character.extensions.tavern_helper.scripts[0]?.content,
+    ).toContain('0, 100');
+
+    harness.manifest.revision = 'test.2';
+    harness.manifest.operations = [
+      {
+        id: '2026-08-31.affinity-500.schema-rebuild-v2-11',
+        target: {
+          kind: 'character-script',
+          scriptId: 'schema-script',
+        },
+        mutation: {
+          action: 'replace-entire',
+          content: 'const affinity = _.clamp(value, 0, 500);',
+        },
+      },
+    ];
+
+    const second = await new ManagedContentUpdater(harness.host).sync({
+      force: true,
+    });
+    expect(second).toMatchObject({ applied: 1, skipped: 0, conflicts: [] });
+    expect(
+      harness.character.extensions.tavern_helper.scripts[0]?.content,
+    ).toContain('0, 500');
   });
 
   it('按旧名称迁移 MVU 条目并补建缺失条目', async () => {

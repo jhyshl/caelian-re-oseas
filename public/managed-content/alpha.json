@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "channel": "alpha",
-  "revision": "2026-08-31.1",
+  "revision": "2026-08-31.2",
   "target": {
     "characterName": "凯利安",
     "worldbookNames": [
@@ -20,7 +20,7 @@
   },
   "operations": [
     {
-      "id": "2026-08-31.affinity-500.schema-rebuild",
+      "id": "2026-08-31.affinity-500.schema-rebuild-v2-11",
       "target": {
         "kind": "character-script",
         "scriptId": "edfcaddc-2475-46e8-a0d9-f14a2e6558b2"

@@ -210,7 +210,7 @@ if (!String(card.data.character_version ?? '').includes(versionTag)) {
 
 const operations = [
   {
-    id: '2026-08-31.affinity-500.schema-rebuild',
+    id: '2026-08-31.affinity-500.schema-rebuild-v2-11',
     target: { kind: 'character-script', scriptId: MVU_SCHEMA_SCRIPT_ID },
     mutation: { action: 'replace-entire', content: mvuSchemaContent },
   },
@@ -247,7 +247,7 @@ const cardSha256 = createHash('sha256').update(cardJson).digest('hex');
 const manifest = {
   schemaVersion: 1,
   channel: 'alpha',
-  revision: '2026-08-31.1',
+  revision: '2026-08-31.2',
   target: {
     characterName,
     worldbookNames: [
