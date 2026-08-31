@@ -1525,7 +1525,7 @@ describe('CaelianKernel integration', () => {
     databaseNames.push(currentDatabaseName);
     const currentKernel = createKernel({
       channel: 'alpha',
-      version: '0.2.0-alpha.59',
+      version: '0.2.0-alpha.60',
       buildId: 'current-release-test-build',
       databaseName: currentDatabaseName,
       sourceWindow: window,
@@ -1535,8 +1535,8 @@ describe('CaelianKernel integration', () => {
     const currentAnnouncement = document.querySelector(
       '[data-caelian-panel="release-notes"]',
     );
-    expect(currentAnnouncement?.textContent).toContain('Alpha 59');
-    expect(currentAnnouncement?.textContent).toContain('好感度上限');
+    expect(currentAnnouncement?.textContent).toContain('Alpha 60');
+    expect(currentAnnouncement?.textContent).toContain('变量结构 v2.10');
     expect(currentAnnouncement?.textContent).toContain('当前版本');
     await currentKernel.api.shutdown();
 
@@ -1544,7 +1544,7 @@ describe('CaelianKernel integration', () => {
     databaseNames.push(unmatchedDatabaseName);
     const unmatchedKernel = createKernel({
       channel: 'alpha',
-      version: '0.2.0-alpha.60',
+      version: '0.2.0-alpha.61',
       buildId: 'unmatched-release-test-build',
       databaseName: unmatchedDatabaseName,
       sourceWindow: window,
@@ -1559,9 +1559,9 @@ describe('CaelianKernel integration', () => {
       '[data-caelian-panel="release-notes"]',
     );
     expect(historicalAnnouncement?.textContent).toContain(
-      '当前构建 0.2.0-alpha.60 暂无独立公告',
+      '当前构建 0.2.0-alpha.61 暂无独立公告',
     );
-    expect(historicalAnnouncement?.textContent).toContain('Alpha 59');
+    expect(historicalAnnouncement?.textContent).toContain('Alpha 60');
     expect(
       historicalAnnouncement?.querySelector('.current-badge'),
     ).toBeNull();
