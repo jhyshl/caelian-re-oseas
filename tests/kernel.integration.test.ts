@@ -1467,7 +1467,21 @@ describe('CaelianKernel integration', () => {
       }),
     ).resolves.toMatchObject({
       status: 'rejected',
-      message: '当前回复仍在生成，请等待生成结束后再赠礼',
+      message: '当前回复仍在生成，请等待生成结束后再与凯利安互动',
+    });
+    await expect(
+      kernel.api.execute({
+        id: 'generation-invite-attempt',
+        type: 'social.interact',
+        payload: {
+          action: 'caelian.invite',
+          regionId: 'academy',
+          place: '正门',
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: 'rejected',
+      message: '当前回复仍在生成，请等待生成结束后再与凯利安互动',
     });
     expect(await kernel.api.query('inventory')).toContainEqual(
       expect.objectContaining({ itemId: '精制面包', quantity: 1 }),
@@ -1478,6 +1492,7 @@ describe('CaelianKernel integration', () => {
     });
 
     handlers.get('generation-stopped')?.();
+    handlers.get('generation-started')?.();
     await expect
       .poll(() =>
         tavernChanged.mock.calls.some(
@@ -1485,6 +1500,26 @@ describe('CaelianKernel integration', () => {
         ),
       )
       .toBe(true);
+    await expect(
+      kernel.api.execute({
+        id: 'generation-gift-second-attempt',
+        type: 'social.interact',
+        payload: { action: 'caelian.gift', itemId: '精制面包' },
+      }),
+    ).resolves.toMatchObject({ status: 'rejected' });
+    expect(await kernel.api.query('inventory')).toContainEqual(
+      expect.objectContaining({ itemId: '精制面包', quantity: 1 }),
+    );
+
+    handlers.get('generation-stopped')?.();
+    await expect
+      .poll(
+        () =>
+          tavernChanged.mock.calls.filter(
+            ([event]) => event.event === 'GENERATION_STOPPED',
+          ).length,
+      )
+      .toBe(2);
     await expect
       .poll(() =>
         kernel.api.execute({

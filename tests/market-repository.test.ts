@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadCardCatalog } from '@/content/catalogs/cards';
 import { loadMarketCatalogs } from '@/content/catalogs/market';
+import { HUNTING_MATERIAL_IDS } from '@/content/cooking';
 import {
   loadEquipmentDefinitions,
   loadItemCatalog,
@@ -17,6 +18,29 @@ import {
 
 const databases: CaelianDatabase[] = [];
 
+const MARKET_COOKING_MATERIALS = [
+  '牛奶',
+  '面粉',
+  '火腿',
+  '糖',
+  '盐',
+  '奶油',
+  '黄油',
+] as const;
+
+const REGION_DISHES = {
+  '圣德里安学院': ['晨露煎蛋', '黄油香草面包', '学院早餐拼盘', '蜜糖松饼', '月露奶冻'],
+  '伊拉亚城': ['晨露煎蛋', '火腿奶酪卷', '奶香炖鸡', '百合蒸蛋', '冒险者丰收炖锅'],
+  '索拉维亚': ['百合蒸蛋', '圣心奶油糕', '火腿奶酪卷', '蔷薇糖霜饼', '奶香炖鸡'],
+  '艾瑟拉森林': ['猎人野猪排', '奶油夜光菇汤', '森林肉酱面', '古树香草烤肉', '冒险者丰收炖锅'],
+  '奈亚索斯城': ['湖畔香煎鱼', '海盐烤鱼', '潮汐鲜鱼浓汤', '蜜糖松饼', '奶香炖鸡'],
+  '阿必塞海': ['海盐烤鱼', '潮汐鲜鱼浓汤', '湖畔香煎鱼', '月露奶冻', '圣心奶油糕'],
+  '炉心城': ['炉心黄油肉排', '猎人野猪排', '香煎鸡排', '火腿奶酪卷', '冒险者丰收炖锅'],
+  '银月之城': ['月露奶冻', '蔷薇糖霜饼', '奶油夜光菇汤', '森林肉酱面', '湖畔香煎鱼'],
+  '远古圣山': ['古树香草烤肉', '圣心奶油糕', '香煎鸡排', '百合蒸蛋', '冒险者丰收炖锅'],
+  '极北之地': ['猎人野猪排', '奶香炖鸡', '炉心黄油肉排', '黄油香草面包', '潮汐鲜鱼浓汤'],
+} as const;
+
 afterEach(async () => {
   await Promise.all(
     databases.splice(0).map(async (database) => {
@@ -27,6 +51,52 @@ afterEach(async () => {
 });
 
 describe('MarketRepository integration', () => {
+  it('所有地区料理页固定供应七种材料，不出售狩猎材料，并使用地区料理表', async () => {
+    const marketDate = new Date(2026, 8, 1, 12, 30);
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-alpha-market-cooking-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('market-cooking-all-regions');
+    const repository = new MarketRepository(database, () => marketDate);
+
+    for (const [region, expectedDishes] of Object.entries(REGION_DISHES)) {
+      await database.worldStates.update(profile.id, {
+        region,
+        location: region,
+        updatedAt: Date.now(),
+      });
+      const view = await repository.view(profile.id);
+      const cooking = view.listings.filter(
+        (listing) => listing.tab === 'cooking',
+      );
+      const materials = cooking.filter(
+        (listing) => listing.source === '料理材料',
+      );
+      const dishes = cooking.filter(
+        (listing) => listing.source === '地区料理',
+      );
+
+      expect(materials.map((listing) => listing.name).sort()).toEqual(
+        [...MARKET_COOKING_MATERIALS].sort(),
+      );
+      expect(materials.every((listing) => listing.stock === 100)).toBe(true);
+      expect(dishes.map((listing) => listing.name)).toEqual(expectedDishes);
+      expect(
+        view.listings.some((listing) =>
+          HUNTING_MATERIAL_IDS.includes(
+            listing.itemId as (typeof HUNTING_MATERIAL_IDS)[number],
+          ),
+        ),
+      ).toBe(false);
+    }
+
+    expect(new Set(Object.values(REGION_DISHES).map((rows) => rows.join('|'))).size)
+      .toBe(Object.keys(REGION_DISHES).length);
+  });
+
   it('完整读取旧版物品、装备、区域商品和通用卡牌库', async () => {
     const [items, equipment, regions, cards] = await Promise.all([
       loadItemCatalog(),

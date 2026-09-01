@@ -44,7 +44,11 @@ import {
 } from '@/rewards/reward-display';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import MeterBar from '@/ui/adventurer/MeterBar.vue';
-import { readWorkshopMechanisms } from '@/workshop-mechanisms';
+import {
+  readWorkshopMechanisms,
+  workshopStatusKey,
+  type WorkshopMechanismStatus,
+} from '@/workshop-mechanisms';
 import {
   type BattleCardFaceType,
   battleCardFaceType,
@@ -531,6 +535,7 @@ const mechanismResources = computed(() => {
       .map((resource) => ({
         id: `${manifest.id}:${resource.id}`,
         label: resource.label,
+        description: resource.description,
         value:
           runtime.resources[`${manifest.id}:${resource.id}`] ??
           resource.initial,
@@ -1048,9 +1053,49 @@ function effectEntries(
 }
 
 function statusDisplayName(name: string, kind: 'buff' | 'debuff'): string {
+  const custom = customWorkshopStatus(name, kind);
+  if (custom) return custom.label;
   const world = kind === 'buff' ? worldBuffNames : worldDebuffNames;
   const generated = kind === 'buff' ? generatedBuffNames : generatedDebuffNames;
   return statusNames[name] ?? world[name] ?? generated[name] ?? name;
+}
+
+function customWorkshopStatus(
+  name: string,
+  kind: 'buff' | 'debuff',
+): WorkshopMechanismStatus | undefined {
+  for (const mechanism of readWorkshopMechanisms()) {
+    const status = mechanism.statuses.find(
+      (entry) =>
+        entry.polarity === kind &&
+        workshopStatusKey(mechanism.id, entry.id) === name,
+    );
+    if (status) return status;
+  }
+  return undefined;
+}
+
+function customWorkshopStatusDescription(
+  status: WorkshopMechanismStatus,
+): string {
+  const effects = status.effects.map((effect) => {
+    const value = formatStatusNumber(effect.value);
+    switch (effect.type) {
+      case 'damage_reduction':
+        return `受到伤害降低 ${value}%`;
+      case 'debuff_immunity':
+        return '免疫减益状态';
+      case 'turn_heal':
+        return `每回合恢复 ${value} 点生命`;
+      case 'turn_shield':
+        return `每回合获得 ${value} 点护盾`;
+      case 'turn_damage':
+        return `每回合失去 ${value} 点生命`;
+      case 'damage_bonus':
+        return `造成伤害提高 ${value}%`;
+    }
+  });
+  return [status.description, effects.join('；')].filter(Boolean).join('｜');
 }
 
 function statusDescription(
@@ -1058,6 +1103,8 @@ function statusDescription(
   kind: 'buff' | 'debuff',
   fallback = '',
 ): string {
+  const custom = customWorkshopStatus(name, kind);
+  if (custom) return customWorkshopStatusDescription(custom);
   if (localStatusDescriptions[name]) return localStatusDescriptions[name];
   const worldGlobalDescription = worldStatusDescriptions[name];
   if (typeof worldGlobalDescription === 'string') return worldGlobalDescription;
@@ -1081,9 +1128,14 @@ function formatStatusNumber(value: unknown): string {
 }
 
 function statusEffectSummary(
+  name: string,
   effect: LocalBattleState['player']['buffs'][string],
 ): string {
-  const parts = [`数值 ${formatStatusNumber(effect.value)}`];
+  const custom =
+    customWorkshopStatus(name, 'buff') ?? customWorkshopStatus(name, 'debuff');
+  const parts = [
+    `${custom ? '层数' : '数值'} ${formatStatusNumber(effect.value)}`,
+  ];
   if (effect.stacks !== undefined) {
     parts.push(`层数 ${formatStatusNumber(effect.stacks)}`);
   }
@@ -1986,7 +2038,7 @@ onUnmounted(() => {
                   :title="statusDescription(entry.name, 'buff')"
                 >
                   {{ statusDisplayName(entry.name, 'buff') }}
-                  {{ statusEffectSummary(entry.effect) }}
+                  {{ statusEffectSummary(entry.name, entry.effect) }}
                 </span>
                 <span
                   v-for="entry in effectEntries(enemy.debuffs)"
@@ -1995,7 +2047,7 @@ onUnmounted(() => {
                   :title="statusDescription(entry.name, 'debuff')"
                 >
                   {{ statusDisplayName(entry.name, 'debuff') }}
-                  {{ statusEffectSummary(entry.effect) }}
+                  {{ statusEffectSummary(entry.name, entry.effect) }}
                 </span>
               </div>
               <div class="battle-float-layer" aria-hidden="true">
@@ -2143,7 +2195,7 @@ onUnmounted(() => {
                     :title="statusDescription(entry.name, 'buff')"
                   >
                     {{ statusDisplayName(entry.name, 'buff') }} ·
-                    {{ statusEffectSummary(entry.effect) }}
+                    {{ statusEffectSummary(entry.name, entry.effect) }}
                   </span>
                   <span
                     v-for="entry in effectEntries(summon.debuffs ?? {})"
@@ -2152,7 +2204,7 @@ onUnmounted(() => {
                     :title="statusDescription(entry.name, 'debuff')"
                   >
                     {{ statusDisplayName(entry.name, 'debuff') }} ·
-                    {{ statusEffectSummary(entry.effect) }}
+                    {{ statusEffectSummary(entry.name, entry.effect) }}
                   </span>
                 </div>
                 <div class="battle-float-layer" aria-hidden="true">
@@ -2173,7 +2225,11 @@ onUnmounted(() => {
             <span
               v-for="resource in mechanismResources"
               :key="resource.id"
-              :title="`${resource.min}–${resource.max}`"
+              :title="[
+                '自定义资源',
+                `${resource.min}–${resource.max}`,
+                resource.description,
+              ].filter(Boolean).join(' · ')"
             >
               {{ resource.label }} <b>{{ resource.value }}</b>
             </span>
@@ -2196,7 +2252,7 @@ onUnmounted(() => {
                 :title="statusDescription(entry.name, 'buff')"
               >
                 {{ statusDisplayName(entry.name, 'buff') }}
-                {{ statusEffectSummary(entry.effect) }}
+                {{ statusEffectSummary(entry.name, entry.effect) }}
               </span>
               <span
                 v-for="entry in effectEntries(state.player.debuffs)"
@@ -2205,7 +2261,7 @@ onUnmounted(() => {
                 :title="statusDescription(entry.name, 'debuff')"
               >
                 {{ statusDisplayName(entry.name, 'debuff') }}
-                {{ statusEffectSummary(entry.effect) }}
+                {{ statusEffectSummary(entry.name, entry.effect) }}
               </span>
               <span
                 v-for="generator in state.player.blankGenerators ?? []"

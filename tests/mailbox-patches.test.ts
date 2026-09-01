@@ -273,6 +273,14 @@ describe('Achievement patch mailbox', () => {
         (entry) => entry.achievementId === 'ach_thanks_old_caelian',
       )?.unlocked,
     ).not.toBe(true);
+    expect((await repository.mailboxState(profile.id)).entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'mail_thanks_old_caelian',
+          unread: true,
+        }),
+      ]),
+    );
 
     await expect(
       repository.syncPatchEntitlements(profile.id, [

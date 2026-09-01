@@ -6,6 +6,7 @@ import { BattleRepository } from '@/storage/repositories/battle-repository';
 import { cardNameHistoryKey } from '@/battle/card-history';
 import { GameRepository } from '@/storage/repository';
 import { saveWorkshopPack } from '@/workshop';
+import { saveWorkshopMechanism } from '@/workshop-mechanisms';
 
 const databases: CaelianDatabase[] = [];
 
@@ -880,6 +881,278 @@ describe('本地战斗仓库', () => {
       session.state.animations?.at(-2)?.label === '防反' ||
         session.state.animations?.at(-1)?.label === '防反',
     ).toBe(true);
+  });
+
+  it('多段攻击每段都按该段攻击前的当前护盾重新计算防反', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'defense-reflect-multi-hit',
+      'holy_knight',
+      () => 0.5,
+    );
+    session.state.player.hp = session.state.player.hpMax = 200;
+    session.state.player.shield = 20;
+    session.state.player.defense = 50;
+    session.state.player.speed = 0;
+    session.state.player.buffs = {
+      defense_reflect: { value: 1, turns: 3 },
+    };
+    session.state.player.debuffs = {};
+    session.state.player.passiveEffects = [];
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 200;
+    session.state.enemies[0]!.attack = 20;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.shield = 0;
+    session.state.enemies[0]!.buffs = {};
+    session.state.enemies[0]!.debuffs = {};
+    session.state.enemies[0]!.intent = {
+      skillId: 'frenzy',
+      name: '狂乱撕咬',
+      kind: '连击',
+      description: '测试两段攻击',
+      amount: 20,
+      hits: 2,
+    };
+    await database.battleSessions.put(session);
+
+    await battles.endTurn(profile.id, session.id);
+
+    const current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.shield).toBe(8);
+    expect(current.state.enemies[0]!.hp).toBe(186);
+    expect(
+      current.state.animations
+        ?.filter((event) => event.label === '防反')
+        .map((event) => event.amount),
+    ).toEqual([8, 6]);
+  });
+
+  it('双方同时拥有防反时只结算原攻击目标的一次防反', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'defense-reflect-no-recursion',
+      'holy_knight',
+    );
+    session.state.player.hp = session.state.player.hpMax = 200;
+    session.state.player.attack = 0;
+    session.state.player.ap = 10;
+    session.state.player.shield = 10;
+    session.state.player.defense = 100;
+    session.state.player.speed = 0;
+    session.state.player.buffs = {
+      defense_reflect: { value: 1, turns: 3 },
+    };
+    session.state.player.debuffs = {};
+    session.state.player.passiveEffects = [];
+    session.state.player.hand = [
+      {
+        instanceId: 'test:defense-reflect-no-recursion',
+        cardId: 'hk_lumen_slash',
+      },
+    ];
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 200;
+    session.state.enemies[0]!.shield = 10;
+    session.state.enemies[0]!.defense = 100;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.buffs = {
+      defense_reflect: { value: 1, turns: 3 },
+    };
+    session.state.enemies[0]!.debuffs = {};
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+
+    const current = (await database.battleSessions.get(session.id))!;
+    const reflectEvents = current.state.animations?.filter(
+      (event) => event.label === '防反',
+    );
+    expect(reflectEvents).toHaveLength(1);
+    expect(reflectEvents?.[0]?.amount).toBe(8);
+    expect(current.state.player).toMatchObject({ hp: 200, shield: 2 });
+  });
+
+  it('新防反造成的伤害不会触发旧荆棘的二次反弹', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'defense-reflect-does-not-trigger-thorns',
+      'holy_knight',
+    );
+    session.state.player.hp = session.state.player.hpMax = 200;
+    session.state.player.attack = 0;
+    session.state.player.ap = 10;
+    session.state.player.shield = 0;
+    session.state.player.speed = 0;
+    session.state.player.buffs = {
+      thorns: { value: 7, turns: 3 },
+    };
+    session.state.player.debuffs = {};
+    session.state.player.passiveEffects = [];
+    session.state.player.hand = [
+      {
+        instanceId: 'test:defense-reflect-does-not-trigger-thorns',
+        cardId: 'hk_lumen_slash',
+      },
+    ];
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 200;
+    session.state.enemies[0]!.shield = 10;
+    session.state.enemies[0]!.defense = 100;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.buffs = {
+      defense_reflect: { value: 1, turns: 3 },
+    };
+    session.state.enemies[0]!.debuffs = {};
+    await database.battleSessions.put(session);
+
+    await battles.playCard(profile.id, {
+      battleId: session.id,
+      handIndex: 0,
+      targetIndex: 0,
+    });
+
+    const current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.player.hp).toBe(192);
+    expect(current.state.enemies[0]).toMatchObject({ hp: 200, shield: 9 });
+    expect(
+      current.state.animations?.filter(
+        (event) => event.label === '荆棘反弹',
+      ),
+    ).toHaveLength(0);
+  });
+
+  it('工坊before_damage机制不能改写防反的固定公式伤害', async () => {
+    const mechanismId = 'test.fixed-defense-reflect';
+    saveWorkshopMechanism({
+      format: 'caelian_workshop_script_mechanism',
+      version: 1,
+      id: mechanismId,
+      name: '防反固定伤害测试',
+      triggers: ['before_damage'],
+      resources: [],
+      source: `
+        function handle(ctx) {
+          if (ctx.event.origin !== 'defense_reflect') return {};
+          return { event: { amount: 999 } };
+        }
+      `,
+    });
+    const { database, profile, battles, session } = await createStartedBattle(
+      'defense-reflect-fixed-damage',
+      'holy_knight',
+      () => 0.5,
+    );
+    session.state.workshopMechanisms = {
+      ids: [mechanismId],
+      resources: {},
+      fired: [],
+      disabled: [],
+      errors: {},
+    };
+    session.state.player.hp = session.state.player.hpMax = 200;
+    session.state.player.shield = 10;
+    session.state.player.defense = 100;
+    session.state.player.speed = 0;
+    session.state.player.buffs = {
+      defense_reflect: { value: 1, turns: 3 },
+    };
+    session.state.player.debuffs = {};
+    session.state.player.passiveEffects = [];
+    session.state.enemies[0]!.hp = session.state.enemies[0]!.hpMax = 200;
+    session.state.enemies[0]!.attack = 10;
+    session.state.enemies[0]!.defense = 0;
+    session.state.enemies[0]!.speed = 0;
+    session.state.enemies[0]!.shield = 0;
+    session.state.enemies[0]!.buffs = {};
+    session.state.enemies[0]!.debuffs = {};
+    session.state.enemies[0]!.intent = null;
+    await database.battleSessions.put(session);
+
+    await battles.endTurn(profile.id, session.id);
+
+    const current = (await database.battleSessions.get(session.id))!;
+    expect(current.state.enemies[0]!.hp).toBe(192);
+    expect(
+      current.state.animations?.find((event) => event.label === '防反')?.amount,
+    ).toBe(8);
+  });
+
+  it('防反公式锁定零防御、150%上限与四舍五入边界', async () => {
+    const { database, profile, battles, session } = await createStartedBattle(
+      'defense-reflect-formula-boundaries',
+      'holy_knight',
+    );
+    let caseIndex = 0;
+    const resolveCase = async (
+      defense: number,
+      shield: number,
+    ): Promise<{ damage: number; reflected: number[] }> => {
+      let current = (await database.battleSessions.get(session.id))!;
+      current.state.player.hp = current.state.player.hpMax = 200;
+      current.state.player.attack = 0;
+      current.state.player.ap = 10;
+      current.state.player.shield = 0;
+      current.state.player.speed = 0;
+      current.state.player.buffs = {};
+      current.state.player.debuffs = {};
+      current.state.player.passiveEffects = [];
+      current.state.player.hand = [
+        {
+          instanceId: `test:defense-reflect-boundary:${caseIndex}`,
+          cardId: 'hk_lumen_slash',
+        },
+      ];
+      current.state.enemies[0]!.hp = current.state.enemies[0]!.hpMax = 1_000;
+      current.state.enemies[0]!.shield = shield;
+      current.state.enemies[0]!.defense = defense;
+      current.state.enemies[0]!.speed = 0;
+      current.state.enemies[0]!.buffs = {
+        defense_reflect: { value: 1, turns: 3 },
+      };
+      current.state.enemies[0]!.debuffs = {};
+      const reflectedBefore =
+        current.state.animations?.filter((event) => event.label === '防反')
+          .length ?? 0;
+      await database.battleSessions.put(current);
+
+      await battles.playCard(profile.id, {
+        battleId: session.id,
+        handIndex: 0,
+        targetIndex: 0,
+      });
+
+      current = (await database.battleSessions.get(session.id))!;
+      caseIndex += 1;
+      return {
+        damage: 200 - current.state.player.hp,
+        reflected:
+          current.state.animations
+            ?.filter((event) => event.label === '防反')
+            .slice(reflectedBefore)
+            .map((event) => Number(event.amount)) ?? [],
+      };
+    };
+
+    await expect(resolveCase(0, 10)).resolves.toEqual({
+      damage: 0,
+      reflected: [],
+    });
+    await expect(resolveCase(150, 10)).resolves.toEqual({
+      damage: 12,
+      reflected: [12],
+    });
+    await expect(resolveCase(300, 10)).resolves.toEqual({
+      damage: 12,
+      reflected: [12],
+    });
+    await expect(resolveCase(50, 1)).resolves.toEqual({
+      damage: 0,
+      reflected: [],
+    });
+    await expect(resolveCase(63, 1)).resolves.toEqual({
+      damage: 1,
+      reflected: [1],
+    });
   });
 
   it('按旧版实际结算冻结、再生、流血与濒死保护', async () => {

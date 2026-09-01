@@ -9,15 +9,32 @@ import {
 
 type EditableEffect = Record<string, any>;
 
+interface WorkshopResourceOption {
+  mechanismId: string;
+  resourceId: string;
+  label: string;
+}
+
+interface WorkshopStatusOption {
+  mechanismId: string;
+  statusId: string;
+  label: string;
+  polarity: 'buff' | 'debuff';
+}
+
 const props = defineProps<{
   effect: EditableEffect;
   nested?: boolean;
+  resourceOptions?: WorkshopResourceOption[];
+  statusOptions?: WorkshopStatusOption[];
 }>();
 const emit = defineEmits<{ remove: [] }>();
 
 const labels = Object.fromEntries(
   WORKSHOP_EFFECT_OPTIONS.map((option) => [option.type, option.label]),
 );
+labels.workshop_resource_change = '增减自定义资源';
+labels.apply_workshop_status = '施加自定义状态';
 const hasValue = computed(() => {
   const supported = [
     'damage',
@@ -99,7 +116,13 @@ const nestedOptionGroups = [
   },
   {
     label: '状态效果',
-    types: ['apply_buff', 'apply_debuff', 'cleanse', 'dispel'],
+    types: [
+      'apply_buff',
+      'apply_debuff',
+      'apply_workshop_status',
+      'cleanse',
+      'dispel',
+    ],
   },
   {
     label: '特殊机制',
@@ -117,6 +140,7 @@ const nestedOptionGroups = [
       'discard_blank_damage',
       'destroy_summon',
       'reveal_intent',
+      'workshop_resource_change',
     ],
   },
 ].map((group) => ({
@@ -162,7 +186,46 @@ const conditions = [
   ['spend_hp', '支付 HP（换取可支配强度）'],
   ['discard', '弃置手牌'],
   ['destroy_summon', '牺牲召唤物'],
+  ['spend_workshop_resource', '支付自定义资源'],
 ];
+
+function resourceKey(value: EditableEffect): string {
+  return `${String(value.mechanismId ?? '')}:${String(value.resourceId ?? '')}`;
+}
+
+function setResource(value: EditableEffect, key: string): void {
+  const option = props.resourceOptions?.find(
+    (entry) => `${entry.mechanismId}:${entry.resourceId}` === key,
+  );
+  if (!option) return;
+  value.mechanismId = option.mechanismId;
+  value.resourceId = option.resourceId;
+}
+
+function statusKey(value: EditableEffect): string {
+  return `${String(value.mechanismId ?? '')}:${String(value.statusId ?? '')}`;
+}
+
+function setStatus(value: EditableEffect, key: string): void {
+  const option = props.statusOptions?.find(
+    (entry) => `${entry.mechanismId}:${entry.statusId}` === key,
+  );
+  if (!option) return;
+  value.mechanismId = option.mechanismId;
+  value.statusId = option.statusId;
+  if (!value.target) value.target = option.polarity === 'debuff' ? 'enemy' : 'self';
+}
+
+function initializeConditionResource(condition: EditableEffect): void {
+  if (condition.type !== 'spend_workshop_resource') return;
+  const option = props.resourceOptions?.[0];
+  if (option && !condition.mechanismId) setResource(condition, resourceKey(option));
+  condition.amount ??= 1;
+}
+
+function setResourceSpendMode(condition: EditableEffect, mode: string): void {
+  condition.amount = mode === 'all' ? 'all' : 1;
+}
 
 function setScalingMode(mode: string): void {
   if (mode === 'hybrid') {
@@ -177,6 +240,12 @@ function cloneOption(type: string): EditableEffect {
   if (!option) return { type: 'damage', value: 1, target: 'enemy' };
   const clone = structuredClone(option) as EditableEffect;
   delete clone.label;
+  if (type === 'apply_workshop_status' && props.statusOptions?.[0]) {
+    setStatus(clone, statusKey(props.statusOptions[0]));
+  }
+  if (type === 'workshop_resource_change' && props.resourceOptions?.[0]) {
+    setResource(clone, resourceKey(props.resourceOptions[0]));
+  }
   return clone;
 }
 
@@ -223,8 +292,78 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
       </button>
     </header>
 
+    <div v-if="effect.type === 'apply_workshop_status'" class="effect-fields">
+      <label>
+        <span>自定义状态</span>
+        <select
+          :value="statusKey(effect)"
+          @change="setStatus(effect, ($event.target as HTMLSelectElement).value)"
+        >
+          <option
+            v-for="option in statusOptions"
+            :key="`${option.mechanismId}:${option.statusId}`"
+            :value="`${option.mechanismId}:${option.statusId}`"
+          >
+            {{ option.label }} · {{ option.polarity === 'buff' ? 'Buff' : 'Debuff' }}
+          </option>
+        </select>
+      </label>
+      <label>
+        <span>层数</span>
+        <input v-model.number="effect.value" type="number" min="1" max="10" />
+      </label>
+      <label>
+        <span>持续回合</span>
+        <input v-model.number="effect.turns" type="number" min="1" max="99" />
+      </label>
+      <label>
+        <span>目标</span>
+        <select v-model="effect.target">
+          <option value="self">自身</option>
+          <option value="enemy">指定敌人</option>
+          <option value="all_enemies">所有敌人</option>
+          <option value="random_enemy">随机敌人</option>
+          <option value="all_allies">所有友方</option>
+          <option value="random_allies">随机友方</option>
+          <option value="selected_allies">指定友方</option>
+          <option value="all_summons">所有召唤物</option>
+          <option value="random_summons">随机召唤物</option>
+          <option value="selected_summons">指定召唤物</option>
+        </select>
+      </label>
+    </div>
+
+    <div v-else-if="effect.type === 'workshop_resource_change'" class="effect-fields">
+      <label>
+        <span>资源</span>
+        <select
+          :value="resourceKey(effect)"
+          @change="setResource(effect, ($event.target as HTMLSelectElement).value)"
+        >
+          <option
+            v-for="option in resourceOptions"
+            :key="`${option.mechanismId}:${option.resourceId}`"
+            :value="`${option.mechanismId}:${option.resourceId}`"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
+      <label>
+        <span>操作</span>
+        <select v-model="effect.mode">
+          <option value="add">增减（负数为减少）</option>
+          <option value="set">直接设为</option>
+        </select>
+      </label>
+      <label>
+        <span>数值</span>
+        <input v-model.number="effect.value" type="number" step="1" />
+      </label>
+    </div>
+
     <div
-      v-if="effect.type !== 'conditional_group' && effect.type !== 'summon'"
+      v-else-if="effect.type !== 'conditional_group' && effect.type !== 'summon'"
       class="effect-fields"
     >
       <label v-if="hasValue">
@@ -365,7 +504,7 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
         :key="index"
         class="condition-row"
       >
-        <select v-model="condition.type">
+        <select v-model="condition.type" @change="initializeConditionResource(condition)">
           <option
             v-for="[type, label] in conditions"
             :key="type"
@@ -373,6 +512,27 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
           >
             {{ label }}
           </option>
+        </select>
+        <select
+          v-if="condition.type === 'spend_workshop_resource'"
+          :value="resourceKey(condition)"
+          @change="setResource(condition, ($event.target as HTMLSelectElement).value)"
+        >
+          <option
+            v-for="option in resourceOptions"
+            :key="`${option.mechanismId}:${option.resourceId}`"
+            :value="`${option.mechanismId}:${option.resourceId}`"
+          >
+            {{ option.label }}
+          </option>
+        </select>
+        <select
+          v-if="condition.type === 'spend_workshop_resource'"
+          :value="condition.amount === 'all' ? 'all' : 'fixed'"
+          @change="setResourceSpendMode(condition, ($event.target as HTMLSelectElement).value)"
+        >
+          <option value="fixed">支付指定数量</option>
+          <option value="all">支付全部</option>
         </select>
         <select
           v-if="String(condition.type).includes('specific_debuff')"
@@ -386,7 +546,7 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
           <option value="entangle">缠绕</option>
         </select>
         <input
-          v-if="['spend_mp', 'spend_hp', 'discard', 'destroy_summon'].includes(condition.type)"
+          v-if="['spend_mp', 'spend_hp', 'discard', 'destroy_summon'].includes(condition.type) || (condition.type === 'spend_workshop_resource' && condition.amount !== 'all')"
           v-model.number="condition.amount"
           type="number"
           min="1"
@@ -413,6 +573,8 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
         v-for="(child, index) in effect.then_effects"
         :key="`then:${index}`"
         :effect="child"
+        :resource-options="resourceOptions"
+        :status-options="statusOptions"
         nested
         @remove="effect.then_effects.splice(index, 1)"
       />
@@ -448,6 +610,8 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
         v-for="(child, index) in effect.else_effects"
         :key="`else:${index}`"
         :effect="child"
+        :resource-options="resourceOptions"
+        :status-options="statusOptions"
         nested
         @remove="effect.else_effects.splice(index, 1)"
       />
@@ -531,6 +695,8 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
           v-for="(child, childIndex) in skill.effects"
           :key="childIndex"
           :effect="child"
+          :resource-options="resourceOptions"
+          :status-options="statusOptions"
           nested
           @remove="skill.effects.splice(childIndex, 1)"
         />

@@ -729,10 +729,19 @@ export class AchievementRepository {
       }
 
       for (const [id, raw] of Object.entries(payload.unlocked ?? {})) {
+        const patch = Object.values(ACHIEVEMENT_PATCH_REGISTRY).find(
+          (entry) => entry.achievement.id === id,
+        );
+        if (patch?.preserveNativeUnread) {
+          await this.syncPatchEntitlements(profileId, [
+            { id: patch.id, opened: false },
+          ]);
+          continue;
+        }
         if (
-          Object.values(ACHIEVEMENT_PATCH_REGISTRY).some(
-            (patch) => patch.achievement.id === id,
-          )
+          patch &&
+          (marker.value <= 0 ||
+            (await this.db.mailRecords.get(this.mailRecordId(patch.mail.id))))
         ) {
           continue;
         }

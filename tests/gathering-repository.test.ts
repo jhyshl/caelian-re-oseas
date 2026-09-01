@@ -4,7 +4,10 @@ import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { GatheringRepository } from '@/storage/repositories/gathering-repository';
 import { GameRepository } from '@/storage/repository';
-import { rollHuntingRewards } from '@/content/cooking';
+import {
+  HUNTING_MATERIAL_IDS,
+  rollHuntingRewards,
+} from '@/content/cooking';
 
 const databases: CaelianDatabase[] = [];
 
@@ -377,7 +380,7 @@ describe('GatheringRepository', () => {
     expect(rewards.map((item) => item.itemId)).toContain('鱼肉');
   });
 
-  it('只有81至100点生成的一次性凭证可以启动打猎战斗', async () => {
+  it('只有81至100点生成的一次性凭证可以启动战斗，胜利后追加料理材料', async () => {
     const { database, game, profile, repository } = await setup({
       random: () => 1,
     });
@@ -419,5 +422,48 @@ describe('GatheringRepository', () => {
     expect((await game.snapshot(profile.id)).battle?.state.huntingContext).toMatchObject({
       animalId: 'wild_fowl',
     });
+
+    const session = (await database.battleSessions
+      .where('profileId')
+      .equals(profile.id)
+      .filter((entry) => entry.active)
+      .first())!;
+    session.state.enemies.forEach((enemy, index) => {
+      enemy.hp = index === 0 ? 1 : 0;
+      enemy.shield = 0;
+      enemy.defense = 0;
+      enemy.speed = 0;
+    });
+    session.state.player.ap = 99;
+    session.state.player.hand.unshift({
+      instanceId: 'hunting-victory-card',
+      cardId: 'hk_lumen_slash',
+    });
+    await database.battleSessions.put(session);
+    await expect(
+      game.execute(profile.id, {
+        id: 'hunting-victory-hit',
+        type: 'battle.play-card',
+        payload: {
+          battleId: session.id,
+          handIndex: 0,
+          targetIndex: 0,
+        },
+      }),
+    ).resolves.toMatchObject({ status: 'applied' });
+
+    const finished = await game.snapshot(profile.id);
+    expect(finished.battle?.state.status).toBe('victory');
+    const huntingRewards = finished.inventory.filter((entry) =>
+      HUNTING_MATERIAL_IDS.includes(
+        entry.itemId as (typeof HUNTING_MATERIAL_IDS)[number],
+      ),
+    );
+    expect(huntingRewards.length).toBeGreaterThanOrEqual(2);
+    expect(huntingRewards.length).toBeLessThanOrEqual(3);
+    for (const reward of huntingRewards) {
+      expect(reward.quantity).toBeGreaterThanOrEqual(1);
+      expect(reward.quantity).toBeLessThanOrEqual(10);
+    }
   });
 });

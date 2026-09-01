@@ -149,6 +149,7 @@ export class CaelianKernel {
   private projectionWriteInProgress = false;
   private mvuIngestDepth = 0;
   private generationActive = false;
+  private generationEpoch = 0;
   private managedContentTimer?: number;
   private surveyTimer?: number;
   private memoryTogetherLetterPending = false;
@@ -320,11 +321,11 @@ export class CaelianKernel {
     }
     try {
       const type = this.commandType(command);
-      if (this.generationActive && this.isCaelianGiftCommand(command)) {
+      if (this.generationActive && this.isCaelianInteractionCommand(command)) {
         return {
           id: this.commandId(command),
           status: 'rejected',
-          message: '当前回复仍在生成，请等待生成结束后再赠礼',
+          message: '当前回复仍在生成，请等待生成结束后再与凯利安互动',
         };
       }
       const requestedTheme = this.requestedTheme(command);
@@ -959,6 +960,7 @@ export class CaelianKernel {
   async shutdown(): Promise<void> {
     if (this.status === 'stopped') return;
     this.shuttingDown = true;
+    this.generationEpoch += 1;
     this.generationActive = false;
     this.cancelQuestJudge();
     if (this.surveyTimer !== undefined) {
@@ -988,16 +990,21 @@ export class CaelianKernel {
   ): void {
     if (eventName === 'CHAT_CHANGED') {
       this.cancelQuestJudge();
+      this.generationEpoch += 1;
       this.generationActive = false;
     }
     if (this.isGenerationStartEvent(eventName)) {
-      // Mark synchronously at the adapter callback boundary so a gift cannot
-      // enter its inventory transaction while this update is still queued.
+      // Mark synchronously at the adapter callback boundary so an interaction
+      // cannot enter its transaction while this update is still queued.
+      this.generationEpoch += 1;
       this.generationActive = true;
     }
+    const generationEpoch = this.generationEpoch;
     const task = this.tavernUpdateQueue
       .catch(() => undefined)
-      .then(() => this.handleTavernUpdate(eventName, payload))
+      .then(() =>
+        this.handleTavernUpdate(eventName, payload, generationEpoch),
+      )
       .catch((error) => {
         if (this.status === 'stopped') return;
         this.lastError =
@@ -1010,9 +1017,7 @@ export class CaelianKernel {
       })
       .finally(() => {
         if (this.isGenerationEndEvent(eventName)) {
-          // Terminal events must always release the interaction lock, even if
-          // quest reconciliation or MVU ingestion failed earlier in the task.
-          this.generationActive = false;
+          this.finishGeneration(generationEpoch);
         }
         this.pendingTavernUpdates.delete(task);
       });
@@ -1023,6 +1028,7 @@ export class CaelianKernel {
   private async handleTavernUpdate(
     eventName: string,
     payload?: TavernEventPayload,
+    generationEpoch = this.generationEpoch,
   ): Promise<void> {
     if (eventName === 'ACHIEVEMENT_PATCH_CHANGED') {
       await this.syncAchievementPatches();
@@ -1060,10 +1066,13 @@ export class CaelianKernel {
       });
     }
     const terminalEvent = this.isGenerationEndEvent(eventName);
+    const endedCurrentGeneration = terminalEvent
+      ? this.finishGeneration(generationEpoch)
+      : false;
     try {
       await this.reconcileQuestFloors(eventName, payload);
       await this.ingestMvuNarrative();
-      if (terminalEvent) {
+      if (endedCurrentGeneration) {
         await this.retryPendingAffinityProjection();
       }
       if (
@@ -1096,7 +1105,7 @@ export class CaelianKernel {
       if (terminalEvent) {
         // Terminal events always refresh the affinity UI, even if MVU or
         // quest reconciliation failed before the normal event broadcast.
-        this.generationActive = false;
+        this.finishGeneration(generationEpoch);
         await this.events.emit('tavern.changed', { event: eventName });
       }
     }
@@ -2334,7 +2343,7 @@ export class CaelianKernel {
     return undefined;
   }
 
-  private isCaelianGiftCommand(input: unknown): boolean {
+  private isCaelianInteractionCommand(input: unknown): boolean {
     if (
       !input ||
       typeof input !== 'object' ||
@@ -2349,8 +2358,14 @@ export class CaelianKernel {
       payload &&
         typeof payload === 'object' &&
         'action' in payload &&
-        payload.action === 'caelian.gift',
+        ['caelian.gift', 'caelian.invite'].includes(String(payload.action)),
     );
+  }
+
+  private finishGeneration(epoch: number): boolean {
+    if (!this.generationActive || epoch !== this.generationEpoch) return false;
+    this.generationActive = false;
+    return true;
   }
 
   private isGenerationStartEvent(eventName: string): boolean {
