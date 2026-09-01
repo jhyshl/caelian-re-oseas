@@ -18,6 +18,10 @@ const selected = computed(
     null,
 );
 
+const selectedNeedsClaim = computed(
+  () => Boolean(selected.value?.unread && !selected.value.rewardClaimedAt),
+);
+
 function dateLabel(timestamp: number): string {
   if (!timestamp) return '';
   return new Intl.DateTimeFormat('zh-CN', {
@@ -60,6 +64,10 @@ async function selectMail(entry: MailboxEntry): Promise<void> {
   } finally {
     busy.value = false;
   }
+}
+
+async function openSelected(): Promise<void> {
+  if (selected.value) await selectMail(selected.value);
 }
 
 onMounted(async () => {
@@ -145,8 +153,27 @@ onUnmounted(() => {
             {{ selected.signature }}
           </p>
           <p class="reward">{{ selected.rewardText }}</p>
+          <button
+            v-if="selected.unread"
+            class="mail-open"
+            type="button"
+            :disabled="busy"
+            @click="openSelected"
+          >
+            {{
+              busy
+                ? '正在开启……'
+                : selectedNeedsClaim
+                  ? '打开信件并领取奖励'
+                  : '打开信件'
+            }}
+          </button>
           <small v-if="selected.rewardClaimedAt">
-            奖励已结算；再次阅读不会重复发放。
+            {{
+              selected.unread
+                ? '奖励已同步；打开后可永久重读。'
+                : '奖励已结算；再次阅读不会重复发放。'
+            }}
           </small>
           <small v-else-if="busy">正在开启信件并结算奖励……</small>
         </div>
@@ -369,6 +396,23 @@ onUnmounted(() => {
   color: #8a735d;
   text-align: center;
   font-size: 10px;
+}
+
+.mail-open {
+  display: block;
+  margin: 18px auto 9px;
+  padding: 9px 18px;
+  border: 1px solid rgba(123, 75, 22, 0.48);
+  border-radius: 999px;
+  color: #fffaf2;
+  background: #7b4b16;
+  font: 700 12px "Noto Serif SC", Georgia, serif;
+  cursor: pointer;
+}
+
+.mail-open:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .mail-empty {

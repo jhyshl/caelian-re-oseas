@@ -8,6 +8,7 @@ import {
   defaultPlayer,
   defaultSettings,
   defaultSocialProgress,
+  defaultTrelaoProgress,
   defaultStatAllocations,
   defaultWorld,
   GLOBAL_SETTINGS_ID,
@@ -22,12 +23,7 @@ export class ProfileRepository {
   ): Promise<ProfileRecord> {
     const existing = await this.db.profiles.where('chatId').equals(chatId).first();
     if (existing) {
-      const socialId = `${existing.id}:caelian`;
-      if (!(await this.db.socialProgress.get(socialId))) {
-        await this.db.socialProgress.add(
-          defaultSocialProgress(existing.id, Date.now()),
-        );
-      }
+      await this.ensureSocialRows(existing.id);
       return existing;
     }
 
@@ -79,7 +75,10 @@ export class ProfileRepository {
         await this.db.regionAccess.bulkAdd(access);
         await this.db.guildStates.add(defaultGuild(id, now));
         await this.db.equipmentLoadouts.add(defaultLoadout(id, now));
-        await this.db.socialProgress.add(defaultSocialProgress(id, now));
+        await this.db.socialProgress.bulkAdd([
+          defaultSocialProgress(id, now),
+          defaultTrelaoProgress(id, now),
+        ]);
         await this.db.settings.add(defaultSettings(id, now));
       },
     );
@@ -99,7 +98,10 @@ export class ProfileRepository {
     );
     if (global.preserveAdventureSave && global.sharedProfileId) {
       const shared = await this.db.profiles.get(global.sharedProfileId);
-      if (shared) return shared;
+      if (shared) {
+        await this.ensureSocialRows(shared.id);
+        return shared;
+      }
     }
 
     const profile = await this.ensure(chatId, defaults);
@@ -110,6 +112,19 @@ export class ProfileRepository {
       });
     }
     return profile;
+  }
+
+  private async ensureSocialRows(profileId: string): Promise<void> {
+    const now = Date.now();
+    const [caelian, trelao] = await Promise.all([
+      this.db.socialProgress.get(`${profileId}:caelian`),
+      this.db.socialProgress.get(`${profileId}:trelao`),
+    ]);
+    const missing = [
+      ...(caelian ? [] : [defaultSocialProgress(profileId, now)]),
+      ...(trelao ? [] : [defaultTrelaoProgress(profileId, now)]),
+    ];
+    if (missing.length) await this.db.socialProgress.bulkAdd(missing);
   }
 
   async ensureGlobalSettings(legacyValue = false) {

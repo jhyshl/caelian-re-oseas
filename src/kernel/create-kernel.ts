@@ -149,9 +149,11 @@ export class CaelianKernel {
   private projectionWriteInProgress = false;
   private mvuIngestDepth = 0;
   private generationActive = false;
+  private generationEpoch = 0;
   private managedContentTimer?: number;
   private surveyTimer?: number;
   private memoryTogetherLetterPending = false;
+  private patchMailboxPending = false;
   private surveyPromptActive = false;
   private questTracker?: QuestTrackerService;
   private questJudgeClient?: OpenAiCompatibleQuestJudgeClient;
@@ -263,6 +265,7 @@ export class CaelianKernel {
             await this.finishTerminalBattleIfNeeded();
           }
           await this.presentMemoryTogetherLetterIfReady();
+          await this.presentPatchMailboxIfReady();
           void this.offerPendingSurvey();
         }),
       );
@@ -281,6 +284,7 @@ export class CaelianKernel {
       await this.openReleaseNotesIfNew();
       await this.openAchievementSpecialIfNeeded();
       await this.presentMemoryTogetherLetterIfReady();
+      await this.presentPatchMailboxIfReady();
       this.startManagedContentUpdates();
       if (this.channel === 'alpha') this.startSurveyUpdates();
       await this.events.emit('runtime.ready', this.getRuntimeInfo());
@@ -317,11 +321,11 @@ export class CaelianKernel {
     }
     try {
       const type = this.commandType(command);
-      if (this.generationActive && this.isCaelianGiftCommand(command)) {
+      if (this.generationActive && this.isCaelianInteractionCommand(command)) {
         return {
           id: this.commandId(command),
           status: 'rejected',
-          message: '当前回复仍在生成，请等待生成结束后再赠礼',
+          message: '当前回复仍在生成，请等待生成结束后再与凯利安互动',
         };
       }
       const requestedTheme = this.requestedTheme(command);
@@ -956,6 +960,7 @@ export class CaelianKernel {
   async shutdown(): Promise<void> {
     if (this.status === 'stopped') return;
     this.shuttingDown = true;
+    this.generationEpoch += 1;
     this.generationActive = false;
     this.cancelQuestJudge();
     if (this.surveyTimer !== undefined) {
@@ -985,16 +990,21 @@ export class CaelianKernel {
   ): void {
     if (eventName === 'CHAT_CHANGED') {
       this.cancelQuestJudge();
+      this.generationEpoch += 1;
       this.generationActive = false;
     }
     if (this.isGenerationStartEvent(eventName)) {
-      // Mark synchronously at the adapter callback boundary so a gift cannot
-      // enter its inventory transaction while this update is still queued.
+      // Mark synchronously at the adapter callback boundary so an interaction
+      // cannot enter its transaction while this update is still queued.
+      this.generationEpoch += 1;
       this.generationActive = true;
     }
+    const generationEpoch = this.generationEpoch;
     const task = this.tavernUpdateQueue
       .catch(() => undefined)
-      .then(() => this.handleTavernUpdate(eventName, payload))
+      .then(() =>
+        this.handleTavernUpdate(eventName, payload, generationEpoch),
+      )
       .catch((error) => {
         if (this.status === 'stopped') return;
         this.lastError =
@@ -1006,6 +1016,9 @@ export class CaelianKernel {
         );
       })
       .finally(() => {
+        if (this.isGenerationEndEvent(eventName)) {
+          this.finishGeneration(generationEpoch);
+        }
         this.pendingTavernUpdates.delete(task);
       });
     this.tavernUpdateQueue = task;
@@ -1015,15 +1028,16 @@ export class CaelianKernel {
   private async handleTavernUpdate(
     eventName: string,
     payload?: TavernEventPayload,
+    generationEpoch = this.generationEpoch,
   ): Promise<void> {
     if (eventName === 'ACHIEVEMENT_PATCH_CHANGED') {
+      await this.syncAchievementPatches();
       if (this.profileId) {
         await this.repository.importLegacyAchievements(
           this.profileId,
           this.adapter.legacyAchievementPayload(),
         );
       }
-      await this.syncAchievementPatches();
       await this.events.emit('tavern.changed', { event: eventName });
       return;
     }
@@ -1051,45 +1065,53 @@ export class CaelianKernel {
         pending: Boolean(await this.getPendingQuestSubmission()),
       });
     }
-    await this.reconcileQuestFloors(eventName, payload);
+    const terminalEvent = this.isGenerationEndEvent(eventName);
+    const endedCurrentGeneration = terminalEvent
+      ? this.finishGeneration(generationEpoch)
+      : false;
     try {
+      await this.reconcileQuestFloors(eventName, payload);
       await this.ingestMvuNarrative();
-    } finally {
-      if (eventName === 'GENERATION_ENDED') {
-        // Keep gifts locked until the AI-authored MVU value has been ingested.
-        this.generationActive = false;
+      if (endedCurrentGeneration) {
+        await this.retryPendingAffinityProjection();
       }
-    }
-    if (eventName === 'GENERATION_ENDED') {
-      await this.retryPendingAffinityProjection();
-    }
-    if (
-      [
-        'MESSAGE_RECEIVED',
-        'CHARACTER_MESSAGE_RENDERED',
-        'GENERATION_ENDED',
-      ].includes(eventName)
-    ) {
-      await this.triggerStoryBattle(payload);
-    }
-    if (eventName === 'GENERATION_ENDED') {
-      const evaluation = await this.evaluateTrackedQuest(payload);
-      await this.advanceTrackedQuestFromLocalState();
-      if (evaluation) {
-        await this.presentQuestGuidance(evaluation);
-        if (evaluation.gatheringRequested) {
-          await this.presentStoryGathering(
-            evaluation.floorId,
-            evaluation.floorLineageHash,
-            evaluation.originRegion,
-          );
+      if (
+        [
+          'MESSAGE_RECEIVED',
+          'CHARACTER_MESSAGE_RENDERED',
+          'GENERATION_ENDED',
+        ].includes(eventName)
+      ) {
+        await this.triggerStoryBattle(payload);
+      }
+      if (eventName === 'GENERATION_ENDED') {
+        const evaluation = await this.evaluateTrackedQuest(payload);
+        await this.advanceTrackedQuestFromLocalState();
+        if (evaluation) {
+          await this.presentQuestGuidance(evaluation);
+          if (evaluation.gatheringRequested) {
+            await this.presentStoryGathering(
+              evaluation.floorId,
+              evaluation.floorLineageHash,
+              evaluation.originRegion,
+            );
+          }
         }
       }
+      await this.syncQuestContext();
+      await this.scanCurrentAchievements();
+      await this.syncProjection();
+    } finally {
+      if (terminalEvent) {
+        // Terminal events always refresh the affinity UI, even if MVU or
+        // quest reconciliation failed before the normal event broadcast.
+        this.finishGeneration(generationEpoch);
+        await this.events.emit('tavern.changed', { event: eventName });
+      }
     }
-    await this.syncQuestContext();
-    await this.scanCurrentAchievements();
-    await this.syncProjection();
-    await this.events.emit('tavern.changed', { event: eventName });
+    if (!terminalEvent) {
+      await this.events.emit('tavern.changed', { event: eventName });
+    }
   }
 
   private async triggerStoryBattle(
@@ -1878,11 +1900,11 @@ export class CaelianKernel {
         snapshot.player.subclass,
       );
     }
+    await this.syncAchievementPatches();
     await this.repository.importLegacyAchievements(
       profile.id,
       this.adapter.legacyAchievementPayload(),
     );
-    await this.syncAchievementPatches();
   }
 
   private async syncAchievementPatches(): Promise<void> {
@@ -1898,6 +1920,7 @@ export class CaelianKernel {
       this.memoryTogetherLetterPending = true;
     }
     if (result.receivedMailIds.length > 0) {
+      this.patchMailboxPending = true;
       this.notifications.show({
         kind: 'info',
         icon: '✉',
@@ -1908,8 +1931,17 @@ export class CaelianKernel {
         onClick: () => this.panels.navigate('mailbox'),
       });
     }
+    const mailbox = await this.repository.mailboxState(this.profileId);
+    if (
+      mailbox.entries.some(
+        (entry) => entry.source === 'achievement-patch' && entry.unread,
+      )
+    ) {
+      this.patchMailboxPending = true;
+    }
     if (this.status === 'ready') {
       await this.presentMemoryTogetherLetterIfReady();
+      await this.presentPatchMailboxIfReady();
     }
   }
 
@@ -1935,6 +1967,33 @@ export class CaelianKernel {
       this.memoryTogetherLetterPending = false;
     } catch {
       // The reward is already authoritative; another in-session sync may retry UI.
+    }
+  }
+
+  private async presentPatchMailboxIfReady(): Promise<void> {
+    if (
+      !this.patchMailboxPending ||
+      this.status !== 'ready' ||
+      this.shuttingDown
+    ) {
+      return;
+    }
+    const blockingPanels = new Set([
+      'feedback',
+      'surveys',
+      'release-notes',
+      'achievement-letter',
+      'memory-together-letter',
+      'quest-submission',
+      'battle',
+    ]);
+    if (this.panels.list().some((panel) => blockingPanels.has(panel))) return;
+    this.patchMailboxPending = false;
+    try {
+      await this.panels.navigate('mailbox');
+    } catch {
+      // Keep the pending bit so the next panel transition can retry delivery.
+      this.patchMailboxPending = true;
     }
   }
 
@@ -2284,7 +2343,7 @@ export class CaelianKernel {
     return undefined;
   }
 
-  private isCaelianGiftCommand(input: unknown): boolean {
+  private isCaelianInteractionCommand(input: unknown): boolean {
     if (
       !input ||
       typeof input !== 'object' ||
@@ -2299,14 +2358,28 @@ export class CaelianKernel {
       payload &&
         typeof payload === 'object' &&
         'action' in payload &&
-        payload.action === 'caelian.gift',
+        ['caelian.gift', 'caelian.invite'].includes(String(payload.action)),
     );
+  }
+
+  private finishGeneration(epoch: number): boolean {
+    if (!this.generationActive || epoch !== this.generationEpoch) return false;
+    this.generationActive = false;
+    return true;
   }
 
   private isGenerationStartEvent(eventName: string): boolean {
     return (
+      eventName === 'GENERATION_STARTED' ||
       eventName === 'GENERATE_BEFORE_COMBINE_PROMPTS' ||
       eventName === 'GENERATION_AFTER_COMMANDS'
+    );
+  }
+
+  private isGenerationEndEvent(eventName: string): boolean {
+    return (
+      eventName === 'GENERATION_ENDED' ||
+      eventName === 'GENERATION_STOPPED'
     );
   }
 

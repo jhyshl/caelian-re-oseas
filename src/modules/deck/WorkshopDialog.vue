@@ -17,6 +17,7 @@ import {
 } from '@/player/progression';
 import WorkshopEffectEditor from '@/modules/deck/WorkshopEffectEditor.vue';
 import WorkshopEffectPalette from '@/modules/deck/WorkshopEffectPalette.vue';
+import WorkshopStateResourceBuilder from '@/modules/deck/WorkshopStateResourceBuilder.vue';
 import {
   WORKSHOP_MECHANISM_FORMAT,
   WORKSHOP_SCRIPT_MECHANISM_FORMAT,
@@ -162,6 +163,25 @@ const effectOptions = computed(() => [
     })),
   ),
 ]);
+const workshopResourceOptions = computed(() =>
+  mechanisms.value.flatMap((mechanism) =>
+    mechanism.resources.map((resource) => ({
+      mechanismId: mechanism.id,
+      resourceId: resource.id,
+      label: `${mechanism.name}｜${resource.label}`,
+    })),
+  ),
+);
+const workshopStatusOptions = computed(() =>
+  mechanisms.value.flatMap((mechanism) =>
+    mechanism.statuses.map((status) => ({
+      mechanismId: mechanism.id,
+      statusId: status.id,
+      label: `${mechanism.name}｜${status.label}`,
+      polarity: status.polarity,
+    })),
+  ),
+);
 const maxLevelAttributeBudget = 99 * STAT_POINTS_PER_LEVEL;
 const testAttributeSpent = computed(() => {
   const attributes = testConfig.value.attributes;
@@ -307,7 +327,14 @@ function loadDraft(draft: WorkshopDraft): void {
 
 function addTalent(type: string): void {
   if (editor.value.talent.effects.length >= 4) return;
-  if (editor.value.talent.effects.some((effect) => effect.type === type)) {
+  const customType = [
+    'apply_workshop_status',
+    'workshop_resource_change',
+  ].includes(type);
+  if (
+    !customType &&
+    editor.value.talent.effects.some((effect) => effect.type === type)
+  ) {
     error.value = '每个天赋词条只能添加一次。';
     return;
   }
@@ -324,8 +351,79 @@ function addTalent(type: string): void {
     hand_limit_bonus: 5,
   };
   const effect: EditableEffect = { type };
-  if (type !== 'always_reveal_intent') effect.value = defaults[type] ?? 1;
+  if (type === 'apply_workshop_status') {
+    const option = workshopStatusOptions.value[0];
+    if (!option) {
+      error.value = '请先在扩展中创建一个自定义状态。';
+      return;
+    }
+    Object.assign(effect, {
+      trigger: 'battle_start',
+      target: option.polarity === 'debuff' ? 'all_enemies' : 'self',
+      mechanismId: option.mechanismId,
+      statusId: option.statusId,
+      value: 1,
+      turns: -1,
+    });
+  } else if (type === 'workshop_resource_change') {
+    const option = workshopResourceOptions.value[0];
+    if (!option) {
+      error.value = '请先在扩展中创建一个自定义资源。';
+      return;
+    }
+    Object.assign(effect, {
+      trigger: 'battle_start',
+      target: 'self',
+      mechanismId: option.mechanismId,
+      resourceId: option.resourceId,
+      mode: 'add',
+      value: 1,
+    });
+  } else if (
+    !['always_reveal_intent', 'defense_reflect', 'counterattack'].includes(type)
+  ) {
+    effect.value = defaults[type] ?? 1;
+  }
   editor.value.talent.effects.push(effect);
+  if (
+    typeof effect.mechanismId === 'string' &&
+    !editor.value.mechanismIds.includes(effect.mechanismId)
+  ) {
+    editor.value.mechanismIds.push(effect.mechanismId);
+  }
+  error.value = '';
+}
+
+function talentDefinitionValue(mechanismId: unknown, definitionId: unknown): string {
+  return JSON.stringify([String(mechanismId ?? ''), String(definitionId ?? '')]);
+}
+
+function setTalentDefinition(
+  effect: EditableEffect,
+  kind: 'status' | 'resource',
+  rawValue: string,
+): void {
+  try {
+    const [mechanismId, definitionId] = JSON.parse(rawValue) as [string, string];
+    effect.mechanismId = mechanismId;
+    if (kind === 'status') effect.statusId = definitionId;
+    else effect.resourceId = definitionId;
+    if (!editor.value.mechanismIds.includes(mechanismId)) {
+      editor.value.mechanismIds.push(mechanismId);
+    }
+  } catch {
+    error.value = '自定义状态或资源选项无效，请重新选择。';
+  }
+}
+
+function talentOptionDisabled(type: string): boolean {
+  if (type === 'apply_workshop_status') {
+    return workshopStatusOptions.value.length === 0;
+  }
+  if (type === 'workshop_resource_change') {
+    return workshopResourceOptions.value.length === 0;
+  }
+  return editor.value.talent.effects.some((effect) => effect.type === type);
 }
 
 function addCard(): void {
@@ -412,7 +510,43 @@ function addBuiltEffect(effect: CardEffect): void {
   }
   error.value = '';
   card.effects.push(cloneData(effect) as EditableEffect);
+  if (
+    ['workshop_resource_change', 'apply_workshop_status'].includes(
+      effect.type,
+    ) &&
+    typeof effect.mechanismId === 'string' &&
+    !editor.value.mechanismIds.includes(effect.mechanismId)
+  ) {
+    editor.value.mechanismIds.push(effect.mechanismId);
+  }
   notice.value = '效果积木已加入卡牌，可继续调整它的参数。';
+}
+
+function collectReferencedMechanisms(value: unknown, result = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) {
+    for (const entry of value) collectReferencedMechanisms(entry, result);
+    return result;
+  }
+  if (!value || typeof value !== 'object') return result;
+  const source = value as Record<string, unknown>;
+  if (
+    [
+      'workshop_resource_change',
+      'spend_workshop_resource',
+      'apply_workshop_status',
+    ].includes(
+      String(source.type ?? ''),
+    ) &&
+    typeof source.mechanismId === 'string'
+  ) {
+    result.add(source.mechanismId);
+  }
+  for (const child of Object.values(source)) {
+    if (child && typeof child === 'object') {
+      collectReferencedMechanisms(child, result);
+    }
+  }
+  return result;
 }
 
 async function validateCard(): Promise<void> {
@@ -469,6 +603,13 @@ async function publishProfession(): Promise<void> {
   error.value = '';
   notice.value = '';
   try {
+    editor.value.mechanismIds = [
+      ...new Set([
+        ...editor.value.mechanismIds,
+        ...collectReferencedMechanisms(editor.value.cards),
+        ...collectReferencedMechanisms(editor.value.talent.effects),
+      ]),
+    ];
     if (editor.value.cards.length < 8 || editor.value.cards.length > 16) {
       throw new Error('职业包需要 8–16 种不同名称的可配置卡牌。');
     }
@@ -537,6 +678,17 @@ function removeMechanism(mechanism: WorkshopMechanismManifest): void {
   if (deleteWorkshopMechanism(mechanism.id)) {
     mechanisms.value = readWorkshopMechanisms();
     notice.value = `底层机制「${mechanism.name}」已删除。`;
+  }
+}
+
+function saveVisualMechanism(mechanism: WorkshopMechanismManifest): void {
+  error.value = '';
+  try {
+    const saved = saveWorkshopMechanism(mechanism);
+    mechanisms.value = readWorkshopMechanisms();
+    notice.value = `自定义${saved.statuses.length ? '状态' : '资源'}「${saved.name}」已保存，可在职业天赋与卡牌中启用。`;
+  } catch (caught) {
+    error.value = caught instanceof Error ? caught.message : String(caught);
   }
 }
 
@@ -830,6 +982,7 @@ async function startWorkshopTest(): Promise<void> {
               代码只接收本场战斗快照并返回受控战斗指令，不能读取聊天记录、存档、变量管理器、页面或网络。
             </p>
           </div>
+          <WorkshopStateResourceBuilder @save="saveVisualMechanism" />
           <div v-if="extensions.length + mechanisms.length === 0" class="workshop-empty">
             尚未安装扩展。下载指导手册即可查看完整格式、示例和强度限制。
           </div>
@@ -846,6 +999,7 @@ async function startWorkshopTest(): Promise<void> {
               <h3>{{ mechanism.name }}</h3>
               <p>{{ mechanism.description || '未填写机制说明' }}</p>
               <small>
+                {{ mechanism.statuses.length }} 个状态 ·
                 {{ mechanism.resources.length }} 个资源 ·
                 <template v-if="isWorkshopScriptMechanism(mechanism)">
                   {{ mechanism.triggers?.length ?? 0 }} 个触发器 · 沙箱执行
@@ -1024,7 +1178,7 @@ async function startWorkshopTest(): Promise<void> {
                 ></textarea>
               </label>
               <fieldset v-if="mechanisms.length" class="wide mechanism-links">
-                <legend>启用底层机制</legend>
+                <legend>启用天赋 / 自定义状态与资源</legend>
                 <label v-for="mechanism in mechanisms" :key="mechanism.id">
                   <input
                     v-model="editor.mechanismIds"
@@ -1038,7 +1192,13 @@ async function startWorkshopTest(): Promise<void> {
             <div class="talent-effects">
               <div
                 v-for="(effect, index) in editor.talent.effects"
-                :key="effect.type"
+                :key="`${effect.type}:${index}`"
+                :class="{
+                  'custom-talent': [
+                    'apply_workshop_status',
+                    'workshop_resource_change',
+                  ].includes(effect.type),
+                }"
               >
                 <strong>
                   {{
@@ -1047,8 +1207,134 @@ async function startWorkshopTest(): Promise<void> {
                     )?.[1]
                   }}
                 </strong>
+                <template v-if="effect.type === 'apply_workshop_status'">
+                  <label>
+                    <span>自定义状态</span>
+                    <select
+                      :value="
+                        talentDefinitionValue(
+                          effect.mechanismId,
+                          effect.statusId,
+                        )
+                      "
+                      @change="
+                        setTalentDefinition(
+                          effect,
+                          'status',
+                          ($event.target as HTMLSelectElement).value,
+                        )
+                      "
+                    >
+                      <option
+                        v-for="option in workshopStatusOptions"
+                        :key="`${option.mechanismId}:${option.statusId}`"
+                        :value="
+                          talentDefinitionValue(
+                            option.mechanismId,
+                            option.statusId,
+                          )
+                        "
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>施加目标</span>
+                    <select v-model="effect.target">
+                      <option value="self">自身</option>
+                      <option value="all_enemies">全体敌人</option>
+                      <option value="all_summons">全体召唤物</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>层数</span>
+                    <input
+                      v-model.number="effect.value"
+                      type="number"
+                      min="1"
+                      max="10"
+                      step="1"
+                    />
+                  </label>
+                  <label>
+                    <span>持续回合（-1 = 整场）</span>
+                    <input
+                      v-model.number="effect.turns"
+                      type="number"
+                      min="-1"
+                      max="99"
+                      step="1"
+                    />
+                  </label>
+                </template>
+                <template v-else-if="effect.type === 'workshop_resource_change'">
+                  <label>
+                    <span>自定义资源</span>
+                    <select
+                      :value="
+                        talentDefinitionValue(
+                          effect.mechanismId,
+                          effect.resourceId,
+                        )
+                      "
+                      @change="
+                        setTalentDefinition(
+                          effect,
+                          'resource',
+                          ($event.target as HTMLSelectElement).value,
+                        )
+                      "
+                    >
+                      <option
+                        v-for="option in workshopResourceOptions"
+                        :key="`${option.mechanismId}:${option.resourceId}`"
+                        :value="
+                          talentDefinitionValue(
+                            option.mechanismId,
+                            option.resourceId,
+                          )
+                        "
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>触发时机</span>
+                    <select v-model="effect.trigger">
+                      <option value="battle_start">战斗开始</option>
+                      <option value="turn_start">每回合开始</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>变动方式</span>
+                    <select v-model="effect.mode">
+                      <option value="add">增加 / 减少</option>
+                      <option value="set">设为指定值</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>数值（可为负数）</span>
+                    <input
+                      v-model.number="effect.value"
+                      type="number"
+                      min="-999999"
+                      max="999999"
+                      step="1"
+                    />
+                  </label>
+                </template>
                 <input
-                  v-if="effect.type !== 'always_reveal_intent'"
+                  v-else-if="
+                    ![
+                      'always_reveal_intent',
+                      'defense_reflect',
+                      'counterattack',
+                      'apply_workshop_status',
+                      'workshop_resource_change',
+                    ].includes(effect.type)
+                  "
                   v-model.number="effect.value"
                   type="number"
                   min="0"
@@ -1074,9 +1360,7 @@ async function startWorkshopTest(): Promise<void> {
                   v-for="[type, label] in WORKSHOP_TALENT_OPTIONS"
                   :key="type"
                   :value="type"
-                  :disabled="
-                    editor.talent.effects.some((effect) => effect.type === type)
-                  "
+                  :disabled="talentOptionDisabled(type)"
                 >
                   {{ label }}
                 </option>
@@ -1170,11 +1454,15 @@ async function startWorkshopTest(): Promise<void> {
                   v-for="(effect, index) in activeCard.effects"
                   :key="`${effect.type}:${index}`"
                   :effect="effect"
+                  :resource-options="workshopResourceOptions"
+                  :status-options="workshopStatusOptions"
                   @remove="activeCard.effects.splice(index, 1)"
                 />
                 <WorkshopEffectPalette
                   :card-type="activeCard.type"
                   :disabled="activeCard.effects.length >= 8"
+                  :resource-options="workshopResourceOptions"
+                  :status-options="workshopStatusOptions"
                   @add="addBuiltEffect"
                 />
                 <select
@@ -1631,6 +1919,33 @@ output.over {
   padding: 7px;
   border: 1px solid var(--ca-border);
   border-radius: 8px;
+}
+
+.talent-effects > div.custom-talent {
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  align-items: end;
+}
+
+.custom-talent > strong {
+  flex-basis: 100%;
+}
+
+.custom-talent label {
+  display: grid;
+  min-width: 120px;
+  flex: 1 1 140px;
+  gap: 3px;
+}
+
+.custom-talent label > span {
+  color: var(--ca-muted);
+  font-size: 8px;
+}
+
+.talent-effects .custom-talent input,
+.talent-effects .custom-talent select {
+  width: 100%;
 }
 
 .talent-effects strong {

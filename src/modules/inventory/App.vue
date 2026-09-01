@@ -20,24 +20,45 @@ import {
   isBattleUsableEffect,
   isInventoryUsableEffect,
 } from '@/battle/consumables';
+import { isCookingMaterial, isDish } from '@/content/cooking';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
 const items = ref<Record<string, BattleItemDefinition>>({});
 const relics = ref<Record<string, RelicDefinition>>({});
-const tab = ref<'items' | 'consumables' | 'equipment' | 'relics'>('items');
+const tab = ref<'items' | 'consumables' | 'cooking' | 'equipment' | 'relics'>('items');
 const notice = ref('');
 const noticeTone = ref<'error' | 'success'>('error');
 const disposers: Array<() => void> = [];
 
 const itemInventory = computed(() =>
   (snapshot.value?.inventory ?? []).filter(
-    (stack) => !itemDefinition(stack.itemId, stack.name)?.effect,
+    (stack) =>
+      !isCookingMaterial(stack.itemId) &&
+      !isCookingMaterial(stack.name) &&
+      !isDish(stack.itemId) &&
+      !isDish(stack.name) &&
+      !itemDefinition(stack.itemId, stack.name)?.effect,
   ),
 );
 const consumableInventory = computed(() =>
+  (snapshot.value?.inventory ?? []).filter(
+    (stack) =>
+      !isCookingMaterial(stack.itemId) &&
+      !isCookingMaterial(stack.name) &&
+      !isDish(stack.itemId) &&
+      !isDish(stack.name) &&
+      Boolean(itemDefinition(stack.itemId, stack.name)?.effect),
+  ),
+);
+const cookingMaterials = computed(() =>
   (snapshot.value?.inventory ?? []).filter((stack) =>
-    Boolean(itemDefinition(stack.itemId, stack.name)?.effect),
+    isCookingMaterial(stack.itemId) || isCookingMaterial(stack.name),
+  ),
+);
+const dishes = computed(() =>
+  (snapshot.value?.inventory ?? []).filter(
+    (stack) => isDish(stack.itemId) || isDish(stack.name),
   ),
 );
 
@@ -255,6 +276,9 @@ onUnmounted(() => {
         >
           消耗品 {{ consumableInventory.length }}
         </button>
+        <button :class="{ active: tab === 'cooking' }" @click="tab = 'cooking'">
+          料理 {{ cookingMaterials.length + dishes.length }}
+        </button>
         <button
           :class="{ active: tab === 'equipment' }"
           @click="tab = 'equipment'"
@@ -341,6 +365,35 @@ onUnmounted(() => {
               战斗中从战斗背包使用
             </small>
             <small v-else>暂不支持直接使用</small>
+          </article>
+        </div>
+      </section>
+
+      <section v-else-if="tab === 'cooking'" class="ca-section">
+        <h2 class="ca-section-title">料理</h2>
+        <p class="relic-note">料理可以赠送凯利安或投喂特莱奥；料理材料只能投喂特莱奥。</p>
+        <h3>成品料理</h3>
+        <div v-if="dishes.length === 0" class="ca-empty">暂时没有成品料理</div>
+        <div v-else class="item-grid">
+          <article v-for="stack in dishes" :key="stack.id">
+            <i>♨</i>
+            <div>
+              <strong>{{ stack.name }}</strong>
+              <span>{{ itemDefinition(stack.itemId, stack.name)?.desc }}</span>
+            </div>
+            <b>×{{ stack.quantity }}</b>
+          </article>
+        </div>
+        <h3>料理材料</h3>
+        <div v-if="cookingMaterials.length === 0" class="ca-empty">暂时没有料理材料</div>
+        <div v-else class="item-grid">
+          <article v-for="stack in cookingMaterials" :key="stack.id">
+            <i>◇</i>
+            <div>
+              <strong>{{ stack.name }}</strong>
+              <span>{{ itemDefinition(stack.itemId, stack.name)?.desc }}</span>
+            </div>
+            <b>×{{ stack.quantity }}</b>
           </article>
         </div>
       </section>

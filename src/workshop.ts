@@ -101,6 +101,16 @@ export interface WorkshopExtensionApi {
 type UnknownRecord = Record<string, unknown>;
 type Amount = number | 'all';
 
+export const WORKSHOP_SCALING_STATS = [
+  ['hp', '当前生命值'],
+  ['attack', '攻击力'],
+  ['shield', '当前护盾值'],
+  ['defense', '防御力'],
+  ['mp', '当前魔力'],
+] as const;
+
+type WorkshopScalingStat = (typeof WORKSHOP_SCALING_STATS)[number][0];
+
 const TARGET_MULTIPLIERS: Record<string, number> = {
   all_enemies: 1.6,
   all_allies: 1.5,
@@ -122,6 +132,8 @@ const ALLOWED_BUFFS = [
   'damage_reduce',
   'mp_regen',
   'blood_burn',
+  'defense_reflect',
+  'counterattack',
 ];
 const ALLOWED_DEBUFFS = [
   'burn',
@@ -162,6 +174,8 @@ const VALID_CARD_EFFECT_TYPES = new Set([
   'summon',
   'conditional_bonus',
   'conditional_group',
+  'workshop_resource_change',
+  'apply_workshop_status',
 ]);
 const TALENT_LIMITS: Record<
   string,
@@ -178,6 +192,8 @@ const TALENT_LIMITS: Record<
   turn_start_cleanse: { min: 1, max: 1, defaultValue: 1 },
   turn_start_debuff_shield: { min: 0, max: 8, defaultValue: 2 },
   hand_limit_bonus: { min: 0, max: 5, defaultValue: 5 },
+  defense_reflect: { min: 0, max: 0, defaultValue: 0 },
+  counterattack: { min: 0, max: 0, defaultValue: 0 },
 };
 const CONDITION_DISCOUNTS: Record<string, number> = {
   self_has_shield: 0.86,
@@ -200,6 +216,7 @@ const CONDITION_DISCOUNTS: Record<string, number> = {
   spend_hp: 0.9,
   discard: 0.78,
   destroy_summon: 0.62,
+  spend_workshop_resource: 0.72,
 };
 
 export const WORKSHOP_EFFECT_OPTIONS = [
@@ -229,6 +246,24 @@ export const WORKSHOP_EFFECT_OPTIONS = [
   { type: 'spend_mp_shield', label: '消耗 MP 获得护盾', value: 3, amount: 3, target: 'self' },
   { type: 'mp_to_ap', label: 'MP 转换 AP', value: 1, amount: 6, target: 'self' },
   { type: 'reveal_intent', label: '洞察敌人意图', target: 'self' },
+  {
+    type: 'workshop_resource_change',
+    label: '增减自定义资源',
+    mechanismId: '',
+    resourceId: '',
+    mode: 'add',
+    value: 1,
+    target: 'self',
+  },
+  {
+    type: 'apply_workshop_status',
+    label: '施加自定义状态',
+    mechanismId: '',
+    statusId: '',
+    value: 1,
+    turns: 2,
+    target: 'self',
+  },
   {
     type: 'conditional_group',
     label: '条件效果组',
@@ -267,6 +302,10 @@ export const WORKSHOP_TALENT_OPTIONS = [
   ['turn_start_cleanse', '回合开始净化'],
   ['turn_start_debuff_shield', '有减益时回合开始获得护盾'],
   ['hand_limit_bonus', '手牌上限提高'],
+  ['defense_reflect', '防反：按护盾与防御反伤'],
+  ['counterattack', '反击：受击后造成10%攻击力伤害'],
+  ['apply_workshop_status', '战斗开始施加自定义状态'],
+  ['workshop_resource_change', '自定义资源变动'],
 ] as const;
 
 function record(value: unknown): UnknownRecord {
@@ -339,6 +378,7 @@ function normalizeTarget(effect: UnknownRecord, type: string): string {
     'spend_mp_shield',
     'generate_blank_to_draw',
     'blank_regen',
+    'workshop_resource_change',
   ]);
   const target = String(
     effect.target ??
@@ -350,6 +390,11 @@ function normalizeTarget(effect: UnknownRecord, type: string): string {
   );
   const enemyTargets = ['enemy', 'all_enemies', 'random_enemy'];
   const allyTargets = ['self', 'all_allies', 'random_allies', 'selected_allies'];
+  const summonTargets = [
+    'all_summons',
+    'random_summons',
+    'selected_summons',
+  ];
   const targetRules: Record<string, string[]> = {
     damage: enemyTargets,
     spend_mp_damage: enemyTargets,
@@ -357,7 +402,7 @@ function normalizeTarget(effect: UnknownRecord, type: string): string {
     damage_from_shield: enemyTargets,
     damage_per_debuff: enemyTargets,
     discard_blank_damage: enemyTargets,
-    strip_shield: enemyTargets,
+    strip_shield: [...enemyTargets, ...allyTargets, ...summonTargets],
     strip_buffs: enemyTargets,
     dispel: enemyTargets,
     shield: allyTargets,
@@ -366,6 +411,11 @@ function normalizeTarget(effect: UnknownRecord, type: string): string {
     apply_buff: allyTargets,
     cleanse: allyTargets,
     apply_debuff: [...enemyTargets, ...allyTargets],
+    apply_workshop_status: [
+      ...enemyTargets,
+      ...allyTargets,
+      ...summonTargets,
+    ],
     destroy_summon: [
       'all_summons',
       'random_summons',
@@ -381,6 +431,17 @@ function normalizeTarget(effect: UnknownRecord, type: string): string {
       : 'enemy';
 }
 
+function normalizeScaling(value: unknown):
+  | { stat: WorkshopScalingStat; percent: number }
+  | undefined {
+  const source = record(value);
+  const stat = String(source.stat ?? '') as WorkshopScalingStat;
+  if (!WORKSHOP_SCALING_STATS.some(([key]) => key === stat)) return undefined;
+  const percent = clamp(source.percent, 0, 200);
+  if (percent <= 0) return undefined;
+  return { stat, percent };
+}
+
 function normalizeCondition(value: unknown): CardEffect | undefined {
   const source = record(value);
   const type = String(source.type ?? source.condition ?? '');
@@ -390,6 +451,16 @@ function normalizeCondition(value: unknown): CardEffect | undefined {
     type,
     discount: clamp(source.discount, 0.1, 1, baseDiscount),
   };
+  if (type === 'spend_workshop_resource') {
+    const mechanismId = extensionId(source.mechanismId, '');
+    const resourceId = extensionId(source.resourceId, '');
+    if (!mechanismId || !resourceId) return undefined;
+    result.mechanismId = mechanismId;
+    result.resourceId = resourceId;
+    result.amount = amount(source.amount ?? source.value, 1);
+    result.value = result.amount === 'all' ? 99 : result.amount;
+    return result;
+  }
   if (type.includes('specific_debuff')) {
     const debuff = String(source.debuff ?? '');
     if (!ALLOWED_DEBUFFS.includes(debuff)) return undefined;
@@ -480,6 +551,32 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
   const source = record(value);
   const type = String(source.type ?? '').trim();
   if (!VALID_CARD_EFFECT_TYPES.has(type)) return undefined;
+  if (type === 'workshop_resource_change') {
+    const mechanismId = extensionId(source.mechanismId, '');
+    const resourceId = extensionId(source.resourceId, '');
+    if (!mechanismId || !resourceId) return undefined;
+    return {
+      type,
+      target: 'self',
+      mechanismId,
+      resourceId,
+      mode: source.mode === 'set' ? 'set' : 'add',
+      value: clamp(source.value, -999_999, 999_999),
+    };
+  }
+  if (type === 'apply_workshop_status') {
+    const mechanismId = extensionId(source.mechanismId, '');
+    const statusId = extensionId(source.statusId, '');
+    if (!mechanismId || !statusId) return undefined;
+    return {
+      type,
+      target: normalizeTarget(source, type),
+      mechanismId,
+      statusId,
+      value: clamp(source.value, 1, 10, 1),
+      turns: clamp(source.turns, 1, 99, 2),
+    };
+  }
   if (type === 'summon') return normalizeSummon(source);
   if (type === 'conditional_group') {
     const conditions = (Array.isArray(source.conditions)
@@ -569,7 +666,9 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
     if (!ALLOWED_BUFFS.includes(buff)) return undefined;
     result.buff = buff;
     result.turns = clamp(source.turns, 1, 99, 1);
-    result.value = clamp(source.value, 0, 999999, 1);
+    result.value = ['defense_reflect', 'counterattack'].includes(buff)
+      ? 1
+      : clamp(source.value, 0, 999999, 1);
   }
   if (type === 'apply_debuff') {
     const debuff = String(source.debuff ?? '');
@@ -621,12 +720,54 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
       result.ratio = clamp(source.ratio ?? source.bonus, 0, 999999, 10);
     }
   }
+  if (
+    typeof result.value === 'number' &&
+    !(
+      type === 'apply_buff' &&
+      ['defense_reflect', 'counterattack'].includes(String(result.buff))
+    )
+  ) {
+    const scaling = normalizeScaling(source.scaling);
+    if (scaling) result.scaling = scaling;
+  }
   return result;
 }
 
 export function normalizeTalentEffect(value: unknown): CardEffect | undefined {
   const source = record(value);
   const type = String(source.type ?? '');
+  if (type === 'apply_workshop_status') {
+    const mechanismId = extensionId(source.mechanismId, '');
+    const statusId = extensionId(source.statusId, '');
+    if (!mechanismId || !statusId) return undefined;
+    const target = String(source.target ?? 'self');
+    const rawTurns = source.turns === undefined ? -1 : number(source.turns, -1);
+    return {
+      type,
+      trigger: 'battle_start',
+      target: ['self', 'all_enemies', 'all_summons'].includes(target)
+        ? target
+        : 'self',
+      mechanismId,
+      statusId,
+      value: clamp(source.value, 1, 10, 1),
+      turns: rawTurns === -1 ? -1 : clamp(rawTurns, 1, 99, 1),
+    };
+  }
+  if (type === 'workshop_resource_change') {
+    const mechanismId = extensionId(source.mechanismId, '');
+    const resourceId = extensionId(source.resourceId, '');
+    if (!mechanismId || !resourceId) return undefined;
+    return {
+      type,
+      trigger: source.trigger === 'turn_start' ? 'turn_start' : 'battle_start',
+      target: 'self',
+      mechanismId,
+      resourceId,
+      mode: source.mode === 'set' ? 'set' : 'add',
+      value: clamp(source.value, -999_999, 999_999),
+    };
+  }
   const rule = TALENT_LIMITS[type];
   if (!rule) return undefined;
   const effect: CardEffect = { type };
@@ -648,6 +789,32 @@ function effectUniqueKey(effect: CardEffect): string {
   }
   if (effect.type === 'conditional_bonus') {
     return `conditional_bonus:${effect.condition ?? ''}:${effect.debuff ?? ''}`;
+  }
+  if (effect.type === 'workshop_resource_change') {
+    return `${effect.type}:${effect.mechanismId ?? ''}:${effect.resourceId ?? ''}`;
+  }
+  if (effect.type === 'apply_workshop_status') {
+    return `${effect.type}:${effect.mechanismId ?? ''}:${effect.statusId ?? ''}`;
+  }
+  return effect.type;
+}
+
+function talentEffectUniqueKey(effect: CardEffect): string {
+  if (effect.type === 'apply_workshop_status') {
+    return [
+      effect.type,
+      effect.mechanismId ?? '',
+      effect.statusId ?? '',
+      effect.target ?? 'self',
+    ].join(':');
+  }
+  if (effect.type === 'workshop_resource_change') {
+    return [
+      effect.type,
+      effect.mechanismId ?? '',
+      effect.resourceId ?? '',
+      effect.trigger ?? 'battle_start',
+    ].join(':');
   }
   return effect.type;
 }
@@ -699,7 +866,15 @@ function summonExpectedTurns(hpRatio: number): number {
 }
 
 function singleEffectScore(effect: CardEffect): number {
-  const value = number(effect.value);
+  const scaling = record(effect.scaling);
+  const scalingStat = String(scaling.stat ?? '');
+  const scalingPercent = clamp(scaling.percent, 0, 200);
+  const scalingValue =
+    scalingPercent *
+    ({ hp: 0.4, attack: 0.55, shield: 0.3, defense: 0.4, mp: 0.25 }[
+      scalingStat
+    ] ?? 0);
+  const value = number(effect.value) + scalingValue;
   const turns = Math.max(1, number(effect.turns, 1));
   const multiplier = targetMultiplier(effect);
   switch (effect.type) {
@@ -763,6 +938,8 @@ function singleEffectScore(effect: CardEffect): number {
           damage_reduce: 4,
           mp_regen: 1.2,
           blood_burn: 3,
+          defense_reflect: 14,
+          counterattack: 8,
         }[String(effect.buff)] ?? 5;
       return (
         perTurn *
@@ -836,6 +1013,11 @@ function singleEffectScore(effect: CardEffect): number {
       ).reduce((sum, child) => sum + singleEffectScore(child), 0);
       return Math.max(thenScore * number(effect.discount, 1), elseScore);
     }
+    case 'workshop_resource_change':
+      return Math.abs(number(effect.value)) * 1.5;
+    case 'apply_workshop_status':
+      return Math.max(1, number(effect.value, 1)) *
+        Math.max(1, number(effect.turns, 1)) * 5;
     case 'conditional_bonus':
       if (
         ['bonus_by_lost_hp_ratio', 'bonus_by_max_hp_ratio'].includes(
@@ -878,6 +1060,16 @@ export function rarityFromScore(score: number): string {
 export function talentScore(effects: CardEffect[]): number {
   return effects.reduce((score, effect) => {
     const value = number(effect.value);
+    if (effect.type === 'apply_workshop_status') {
+      const turns = number(effect.turns, -1);
+      const durationWeight = turns === -1 ? 2 : Math.min(2, 0.5 + turns * 0.3);
+      return score + Math.max(1, value) * 3 * durationWeight;
+    }
+    if (effect.type === 'workshop_resource_change') {
+      const triggerWeight = effect.trigger === 'turn_start' ? 1.5 : 0.75;
+      const modeWeight = effect.mode === 'set' ? 1.2 : 1;
+      return score + Math.min(24, Math.abs(value) * triggerWeight * modeWeight);
+    }
     if (effect.type === 'battle_start_shield') return score + value * 0.7;
     if (effect.type === 'turn_start_heal') return score + value * 4;
     if (effect.type === 'attack_bonus') return score + value * 4;
@@ -893,6 +1085,8 @@ export function talentScore(effects: CardEffect[]): number {
       return score + value * 1.2;
     }
     if (effect.type === 'hand_limit_bonus') return score + value * 3;
+    if (effect.type === 'defense_reflect') return score + 14;
+    if (effect.type === 'counterattack') return score + 10;
     return score + 6;
   }, 0);
 }
@@ -996,12 +1190,13 @@ export function normalizeWorkshopClass(
     });
   const talentTypes = new Set<string>();
   for (const effect of talentEffects) {
-    if (talentTypes.has(effect.type)) {
+    const key = talentEffectUniqueKey(effect);
+    if (talentTypes.has(key)) {
       throw new Error(
         `职业「${name}」的天赋效果「${effect.type}」重复。每个天赋词条只能添加一次。`,
       );
     }
-    talentTypes.add(effect.type);
+    talentTypes.add(key);
   }
   const talentPower = talentScore(talentEffects);
   if (talentPower > 24) {
@@ -1101,6 +1296,106 @@ export function normalizeWorkshopClass(
   };
 }
 
+function workshopResourceReferences(
+  value: unknown,
+  result: Array<{ mechanismId: string; resourceId: string }> = [],
+): Array<{ mechanismId: string; resourceId: string }> {
+  if (Array.isArray(value)) {
+    for (const entry of value) workshopResourceReferences(entry, result);
+    return result;
+  }
+  if (!value || typeof value !== 'object') return result;
+  const source = value as UnknownRecord;
+  if (
+    ['workshop_resource_change', 'spend_workshop_resource'].includes(
+      String(source.type ?? ''),
+    )
+  ) {
+    result.push({
+      mechanismId: String(source.mechanismId ?? ''),
+      resourceId: String(source.resourceId ?? ''),
+    });
+  }
+  for (const child of Object.values(source)) {
+    if (child && typeof child === 'object') {
+      workshopResourceReferences(child, result);
+    }
+  }
+  return result;
+}
+
+function workshopStatusReferences(
+  value: unknown,
+  result: Array<{ mechanismId: string; statusId: string }> = [],
+): Array<{ mechanismId: string; statusId: string }> {
+  if (Array.isArray(value)) {
+    for (const entry of value) workshopStatusReferences(entry, result);
+    return result;
+  }
+  if (!value || typeof value !== 'object') return result;
+  const source = value as UnknownRecord;
+  if (source.type === 'apply_workshop_status') {
+    result.push({
+      mechanismId: String(source.mechanismId ?? ''),
+      statusId: String(source.statusId ?? ''),
+    });
+  }
+  for (const child of Object.values(source)) {
+    if (child && typeof child === 'object') {
+      workshopStatusReferences(child, result);
+    }
+  }
+  return result;
+}
+
+function validateWorkshopResourceReferences(
+  classes: WorkshopClass[],
+  bundled: WorkshopMechanismManifest[],
+): void {
+  const manifests = new Map(
+    [...readWorkshopMechanisms(), ...bundled].map((entry) => [entry.id, entry]),
+  );
+  for (const profession of classes) {
+    const enabled = new Set(profession.mechanismIds ?? []);
+    for (const reference of workshopResourceReferences({
+      cards: profession.cards,
+      talent: profession.talent.effects,
+    })) {
+      if (!enabled.has(reference.mechanismId)) {
+        throw new Error(
+          `职业「${profession.name}」没有启用卡牌或天赋引用的机制 ${reference.mechanismId}。`,
+        );
+      }
+      const manifest = manifests.get(reference.mechanismId);
+      if (
+        !manifest?.resources.some(
+          (resource) => resource.id === reference.resourceId,
+        )
+      ) {
+        throw new Error(
+          `职业「${profession.name}」引用了不存在的自定义资源 ${reference.resourceId}。`,
+        );
+      }
+    }
+    for (const reference of workshopStatusReferences({
+      cards: profession.cards,
+      talent: profession.talent.effects,
+    })) {
+      if (!enabled.has(reference.mechanismId)) {
+        throw new Error(
+          `职业「${profession.name}」没有启用卡牌或天赋引用的状态机制 ${reference.mechanismId}。`,
+        );
+      }
+      const manifest = manifests.get(reference.mechanismId);
+      if (!manifest?.statuses.some((status) => status.id === reference.statusId)) {
+        throw new Error(
+          `职业「${profession.name}」引用了不存在的自定义状态 ${reference.statusId}。`,
+        );
+      }
+    }
+  }
+}
+
 export function normalizeWorkshopPack(value: unknown): WorkshopPack {
   const source = record(value);
   const classesSource = Array.isArray(source.classes)
@@ -1118,6 +1413,7 @@ export function normalizeWorkshopPack(value: unknown): WorkshopPack {
   const uniqueMechanisms = [
     ...new Map(mechanisms.map((entry) => [entry.id, entry])).values(),
   ];
+  validateWorkshopResourceReferences(classes, uniqueMechanisms);
   return {
     format: WORKSHOP_FORMAT,
     version: 1,

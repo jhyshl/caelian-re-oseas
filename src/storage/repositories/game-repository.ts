@@ -47,7 +47,7 @@ import { relationshipStage } from '@/mvu/contracts';
 type CommandApplicationResult = Pick<
   SocialInteractionOutcome,
   'message' | 'prompt' | 'affinityChanged'
->;
+> & { data?: unknown };
 
 export class GameRepository {
   private readonly profiles: ProfileRepository;
@@ -77,11 +77,13 @@ export class GameRepository {
     this.cards = new CardRepository(db);
     this.crafting = new CraftingRepository(db);
     this.guild = new GuildRepository(db);
-    this.battles = new BattleRepository(db);
+    this.battles = new BattleRepository(db, dependencies.random);
     this.narrative = new NarrativeRepository(db);
     this.achievements = new AchievementRepository(db, events);
-    this.market = new MarketRepository(db);
-    this.gathering = new GatheringRepository(db);
+    this.market = new MarketRepository(db, undefined, dependencies.random);
+    this.gathering = new GatheringRepository(db, {
+      random: dependencies.random,
+    });
     this.socialInteractions = new SocialInteractionRepository(
       db,
       dependencies.random,
@@ -115,6 +117,7 @@ export class GameRepository {
       regionAccess,
       storyFlags,
       social,
+      trelao,
       guild,
       quests,
       questHistory,
@@ -137,6 +140,7 @@ export class GameRepository {
       this.db.regionAccess.where('profileId').equals(profileId).toArray(),
       this.db.storyFlags.where('profileId').equals(profileId).toArray(),
       this.db.socialProgress.get(`${profileId}:caelian`),
+      this.db.socialProgress.get(`${profileId}:trelao`),
       this.db.guildStates.get(profileId),
       this.db.questRecords.where('profileId').equals(profileId).toArray(),
       this.db.questHistory.where('profileId').equals(profileId).toArray(),
@@ -165,6 +169,7 @@ export class GameRepository {
       !statAllocations ||
       !world ||
       !social ||
+      !trelao ||
       !guild ||
       !loadout ||
       !settings
@@ -185,6 +190,7 @@ export class GameRepository {
         ),
         relationshipStage: relationshipStage(social.affinity),
       },
+      trelao,
       guild,
       quests,
       questHistory,
@@ -231,7 +237,7 @@ export class GameRepository {
     if (command.type.startsWith('market.')) {
       await this.market.prepare();
     }
-    if (command.type.startsWith('gather.')) {
+    if (command.type.startsWith('gather.') || command.type.startsWith('hunt.')) {
       await this.gathering.prepare();
     }
     if (command.type === 'social.interact') {
@@ -617,6 +623,8 @@ export class GameRepository {
         );
       case 'gather.collect':
         return this.gathering.collect(profileId, command.payload);
+      case 'hunt.attempt':
+        return this.gathering.hunt(profileId, command.payload.animalId);
       case 'battle.start':
         return this.battles.start(profileId, command.payload);
       case 'battle.explore':

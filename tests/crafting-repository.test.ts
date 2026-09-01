@@ -1,4 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { loadGatherResources } from '@/content/catalogs/inventory';
+import {
+  COOKING_DISHES,
+  COOKING_MATERIALS,
+  COOKING_RECIPES,
+} from '@/content/cooking';
 import type { EquipmentInstanceRecord } from '@/domain/types';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
@@ -50,6 +56,86 @@ afterEach(async () => {
 });
 
 describe('CraftingRepository integration', () => {
+  it('料理配方全部使用 2 至 6 种已知材料，每种消耗 1 至 5 个', async () => {
+    const gatherResources = await loadGatherResources();
+    const outputIds = new Set<string>();
+
+    expect(COOKING_RECIPES).toHaveLength(20);
+    for (const recipe of COOKING_RECIPES) {
+      const ingredients = Object.entries(recipe.inputs);
+      expect(ingredients.length).toBeGreaterThanOrEqual(2);
+      expect(ingredients.length).toBeLessThanOrEqual(6);
+      expect(recipe.count).toBe(1);
+      expect(recipe.category).toBe('料理');
+      expect(COOKING_DISHES[recipe.output]).toBeDefined();
+      expect(outputIds.has(recipe.output)).toBe(false);
+      outputIds.add(recipe.output);
+
+      for (const [ingredient, quantity] of ingredients) {
+        expect(Number.isInteger(quantity)).toBe(true);
+        expect(quantity).toBeGreaterThanOrEqual(1);
+        expect(quantity).toBeLessThanOrEqual(5);
+        expect(
+          COOKING_MATERIALS[ingredient] ?? gatherResources[ingredient],
+        ).toBeDefined();
+      }
+    }
+    expect(outputIds).toEqual(new Set(Object.keys(COOKING_DISHES)));
+  });
+
+  it('批量制作料理会按配方消耗六种材料并只产出指定份数', async () => {
+    const { repository } = setup();
+    const profile = await repository.ensureProfile('craft-cooking-recipe');
+    const recipe = COOKING_RECIPES.find(
+      (entry) => entry.id === 'cook_harvest_stew',
+    );
+    expect(recipe).toBeDefined();
+    expect(Object.keys(recipe!.inputs)).toHaveLength(6);
+
+    for (const [material, perCraft] of Object.entries(recipe!.inputs)) {
+      await repository.execute(profile.id, {
+        id: `grant-cooking:${material}`,
+        type: 'inventory.adjust',
+        payload: {
+          itemId: material,
+          name: material,
+          delta: perCraft * 2 + 1,
+        },
+      });
+    }
+
+    const command = {
+      id: 'craft-two-harvest-stews',
+      type: 'craft.item',
+      payload: { recipeId: recipe!.id, count: 2 },
+    } as const;
+    await expect(repository.execute(profile.id, command)).resolves.toMatchObject({
+      status: 'applied',
+    });
+
+    const after = await repository.snapshot(profile.id);
+    for (const material of Object.keys(recipe!.inputs)) {
+      expect(
+        after.inventory.find((stack) => stack.itemId === material),
+      ).toMatchObject({ quantity: 1 });
+    }
+    expect(
+      after.inventory.find((stack) => stack.itemId === recipe!.output),
+    ).toMatchObject({
+      name: recipe!.output,
+      quantity: 2,
+    });
+
+    await expect(repository.execute(profile.id, command)).resolves.toMatchObject({
+      status: 'duplicate',
+    });
+    expect(
+      (await repository.snapshot(profile.id)).inventory.find(
+        (stack) => stack.itemId === recipe!.output,
+      ),
+    ).toMatchObject({ quantity: 2 });
+  });
+
   it('按库存批量合成，并用命令 ID 保证幂等', async () => {
     const { repository } = setup();
     const profile = await repository.ensureProfile('craft-items');

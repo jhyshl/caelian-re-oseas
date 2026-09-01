@@ -13,6 +13,8 @@ export type WorkshopMechanismTrigger =
   | 'before_card'
   | 'after_card'
   | 'before_damage'
+  | 'before_debuff'
+  | 'resource_changed'
   | 'before_enemy_turn'
   | 'after_enemy_turn'
   | 'player_damaged'
@@ -78,12 +80,15 @@ export interface WorkshopMechanismAction {
     | 'gain_mp'
     | 'apply_buff'
     | 'apply_debuff'
+    | 'apply_status'
     | 'cleanse'
     | 'discard_random'
     | 'recover_discard'
+    | 'event_multiply'
+    | 'event_cancel'
     | 'log';
   resource?: string;
-  target?: 'player' | 'selected_enemy' | 'all_enemies';
+  target?: 'player' | 'selected_enemy' | 'all_enemies' | 'all_summons';
   value?: WorkshopFormula;
   turns?: WorkshopFormula;
   status?: string;
@@ -98,6 +103,25 @@ export interface WorkshopMechanismResource {
   max: number;
   initial: number;
   visible: boolean;
+}
+
+export interface WorkshopMechanismStatusEffect {
+  type:
+    | 'damage_reduction'
+    | 'debuff_immunity'
+    | 'turn_heal'
+    | 'turn_shield'
+    | 'turn_damage'
+    | 'damage_bonus';
+  value: number;
+}
+
+export interface WorkshopMechanismStatus {
+  id: string;
+  label: string;
+  description: string;
+  polarity: 'buff' | 'debuff';
+  effects: WorkshopMechanismStatusEffect[];
 }
 
 export interface WorkshopMechanismRule {
@@ -120,6 +144,7 @@ export interface WorkshopMechanismManifest {
   author: string;
   description: string;
   resources: WorkshopMechanismResource[];
+  statuses: WorkshopMechanismStatus[];
   rules: WorkshopMechanismRule[];
   /** Script mechanisms run inside an isolated QuickJS runtime. */
   source?: string;
@@ -150,6 +175,8 @@ const TRIGGERS = new Set<WorkshopMechanismTrigger>([
   'before_card',
   'after_card',
   'before_damage',
+  'before_debuff',
+  'resource_changed',
   'before_enemy_turn',
   'after_enemy_turn',
   'player_damaged',
@@ -170,9 +197,12 @@ const ACTIONS = new Set<WorkshopMechanismAction['type']>([
   'gain_mp',
   'apply_buff',
   'apply_debuff',
+  'apply_status',
   'cleanse',
   'discard_random',
   'recover_discard',
+  'event_multiply',
+  'event_cancel',
   'log',
 ]);
 const SAFE_STATS = new Set([
@@ -308,7 +338,7 @@ function normalizeAction(value: unknown): WorkshopMechanismAction {
   const source = record(value);
   const type = String(source.type ?? '') as WorkshopMechanismAction['type'];
   if (!ACTIONS.has(type)) throw new Error(`不支持的机制动作：${type || '空'}`);
-  const target = ['player', 'selected_enemy', 'all_enemies'].includes(
+  const target = ['player', 'selected_enemy', 'all_enemies', 'all_summons'].includes(
     String(source.target),
   )
     ? (source.target as WorkshopMechanismAction['target'])
@@ -323,7 +353,79 @@ function normalizeAction(value: unknown): WorkshopMechanismAction {
   if ((type === 'resource_add' || type === 'resource_set') && !result.resource) {
     throw new Error(`${type} 动作缺少 resource。`);
   }
+  if (type === 'apply_status' && !result.status) {
+    throw new Error('apply_status 动作缺少 status。');
+  }
   return result;
+}
+
+function collectFormulaResourceIds(
+  formula: WorkshopFormula | undefined,
+  result: Set<string>,
+): void {
+  if (formula === undefined || typeof formula === 'number') return;
+  if (formula.op === 'resource' && formula.id) result.add(formula.id);
+  for (const child of formula.args ?? []) {
+    collectFormulaResourceIds(child, result);
+  }
+  collectFormulaResourceIds(formula.value, result);
+  collectFormulaResourceIds(formula.min, result);
+  collectFormulaResourceIds(formula.max, result);
+}
+
+function collectConditionResourceIds(
+  condition: WorkshopMechanismCondition | undefined,
+  result: Set<string>,
+): void {
+  if (!condition) return;
+  collectFormulaResourceIds(condition.left, result);
+  collectFormulaResourceIds(condition.right, result);
+  for (const child of condition.conditions ?? []) {
+    collectConditionResourceIds(child, result);
+  }
+  collectConditionResourceIds(condition.condition, result);
+}
+
+function validateDeclarativeReferences(
+  name: string,
+  resources: WorkshopMechanismResource[],
+  statuses: WorkshopMechanismStatus[],
+  rules: WorkshopMechanismRule[],
+): void {
+  const resourceIds = new Set(resources.map((entry) => entry.id));
+  const statusIds = new Set(statuses.map((entry) => entry.id));
+  for (const rule of rules) {
+    const formulaResourceIds = new Set<string>();
+    collectConditionResourceIds(rule.condition, formulaResourceIds);
+    for (const action of rule.actions) {
+      if (
+        (action.type === 'resource_add' || action.type === 'resource_set') &&
+        !resourceIds.has(action.resource ?? '')
+      ) {
+        throw new Error(
+          `机制「${name}」的规则「${rule.id}」引用了不存在的资源 ${action.resource ?? ''}。`,
+        );
+      }
+      if (
+        action.type === 'apply_status' &&
+        !statusIds.has(action.status ?? '')
+      ) {
+        throw new Error(
+          `机制「${name}」的规则「${rule.id}」引用了不存在的状态 ${action.status ?? ''}。`,
+        );
+      }
+      collectFormulaResourceIds(action.value, formulaResourceIds);
+      collectFormulaResourceIds(action.turns, formulaResourceIds);
+    }
+    const missingFormulaResource = [...formulaResourceIds].find(
+      (resourceId) => !resourceIds.has(resourceId),
+    );
+    if (missingFormulaResource) {
+      throw new Error(
+        `机制「${name}」的规则「${rule.id}」公式引用了不存在的资源 ${missingFormulaResource}。`,
+      );
+    }
+  }
 }
 
 const SCRIPT_EVENT_PATCHES: Partial<
@@ -394,6 +496,64 @@ function normalizeResources(
   return resources;
 }
 
+function normalizeStatuses(value: unknown): WorkshopMechanismStatus[] {
+  const statuses = (Array.isArray(value) ? value : [])
+    .slice(0, 12)
+    .map((entry, index) => {
+      const status = record(entry);
+      const effects = (Array.isArray(status.effects) ? status.effects : [])
+        .slice(0, 8)
+        .map((rawEffect) => {
+          const effect = record(rawEffect);
+          const type = String(effect.type) as WorkshopMechanismStatusEffect['type'];
+          if (![
+            'damage_reduction',
+            'debuff_immunity',
+            'turn_heal',
+            'turn_shield',
+            'turn_damage',
+            'damage_bonus',
+          ].includes(type)) {
+            throw new Error(`不支持的自定义状态效果：${type || '空'}`);
+          }
+          return {
+            type,
+            value:
+              type === 'debuff_immunity'
+                ? 1
+                : Math.max(
+                    0,
+                    Math.min(
+                      type === 'damage_reduction' ? 90 : 999_999,
+                      finite(effect.value),
+                    ),
+                  ),
+          };
+        });
+      if (!effects.length) {
+        throw new Error(`自定义状态 ${index + 1} 至少需要一个效果。`);
+      }
+      return {
+        id: safeId(status.id, `status-${index + 1}`),
+        label: limitedText(status.label ?? status.name, 30) || `状态${index + 1}`,
+        description: limitedText(status.description, 120),
+        polarity: status.polarity === 'debuff' ? 'debuff' as const : 'buff' as const,
+        effects,
+      };
+    });
+  if (new Set(statuses.map((entry) => entry.id)).size !== statuses.length) {
+    throw new Error('底层机制包含重复的状态 ID。');
+  }
+  return statuses;
+}
+
+export function workshopStatusKey(
+  mechanismId: string,
+  statusId: string,
+): string {
+  return `workshop_status:${mechanismId}:${statusId}`;
+}
+
 export function isWorkshopScriptMechanism(
   mechanism: WorkshopMechanismManifest,
 ): boolean {
@@ -411,6 +571,7 @@ export function normalizeWorkshopMechanism(
   if (!name) throw new Error('底层机制缺少名称。');
   const id = safeId(source.id, `mechanism-${Date.now().toString(36)}`);
   const resources = normalizeResources(source.resources, id);
+  const statuses = normalizeStatuses(source.statuses);
   const script =
     source.format === WORKSHOP_SCRIPT_MECHANISM_FORMAT ||
     source.engine === 'script';
@@ -448,6 +609,7 @@ export function normalizeWorkshopMechanism(
       author: limitedText(source.author ?? '匿名作者', 40),
       description: limitedText(source.description, 240),
       resources,
+      statuses,
       rules: [],
       source: code,
       entrypoint,
@@ -482,10 +644,13 @@ export function normalizeWorkshopMechanism(
         actions,
       };
     });
-  if (!rules.length) throw new Error(`机制「${name}」没有规则。`);
+  if (!rules.length && !resources.length && !statuses.length) {
+    throw new Error(`机制「${name}」没有状态、资源或规则。`);
+  }
   if (new Set(rules.map((entry) => entry.id)).size !== rules.length) {
     throw new Error(`机制「${name}」包含重复的规则 ID。`);
   }
+  validateDeclarativeReferences(name, resources, statuses, rules);
   return {
     format: WORKSHOP_MECHANISM_FORMAT,
     version: 1,
@@ -495,6 +660,7 @@ export function normalizeWorkshopMechanism(
     author: limitedText(source.author ?? '匿名作者', 40),
     description: limitedText(source.description, 240),
     resources,
+    statuses,
     rules,
   };
 }
@@ -520,12 +686,16 @@ export function readWorkshopMechanisms(): WorkshopMechanismManifest[] {
 
 export function saveWorkshopMechanism(value: unknown): WorkshopMechanismManifest {
   const normalized = normalizeWorkshopMechanism(value);
-  const kept = readWorkshopMechanisms().filter(
+  const existing = readWorkshopMechanisms();
+  const kept = existing.filter(
     (entry) => entry.id !== normalized.id,
   );
+  if (kept.length >= 40) {
+    throw new Error('自定义状态与资源已达到 40 个，请先删除一个再保存。');
+  }
   localStorage.setItem(
     WORKSHOP_MECHANISM_STORAGE_KEY,
-    JSON.stringify([...kept, normalized].slice(0, 40)),
+    JSON.stringify([...kept, normalized]),
   );
   return normalized;
 }

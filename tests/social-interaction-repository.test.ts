@@ -223,14 +223,14 @@ describe('SocialInteractionRepository', () => {
     });
   });
 
-  it('以严格小于8%的边界触发抚摸拒绝', async () => {
+  it('按阶段反应池区分中性、降低与增加好感的触摸', async () => {
     const db = database('pet');
     const profile = await new GameRepository(db, new EventBus()).ensureProfile(
       'chat:social-pet',
     );
     const rejected = new SocialInteractionRepository(
       db,
-      randomSequence(0.079, 0),
+      randomSequence(0.5, 0),
     );
     await rejected.prepare();
     await expect(
@@ -238,14 +238,15 @@ describe('SocialInteractionRepository', () => {
     ).resolves.toMatchObject({
       achievement: {
         event: 'trelao.pet',
-        success: false,
+        success: true,
         positive: false,
+        reaction: 'down',
       },
     });
 
     const accepted = new SocialInteractionRepository(
       db,
-      randomSequence(0.08, 0),
+      randomSequence(0.8, 0),
     );
     await accepted.prepare();
     await expect(
@@ -255,6 +256,23 @@ describe('SocialInteractionRepository', () => {
         event: 'trelao.pet',
         success: true,
         positive: true,
+        reaction: 'up',
+      },
+    });
+
+    const neutral = new SocialInteractionRepository(
+      db,
+      randomSequence(0, 0),
+    );
+    await neutral.prepare();
+    await expect(
+      neutral.interact(profile.id, { action: 'trelao.pet' }),
+    ).resolves.toMatchObject({
+      achievement: {
+        event: 'trelao.pet',
+        success: true,
+        positive: false,
+        reaction: 'neutral',
       },
     });
   });

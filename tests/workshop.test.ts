@@ -124,6 +124,69 @@ describe('旧版创意工坊规则', () => {
     ).toThrow('同类效果只能添加一次');
   });
 
+  it('保留移除护盾的己方/召唤物目标与 x+y% 属性公式', () => {
+    expect(
+      normalizeCardEffect({ type: 'strip_shield', target: 'self' }),
+    ).toMatchObject({ type: 'strip_shield', target: 'self' });
+    expect(
+      normalizeCardEffect({ type: 'strip_shield', target: 'all_summons' }),
+    ).toMatchObject({ type: 'strip_shield', target: 'all_summons' });
+    expect(
+      normalizeCardEffect({
+        type: 'damage',
+        target: 'enemy',
+        value: 8,
+        scaling: { stat: 'attack', percent: 25 },
+      }),
+    ).toMatchObject({
+      value: 8,
+      scaling: { stat: 'attack', percent: 25 },
+    });
+    expect(
+      normalizeCardEffect({
+        type: 'shield',
+        target: 'self',
+        value: 3,
+        scaling: { stat: 'unknown', percent: 50 },
+      }),
+    ).not.toHaveProperty('scaling');
+  });
+
+  it('开放防反、反击与烧血积木并保持布尔天赋强度', () => {
+    expect(
+      normalizeCardEffect({
+        type: 'apply_buff',
+        buff: 'defense_reflect',
+        value: 99,
+        turns: 3,
+        target: 'self',
+      }),
+    ).toMatchObject({ buff: 'defense_reflect', value: 1, turns: 3 });
+    expect(
+      normalizeCardEffect({
+        type: 'apply_buff',
+        buff: 'counterattack',
+        turns: 2,
+        target: 'self',
+      }),
+    ).toMatchObject({ buff: 'counterattack', value: 1, turns: 2 });
+    expect(
+      normalizeCardEffect({
+        type: 'apply_buff',
+        buff: 'blood_burn',
+        value: 20,
+        turns: 4,
+        target: 'self',
+      }),
+    ).toMatchObject({ buff: 'blood_burn', value: 20, turns: 4 });
+    expect(
+      talentScore([
+        { type: 'defense_reflect' },
+        { type: 'counterattack' },
+      ]),
+    ).toBe(24);
+  });
+
   it('按官方公式校验空白牌生成、持续生成、揭晓伤害与手牌上限', () => {
     expect(
       cardScore({

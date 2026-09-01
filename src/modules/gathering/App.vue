@@ -1,7 +1,11 @@
 <script setup lang="ts">
 /* global Window */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import type { GatheringItem, GatheringView } from '@/domain/types';
+import type {
+  GatheringItem,
+  GatheringView,
+  HuntingAttemptData,
+} from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
@@ -14,6 +18,7 @@ const busy = ref('');
 const notice = ref('');
 const noticeTone = ref<'success' | 'error'>('success');
 const error = ref('');
+const tab = ref<'gather' | 'hunt'>('gather');
 const clock = ref(Date.now());
 const disposers: Array<() => void> = [];
 let refreshTimer: number | undefined;
@@ -149,8 +154,48 @@ async function collect(item: GatheringItem): Promise<void> {
       throw new Error(result.message ?? `${item.actionLabel}失败`);
     }
     noticeTone.value = 'success';
-    notice.value = `已${item.actionLabel}「${item.name}」×${quantity}，物品已放入背包。`;
+    notice.value = result.message ?? `已${item.actionLabel}「${item.name}」×${quantity}，物品已放入背包。`;
     quantities.value[item.listingKey] = 1;
+    await refresh();
+  } catch (caught) {
+    noticeTone.value = 'error';
+    notice.value = caught instanceof Error ? caught.message : String(caught);
+  } finally {
+    busy.value = '';
+  }
+}
+
+async function hunt(animalId: string): Promise<void> {
+  if (busy.value) return;
+  busy.value = `hunt:${animalId}`;
+  notice.value = '';
+  try {
+    const result = await props.context.api.execute({
+      id: commandId('hunt.attempt'),
+      type: 'hunt.attempt',
+      payload: { animalId },
+    });
+    if (result.status === 'rejected') {
+      throw new Error(result.message ?? '打猎失败');
+    }
+    const outcome = result.data as HuntingAttemptData | undefined;
+    noticeTone.value = 'success';
+    notice.value = result.message ?? '本轮打猎已经结算。';
+    if (outcome?.outcome === 'battle') {
+      const battle = await props.context.api.execute({
+        id: commandId('battle.start.hunting'),
+        type: 'battle.start',
+        payload: {
+          source: `打猎 · ${outcome.animalName}`,
+          huntingAnimalId: outcome.animalId,
+          huntingToken: outcome.battleToken,
+        },
+      });
+      if (battle.status === 'rejected') {
+        throw new Error(battle.message ?? '无法开始打猎遭遇战');
+      }
+      await props.context.api.navigatePanel('battle');
+    }
     await refresh();
   } catch (caught) {
     noticeTone.value = 'error';
@@ -239,8 +284,13 @@ onUnmounted(() => {
         {{ notice }}
       </p>
 
+      <nav class="gathering-tabs" aria-label="采集玩法">
+        <button :class="{ active: tab === 'gather' }" @click="tab = 'gather'">区域采集</button>
+        <button :class="{ active: tab === 'hunt' }" @click="tab = 'hunt'">打猎</button>
+      </nav>
+
       <section
-        v-if="!gathering.availableRegion"
+        v-if="tab === 'gather' && !gathering.availableRegion"
         class="ca-section gathering-empty"
       >
         <strong>当前地点暂未开放采集</strong>
@@ -249,7 +299,7 @@ onUnmounted(() => {
         </p>
       </section>
 
-      <section v-else class="ca-section gathering-resources">
+      <section v-else-if="tab === 'gather'" class="ca-section gathering-resources">
         <h2 class="ca-section-title">
           今日区域资源
           <small>{{ gathering.items.length }} 种</small>
@@ -324,6 +374,29 @@ onUnmounted(() => {
           </article>
         </div>
       </section>
+
+      <section v-else class="ca-section gathering-resources">
+        <h2 class="ca-section-title">选择猎物 <small>ROLL 0–100</small></h2>
+        <p class="hunt-rule">0–40 失败；41–80 直接获得 2–3 种料理材料；81–100 进入遭遇战，胜利后在基础奖励外获得料理材料。每种材料数量为 1–10。</p>
+        <div class="gathering-grid">
+          <article v-for="animal in gathering.animals" :key="animal.id" class="gathering-card hunt-card">
+            <div class="resource-icon" aria-hidden="true">⌖</div>
+            <div class="resource-copy">
+              <div class="resource-meta"><span>可追踪猎物</span><small>狩猎</small></div>
+              <h3>{{ animal.name }}</h3>
+              <p>{{ animal.description }}</p>
+              <button
+                type="button"
+                class="ca-button primary"
+                :disabled="busy !== ''"
+                @click="hunt(animal.id)"
+              >
+                {{ busy === `hunt:${animal.id}` ? '判定中…' : '开始打猎' }}
+              </button>
+            </div>
+          </article>
+        </div>
+      </section>
     </template>
   </AdventurerFrame>
 </template>
@@ -386,6 +459,34 @@ onUnmounted(() => {
 
 .gathering-resources {
   min-width: 0;
+}
+
+.gathering-tabs {
+  display: flex;
+  gap: 8px;
+}
+
+.gathering-tabs button {
+  padding: 8px 16px;
+  border: 1px solid var(--ca-border);
+  border-radius: 999px;
+  color: var(--ca-muted);
+  background: var(--ca-surface);
+}
+
+.gathering-tabs button.active {
+  border-color: var(--ca-gold);
+  color: var(--ca-gold-light);
+}
+
+.hunt-rule {
+  color: var(--ca-muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.hunt-card .ca-button {
+  margin-top: 10px;
 }
 
 .gathering-resources .ca-section-title small {

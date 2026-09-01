@@ -14,6 +14,7 @@ import {
 } from '@/modules/affinity/view-model';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import AdjustableAvatar from '@/ui/AdjustableAvatar.vue';
+import { TRELAO_AFFINITY_MAX, trelaoStageLabel } from '@/trelao';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -38,6 +39,14 @@ const status = computed(() =>
     ? createAffinityViewModel(snapshot.value.social)
     : undefined,
 );
+const trelaoStatus = computed(() => {
+  const affinity = snapshot.value?.trelao?.affinity ?? 0;
+  return {
+    affinity,
+    stage: trelaoStageLabel(affinity),
+    percent: (affinity / TRELAO_AFFINITY_MAX) * 100,
+  };
+});
 
 const updatedAt = computed(() => {
   const timestamp = snapshot.value?.social.updatedAt;
@@ -210,7 +219,11 @@ onMounted(async () => {
       if (!characterAvatarUrl.value) scheduleAvatarRetry();
     }),
     props.context.api.on('tavern.changed', async ({ event }) => {
-      await refreshState();
+      if (['GENERATION_ENDED', 'GENERATION_STOPPED'].includes(String(event))) {
+        await Promise.all([refreshState(), refreshInteractionOptions()]);
+      } else {
+        await refreshState();
+      }
       if (event === 'CHAT_CHANGED' || event === 'CHARACTER_EDITED') {
         avatarRetryIndex = 0;
         clearAvatarRetry();
@@ -334,6 +347,28 @@ onUnmounted(() => {
         </article>
       </section>
 
+      <section class="trelao-status" aria-label="特莱奥好感度">
+        <div class="affinity-heading">
+          <div>
+            <span>特莱奥好感度</span>
+            <strong>{{ trelaoStatus.affinity }}</strong>
+            <small>/{{ TRELAO_AFFINITY_MAX }}</small>
+          </div>
+          <span class="stage">{{ trelaoStatus.stage }}</span>
+        </div>
+        <div
+          class="affinity-track"
+          role="progressbar"
+          aria-label="特莱奥好感度"
+          :aria-valuenow="trelaoStatus.affinity"
+          aria-valuemin="0"
+          :aria-valuemax="TRELAO_AFFINITY_MAX"
+        >
+          <i :style="{ width: `${trelaoStatus.percent}%` }"></i>
+        </div>
+        <p>触摸与投喂会根据特莱奥的喜好改变关系；料理中的植物材料会让它不高兴。</p>
+      </section>
+
       <section class="interaction-panel" aria-label="同行互动">
         <header class="interaction-heading">
           <div>
@@ -399,7 +434,10 @@ onUnmounted(() => {
               <span>持有 {{ gift.quantity }} · 参考售价 {{ gift.price }}</span>
             </div>
             <em :class="{ negative: gift.affinityDelta < 0 }">
-              好感 {{ gift.affinityDelta > 0 ? '+' : '' }}{{ gift.affinityDelta }}
+              {{
+                gift.affinityDeltaLabel ??
+                  `好感 ${gift.affinityDelta > 0 ? '+' : ''}${gift.affinityDelta}`
+              }}
             </em>
             <button
               type="button"
@@ -691,6 +729,21 @@ onUnmounted(() => {
   border-radius: 18px;
   background: rgba(20, 16, 13, 0.62);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.trelao-status {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px solid rgba(212, 168, 67, 0.3);
+  border-radius: 18px;
+  color: #513414;
+  background: linear-gradient(145deg, #fffaf0, #f7e6bf);
+}
+
+.trelao-status p {
+  margin: 9px 0 0;
+  color: #8b6a3f;
+  font-size: 10px;
 }
 
 .interaction-heading,

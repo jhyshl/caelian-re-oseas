@@ -1,3 +1,5 @@
+import { COOKING_RECIPES } from '@/content/cooking';
+
 export interface CraftingRecipeDefinition {
   id: string;
   name: string;
@@ -16,7 +18,10 @@ export async function loadCraftingRecipes(): Promise<
 > {
   if (!recipeCache) {
     const module = await import('@/content/generated/crafting/recipes.json');
-    recipeCache = module.default as unknown as CraftingRecipeDefinition[];
+    recipeCache = [
+      ...(module.default as unknown as CraftingRecipeDefinition[]),
+      ...COOKING_RECIPES,
+    ];
   }
   return recipeCache;
 }

@@ -69,6 +69,9 @@ afterEach(() => {
   delete window.getCharAvatarPath;
   vi.useRealTimers();
   document.querySelector('#user_avatar_block')?.remove();
+  document
+    .querySelector('#caelian_special_patch_old_player_v2_letter_overlay')
+    ?.remove();
 });
 
 describe('TavernAdapter', () => {
@@ -658,9 +661,17 @@ describe('TavernAdapter', () => {
     const listener = vi.fn();
     adapter.subscribe(listener);
     window.dispatchEvent(
-      new CustomEvent('caelian-special-achievement-patch'),
+      new CustomEvent('caelian-special-achievement-patch', {
+        detail: {
+          id: 'ach_thanks_old_caelian',
+          patch: 'caelian_special_patch_old_player_v2',
+        },
+      }),
     );
     expect(listener).toHaveBeenCalledWith('ACHIEVEMENT_PATCH_CHANGED');
+    expect(
+      adapter.achievementPatchSignals(new Date(2026, 7, 20, 12, 0, 0)),
+    ).toContainEqual({ id: 'old-player', opened: true });
     listener.mockClear();
     window.dispatchEvent(new CustomEvent('caelian-special-reward-patch'));
     expect(listener).toHaveBeenCalledWith('ACHIEVEMENT_PATCH_CHANGED');
@@ -687,6 +698,40 @@ describe('TavernAdapter', () => {
     expect(
       adapter.achievementPatchSignals(new Date(2026, 7, 20, 12, 0, 0)),
     ).not.toContainEqual(expect.objectContaining({ id: 'memory-together' }));
+  });
+
+  it('识别感谢有你旧脚本已存在和动态插入的信件弹层', async () => {
+    const existing = document.createElement('div');
+    existing.id = 'caelian_special_patch_old_player_v2_letter_overlay';
+    document.body.append(existing);
+    const initialListener = vi.fn();
+    const initialAdapter = new TavernAdapter(window);
+    initialAdapter.subscribe(initialListener);
+    expect(initialListener).toHaveBeenCalledWith('ACHIEVEMENT_PATCH_CHANGED');
+    expect(initialAdapter.achievementPatchSignals()).toContainEqual({
+      id: 'old-player',
+      opened: false,
+    });
+    initialAdapter.unsubscribeAll();
+    existing.remove();
+
+    const dynamicListener = vi.fn();
+    const dynamicAdapter = new TavernAdapter(window);
+    dynamicAdapter.subscribe(dynamicListener);
+    const inserted = document.createElement('div');
+    inserted.id = 'caelian_special_patch_old_player_v2_letter_overlay';
+    document.body.append(inserted);
+    await vi.waitFor(() => {
+      expect(dynamicListener).toHaveBeenCalledWith(
+        'ACHIEVEMENT_PATCH_CHANGED',
+      );
+    });
+    dynamicAdapter.unsubscribeAll();
+    dynamicListener.mockClear();
+    inserted.remove();
+    document.body.append(inserted);
+    await Promise.resolve();
+    expect(dynamicListener).not.toHaveBeenCalled();
   });
 
   it('识别抓虫中信件的导入、开启与历史领取标记', () => {

@@ -1410,7 +1410,7 @@ describe('CaelianKernel integration', () => {
     await kernel.api.shutdown();
   });
 
-  it('生成期间拒绝赠礼且不扣物，完成 MVU 导入后恢复赠礼', async () => {
+  it('生成期间拒绝赠礼且不扣物，生成停止后刷新界面并恢复赠礼', async () => {
     const databaseName = `caelian-alpha-generation-gift-lock-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
     const handlers = new Map<unknown, (...args: unknown[]) => void>();
@@ -1421,6 +1421,7 @@ describe('CaelianKernel integration', () => {
     window.tavern_events = {
       GENERATE_BEFORE_COMBINE_PROMPTS: 'generation-started',
       GENERATION_ENDED: 'generation-ended',
+      GENERATION_STOPPED: 'generation-stopped',
     };
     let mvuData: Record<string, unknown> = {
       stat_data: {
@@ -1446,6 +1447,11 @@ describe('CaelianKernel integration', () => {
     });
 
     await kernel.initialize();
+    const tavernChanged = vi.fn();
+    const disposeTavernChanged = kernel.api.on(
+      'tavern.changed',
+      tavernChanged,
+    );
     await kernel.api.execute({
       id: 'generation-gift-add-item',
       type: 'inventory.adjust',
@@ -1461,7 +1467,21 @@ describe('CaelianKernel integration', () => {
       }),
     ).resolves.toMatchObject({
       status: 'rejected',
-      message: '当前回复仍在生成，请等待生成结束后再赠礼',
+      message: '当前回复仍在生成，请等待生成结束后再与凯利安互动',
+    });
+    await expect(
+      kernel.api.execute({
+        id: 'generation-invite-attempt',
+        type: 'social.interact',
+        payload: {
+          action: 'caelian.invite',
+          regionId: 'academy',
+          place: '正门',
+        },
+      }),
+    ).resolves.toMatchObject({
+      status: 'rejected',
+      message: '当前回复仍在生成，请等待生成结束后再与凯利安互动',
     });
     expect(await kernel.api.query('inventory')).toContainEqual(
       expect.objectContaining({ itemId: '精制面包', quantity: 1 }),
@@ -1471,7 +1491,35 @@ describe('CaelianKernel integration', () => {
       pendingAffinityDelta: 0,
     });
 
-    handlers.get('generation-ended')?.();
+    handlers.get('generation-stopped')?.();
+    handlers.get('generation-started')?.();
+    await expect
+      .poll(() =>
+        tavernChanged.mock.calls.some(
+          ([event]) => event.event === 'GENERATION_STOPPED',
+        ),
+      )
+      .toBe(true);
+    await expect(
+      kernel.api.execute({
+        id: 'generation-gift-second-attempt',
+        type: 'social.interact',
+        payload: { action: 'caelian.gift', itemId: '精制面包' },
+      }),
+    ).resolves.toMatchObject({ status: 'rejected' });
+    expect(await kernel.api.query('inventory')).toContainEqual(
+      expect.objectContaining({ itemId: '精制面包', quantity: 1 }),
+    );
+
+    handlers.get('generation-stopped')?.();
+    await expect
+      .poll(
+        () =>
+          tavernChanged.mock.calls.filter(
+            ([event]) => event.event === 'GENERATION_STOPPED',
+          ).length,
+      )
+      .toBe(2);
     await expect
       .poll(() =>
         kernel.api.execute({
@@ -1489,6 +1537,7 @@ describe('CaelianKernel integration', () => {
       pendingAffinityDelta: 0,
     });
 
+    disposeTavernChanged();
     await kernel.api.shutdown();
   });
 
@@ -1554,7 +1603,7 @@ describe('CaelianKernel integration', () => {
     databaseNames.push(unmatchedDatabaseName);
     const unmatchedKernel = createKernel({
       channel: 'alpha',
-      version: '0.2.0-alpha.61',
+      version: '0.2.0-alpha.62',
       buildId: 'unmatched-release-test-build',
       databaseName: unmatchedDatabaseName,
       sourceWindow: window,
@@ -1569,9 +1618,9 @@ describe('CaelianKernel integration', () => {
       '[data-caelian-panel="release-notes"]',
     );
     expect(historicalAnnouncement?.textContent).toContain(
-      '当前构建 0.2.0-alpha.61 暂无独立公告',
+      '当前构建 0.2.0-alpha.62 暂无独立公告',
     );
-    expect(historicalAnnouncement?.textContent).toContain('Alpha 60');
+    expect(historicalAnnouncement?.textContent).toContain('Alpha 61');
     expect(
       historicalAnnouncement?.querySelector('.current-badge'),
     ).toBeNull();

@@ -44,7 +44,11 @@ import {
 } from '@/rewards/reward-display';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import MeterBar from '@/ui/adventurer/MeterBar.vue';
-import { readWorkshopMechanisms } from '@/workshop-mechanisms';
+import {
+  readWorkshopMechanisms,
+  workshopStatusKey,
+  type WorkshopMechanismStatus,
+} from '@/workshop-mechanisms';
 import {
   type BattleCardFaceType,
   battleCardFaceType,
@@ -531,6 +535,7 @@ const mechanismResources = computed(() => {
       .map((resource) => ({
         id: `${manifest.id}:${resource.id}`,
         label: resource.label,
+        description: resource.description,
         value:
           runtime.resources[`${manifest.id}:${resource.id}`] ??
           resource.initial,
@@ -592,6 +597,7 @@ const friendlyEffectTypes = new Set([
   'cleanse_heal_per',
   'cleanse_specific',
   'shield_from_shield',
+  'strip_shield',
 ]);
 
 function cardFriendlyTargetMode(definition?: CardDefinition) {
@@ -667,6 +673,8 @@ const statusNames: Record<string, string> = {
   damage_halve: '伤害减半',
   monster_frenzy: '狂暴',
   blood_burn: '燃血',
+  defense_reflect: '防反',
+  counterattack: '反击',
   curse_mark: '诅咒印记',
   abyss_mark: '深渊印记',
   regen: '再生',
@@ -709,6 +717,8 @@ const localStatusDescriptions: Record<string, string> = {
   purified_power:
     '净化增伤：本回合攻击牌造成的伤害按显示数值提高。',
   damage_reduce: '固定减伤：受到伤害时减去显示数值，最低仍会受到 1 点伤害。',
+  defense_reflect: '防反：有护盾时，受攻击前先按80%当前护盾×防御力百分比反伤，防御力倍率最高150%。',
+  counterattack: '反击：受到敌方攻击后造成一次攻击力10%的反击伤害。',
   spell_double: '攻击翻倍：下一张攻击牌造成的伤害翻倍，触发后消耗 1 次。',
   wet: '湿润：当前作为特定卡牌的条件标记；不会自行增加雷系伤害或冻结回合。',
   abyss_echo: '自身失去生命时获得；每批深渊回声独立保留 2 回合并分别过期。',
@@ -1043,9 +1053,49 @@ function effectEntries(
 }
 
 function statusDisplayName(name: string, kind: 'buff' | 'debuff'): string {
+  const custom = customWorkshopStatus(name, kind);
+  if (custom) return custom.label;
   const world = kind === 'buff' ? worldBuffNames : worldDebuffNames;
   const generated = kind === 'buff' ? generatedBuffNames : generatedDebuffNames;
   return statusNames[name] ?? world[name] ?? generated[name] ?? name;
+}
+
+function customWorkshopStatus(
+  name: string,
+  kind: 'buff' | 'debuff',
+): WorkshopMechanismStatus | undefined {
+  for (const mechanism of readWorkshopMechanisms()) {
+    const status = mechanism.statuses.find(
+      (entry) =>
+        entry.polarity === kind &&
+        workshopStatusKey(mechanism.id, entry.id) === name,
+    );
+    if (status) return status;
+  }
+  return undefined;
+}
+
+function customWorkshopStatusDescription(
+  status: WorkshopMechanismStatus,
+): string {
+  const effects = status.effects.map((effect) => {
+    const value = formatStatusNumber(effect.value);
+    switch (effect.type) {
+      case 'damage_reduction':
+        return `受到伤害降低 ${value}%`;
+      case 'debuff_immunity':
+        return '免疫减益状态';
+      case 'turn_heal':
+        return `每回合恢复 ${value} 点生命`;
+      case 'turn_shield':
+        return `每回合获得 ${value} 点护盾`;
+      case 'turn_damage':
+        return `每回合失去 ${value} 点生命`;
+      case 'damage_bonus':
+        return `造成伤害提高 ${value}%`;
+    }
+  });
+  return [status.description, effects.join('；')].filter(Boolean).join('｜');
 }
 
 function statusDescription(
@@ -1053,6 +1103,8 @@ function statusDescription(
   kind: 'buff' | 'debuff',
   fallback = '',
 ): string {
+  const custom = customWorkshopStatus(name, kind);
+  if (custom) return customWorkshopStatusDescription(custom);
   if (localStatusDescriptions[name]) return localStatusDescriptions[name];
   const worldGlobalDescription = worldStatusDescriptions[name];
   if (typeof worldGlobalDescription === 'string') return worldGlobalDescription;
@@ -1076,9 +1128,14 @@ function formatStatusNumber(value: unknown): string {
 }
 
 function statusEffectSummary(
+  name: string,
   effect: LocalBattleState['player']['buffs'][string],
 ): string {
-  const parts = [`数值 ${formatStatusNumber(effect.value)}`];
+  const custom =
+    customWorkshopStatus(name, 'buff') ?? customWorkshopStatus(name, 'debuff');
+  const parts = [
+    `${custom ? '层数' : '数值'} ${formatStatusNumber(effect.value)}`,
+  ];
   if (effect.stacks !== undefined) {
     parts.push(`层数 ${formatStatusNumber(effect.stacks)}`);
   }
@@ -1981,7 +2038,7 @@ onUnmounted(() => {
                   :title="statusDescription(entry.name, 'buff')"
                 >
                   {{ statusDisplayName(entry.name, 'buff') }}
-                  {{ statusEffectSummary(entry.effect) }}
+                  {{ statusEffectSummary(entry.name, entry.effect) }}
                 </span>
                 <span
                   v-for="entry in effectEntries(enemy.debuffs)"
@@ -1990,7 +2047,7 @@ onUnmounted(() => {
                   :title="statusDescription(entry.name, 'debuff')"
                 >
                   {{ statusDisplayName(entry.name, 'debuff') }}
-                  {{ statusEffectSummary(entry.effect) }}
+                  {{ statusEffectSummary(entry.name, entry.effect) }}
                 </span>
               </div>
               <div class="battle-float-layer" aria-hidden="true">
@@ -2138,7 +2195,7 @@ onUnmounted(() => {
                     :title="statusDescription(entry.name, 'buff')"
                   >
                     {{ statusDisplayName(entry.name, 'buff') }} ·
-                    {{ statusEffectSummary(entry.effect) }}
+                    {{ statusEffectSummary(entry.name, entry.effect) }}
                   </span>
                   <span
                     v-for="entry in effectEntries(summon.debuffs ?? {})"
@@ -2147,7 +2204,7 @@ onUnmounted(() => {
                     :title="statusDescription(entry.name, 'debuff')"
                   >
                     {{ statusDisplayName(entry.name, 'debuff') }} ·
-                    {{ statusEffectSummary(entry.effect) }}
+                    {{ statusEffectSummary(entry.name, entry.effect) }}
                   </span>
                 </div>
                 <div class="battle-float-layer" aria-hidden="true">
@@ -2168,7 +2225,11 @@ onUnmounted(() => {
             <span
               v-for="resource in mechanismResources"
               :key="resource.id"
-              :title="`${resource.min}–${resource.max}`"
+              :title="[
+                '自定义资源',
+                `${resource.min}–${resource.max}`,
+                resource.description,
+              ].filter(Boolean).join(' · ')"
             >
               {{ resource.label }} <b>{{ resource.value }}</b>
             </span>
@@ -2191,7 +2252,7 @@ onUnmounted(() => {
                 :title="statusDescription(entry.name, 'buff')"
               >
                 {{ statusDisplayName(entry.name, 'buff') }}
-                {{ statusEffectSummary(entry.effect) }}
+                {{ statusEffectSummary(entry.name, entry.effect) }}
               </span>
               <span
                 v-for="entry in effectEntries(state.player.debuffs)"
@@ -2200,7 +2261,7 @@ onUnmounted(() => {
                 :title="statusDescription(entry.name, 'debuff')"
               >
                 {{ statusDisplayName(entry.name, 'debuff') }}
-                {{ statusEffectSummary(entry.effect) }}
+                {{ statusEffectSummary(entry.name, entry.effect) }}
               </span>
               <span
                 v-for="generator in state.player.blankGenerators ?? []"
