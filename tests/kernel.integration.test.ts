@@ -1410,7 +1410,7 @@ describe('CaelianKernel integration', () => {
     await kernel.api.shutdown();
   });
 
-  it('生成期间拒绝赠礼且不扣物，完成 MVU 导入后恢复赠礼', async () => {
+  it('生成期间拒绝赠礼且不扣物，生成停止后刷新界面并恢复赠礼', async () => {
     const databaseName = `caelian-alpha-generation-gift-lock-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
     const handlers = new Map<unknown, (...args: unknown[]) => void>();
@@ -1421,6 +1421,7 @@ describe('CaelianKernel integration', () => {
     window.tavern_events = {
       GENERATE_BEFORE_COMBINE_PROMPTS: 'generation-started',
       GENERATION_ENDED: 'generation-ended',
+      GENERATION_STOPPED: 'generation-stopped',
     };
     let mvuData: Record<string, unknown> = {
       stat_data: {
@@ -1446,6 +1447,11 @@ describe('CaelianKernel integration', () => {
     });
 
     await kernel.initialize();
+    const tavernChanged = vi.fn();
+    const disposeTavernChanged = kernel.api.on(
+      'tavern.changed',
+      tavernChanged,
+    );
     await kernel.api.execute({
       id: 'generation-gift-add-item',
       type: 'inventory.adjust',
@@ -1471,7 +1477,14 @@ describe('CaelianKernel integration', () => {
       pendingAffinityDelta: 0,
     });
 
-    handlers.get('generation-ended')?.();
+    handlers.get('generation-stopped')?.();
+    await expect
+      .poll(() =>
+        tavernChanged.mock.calls.some(
+          ([event]) => event.event === 'GENERATION_STOPPED',
+        ),
+      )
+      .toBe(true);
     await expect
       .poll(() =>
         kernel.api.execute({
@@ -1489,6 +1502,7 @@ describe('CaelianKernel integration', () => {
       pendingAffinityDelta: 0,
     });
 
+    disposeTavernChanged();
     await kernel.api.shutdown();
   });
 

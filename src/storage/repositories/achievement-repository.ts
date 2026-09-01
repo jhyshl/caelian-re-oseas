@@ -721,6 +721,13 @@ export class AchievementRepository {
       }
 
       for (const [id, raw] of Object.entries(payload.unlocked ?? {})) {
+        if (
+          Object.values(ACHIEVEMENT_PATCH_REGISTRY).some(
+            (patch) => patch.achievement.id === id,
+          )
+        ) {
+          continue;
+        }
         const fallback = this.normalizeExternalDefinition(id, raw);
         if (!definitions[id] && fallback) {
           definitions[id] = fallback;

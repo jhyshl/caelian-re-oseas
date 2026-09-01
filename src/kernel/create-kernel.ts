@@ -1059,46 +1059,50 @@ export class CaelianKernel {
         pending: Boolean(await this.getPendingQuestSubmission()),
       });
     }
+    const terminalEvent = this.isGenerationEndEvent(eventName);
     try {
       await this.reconcileQuestFloors(eventName, payload);
       await this.ingestMvuNarrative();
-    } finally {
-      if (this.isGenerationEndEvent(eventName)) {
-        // Keep gifts locked until the AI-authored MVU value has been ingested.
-        this.generationActive = false;
+      if (terminalEvent) {
+        await this.retryPendingAffinityProjection();
       }
-    }
-    if (this.isGenerationEndEvent(eventName)) {
-      await this.retryPendingAffinityProjection();
-    }
-    if (
-      [
-        'MESSAGE_RECEIVED',
-        'CHARACTER_MESSAGE_RENDERED',
-        'GENERATION_ENDED',
-        'GENERATION_STOPPED',
-      ].includes(eventName)
-    ) {
-      await this.triggerStoryBattle(payload);
-    }
-    if (eventName === 'GENERATION_ENDED') {
-      const evaluation = await this.evaluateTrackedQuest(payload);
-      await this.advanceTrackedQuestFromLocalState();
-      if (evaluation) {
-        await this.presentQuestGuidance(evaluation);
-        if (evaluation.gatheringRequested) {
-          await this.presentStoryGathering(
-            evaluation.floorId,
-            evaluation.floorLineageHash,
-            evaluation.originRegion,
-          );
+      if (
+        [
+          'MESSAGE_RECEIVED',
+          'CHARACTER_MESSAGE_RENDERED',
+          'GENERATION_ENDED',
+        ].includes(eventName)
+      ) {
+        await this.triggerStoryBattle(payload);
+      }
+      if (eventName === 'GENERATION_ENDED') {
+        const evaluation = await this.evaluateTrackedQuest(payload);
+        await this.advanceTrackedQuestFromLocalState();
+        if (evaluation) {
+          await this.presentQuestGuidance(evaluation);
+          if (evaluation.gatheringRequested) {
+            await this.presentStoryGathering(
+              evaluation.floorId,
+              evaluation.floorLineageHash,
+              evaluation.originRegion,
+            );
+          }
         }
       }
+      await this.syncQuestContext();
+      await this.scanCurrentAchievements();
+      await this.syncProjection();
+    } finally {
+      if (terminalEvent) {
+        // Terminal events always refresh the affinity UI, even if MVU or
+        // quest reconciliation failed before the normal event broadcast.
+        this.generationActive = false;
+        await this.events.emit('tavern.changed', { event: eventName });
+      }
     }
-    await this.syncQuestContext();
-    await this.scanCurrentAchievements();
-    await this.syncProjection();
-    await this.events.emit('tavern.changed', { event: eventName });
+    if (!terminalEvent) {
+      await this.events.emit('tavern.changed', { event: eventName });
+    }
   }
 
   private async triggerStoryBattle(
@@ -1972,13 +1976,15 @@ export class CaelianKernel {
       'achievement-letter',
       'memory-together-letter',
       'quest-submission',
+      'battle',
     ]);
     if (this.panels.list().some((panel) => blockingPanels.has(panel))) return;
+    this.patchMailboxPending = false;
     try {
       await this.panels.navigate('mailbox');
-      this.patchMailboxPending = false;
     } catch {
       // Keep the pending bit so the next panel transition can retry delivery.
+      this.patchMailboxPending = true;
     }
   }
 
