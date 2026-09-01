@@ -9,16 +9,34 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.62');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.63');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.62');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.63');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('心动主题');
-    expect(latestText).toContain('好感度达到 250');
-    expect(latestText).toContain('实时显示凯利安好感度');
-    expect(latestText).toContain('九宫格切片');
+    expect(latestText).toContain('边框与悬浮入口');
+    expect(latestText).toContain('统一重制并加粗');
+    expect(latestText).toContain('主面板、快捷菜单、弹窗、内部模块和入口单元格');
+    expect(latestText).toContain('略高于宽度的紧凑纵向比例');
+    expect(latestText).toContain('留白均衡');
+    expect(latestText).toContain('旅程主题');
+    expect(latestText).toContain('纯直线边段');
+    expect(latestText).toContain('宝石拆为独立清晰覆盖层');
+    expect(latestText).toContain('对齐边框中线');
+    expect(latestText).toContain('25% 可见度');
+    expect(latestText).toContain('顶部页眉、侧边/底部导航');
+    expect(latestText).toContain('与快捷菜单');
+    expect(latestText).toContain('完整实心框体');
+    expect(latestText).toContain('人物原图抠图保持完整居中');
+    const alpha62Text =
+      releases
+        .find((release) => release.version === '0.2.0-alpha.62')
+        ?.changes.join('\n') ?? '';
+    expect(alpha62Text).toContain('心动主题');
+    expect(alpha62Text).toContain('好感度达到 250');
+    expect(alpha62Text).toContain('实时显示凯利安好感度');
+    expect(alpha62Text).toContain('九宫格切片');
     const alpha61Text =
       releases
         .find((release) => release.version === '0.2.0-alpha.61')
@@ -154,14 +172,14 @@ describe('release notes', () => {
   });
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
-    expect(releaseHistoryFor('alpha', '0.2.0-alpha.63')[0]?.version).toBe(
-      '0.2.0-alpha.62',
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.64')[0]?.version).toBe(
+      '0.2.0-alpha.63',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.62',
+      '0.2.0-alpha.63',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });

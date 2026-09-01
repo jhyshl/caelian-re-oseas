@@ -67,9 +67,15 @@ describe('心动主题资源与解锁合同', () => {
     const transparentAssets = [
       'launcher-main.png',
       'launcher-stub.png',
+      'launcher-frame.png',
+      'launcher-preview.png',
       'menu-frame.png',
+      'menu-frame-9slice.png',
+      'frame-center-gem.png',
       'menu-cell.png',
+      'menu-cell-9slice.png',
       'section-frame.png',
+      'section-frame-9slice.png',
       ...launcherPanels.map((panel) => `icons/${panel}.png`),
     ];
     for (const asset of transparentAssets) {
@@ -81,13 +87,18 @@ describe('心动主题资源与解锁合同', () => {
       'src/assets/themes/caelian-heart/pattern.png',
     );
     expect(pattern.subarray(1, 4).toString('ascii')).toBe('PNG');
-    const sectionFrame = await readFile(
-      'src/assets/themes/caelian-heart/section-frame.png',
-    );
-    expect([
-      sectionFrame.readUInt32BE(16),
-      sectionFrame.readUInt32BE(20),
-    ]).toEqual([712, 560]);
+    const expectedDimensions: Record<string, readonly [number, number]> = {
+      'launcher-frame.png': [512, 640],
+      'launcher-preview.png': [512, 640],
+      'menu-frame-9slice.png': [1024, 640],
+      'frame-center-gem.png': [512, 156],
+      'menu-cell-9slice.png': [1024, 640],
+      'section-frame-9slice.png': [712, 560],
+    };
+    for (const [asset, dimensions] of Object.entries(expectedDimensions)) {
+      const png = await readFile(`src/assets/themes/caelian-heart/${asset}`);
+      expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual(dimensions);
+    }
   });
 
   it('所有主题边框使用 Journey 同类九宫格切片且菜单保留入口名称', async () => {
@@ -105,9 +116,54 @@ describe('心动主题资源与解锁合同', () => {
     expect(heartCss).toContain(
       'border-image-source: var(--ca-heart-section-frame)',
     );
-    expect(heartCss).toContain('border-image-slice: 112 128 fill');
-    expect(heartCss).toContain('border-image-slice: 108 92 fill');
-    expect(heartCss).toContain('border-image-slice: 64 84 fill');
+    expect(heartCss).toContain('border-image-slice: 200 190 190 190 fill');
+    expect(heartCss).toContain('border-image-slice: 116 100 fill');
+    expect(heartCss).toContain('border-image-width: 28px 24px');
+    expect(heartCss).toContain('border-image-width: 24px 20px');
+    expect(heartCss).toContain('border-image-width: 17px');
+    expect(heartCss).toContain('border-image-width: 15px');
+    expect(heartCss).toContain('border-image-width: 40px');
+    expect(heartCss).toContain('border-image-width: 32px');
+    expect(heartCss).toContain(
+      'linear-gradient(rgba(248, 252, 255, 0.75), rgba(239, 248, 255, 0.75))',
+    );
+    expect(heartCss).toContain(
+      'linear-gradient(rgba(255, 255, 255, 0.75), rgba(237, 247, 255, 0.75))',
+    );
+    expect(heartCss).toContain(
+      'linear-gradient(rgba(242, 249, 255, 0.75), rgba(225, 240, 252, 0.75))',
+    );
+    expect(heartCss).toContain(
+      'linear-gradient(rgba(250, 253, 255, 0.75), rgba(244, 250, 255, 0.75))',
+    );
+    expect(heartCss).toContain('inset: 12px');
+    expect(heartCss).toContain('inset: 10px');
+    expect(heartCss).toContain('padding: 28px 24px 22px');
+    expect(heartCss).toContain('padding: 24px 20px 20px');
+    expect(heartCss).toContain('width: min(320px, calc(100vw - 16px))');
+    expect(heartCss).toContain('width: min(306px, calc(100vw - 8px))');
+    expect(heartCss).toContain('min-height: 94px');
+    expect(heartCss).toContain('min-height: 90px');
+    expect(heartCss).toContain('inset: -23px');
+    expect(heartCss).toContain('inset: -17px');
+    expect(heartCss).toContain('top: -35px');
+    expect(heartCss).toContain('bottom: -35px');
+    expect(heartCss).toContain('top: -20px');
+    expect(heartCss).toContain('bottom: -20px');
+    expect(heartCss).toContain('.ca-section.ca-section');
+    expect(heartCss).toContain('grid-template-columns: 58px minmax(0, 1fr)');
+    expect(heartCss).toContain(
+      'background: transparent var(--ca-heart-launcher-frame) center / contain no-repeat',
+    );
+    expect(heartCss).toContain(
+      'background: transparent var(--ca-heart-launcher-main) center / contain no-repeat',
+    );
+    expect(heartCss).toContain(
+      'background-image: var(--ca-heart-launcher-stub)',
+    );
+    expect(heartCss).toContain('var(--ca-heart-frame-center-gem)');
+    expect(heartCss).toContain('border-image-outset: 14px');
+    expect(heartCss).toContain('z-index: 3');
     expect(heartCss).not.toContain('background-size: 100% 100%');
 
     const shell = await readFile('src/modules/shell/App.vue', 'utf8');

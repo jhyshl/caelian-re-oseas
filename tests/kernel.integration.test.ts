@@ -1783,7 +1783,7 @@ describe('CaelianKernel integration', () => {
     databaseNames.push(unmatchedDatabaseName);
     const unmatchedKernel = createKernel({
       channel: 'alpha',
-      version: '0.2.0-alpha.63',
+      version: '0.2.0-alpha.64',
       buildId: 'unmatched-release-test-build',
       databaseName: unmatchedDatabaseName,
       sourceWindow: window,
@@ -1798,9 +1798,9 @@ describe('CaelianKernel integration', () => {
       '[data-caelian-panel="release-notes"]',
     );
     expect(historicalAnnouncement?.textContent).toContain(
-      '当前构建 0.2.0-alpha.63 暂无独立公告',
+      '当前构建 0.2.0-alpha.64 暂无独立公告',
     );
-    expect(historicalAnnouncement?.textContent).toContain('Alpha 62');
+    expect(historicalAnnouncement?.textContent).toContain('Alpha 63');
     expect(
       historicalAnnouncement?.querySelector('.current-badge'),
     ).toBeNull();
