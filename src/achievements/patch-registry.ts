@@ -50,6 +50,7 @@ export interface AchievementPatchReward {
 export interface AchievementPatchCatalogEntry {
   id: string;
   eventAchievementId: string;
+  eventAliases?: readonly string[];
   windowFlag: string;
   activationStorageKeys: readonly string[];
   openedStorageKeys: readonly string[];
@@ -91,6 +92,7 @@ export const ACHIEVEMENT_PATCH_REGISTRY: Record<
   'old-player': {
     id: 'old-player',
     eventAchievementId: 'ach_thanks_old_caelian',
+    eventAliases: ['caelian_special_patch_old_player_v2'],
     windowFlag: '__CAELIAN_SPECIAL_PATCH_OLD_PLAYER__',
     activationStorageKeys: [
       'caelian_special_patch_old_player_v1',

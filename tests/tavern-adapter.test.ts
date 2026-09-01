@@ -658,9 +658,17 @@ describe('TavernAdapter', () => {
     const listener = vi.fn();
     adapter.subscribe(listener);
     window.dispatchEvent(
-      new CustomEvent('caelian-special-achievement-patch'),
+      new CustomEvent('caelian-special-achievement-patch', {
+        detail: {
+          id: 'ach_thanks_old_caelian',
+          patch: 'caelian_special_patch_old_player_v2',
+        },
+      }),
     );
     expect(listener).toHaveBeenCalledWith('ACHIEVEMENT_PATCH_CHANGED');
+    expect(
+      adapter.achievementPatchSignals(new Date(2026, 7, 20, 12, 0, 0)),
+    ).toContainEqual({ id: 'old-player', opened: true });
     listener.mockClear();
     window.dispatchEvent(new CustomEvent('caelian-special-reward-patch'));
     expect(listener).toHaveBeenCalledWith('ACHIEVEMENT_PATCH_CHANGED');

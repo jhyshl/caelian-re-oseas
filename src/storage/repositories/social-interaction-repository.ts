@@ -21,8 +21,6 @@ import {
   TRELAO_DISLIKED_ITEMS,
   TRELAO_LIKE_FEEDBACK,
   TRELAO_MILD_DISLIKE_FEEDBACK,
-  TRELAO_PET_FEEDBACK,
-  TRELAO_PET_REJECT_FEEDBACK,
   clampInteractionAffinity,
   giftAffinityDelta,
   interactionItemTags,

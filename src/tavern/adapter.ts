@@ -59,6 +59,10 @@ export class TavernAdapter {
   private characterAvatarOriginalUrl: string | undefined;
   private userAvatarId: string | undefined;
   private questContext?: string;
+  private readonly externalPatchSignals = new Map<
+    string,
+    AchievementPatchSignal
+  >();
 
   constructor(
     sourceWindow: Window = window,
@@ -213,7 +217,7 @@ export class TavernAdapter {
       String(date.getMonth() + 1).padStart(2, '0'),
       String(date.getDate()).padStart(2, '0'),
     ].join('-');
-    return ACHIEVEMENT_PATCHES.flatMap((patch) => {
+    const detected = ACHIEVEMENT_PATCHES.flatMap((patch) => {
       const claimDateActive =
         patch.activateOnClaimDate === true && patch.claimDate === dateKey;
       const windowFlag = hostState[patch.windowFlag];
@@ -232,6 +236,15 @@ export class TavernAdapter {
         },
       ];
     });
+    const merged = new Map(detected.map((signal) => [signal.id, signal]));
+    for (const signal of this.externalPatchSignals.values()) {
+      const current = merged.get(signal.id);
+      merged.set(signal.id, {
+        id: signal.id,
+        opened: signal.opened || current?.opened === true,
+      });
+    }
+    return [...merged.values()];
   }
 
   async chatTexts(): Promise<string[]> {
@@ -480,7 +493,31 @@ export class TavernAdapter {
       'caelian-launch-reward-patch',
       'caelian-special-reward-patch',
     ]) {
-      const listener = () => {
+      const listener = (event: Event) => {
+        const detail = (event as CustomEvent<unknown>).detail;
+        const value =
+          detail && typeof detail === 'object'
+            ? (detail as Record<string, unknown>)
+            : {};
+        const aliases = [value.id, value.patch]
+          .map((entry) => String(entry ?? '').trim())
+          .filter(Boolean);
+        const patch = ACHIEVEMENT_PATCHES.find((entry) =>
+          aliases.some(
+            (alias) =>
+              alias === entry.id ||
+              alias === entry.eventAchievementId ||
+              entry.eventAliases?.includes(alias),
+          ),
+        );
+        if (patch) {
+          // Standalone patch scripts dispatch this event after their legacy
+          // letter action. Preserve it even when localStorage is unavailable.
+          this.externalPatchSignals.set(patch.id, {
+            id: patch.id,
+            opened: true,
+          });
+        }
         void handler('ACHIEVEMENT_PATCH_CHANGED');
       };
       this.host.addEventListener(eventName, listener);
@@ -489,11 +526,39 @@ export class TavernAdapter {
       );
     }
 
+    const detectOldPlayerEnvelope = (): void => {
+      if (
+        !this.host.document.querySelector(
+          '#caelian_special_patch_old_player_v2_letter_overlay',
+        )
+      ) {
+        return;
+      }
+      if (!this.externalPatchSignals.has('old-player')) {
+        this.externalPatchSignals.set('old-player', {
+          id: 'old-player',
+          opened: false,
+        });
+        void handler('ACHIEVEMENT_PATCH_CHANGED');
+      }
+    };
+    const HostMutationObserver = (
+      this.host as unknown as typeof globalThis
+    ).MutationObserver;
+    if (HostMutationObserver && this.host.document.body) {
+      const observer = new HostMutationObserver(detectOldPlayerEnvelope);
+      observer.observe(this.host.document.body, { childList: true, subtree: true });
+      this.disposers.push(() => observer.disconnect());
+      detectOldPlayerEnvelope();
+    }
+
     const tavernEventNames = [
       'CHAT_CHANGED',
       'CHAT_LOADED',
       'MESSAGE_RECEIVED',
+      'GENERATION_STARTED',
       'GENERATION_ENDED',
+      'GENERATION_STOPPED',
       'MESSAGE_UPDATED',
       'MESSAGE_EDITED',
       'MESSAGE_DELETED',

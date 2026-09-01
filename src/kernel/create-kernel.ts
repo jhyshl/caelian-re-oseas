@@ -152,6 +152,7 @@ export class CaelianKernel {
   private managedContentTimer?: number;
   private surveyTimer?: number;
   private memoryTogetherLetterPending = false;
+  private patchMailboxPending = false;
   private surveyPromptActive = false;
   private questTracker?: QuestTrackerService;
   private questJudgeClient?: OpenAiCompatibleQuestJudgeClient;
@@ -263,6 +264,7 @@ export class CaelianKernel {
             await this.finishTerminalBattleIfNeeded();
           }
           await this.presentMemoryTogetherLetterIfReady();
+          await this.presentPatchMailboxIfReady();
           void this.offerPendingSurvey();
         }),
       );
@@ -281,6 +283,7 @@ export class CaelianKernel {
       await this.openReleaseNotesIfNew();
       await this.openAchievementSpecialIfNeeded();
       await this.presentMemoryTogetherLetterIfReady();
+      await this.presentPatchMailboxIfReady();
       this.startManagedContentUpdates();
       if (this.channel === 'alpha') this.startSurveyUpdates();
       await this.events.emit('runtime.ready', this.getRuntimeInfo());
@@ -1006,6 +1009,11 @@ export class CaelianKernel {
         );
       })
       .finally(() => {
+        if (this.isGenerationEndEvent(eventName)) {
+          // Terminal events must always release the interaction lock, even if
+          // quest reconciliation or MVU ingestion failed earlier in the task.
+          this.generationActive = false;
+        }
         this.pendingTavernUpdates.delete(task);
       });
     this.tavernUpdateQueue = task;
@@ -1017,13 +1025,13 @@ export class CaelianKernel {
     payload?: TavernEventPayload,
   ): Promise<void> {
     if (eventName === 'ACHIEVEMENT_PATCH_CHANGED') {
+      await this.syncAchievementPatches();
       if (this.profileId) {
         await this.repository.importLegacyAchievements(
           this.profileId,
           this.adapter.legacyAchievementPayload(),
         );
       }
-      await this.syncAchievementPatches();
       await this.events.emit('tavern.changed', { event: eventName });
       return;
     }
@@ -1051,16 +1059,16 @@ export class CaelianKernel {
         pending: Boolean(await this.getPendingQuestSubmission()),
       });
     }
-    await this.reconcileQuestFloors(eventName, payload);
     try {
+      await this.reconcileQuestFloors(eventName, payload);
       await this.ingestMvuNarrative();
     } finally {
-      if (eventName === 'GENERATION_ENDED') {
+      if (this.isGenerationEndEvent(eventName)) {
         // Keep gifts locked until the AI-authored MVU value has been ingested.
         this.generationActive = false;
       }
     }
-    if (eventName === 'GENERATION_ENDED') {
+    if (this.isGenerationEndEvent(eventName)) {
       await this.retryPendingAffinityProjection();
     }
     if (
@@ -1068,6 +1076,7 @@ export class CaelianKernel {
         'MESSAGE_RECEIVED',
         'CHARACTER_MESSAGE_RENDERED',
         'GENERATION_ENDED',
+        'GENERATION_STOPPED',
       ].includes(eventName)
     ) {
       await this.triggerStoryBattle(payload);
@@ -1878,11 +1887,11 @@ export class CaelianKernel {
         snapshot.player.subclass,
       );
     }
+    await this.syncAchievementPatches();
     await this.repository.importLegacyAchievements(
       profile.id,
       this.adapter.legacyAchievementPayload(),
     );
-    await this.syncAchievementPatches();
   }
 
   private async syncAchievementPatches(): Promise<void> {
@@ -1898,6 +1907,7 @@ export class CaelianKernel {
       this.memoryTogetherLetterPending = true;
     }
     if (result.receivedMailIds.length > 0) {
+      this.patchMailboxPending = true;
       this.notifications.show({
         kind: 'info',
         icon: '✉',
@@ -1908,8 +1918,17 @@ export class CaelianKernel {
         onClick: () => this.panels.navigate('mailbox'),
       });
     }
+    const mailbox = await this.repository.mailboxState(this.profileId);
+    if (
+      mailbox.entries.some(
+        (entry) => entry.source === 'achievement-patch' && entry.unread,
+      )
+    ) {
+      this.patchMailboxPending = true;
+    }
     if (this.status === 'ready') {
       await this.presentMemoryTogetherLetterIfReady();
+      await this.presentPatchMailboxIfReady();
     }
   }
 
@@ -1935,6 +1954,31 @@ export class CaelianKernel {
       this.memoryTogetherLetterPending = false;
     } catch {
       // The reward is already authoritative; another in-session sync may retry UI.
+    }
+  }
+
+  private async presentPatchMailboxIfReady(): Promise<void> {
+    if (
+      !this.patchMailboxPending ||
+      this.status !== 'ready' ||
+      this.shuttingDown
+    ) {
+      return;
+    }
+    const blockingPanels = new Set([
+      'feedback',
+      'surveys',
+      'release-notes',
+      'achievement-letter',
+      'memory-together-letter',
+      'quest-submission',
+    ]);
+    if (this.panels.list().some((panel) => blockingPanels.has(panel))) return;
+    try {
+      await this.panels.navigate('mailbox');
+      this.patchMailboxPending = false;
+    } catch {
+      // Keep the pending bit so the next panel transition can retry delivery.
     }
   }
 
@@ -2305,8 +2349,16 @@ export class CaelianKernel {
 
   private isGenerationStartEvent(eventName: string): boolean {
     return (
+      eventName === 'GENERATION_STARTED' ||
       eventName === 'GENERATE_BEFORE_COMBINE_PROMPTS' ||
       eventName === 'GENERATION_AFTER_COMMANDS'
+    );
+  }
+
+  private isGenerationEndEvent(eventName: string): boolean {
+    return (
+      eventName === 'GENERATION_ENDED' ||
+      eventName === 'GENERATION_STOPPED'
     );
   }
 
