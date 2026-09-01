@@ -123,7 +123,7 @@ async function syncManagedContent() {
   }
   notice.value =
     result.conflicts.length > 0
-      ? `已更新 ${result.applied} 项；${result.conflicts.length} 项检测到玩家修改，已保留玩家版本。`
+      ? `已更新 ${result.applied} 项；${result.conflicts.length} 项未能安全写入，请稍后重试。`
       : result.applied > 0
         ? `已安全更新 ${result.applied} 项角色卡/世界书内容。`
         : '角色卡与绑定世界书内容已经是最新版本。';

@@ -44,6 +44,60 @@ afterEach(async () => {
 });
 
 describe('CaelianKernel integration', () => {
+  it('旧运行时占用主内核时仍先检查受管角色卡兼容修复', async () => {
+    const databaseName = `caelian-alpha-legacy-managed-repair-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    window.__CaelianRuntime = {};
+    window.SillyTavern = {
+      getContext: () => ({
+        characterId: 0,
+        name2: '凯利安alpha',
+        characters: [
+          { name: '凯利安alpha', avatar: '凯利安alpha_1.png' },
+        ],
+      }),
+    };
+    (window as unknown as Record<string, unknown>).TavernHelper = {
+      getCurrentCharacterName: () => '凯利安alpha',
+      getCurrentCharacterId: () => '凯利安alpha_1.png',
+      getCharWorldbookNames: () => ({
+        primary: '孔雀开屏你说你看不见alpha',
+        additional: [],
+      }),
+    };
+    const fetchMock = vi
+      .spyOn(window, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 404 }));
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.65',
+      buildId: 'legacy-managed-repair-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+    const panelOpen = vi.fn().mockResolvedValue(undefined);
+    (
+      kernel as unknown as {
+        panels: { open: (panel: string) => Promise<void> };
+      }
+    ).panels.open = panelOpen;
+
+    await kernel.initialize();
+
+    expect(kernel.api.getRuntimeInfo()).toMatchObject({
+      status: 'blocked-by-legacy',
+      lastError: expect.stringContaining('仅保留角色卡与世界书兼容修复'),
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/managed-content/alpha.json'),
+      expect.any(Object),
+    );
+    expect(panelOpen).toHaveBeenCalledWith('shell');
+
+    await kernel.api.shutdown();
+    fetchMock.mockRestore();
+  });
+
   it('只在对应社区脚本解锁后应用小狗与旅程主题', async () => {
     const databaseName = `caelian-alpha-tail-town-theme-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
@@ -1782,7 +1836,7 @@ describe('CaelianKernel integration', () => {
     databaseNames.push(unmatchedDatabaseName);
     const unmatchedKernel = createKernel({
       channel: 'alpha',
-      version: '0.2.0-alpha.65',
+      version: '0.2.0-alpha.66',
       buildId: 'unmatched-release-test-build',
       databaseName: unmatchedDatabaseName,
       sourceWindow: window,
@@ -1797,9 +1851,9 @@ describe('CaelianKernel integration', () => {
       '[data-caelian-panel="release-notes"]',
     );
     expect(historicalAnnouncement?.textContent).toContain(
-      '当前构建 0.2.0-alpha.65 暂无独立公告',
+      '当前构建 0.2.0-alpha.66 暂无独立公告',
     );
-    expect(historicalAnnouncement?.textContent).toContain('Alpha 64');
+    expect(historicalAnnouncement?.textContent).toContain('Alpha 65');
     expect(
       historicalAnnouncement?.querySelector('.current-badge'),
     ).toBeNull();

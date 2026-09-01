@@ -9,6 +9,15 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.65',
+    label: 'Alpha 65',
+    releasedAt: '2026-09-01',
+    changes: [
+      '修复旧角色卡的好感度仍在 100 被截断：受管更新不再把“current”或角色显示名当作写回目标，而是通过 SillyTavern 核心接口按真实头像精确合并当前角色卡脚本；即使 Alpha 旧运行时仍在占用主内核，也会先执行必要的角色卡兼容修复，同名卡与 `_1.png` 头像不会再写到别的卡，新变量结构会在当前会话立即重新注册为 0～500。',
+      '已应用记录改为按发布通道与真实角色头像隔离，并在每次跳过前从后端精确回读角色卡、按 TavernHelper 4.8.19 的规范化结构复核世界书；重导旧卡、内容回退或注入配置被旧接口改坏时会自动补写，只有确认落盘后才会记为成功，部分失败也不会再误报全部完成。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.64',
     label: 'Alpha 64',
     releasedAt: '2026-09-01',
@@ -686,6 +695,15 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 ] as const;
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.12.0-beta.1',
+    label: 'Beta 1.12',
+    releasedAt: '2026-09-01',
+    changes: [
+      '修复旧角色卡的好感度仍在 100 被截断：变量结构现在通过 SillyTavern 核心接口按真实头像精确合并正在使用的角色卡；即使旧运行时仍在占用主内核，也会先执行必要的角色卡兼容修复。同名卡与 `_1.png` 头像不会再写错目标；重导旧卡或内容回退会自动复检补写，且只有从后端确认 0～500 脚本已落盘后才记为成功。',
+      '同步加入好感度 250 解锁的“心动主题”及 Alpha 最新适配：悬浮入口实时显示凯利安好感度，主面板、快捷菜单、弹窗和内页沿用旅程主题的单层九宫格缩放方式，蓝白金底纹完整显示，人物与入口名称保持居中清晰。',
+    ],
+  },
   {
     version: '1.11.0-beta.1',
     label: 'Beta 1.11',

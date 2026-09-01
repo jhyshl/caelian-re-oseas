@@ -221,8 +221,22 @@ export class CaelianKernel {
   async initialize(): Promise<void> {
     this.notifications.mount();
     if (this.adapter.hasLegacyRuntime()) {
+      // Existing Alpha cards still load the legacy runtime before this bridge.
+      // Keep the new kernel read-only, but repair the managed variable schema
+      // and worldbook contract before returning so those cards can migrate
+      // beyond the old 0..100 affinity validator without a manual reinstall.
+      try {
+        await this.syncManagedContent(false);
+      } catch (error) {
+        this.notifyRuntime(
+          'warning',
+          error instanceof Error ? error.message : String(error),
+          '角色卡兼容修复暂未完成',
+        );
+      }
+      this.startManagedContentUpdates(false);
       this.status = 'blocked-by-legacy';
-      this.lastError = `检测到旧版 __CaelianRuntime；${this.channelLabel()} 已停止写入。`;
+      this.lastError = `检测到旧版 __CaelianRuntime；${this.channelLabel()} 新内核已停止写入，仅保留角色卡与世界书兼容修复。`;
       this.notifyRuntime('error', this.lastError, '旧版脚本仍在运行');
       await this.panels.open('shell');
       return;
@@ -2191,10 +2205,17 @@ export class CaelianKernel {
     return (hash >>> 0).toString(36);
   }
 
-  private startManagedContentUpdates(): void {
-    void this.syncManagedContent(false);
+  private startManagedContentUpdates(runInitialSync = true): void {
+    if (runInitialSync) {
+      void this.syncManagedContent(false).catch(() => {
+        // A later polling cycle retries transient host/API failures.
+      });
+    }
     this.managedContentTimer = this.adapter.host.setInterval(
-      () => void this.syncManagedContent(false),
+      () =>
+        void this.syncManagedContent(false).catch(() => {
+          // Keep polling after transient host/API failures.
+        }),
       10 * 60 * 1_000,
     );
   }
@@ -2279,18 +2300,17 @@ export class CaelianKernel {
     force: boolean,
   ): Promise<ManagedContentSyncResult> {
     const result = await this.managedContent.sync({ force });
-    if (result.applied > 0) {
+    if (result.conflicts.length > 0 && (force || result.applied > 0)) {
+      this.notifyRuntime(
+        'warning',
+        `${result.applied > 0 ? `已更新 ${result.applied} 项；` : ''}${result.conflicts.length} 项未能安全写入，请在设置中重试并查看结果。`,
+        '凯利安内容更新未完全完成',
+      );
+    } else if (result.applied > 0) {
       this.notifyRuntime(
         'success',
         `已安全更新 ${result.applied} 项角色卡/世界书内容。`,
         '凯利安内容更新完成',
-      );
-    }
-    if (result.conflicts.length > 0 && force) {
-      this.notifyRuntime(
-        'warning',
-        `${result.conflicts.length} 项内容与玩家修改冲突，已保留玩家版本。`,
-        '凯利安内容更新已暂停',
       );
     }
     return result;

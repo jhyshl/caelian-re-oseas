@@ -21,33 +21,149 @@ interface ManagedCharacter {
   first_messages: string[];
   extensions: {
     tavern_helper?: {
-      scripts?: Array<{
-        id?: string;
-        name?: string;
-        content?: string;
-        [key: string]: unknown;
-      }>;
+      scripts?: ManagedScriptTree[];
     };
     [key: string]: unknown;
   };
   [key: string]: unknown;
 }
 
+interface ManagedScript {
+  type?: 'script';
+  id?: string;
+  name?: string;
+  content?: string;
+  [key: string]: unknown;
+}
+
+interface ManagedScriptFolder {
+  type: 'folder';
+  scripts: ManagedScriptTree[];
+  [key: string]: unknown;
+}
+
+type ManagedScriptTree = ManagedScript | ManagedScriptFolder;
+
+interface CurrentCharacterIdentity {
+  name: string;
+  avatar: string;
+  characterIndex: number | null;
+  requestHeaders: Record<string, string>;
+  safeWholeCardSelector: string | null;
+}
+
 interface ManagedWorldbookEntry {
   uid: number | string;
   name: string;
   content: string;
+  enabled?: boolean;
+  strategy?: {
+    type?: 'constant' | 'selective' | 'vectorized';
+    keys?: string[];
+    keys_secondary?: {
+      logic?: 'and_any' | 'not_all' | 'not_any' | 'and_all';
+      keys?: string[];
+    };
+    scan_depth?: number | 'same_as_global';
+  };
+  position?: {
+    type?:
+      | 'before_character_definition'
+      | 'after_character_definition'
+      | 'before_example_messages'
+      | 'after_example_messages'
+      | 'before_author_note'
+      | 'after_author_note'
+      | 'at_depth'
+      | 'outlet';
+    role?: 'system' | 'user' | 'assistant';
+    depth?: number;
+    order?: number;
+  };
+  probability?: number;
+  recursion?: {
+    prevent_incoming?: boolean;
+    prevent_outgoing?: boolean;
+    delay_until?: number | null;
+  };
+  effect?: {
+    sticky?: number | null;
+    cooldown?: number | null;
+    delay?: number | null;
+  };
   extra?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+interface ManagedWorldbookManifestEntry {
+  uid?: number | string;
+  name?: string;
+  content?: string;
+  keys?: string[];
+  secondary_keys?: string[];
+  constant?: boolean;
+  selective?: boolean;
+  insertion_order?: number;
+  enabled?: boolean;
+  position?: 'before_char' | 'after_char';
+  use_regex?: boolean;
+  extra?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+interface PersistedCharacterPayload {
+  name?: string;
+  avatar?: string;
+  chat?: string;
+  create_date?: string;
+  json_data?: string;
+  data: {
+    name?: string;
+    character_version?: string;
+    creator?: string;
+    creator_notes?: string;
+    description?: string;
+    first_mes?: string;
+    alternate_greetings?: string[];
+    personality?: string;
+    scenario?: string;
+    mes_example?: string;
+    tags?: string[];
+    extensions: Record<string, unknown> & {
+      world?: string;
+      talkativeness?: number | string;
+      fav?: boolean | string;
+      tavern_helper?: {
+        scripts?: ManagedScriptTree[];
+        [key: string]: unknown;
+      };
+    };
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
 interface ManagedContentApi {
   getCurrentCharacterName?: () => string | null;
+  getCurrentCharacterId?: () => string | null;
   getCharWorldbookNames?: (
-    characterName: 'current',
+    characterName: 'current' | string,
   ) => { primary: string | null; additional: string[] };
+  getWorldbook?: (
+    worldbookName: string,
+  ) => Promise<ManagedWorldbookEntry[]>;
+  getScriptTrees?: (options: {
+    type: 'character';
+  }) => ManagedScriptTree[];
+  replaceScriptTrees?: (
+    trees: ManagedScriptTree[],
+    options: { type: 'character' },
+  ) => void;
+  getVariables?: (options: {
+    type: 'character';
+  }) => Record<string, unknown>;
   updateCharacterWith?: (
-    characterName: 'current',
+    characterName: string,
     updater: (character: ManagedCharacter) => ManagedCharacter,
   ) => Promise<ManagedCharacter>;
   updateWorldbookWith?: (
@@ -132,7 +248,7 @@ type ManagedContentOperation =
         kind: 'worldbook-upsert-entry';
         entryNames: string[];
       };
-      entry: Partial<ManagedWorldbookEntry>;
+      entry: ManagedWorldbookManifestEntry;
     }
   | {
       id: string;
@@ -140,7 +256,7 @@ type ManagedContentOperation =
         kind: 'worldbook-create-entry';
         managedId: string;
       };
-      entry: Partial<ManagedWorldbookEntry>;
+      entry: ManagedWorldbookManifestEntry;
     }
   | {
       id: string;
@@ -227,19 +343,18 @@ export class ManagedContentUpdater {
     }
 
     const api = this.resolveApi();
-    if (
-      !api.updateCharacterWith ||
-      !api.updateWorldbookWith ||
-      !api.getCharWorldbookNames
-    ) {
+    if (!api.getCharWorldbookNames) {
       return emptyResult('unavailable');
     }
 
-    const characterName = await this.currentCharacterName(api);
-    if (!isCaelianCharacterName(characterName)) {
+    const identity = await this.currentCharacterIdentity(api);
+    if (!identity || !isCaelianCharacterName(identity.name)) {
       return emptyResult('wrong-character');
     }
 
+    // `current` is safe for this read-only helper and resolves the exact
+    // SillyTavern character id. A display name is ambiguous when duplicate
+    // cards exist.
     const bindings = api.getCharWorldbookNames.call(api, 'current');
     const worldbookName = bindings.primary?.trim() ?? '';
     if (!isCaelianWorldbookName(worldbookName)) {
@@ -250,7 +365,7 @@ export class ManagedContentUpdater {
     if (!manifest) return emptyResult('offline');
     this.assertSafeManifest(manifest, worldbookName);
 
-    const appliedState = this.readAppliedState();
+    const appliedState = this.readAppliedState(identity.avatar);
     const conflicts: ManagedContentSyncResult['conflicts'] = [];
     let applied = 0;
     let skipped = 0;
@@ -259,8 +374,16 @@ export class ManagedContentUpdater {
       const checksum = stableHash(operation);
       const previous = appliedState[operation.id];
       if (previous?.checksum === checksum) {
-        skipped += 1;
-        continue;
+        const stillApplied = await this.isOperationApplied(
+          api,
+          identity,
+          worldbookName,
+          operation,
+        );
+        if (stillApplied) {
+          skipped += 1;
+          continue;
+        }
       }
       if (previous && previous.checksum !== checksum) {
         conflicts.push({
@@ -271,13 +394,18 @@ export class ManagedContentUpdater {
       }
 
       try {
-        await this.applyOperation(api, worldbookName, operation);
+        await this.applyOperation(
+          api,
+          identity,
+          worldbookName,
+          operation,
+        );
         appliedState[operation.id] = {
           checksum,
           revision: manifest.revision,
           appliedAt: Date.now(),
         };
-        this.writeAppliedState(appliedState);
+        this.writeAppliedState(appliedState, identity.avatar);
         applied += 1;
       } catch (error) {
         conflicts.push({
@@ -287,7 +415,7 @@ export class ManagedContentUpdater {
       }
     }
 
-    this.writeConflicts(manifest.revision, conflicts);
+    this.writeConflicts(manifest.revision, conflicts, identity.avatar);
     return {
       status: applied > 0 ? 'applied' : 'current',
       revision: manifest.revision,
@@ -297,19 +425,53 @@ export class ManagedContentUpdater {
     };
   }
 
-  private async currentCharacterName(
+  private async currentCharacterIdentity(
     api: ManagedContentApi,
-  ): Promise<string | null> {
-    const direct = api.getCurrentCharacterName?.call(api);
-    if (typeof direct === 'string') return direct.trim();
+  ): Promise<CurrentCharacterIdentity | null> {
+    let context: TavernContext;
     try {
-      const context = await Promise.resolve(
-        this.host.SillyTavern?.getContext?.(),
-      );
-      return context?.name2?.trim() ?? null;
+      context =
+        (await Promise.resolve(
+          this.host.SillyTavern?.getContext?.(),
+        )) ?? {};
     } catch {
-      return null;
+      context = {};
     }
+
+    const directName = api.getCurrentCharacterName?.call(api);
+    const name =
+      (typeof directName === 'string' ? directName.trim() : '') ||
+      context.name2?.trim() ||
+      '';
+    if (!name) return null;
+
+    const characterIndex = Number(context.characterId);
+    const indexedCharacter =
+      Number.isInteger(characterIndex) && characterIndex >= 0
+        ? context.characters?.[characterIndex]
+        : undefined;
+    const directAvatar = api.getCurrentCharacterId?.call(api);
+    const avatar =
+      indexedCharacter?.avatar?.trim() ||
+      (typeof directAvatar === 'string' ? directAvatar.trim() : '') ||
+      `name:${name}`;
+    const sameNameCount =
+      context.characters?.filter((character) => character.name === name)
+        .length ?? 0;
+    const safeWholeCardSelector =
+      sameNameCount === 1 && avatar === `${name}.png` ? name : null;
+    const requestHeaders = context.getRequestHeaders?.call(context) ?? {};
+
+    return {
+      name,
+      avatar,
+      characterIndex:
+        Number.isInteger(characterIndex) && characterIndex >= 0
+          ? characterIndex
+          : null,
+      requestHeaders,
+      safeWholeCardSelector,
+    };
   }
 
   private resolveApi(): ManagedContentApi {
@@ -359,6 +521,7 @@ export class ManagedContentUpdater {
 
   private async applyOperation(
     api: ManagedContentApi,
+    identity: CurrentCharacterIdentity,
     worldbookName: string,
     operation: ManagedContentOperation,
   ): Promise<void> {
@@ -367,70 +530,336 @@ export class ManagedContentUpdater {
       operation.target.kind === 'character-first-message' ||
       operation.target.kind === 'character-script'
     ) {
-      await this.applyCharacterOperation(api, operation);
+      await this.applyCharacterOperation(api, identity, operation);
       return;
     }
     await this.applyWorldbookOperation(api, worldbookName, operation);
+    if (
+      !isWorldbookOperationApplied(
+        await this.readWorldbook(api, worldbookName),
+        operation,
+      )
+    ) {
+      throw new Error('世界书更新后回读校验失败');
+    }
   }
 
   private async applyCharacterOperation(
     api: ManagedContentApi,
+    identity: CurrentCharacterIdentity,
     operation: ManagedContentOperation,
   ): Promise<void> {
-    if (!api.updateCharacterWith) throw new Error('角色卡编辑接口不可用');
     if (!('mutation' in operation)) {
       throw new Error('角色卡更新操作缺少文本命令');
     }
-    await api.updateCharacterWith.call(api, 'current', (character) => {
-      const target = operation.target;
-      if (target.kind === 'character-field') {
-        const field = target.field;
-        character[field] = applyTextMutation(
-          String(character[field] ?? ''),
-          operation.mutation,
-        );
-        return character;
-      }
 
-      if (target.kind === 'character-first-message') {
-        const index = target.index;
-        if (
-          !Number.isInteger(index) ||
-          index < 0 ||
-          index >= character.first_messages.length
-        ) {
-          throw new Error(`角色卡开场白索引 ${index} 不存在`);
-        }
-        character.first_messages[index] = applyTextMutation(
-          character.first_messages[index] ?? '',
-          operation.mutation,
-        );
-        return character;
-      }
-
-      if (target.kind !== 'character-script') {
-        throw new Error('角色卡更新目标类型不合法');
-      }
-      const scripts =
-        character.extensions?.tavern_helper?.scripts ?? [];
-      const matches = scripts.filter(
-        (script) =>
-          script.id === target.scriptId &&
-          (!target.scriptName || script.name === target.scriptName),
-      );
-      if (matches.length !== 1) {
-        throw new Error(
-          `角色卡脚本 ${target.scriptId} 未找到或不唯一`,
-        );
-      }
-      const script = matches[0];
-      if (!script) throw new Error('角色卡脚本不存在');
-      script.content = applyTextMutation(
-        String(script.content ?? ''),
+    if (operation.target.kind === 'character-script') {
+      await this.applyCharacterScriptOperation(
+        api,
+        identity,
+        operation.target,
         operation.mutation,
       );
-      return character;
+      return;
+    }
+
+    if (!api.updateCharacterWith) throw new Error('角色卡编辑接口不可用');
+    if (!identity.safeWholeCardSelector) {
+      throw new Error(
+        `当前角色卡 ${identity.avatar} 无法通过名称唯一定位，已停止整卡写回`,
+      );
+    }
+
+    await api.updateCharacterWith.call(
+      api,
+      identity.safeWholeCardSelector,
+      (character) => {
+        const target = operation.target;
+        if (target.kind === 'character-field') {
+          const field = target.field;
+          character[field] = applyTextMutation(
+            String(character[field] ?? ''),
+            operation.mutation,
+          );
+          return character;
+        }
+
+        if (target.kind === 'character-first-message') {
+          const index = target.index;
+          if (
+            !Number.isInteger(index) ||
+            index < 0 ||
+            index >= character.first_messages.length
+          ) {
+            throw new Error(`角色卡开场白索引 ${index} 不存在`);
+          }
+          character.first_messages[index] = applyTextMutation(
+            character.first_messages[index] ?? '',
+            operation.mutation,
+          );
+          return character;
+        }
+
+        throw new Error('角色卡更新目标类型不合法');
+      },
+    );
+
+    if (
+      !isCharacterOperationApplied(
+        await this.readPersistedCharacter(identity),
+        operation,
+      )
+    ) {
+      throw new Error('角色卡更新后回读校验失败');
+    }
+  }
+
+  private async applyCharacterScriptOperation(
+    api: ManagedContentApi,
+    identity: CurrentCharacterIdentity,
+    target: Extract<
+      ManagedContentOperation['target'],
+      { kind: 'character-script' }
+    >,
+    mutation: TextMutation,
+  ): Promise<void> {
+    const payload = await this.readPersistedCharacterPayload(identity);
+    const persistedScripts =
+      payload.data.extensions.tavern_helper?.scripts;
+    if (!Array.isArray(persistedScripts)) {
+      throw new Error('当前角色卡没有可编辑的酒馆助手脚本');
+    }
+    const persistedMatches = flattenManagedScriptTrees(
+      persistedScripts,
+    ).filter(
+      (script) =>
+        script.id === target.scriptId &&
+        (!target.scriptName || script.name === target.scriptName),
+    );
+    if (persistedMatches.length !== 1) {
+      throw new Error(`角色卡脚本 ${target.scriptId} 未找到或不唯一`);
+    }
+    const persistedScript = persistedMatches[0];
+    if (!persistedScript) throw new Error('角色卡脚本不存在');
+    applyTextMutation(String(persistedScript.content ?? ''), mutation);
+
+    if (!api.getScriptTrees || !api.replaceScriptTrees || !api.getVariables) {
+      throw new Error('酒馆助手角色脚本仓库同步接口不可用');
+    }
+    const previousScripts = cloneJson(
+      api.getScriptTrees.call(api, { type: 'character' }),
+    );
+    const scripts = cloneJson(previousScripts);
+    const storeMatches = flattenManagedScriptTrees(scripts).filter(
+      (script) =>
+        script.id === target.scriptId &&
+        (!target.scriptName || script.name === target.scriptName),
+    );
+    if (storeMatches.length !== 1) {
+      throw new Error(
+        `酒馆助手脚本仓库中的脚本 ${target.scriptId} 未找到或不唯一`,
+      );
+    }
+    const storeScript = storeMatches[0];
+    if (!storeScript) throw new Error('酒馆助手脚本仓库中的脚本不存在');
+    storeScript.content = applyTextMutation(
+      String(storeScript.content ?? ''),
+      mutation,
+    );
+    const variables = cloneJson(
+      api.getVariables.call(api, { type: 'character' }),
+    );
+    payload.data.extensions.tavern_helper = { scripts, variables };
+    try {
+      await this.writePersistedCharacter(identity, payload, () => {
+        api.replaceScriptTrees?.call(api, cloneJson(scripts), {
+          type: 'character',
+        });
+      });
+    } catch (error) {
+      await this.refreshCurrentCharacterMemory(identity);
+      if (await this.isCurrentCharacter(identity)) {
+        api.replaceScriptTrees.call(api, cloneJson(previousScripts), {
+          type: 'character',
+        });
+      }
+      throw error;
+    }
+
+    for (let attempt = 0; attempt < 15; attempt += 1) {
+      if (
+        isCharacterOperationApplied(await this.readPersistedCharacter(identity), {
+          id: '',
+          target,
+          mutation,
+        })
+      ) {
+        await this.refreshCurrentCharacterMemory(identity);
+        return;
+      }
+      if (attempt < 14) await delay(100);
+    }
+    await this.refreshCurrentCharacterMemory(identity);
+    if (await this.isCurrentCharacter(identity)) {
+      api.replaceScriptTrees.call(api, cloneJson(previousScripts), {
+        type: 'character',
+      });
+    }
+    throw new Error(
+      `角色卡脚本 ${target.scriptId} 更新后回读校验失败`,
+    );
+  }
+
+  private async isOperationApplied(
+    api: ManagedContentApi,
+    identity: CurrentCharacterIdentity,
+    worldbookName: string,
+    operation: ManagedContentOperation,
+  ): Promise<boolean> {
+    try {
+      if (
+        operation.target.kind === 'character-field' ||
+        operation.target.kind === 'character-first-message' ||
+        operation.target.kind === 'character-script'
+      ) {
+        return isCharacterOperationApplied(
+          await this.readPersistedCharacter(identity),
+          operation,
+        );
+      }
+      return isWorldbookOperationApplied(
+        await this.readWorldbook(api, worldbookName),
+        operation,
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private async readWorldbook(
+    api: ManagedContentApi,
+    worldbookName: string,
+  ): Promise<ManagedWorldbookEntry[]> {
+    if (!api.getWorldbook) throw new Error('世界书回读接口不可用');
+    return api.getWorldbook.call(api, worldbookName);
+  }
+
+  private async readPersistedCharacter(
+    identity: CurrentCharacterIdentity,
+  ): Promise<ManagedCharacter> {
+    return managedCharacterFromPayload(
+      await this.readPersistedCharacterPayload(identity),
+    );
+  }
+
+  private async readPersistedCharacterPayload(
+    identity: CurrentCharacterIdentity,
+  ): Promise<PersistedCharacterPayload> {
+    if (!identity.avatar || identity.avatar.startsWith('name:')) {
+      throw new Error('无法取得当前角色卡的精确头像标识');
+    }
+    const response = await this.host.fetch('/api/characters/get', {
+      method: 'POST',
+      headers: identity.requestHeaders,
+      body: JSON.stringify({ avatar_url: identity.avatar }),
+      cache: 'no-store',
     });
+    if (!response.ok) {
+      throw new Error(`角色卡持久化回读失败 (${response.status})`);
+    }
+    return persistedCharacterPayload(await response.json());
+  }
+
+  private async writePersistedCharacter(
+    identity: CurrentCharacterIdentity,
+    character: PersistedCharacterPayload,
+    synchronizeStore: () => void,
+  ): Promise<void> {
+    if (identity.characterIndex === null) {
+      throw new Error('无法取得当前角色卡的精确索引');
+    }
+    const tavernHelper = character.data.extensions.tavern_helper;
+    if (!tavernHelper) throw new Error('当前角色卡缺少酒馆助手扩展数据');
+    const context = await Promise.resolve(
+      this.host.SillyTavern?.getContext?.(),
+    );
+    const indexedCharacter = context?.characters?.[identity.characterIndex];
+    if (
+      Number(context?.characterId) !== identity.characterIndex ||
+      !indexedCharacter ||
+      indexedCharacter.avatar !== identity.avatar
+    ) {
+      throw new Error('当前角色卡在写入前发生切换，已停止更新');
+    }
+    if (context.writeExtensionField) {
+      const writeTask = Promise.resolve(
+        context.writeExtensionField(
+          identity.characterIndex,
+          'tavern_helper',
+          cloneJson(tavernHelper),
+        ),
+      );
+      try {
+        synchronizeStore();
+      } catch (error) {
+        await writeTask.catch(() => undefined);
+        throw error;
+      }
+      await writeTask;
+      return;
+    }
+
+    const response = await this.host.fetch('/api/characters/merge-attributes', {
+      method: 'POST',
+      headers: identity.requestHeaders,
+      body: JSON.stringify({
+        avatar: identity.avatar,
+        data: {
+          extensions: {
+            tavern_helper: cloneJson(tavernHelper),
+          },
+        },
+      }),
+      cache: 'no-store',
+    });
+    if (!response.ok) {
+      throw new Error(`角色卡精确写回失败 (${response.status})`);
+    }
+    await this.refreshCurrentCharacterMemory(identity);
+    if (await this.isCurrentCharacter(identity)) {
+      synchronizeStore();
+    }
+  }
+
+  private async refreshCurrentCharacterMemory(
+    identity: CurrentCharacterIdentity,
+  ): Promise<void> {
+    try {
+      const context = await Promise.resolve(
+        this.host.SillyTavern?.getContext?.(),
+      );
+      await context?.getOneCharacter?.(identity.avatar);
+    } catch {
+      // The persisted card is authoritative; memory refresh is best-effort.
+    }
+  }
+
+  private async isCurrentCharacter(
+    identity: CurrentCharacterIdentity,
+  ): Promise<boolean> {
+    if (identity.characterIndex === null) return false;
+    try {
+      const context = await Promise.resolve(
+        this.host.SillyTavern?.getContext?.(),
+      );
+      return (
+        Number(context?.characterId) === identity.characterIndex &&
+        context?.characters?.[identity.characterIndex]?.avatar ===
+          identity.avatar
+      );
+    } catch {
+      return false;
+    }
   }
 
   private async applyWorldbookOperation(
@@ -469,21 +898,35 @@ export class ManagedContentUpdater {
           if (!('entry' in operation)) {
             throw new Error('新增世界书条目的命令缺少条目内容');
           }
+          const patch = managedWorldbookEntryPatch(operation.entry);
           const existing = entries.filter(
             (entry) =>
               entry.extra?.caelianManagedId === target.managedId,
           );
           if (existing.length > 0) {
-            if (existing.length === 1) return entries;
+            if (existing.length === 1) {
+              const entry = existing[0];
+              if (!entry) throw new Error('受控世界书条目不存在');
+              const uid = entry.uid;
+              Object.assign(entry, patch, {
+                uid,
+                extra: {
+                  ...(isRecord(entry.extra) ? entry.extra : {}),
+                  ...(isRecord(patch.extra) ? patch.extra : {}),
+                  caelianManagedId: target.managedId,
+                },
+              });
+              return entries;
+            }
             throw new Error('受控世界书条目标记不唯一');
           }
           entries.push({
             uid: operation.entry.uid ?? 0,
-            name: String(operation.entry.name ?? ''),
-            content: String(operation.entry.content ?? ''),
-            ...operation.entry,
+            name: String(patch.name ?? ''),
+            content: String(patch.content ?? ''),
+            ...patch,
             extra: {
-              ...(operation.entry.extra ?? {}),
+              ...(isRecord(patch.extra) ? patch.extra : {}),
               caelianManagedId: target.managedId,
             },
           });
@@ -529,11 +972,13 @@ export class ManagedContentUpdater {
     );
   }
 
-  private readAppliedState(): Record<string, AppliedOperation> {
+  private readAppliedState(
+    characterAvatar: string,
+  ): Record<string, AppliedOperation> {
     try {
       const value = JSON.parse(
         this.host.localStorage.getItem(
-          this.storageKey(APPLIED_STORAGE_KEY),
+          this.characterStorageKey(APPLIED_STORAGE_KEY, characterAvatar),
         ) || '{}',
       );
       return isRecord(value)
@@ -546,9 +991,10 @@ export class ManagedContentUpdater {
 
   private writeAppliedState(
     state: Record<string, AppliedOperation>,
+    characterAvatar: string,
   ): void {
     this.host.localStorage.setItem(
-      this.storageKey(APPLIED_STORAGE_KEY),
+      this.characterStorageKey(APPLIED_STORAGE_KEY, characterAvatar),
       JSON.stringify(state),
     );
   }
@@ -556,9 +1002,10 @@ export class ManagedContentUpdater {
   private writeConflicts(
     revision: string,
     conflicts: ManagedContentSyncResult['conflicts'],
+    characterAvatar: string,
   ): void {
     this.host.localStorage.setItem(
-      this.storageKey(CONFLICT_STORAGE_KEY),
+      this.characterStorageKey(CONFLICT_STORAGE_KEY, characterAvatar),
       JSON.stringify({ revision, conflicts, checkedAt: Date.now() }),
     );
   }
@@ -566,11 +1013,231 @@ export class ManagedContentUpdater {
   private storageKey(base: string): string {
     return this.channel === 'alpha' ? base : `${base}:${this.channel}`;
   }
+
+  private characterStorageKey(base: string, avatar: string): string {
+    return `${this.storageKey(base)}:card:${stableHash(avatar)}`;
+  }
 }
 
 function defaultManifestSources(channel: 'alpha' | 'beta'): readonly string[] {
   if (channel === 'alpha') return ALPHA_MANIFEST_SOURCES;
   return [new URL('../managed-content/alpha.json', import.meta.url).href];
+}
+
+function characterScripts(character: ManagedCharacter) {
+  return flattenManagedScriptTrees(
+    character.extensions?.tavern_helper?.scripts ?? [],
+  );
+}
+
+function managedCharacterFromPayload(value: unknown): ManagedCharacter {
+  const payload = persistedCharacterPayload(value);
+  const data = payload.data;
+  const extensions = data.extensions;
+  const alternateGreetings = Array.isArray(data.alternate_greetings)
+    ? data.alternate_greetings.map((message) => String(message ?? ''))
+    : [];
+  const firstMessages = Array.isArray(data.first_messages)
+    ? data.first_messages.map((message) => String(message ?? ''))
+    : [String(data.first_mes ?? ''), ...alternateGreetings];
+  return {
+    ...data,
+    description: String(data.description ?? ''),
+    creator_notes: String(data.creator_notes ?? ''),
+    first_messages: firstMessages,
+    extensions: extensions as ManagedCharacter['extensions'],
+  };
+}
+
+function persistedCharacterPayload(
+  value: unknown,
+): PersistedCharacterPayload {
+  if (!isRecord(value) || !isRecord(value.data)) {
+    throw new Error('角色卡持久化回读内容格式不合法');
+  }
+  const data = value.data;
+  if (!isRecord(data.extensions)) {
+    throw new Error('角色卡持久化回读缺少扩展数据');
+  }
+  return value as unknown as PersistedCharacterPayload;
+}
+
+function flattenManagedScriptTrees(
+  trees: ManagedScriptTree[],
+): ManagedScript[] {
+  return trees.flatMap((tree) =>
+    tree.type === 'folder' && Array.isArray(tree.scripts)
+      ? flattenManagedScriptTrees(tree.scripts)
+      : [tree as ManagedScript],
+  );
+}
+
+function cloneJson<T>(value: T): T {
+  if (value === undefined) return value;
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function isCharacterOperationApplied(
+  character: ManagedCharacter,
+  operation: ManagedContentOperation,
+): boolean {
+  const target = operation.target;
+  if (!('mutation' in operation)) return false;
+  if (target.kind === 'character-field') {
+    return isTextMutationApplied(
+      String(character[target.field] ?? ''),
+      operation.mutation,
+    );
+  }
+  if (target.kind === 'character-first-message') {
+    const content = character.first_messages[target.index];
+    return (
+      content !== undefined &&
+      isTextMutationApplied(content, operation.mutation)
+    );
+  }
+  if (target.kind !== 'character-script') return false;
+  const matches = characterScripts(character).filter(
+    (script) =>
+      script.id === target.scriptId &&
+      (!target.scriptName || script.name === target.scriptName),
+  );
+  return (
+    matches.length === 1 &&
+    isTextMutationApplied(
+      String(matches[0]?.content ?? ''),
+      operation.mutation,
+    )
+  );
+}
+
+function isWorldbookOperationApplied(
+  entries: ManagedWorldbookEntry[],
+  operation: ManagedContentOperation,
+): boolean {
+  const target = operation.target;
+  if (target.kind === 'worldbook-upsert-entry') {
+    if (!('entry' in operation)) return false;
+    const names = new Set(target.entryNames);
+    const matches = entries.filter((entry) => names.has(entry.name));
+    return (
+      matches.length === 1 &&
+      worldbookPatchMatches(
+        matches[0] as ManagedWorldbookEntry,
+        managedWorldbookEntryPatch(operation.entry),
+      )
+    );
+  }
+  if (target.kind === 'worldbook-create-entry') {
+    if (!('entry' in operation)) return false;
+    const matches = entries.filter(
+      (entry) => entry.extra?.caelianManagedId === target.managedId,
+    );
+    if (matches.length !== 1) return false;
+    const patch = managedWorldbookEntryPatch(operation.entry);
+    const expected = {
+      ...patch,
+      extra: {
+        ...(isRecord(patch.extra) ? patch.extra : {}),
+        caelianManagedId: target.managedId,
+      },
+    };
+    return worldbookPatchMatches(
+      matches[0] as ManagedWorldbookEntry,
+      expected,
+    );
+  }
+  if (target.kind === 'worldbook-delete-entry') {
+    return !entries.some(
+      (entry) => entry.extra?.caelianManagedId === target.managedId,
+    );
+  }
+  if (target.kind !== 'worldbook-entry' || !('mutation' in operation)) {
+    return false;
+  }
+  const matches = entries.filter(
+    (entry) =>
+      entry.name === target.entryName &&
+      (target.entryUid === undefined ||
+        String(entry.uid) === String(target.entryUid)),
+  );
+  return (
+    matches.length === 1 &&
+    isTextMutationApplied(
+      String(matches[0]?.content ?? ''),
+      operation.mutation,
+    )
+  );
+}
+
+function isTextMutationApplied(
+  source: string,
+  mutation: TextMutation,
+): boolean {
+  if (mutation.action === 'replace-entire') {
+    return source === mutation.content;
+  }
+  if (mutation.action === 'replace-exact') {
+    return (
+      countOccurrences(source, mutation.before) === 0 &&
+      countOccurrences(source, mutation.after) === 1
+    );
+  }
+  if (mutation.action === 'delete-exact') {
+    return !source.includes(mutation.text);
+  }
+  if (mutation.action === 'insert-before') {
+    return countOccurrences(source, `${mutation.text}${mutation.anchor}`) === 1;
+  }
+  if (mutation.action === 'insert-after') {
+    return countOccurrences(source, `${mutation.anchor}${mutation.text}`) === 1;
+  }
+  if (mutation.action === 'upsert-managed-block') {
+    try {
+      const markers = managedBlockMarkers(mutation.blockId);
+      const current = readManagedBlock(
+        source,
+        markers,
+        source.indexOf(markers.start),
+        source.indexOf(markers.end),
+      );
+      return current.content === mutation.content;
+    } catch {
+      return false;
+    }
+  }
+  if (mutation.action === 'delete-managed-block') {
+    const markers = managedBlockMarkers(mutation.blockId);
+    return !source.includes(markers.start) && !source.includes(markers.end);
+  }
+  return false;
+}
+
+function worldbookPatchMatches(
+  entry: ManagedWorldbookEntry,
+  patch: Record<string, unknown>,
+): boolean {
+  return Object.entries(patch).every(
+    ([key, value]) => key === 'uid' || deepContains(entry[key], value),
+  );
+}
+
+function deepContains(actual: unknown, expected: unknown): boolean {
+  if (Object.is(actual, expected)) return true;
+  if (Array.isArray(actual) || Array.isArray(expected)) {
+    return (
+      Array.isArray(actual) &&
+      Array.isArray(expected) &&
+      actual.length === expected.length &&
+      actual.every((value, index) => deepContains(value, expected[index]))
+    );
+  }
+  if (!isRecord(actual) || !isRecord(expected)) return false;
+  return Object.keys(expected).every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(actual, key) &&
+        deepContains(actual[key], expected[key]),
+  );
 }
 
 export function applyTextMutation(
@@ -955,23 +1622,157 @@ function validateWorldbookEntryPatch(value: unknown): void {
 }
 
 function managedWorldbookEntryPatch(
-  value: Partial<ManagedWorldbookEntry>,
+  value: ManagedWorldbookManifestEntry,
 ): Omit<ManagedWorldbookEntry, 'uid'> {
-  return {
+  const extra = value.extra ?? {};
+  const positionTypes = {
+    0: 'before_character_definition',
+    1: 'after_character_definition',
+    2: 'before_author_note',
+    3: 'after_author_note',
+    4: 'at_depth',
+    5: 'before_example_messages',
+    6: 'after_example_messages',
+    7: 'outlet',
+  } as const;
+  const roleTypes = {
+    0: 'system',
+    1: 'user',
+    2: 'assistant',
+  } as const;
+  const secondaryLogic = {
+    0: 'and_any',
+    1: 'not_all',
+    2: 'not_any',
+    3: 'and_all',
+  } as const;
+  const numericPosition =
+    typeof extra.position === 'number' && Number.isInteger(extra.position)
+      ? extra.position
+      : Number.NaN;
+  const numericRole =
+    typeof extra.role === 'number' && Number.isInteger(extra.role)
+      ? extra.role
+      : Number.NaN;
+  const numericLogic =
+    typeof extra.selectiveLogic === 'number' &&
+    Number.isInteger(extra.selectiveLogic)
+      ? extra.selectiveLogic
+      : Number.NaN;
+  const patch: Omit<ManagedWorldbookEntry, 'uid'> = {
     name: String(value.name ?? ''),
     content: String(value.content ?? ''),
-    keys: [...((value.keys as string[] | undefined) ?? [])],
-    secondary_keys: [
-      ...((value.secondary_keys as string[] | undefined) ?? []),
-    ],
-    constant: value.constant,
-    selective: value.selective,
-    insertion_order: value.insertion_order,
-    enabled: value.enabled,
-    position: value.position,
-    use_regex: value.use_regex,
-    extra: { ...(value.extra ?? {}) },
+    enabled: value.enabled ?? true,
+    strategy: {
+      type: value.constant
+        ? 'constant'
+        : extra.vectorized
+          ? 'vectorized'
+          : 'selective',
+      keys: [...(value.keys ?? [])],
+      keys_secondary: {
+        logic:
+          secondaryLogic[numericLogic as keyof typeof secondaryLogic] ??
+          'and_any',
+        keys: [...(value.secondary_keys ?? [])],
+      },
+      scan_depth:
+        typeof extra.scan_depth === 'number'
+          ? extra.scan_depth
+          : 'same_as_global',
+    },
+    position: {
+      type:
+        positionTypes[numericPosition as keyof typeof positionTypes] ??
+        (value.position === 'before_char'
+          ? 'before_character_definition'
+          : value.position === 'after_char'
+            ? 'after_character_definition'
+            : 'at_depth'),
+      role:
+        roleTypes[numericRole as keyof typeof roleTypes] ?? 'system',
+      depth:
+        typeof extra.depth === 'number' && Number.isFinite(extra.depth)
+          ? extra.depth
+          : 4,
+      order:
+        typeof value.insertion_order === 'number'
+          ? value.insertion_order
+          : 100,
+    },
+    probability:
+      extra.useProbability === false
+        ? 100
+        : typeof extra.probability === 'number'
+          ? extra.probability
+          : 100,
+    recursion: {
+      prevent_incoming: Boolean(extra.exclude_recursion),
+      prevent_outgoing: Boolean(extra.prevent_recursion),
+      delay_until: positiveNumberOrNull(extra.delay_until_recursion),
+    },
+    effect: {
+      sticky: positiveNumberOrNull(extra.sticky),
+      cooldown: positiveNumberOrNull(extra.cooldown),
+      delay: positiveNumberOrNull(extra.delay),
+    },
   };
+
+  const optionMappings = {
+    addMemo: 'addMemo',
+    match_persona_description: 'matchPersonaDescription',
+    match_character_description: 'matchCharacterDescription',
+    match_character_personality: 'matchCharacterPersonality',
+    match_character_depth_prompt: 'matchCharacterDepthPrompt',
+    match_scenario: 'matchScenario',
+    match_creator_notes: 'matchCreatorNotes',
+    group: 'group',
+    group_override: 'groupOverride',
+    group_weight: 'groupWeight',
+    case_sensitive: 'caseSensitive',
+    match_whole_words: 'matchWholeWords',
+    use_group_scoring: 'useGroupScoring',
+    automation_id: 'automationId',
+    ignore_budget: 'ignoreBudget',
+    outlet_name: 'outletName',
+    triggers: 'triggers',
+    character_filter: 'characterFilter',
+  } as const;
+  for (const [legacyKey, normalizedKey] of Object.entries(optionMappings)) {
+    if (Object.prototype.hasOwnProperty.call(extra, legacyKey)) {
+      patch[normalizedKey] = cloneJson(extra[legacyKey]);
+    }
+  }
+
+  const knownExtraKeys = new Set([
+    'position',
+    'exclude_recursion',
+    'display_index',
+    'probability',
+    'useProbability',
+    'depth',
+    'selectiveLogic',
+    'prevent_recursion',
+    'delay_until_recursion',
+    'scan_depth',
+    'role',
+    'vectorized',
+    'sticky',
+    'cooldown',
+    'delay',
+    ...Object.keys(optionMappings),
+  ]);
+  const passthroughExtra = Object.fromEntries(
+    Object.entries(extra).filter(([key]) => !knownExtraKeys.has(key)),
+  );
+  if (Object.keys(passthroughExtra).length > 0) {
+    patch.extra = cloneJson(passthroughExtra);
+  }
+  return patch;
+}
+
+function positiveNumberOrNull(value: unknown): number | null {
+  return typeof value === 'number' && value > 0 ? value : null;
 }
 
 function requireManagedId(value: unknown): void {
@@ -1006,6 +1807,10 @@ function stableHash(value: unknown): string {
     hash = Math.imul(hash, 16_777_619);
   }
   return (hash >>> 0).toString(36);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function emptyResult(

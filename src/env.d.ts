@@ -73,6 +73,11 @@ interface TavernContext {
   characters?: Array<{
     name?: string;
     avatar?: string;
+    data?: {
+      extensions?: Record<string, unknown>;
+      [key: string]: unknown;
+    };
+    json_data?: string;
   }>;
   chatMetadata?: {
     persona?: string;
@@ -86,6 +91,13 @@ interface TavernContext {
     file: string,
     cacheBust?: boolean,
   ) => string;
+  getRequestHeaders?: () => Record<string, string>;
+  writeExtensionField?: (
+    characterId: number | string,
+    key: string,
+    value: unknown,
+  ) => void | Promise<void>;
+  getOneCharacter?: (avatar: string) => void | Promise<void>;
   setExtensionPrompt?: (
     key: string,
     value: string,

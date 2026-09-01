@@ -9,21 +9,32 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.64');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.65');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.64');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.65');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('单层九宫格结构');
-    expect(latestText).toContain('完全显示的蓝白金底纹');
-    expect(latestText).toContain('页眉、导航和内容层保持透明');
-    expect(latestText).toContain('移除额外叠加的中央宝石装饰');
-    expect(latestText).toContain('人物放大居中');
-    expect(latestText).toContain('文字对比度');
-    expect(latestText).toContain('蓝底白字');
-    expect(latestText).toContain('enabled 字段');
-    expect(latestText).toContain('重新读取世界书');
+    expect(latestText).toContain('SillyTavern 核心接口');
+    expect(latestText).toContain('同名卡');
+    expect(latestText).toContain('_1.png');
+    expect(latestText).toContain('0～500');
+    expect(latestText).toContain('真实角色头像');
+    expect(latestText).toContain('从后端精确回读');
+    expect(latestText).toContain('确认落盘');
+    const alpha64Text =
+      releases
+        .find((release) => release.version === '0.2.0-alpha.64')
+        ?.changes.join('\n') ?? '';
+    expect(alpha64Text).toContain('单层九宫格结构');
+    expect(alpha64Text).toContain('完全显示的蓝白金底纹');
+    expect(alpha64Text).toContain('页眉、导航和内容层保持透明');
+    expect(alpha64Text).toContain('移除额外叠加的中央宝石装饰');
+    expect(alpha64Text).toContain('人物放大居中');
+    expect(alpha64Text).toContain('文字对比度');
+    expect(alpha64Text).toContain('蓝底白字');
+    expect(alpha64Text).toContain('enabled 字段');
+    expect(alpha64Text).toContain('重新读取世界书');
     const alpha63Text =
       releases
         .find((release) => release.version === '0.2.0-alpha.63')
@@ -121,10 +132,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.11.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.12.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.12',
       'Beta 1.11',
       'Beta 1.10',
       'Beta 1.9',
@@ -139,10 +151,18 @@ describe('release notes', () => {
       'Beta 1.0',
     ]);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('感谢有你');
-    expect(latestText).toContain('打猎分页');
-    expect(latestText).toContain('护盾×80%');
-    expect(latestText).toContain('自定义状态与自定义资源');
+    expect(latestText).toContain('SillyTavern 核心接口');
+    expect(latestText).toContain('同名卡');
+    expect(latestText).toContain('0～500');
+    expect(latestText).toContain('心动主题');
+    expect(latestText).toContain('单层九宫格');
+    const beta111Text = releases
+      .find((release) => release.version === '1.11.0-beta.1')
+      ?.changes.join('\n');
+    expect(beta111Text).toContain('感谢有你');
+    expect(beta111Text).toContain('打猎分页');
+    expect(beta111Text).toContain('护盾×80%');
+    expect(beta111Text).toContain('自定义状态与自定义资源');
     const beta110Text = releases
       .find((release) => release.version === '1.10.0-beta.1')
       ?.changes.join('\n');
@@ -185,14 +205,14 @@ describe('release notes', () => {
   });
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
-    expect(releaseHistoryFor('alpha', '0.2.0-alpha.65')[0]?.version).toBe(
-      '0.2.0-alpha.64',
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.66')[0]?.version).toBe(
+      '0.2.0-alpha.65',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.64',
+      '0.2.0-alpha.65',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });
