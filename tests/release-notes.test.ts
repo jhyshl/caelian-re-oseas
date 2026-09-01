@@ -9,14 +9,22 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.60');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.61');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.60');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.61');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('变量结构 v2.10');
-    expect(latestText).toContain('0～500');
+    expect(latestText).toContain('感谢有你');
+    expect(latestText).toContain('打猎分页');
+    expect(latestText).toContain('护盾×80%');
+    expect(latestText).toContain('自定义状态与自定义资源');
+    const alpha60Text =
+      releases
+        .find((release) => release.version === '0.2.0-alpha.60')
+        ?.changes.join('\n') ?? '';
+    expect(alpha60Text).toContain('变量结构 v2.10');
+    expect(alpha60Text).toContain('0～500');
     const alpha59Text =
       releases
         .find((release) => release.version === '0.2.0-alpha.59')
@@ -74,10 +82,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.10.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.11.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.11',
       'Beta 1.10',
       'Beta 1.9',
       'Beta 1.8',
@@ -91,13 +100,20 @@ describe('release notes', () => {
       'Beta 1.0',
     ]);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('好感度上限从 100 提升到 500');
-    expect(latestText).toContain('赠礼与邀约');
-    expect(latestText).toContain('回填变量管理器');
-    expect(latestText).toContain('特莱奥抚摸与投喂');
-    expect(latestText).toContain('旧版互动成就');
-    expect(latestText).toContain('变量结构 v2.10');
-    expect(latestText).toContain('0～500');
+    expect(latestText).toContain('感谢有你');
+    expect(latestText).toContain('打猎分页');
+    expect(latestText).toContain('护盾×80%');
+    expect(latestText).toContain('自定义状态与自定义资源');
+    const beta110Text = releases
+      .find((release) => release.version === '1.10.0-beta.1')
+      ?.changes.join('\n');
+    expect(beta110Text).toContain('好感度上限从 100 提升到 500');
+    expect(beta110Text).toContain('赠礼与邀约');
+    expect(beta110Text).toContain('回填变量管理器');
+    expect(beta110Text).toContain('特莱奥抚摸与投喂');
+    expect(beta110Text).toContain('旧版互动成就');
+    expect(beta110Text).toContain('变量结构 v2.10');
+    expect(beta110Text).toContain('0～500');
     const beta19Text = releases
       .find((release) => release.version === '1.9.0-beta.1')
       ?.changes.join('\n');
@@ -130,14 +146,14 @@ describe('release notes', () => {
   });
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
-    expect(releaseHistoryFor('alpha', '0.2.0-alpha.61')[0]?.version).toBe(
-      '0.2.0-alpha.60',
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.62')[0]?.version).toBe(
+      '0.2.0-alpha.61',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.60',
+      '0.2.0-alpha.61',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });
