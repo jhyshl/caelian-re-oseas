@@ -77,7 +77,7 @@ describe('Achievement patch mailbox', () => {
           body: expect.arrayContaining(['给同行者：']),
           signature: 'caelian',
           rewardClaimedAt: expect.any(Number),
-          unread: true,
+          unread: false,
         }),
       ]),
     });
@@ -320,7 +320,7 @@ describe('Achievement patch mailbox', () => {
           id: 'mail_bug_hunting',
           achievementId: 'ach_bug_hunting',
           rewardClaimedAt: expect.any(Number),
-          unread: true,
+          unread: false,
         }),
       ]),
     });

@@ -208,7 +208,7 @@ export class AchievementRepository {
       );
       if (patch.claimDate && existingProgress?.unlocked) continue;
       await this.ensurePatchProgress(patch);
-      const ensuredMail = await this.ensurePatchMail(patch);
+      const ensuredMail = await this.ensurePatchMail(patch, signal.opened);
       let record = ensuredMail.record;
       if (ensuredMail.created && !patch.silentMailDelivery) {
         result.receivedMailIds.push(patch.mail.id);
@@ -1269,13 +1269,21 @@ export class AchievementRepository {
 
   private async ensurePatchMail(
     patch: AchievementPatchCatalogEntry,
+    legacyOpened: boolean,
   ): Promise<{ record: MailRecord; created: boolean }> {
     return this.db.transaction('rw', this.db.mailRecords, async () => {
       const id = this.mailRecordId(patch.mail.id);
       const existing = await this.db.mailRecords.get(id);
       const now = Date.now();
       if (existing) {
-        return { record: existing, created: false };
+        const record =
+          legacyOpened &&
+          !patch.preserveNativeUnread &&
+          !existing.openedAt
+            ? { ...existing, openedAt: now, updatedAt: now }
+            : existing;
+        if (record !== existing) await this.db.mailRecords.put(record);
+        return { record, created: false };
       }
       const record: MailRecord = {
         id,
@@ -1283,7 +1291,8 @@ export class AchievementRepository {
         mailId: patch.mail.id,
         source: patch.mail.source,
         receivedAt: now,
-        openedAt: null,
+        openedAt:
+          legacyOpened && !patch.preserveNativeUnread ? now : null,
         rewardClaimedAt: null,
         updatedAt: now,
       };
