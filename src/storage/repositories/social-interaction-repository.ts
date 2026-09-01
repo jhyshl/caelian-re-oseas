@@ -97,7 +97,12 @@ export class SocialInteractionRepository {
     if (!player) throw new Error('玩家档案不存在');
 
     const gifts = inventory
-      .filter((stack) => stack.quantity > 0 && !isCookingMaterial(stack.itemId))
+      .filter(
+        (stack) =>
+          stack.quantity > 0 &&
+          !isCookingMaterial(stack.itemId) &&
+          !isCookingMaterial(stack.name),
+      )
       .flatMap((stack) => {
         const price = this.giftPrice(stack);
         if (price <= 0) return [];
@@ -110,11 +115,16 @@ export class SocialInteractionRepository {
             quantity: stack.quantity,
             price,
             tags,
-            affinityDelta: isDish(stack.itemId)
-              ? COOKING_DISHES[stack.itemId]?.caelianLiked
+            affinityDelta: isDish(stack.itemId) || isDish(stack.name)
+              ? (COOKING_DISHES[stack.itemId] ?? COOKING_DISHES[stack.name])
+                  ?.caelianLiked
                 ? 0.5
                 : -1
               : giftAffinityDelta(tags),
+            ...((COOKING_DISHES[stack.itemId] ?? COOKING_DISHES[stack.name])
+              ?.caelianLiked === false
+              ? { affinityDeltaLabel: '好感 -1～-5' }
+              : {}),
           },
         ];
       })
@@ -217,7 +227,7 @@ export class SocialInteractionRepository {
     itemId: string,
   ): Promise<SocialInteractionOutcome> {
     const stack = await this.ownedStack(profileId, itemId);
-    if (isCookingMaterial(stack.itemId)) {
+    if (isCookingMaterial(stack.itemId) || isCookingMaterial(stack.name)) {
       throw new Error('料理材料只能投喂特莱奥，不能赠送给凯利安');
     }
     if (this.giftPrice(stack) <= 0) {
@@ -227,7 +237,7 @@ export class SocialInteractionRepository {
       stack.name,
       this.isConsumable(stack),
     );
-    const dish = COOKING_DISHES[stack.itemId];
+    const dish = COOKING_DISHES[stack.itemId] ?? COOKING_DISHES[stack.name];
     const requestedDelta = dish
       ? dish.caelianLiked
         ? 0.5
@@ -338,8 +348,8 @@ export class SocialInteractionRepository {
       message: `${reaction.text}${this.trelaoDeltaText(appliedDelta)}`,
       achievement: {
         event: 'trelao.pet',
-        success: reaction.direction !== 'down',
-        positive: reaction.direction !== 'down',
+        success: true,
+        positive: reaction.direction === 'up',
         reaction: reaction.direction,
       },
     };

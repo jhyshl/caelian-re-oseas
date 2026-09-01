@@ -188,6 +188,7 @@ async function hunt(animalId: string): Promise<void> {
         payload: {
           source: `打猎 · ${outcome.animalName}`,
           huntingAnimalId: outcome.animalId,
+          huntingToken: outcome.battleToken,
         },
       });
       if (battle.status === 'rejected') {

@@ -212,9 +212,12 @@ export function rollHuntingRewards(
   random: () => number = Math.random,
   preferredIds: readonly string[] = HUNTING_MATERIAL_IDS,
 ) {
-  const preferred = [...new Set(preferredIds)].filter((id) => HUNTING_MATERIAL_IDS.includes(id as never));
+  const huntingIds = new Set<string>(HUNTING_MATERIAL_IDS);
+  const preferred = [...new Set(preferredIds)].filter((id) =>
+    huntingIds.has(id),
+  );
   const rest = HUNTING_MATERIAL_IDS.filter((id) => !preferred.includes(id));
-  const pool = [...preferred, ...shuffle(rest, random)];
+  const pool = [...shuffle(preferred, random), ...shuffle(rest, random)];
   const kinds = 2 + Math.floor(random() * 2);
   return pool.slice(0, kinds).map((itemId) => ({
     itemId,

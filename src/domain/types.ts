@@ -828,6 +828,12 @@ export interface GatheringState {
   refreshKey: string;
   version: 1;
   items: GatheringStockItem[];
+  pendingHunt?: {
+    token: string;
+    animalId: string;
+    animalName: string;
+    createdAt: number;
+  };
   updatedAt: number;
 }
 
@@ -857,6 +863,7 @@ export interface HuntingAttemptData {
   animalId: string;
   animalName: string;
   rewards: HuntingRewardItem[];
+  battleToken?: string;
 }
 
 export interface HuntingBattleContext {
@@ -935,6 +942,7 @@ export interface SocialGiftOption {
   price: number;
   tags: string[];
   affinityDelta: number;
+  affinityDeltaLabel?: string;
 }
 
 export interface SocialFeedOption {

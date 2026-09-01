@@ -240,9 +240,33 @@ export class GatheringRepository {
       };
     }
     if (roll >= 81) {
+      const battleToken = this.huntingToken(profileId, animal.id);
+      const pendingState: GatheringState = {
+        id: `${profileId}:hunting-pending`,
+        profileId,
+        regionId: this.resolveRegion(world),
+        refreshKey: gatheringDayKey(this.now()),
+        version: STATE_VERSION,
+        items: [],
+        pendingHunt: {
+          token: battleToken,
+          animalId: animal.id,
+          animalName: animal.name,
+          createdAt: Date.now(),
+        },
+        updatedAt: Date.now(),
+      };
+      await this.db.gatheringStates.put(pendingState);
       return {
         message: `打猎点数 ${roll}：遭遇战斗！胜利后会在基础奖励外获得料理材料。`,
-        data: { roll, outcome: 'battle', animalId: animal.id, animalName: animal.name, rewards: [] },
+        data: {
+          roll,
+          outcome: 'battle',
+          animalId: animal.id,
+          animalName: animal.name,
+          rewards: [],
+          battleToken,
+        },
       };
     }
 
@@ -264,6 +288,13 @@ export class GatheringRepository {
       message: `打猎点数 ${roll}：成功获得 ${rewards.map((item) => `${item.name}×${item.quantity}`).join('、')}。`,
       data: { roll, outcome: 'success', animalId: animal.id, animalName: animal.name, rewards },
     };
+  }
+
+  private huntingToken(profileId: string, animalId: string): string {
+    const id = globalThis.crypto?.randomUUID?.();
+    return id
+      ? `hunt:${profileId}:${animalId}:${id}`
+      : `hunt:${profileId}:${animalId}:${Date.now().toString(36)}`;
   }
 
   private async ensureState(

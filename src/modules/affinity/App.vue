@@ -434,7 +434,10 @@ onUnmounted(() => {
               <span>持有 {{ gift.quantity }} · 参考售价 {{ gift.price }}</span>
             </div>
             <em :class="{ negative: gift.affinityDelta < 0 }">
-              好感 {{ gift.affinityDelta > 0 ? '+' : '' }}{{ gift.affinityDelta }}
+              {{
+                gift.affinityDeltaLabel ??
+                  `好感 ${gift.affinityDelta > 0 ? '+' : ''}${gift.affinityDelta}`
+              }}
             </em>
             <button
               type="button"

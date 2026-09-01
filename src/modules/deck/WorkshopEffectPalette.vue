@@ -45,7 +45,7 @@ const blocks: EffectBlock[] = [
   { id: 'damage_bonus', group: 'ongoing', label: '持续增伤', description: '若干回合内提高造成的伤害。', type: 'apply_buff', overrides: { buff: 'damage_bonus', value: 1, turns: 3 } },
   { id: 'spell_damage_bonus', group: 'ongoing', label: '法术强化', description: '若干回合内提高法术伤害。', type: 'apply_buff', overrides: { buff: 'spell_damage_bonus', value: 1, turns: 3 } },
   { id: 'damage_reduce', group: 'ongoing', label: '持续减伤', description: '若干回合内降低受到的伤害。', type: 'apply_buff', overrides: { buff: 'damage_reduce', value: 1, turns: 3 } },
-  { id: 'defense_reflect', group: 'ongoing', label: '防反', description: '有护盾时按攻击前护盾×防御力百分比反伤；重复施加仅延长回合。', type: 'apply_buff', overrides: { buff: 'defense_reflect', value: 1, turns: 3 } },
+  { id: 'defense_reflect', group: 'ongoing', label: '防反', description: '有护盾时按攻击前80%护盾×防御力百分比反伤（上限150%）；重复施加仅延长回合。', type: 'apply_buff', overrides: { buff: 'defense_reflect', value: 1, turns: 3 } },
   { id: 'counterattack', group: 'ongoing', label: '反击', description: '受攻击后反击一次；可与职业天赋叠加。', type: 'apply_buff', overrides: { buff: 'counterattack', value: 1, turns: 3 } },
   { id: 'blood_burn', group: 'ongoing', label: '烧血', description: '每次行动前损失生命并提高本次伤害。', type: 'apply_buff', overrides: { buff: 'blood_burn', value: 20, turns: 3 } },
 

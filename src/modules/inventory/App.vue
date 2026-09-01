@@ -35,7 +35,9 @@ const itemInventory = computed(() =>
   (snapshot.value?.inventory ?? []).filter(
     (stack) =>
       !isCookingMaterial(stack.itemId) &&
+      !isCookingMaterial(stack.name) &&
       !isDish(stack.itemId) &&
+      !isDish(stack.name) &&
       !itemDefinition(stack.itemId, stack.name)?.effect,
   ),
 );
@@ -43,17 +45,21 @@ const consumableInventory = computed(() =>
   (snapshot.value?.inventory ?? []).filter(
     (stack) =>
       !isCookingMaterial(stack.itemId) &&
+      !isCookingMaterial(stack.name) &&
       !isDish(stack.itemId) &&
+      !isDish(stack.name) &&
       Boolean(itemDefinition(stack.itemId, stack.name)?.effect),
   ),
 );
 const cookingMaterials = computed(() =>
   (snapshot.value?.inventory ?? []).filter((stack) =>
-    isCookingMaterial(stack.itemId),
+    isCookingMaterial(stack.itemId) || isCookingMaterial(stack.name),
   ),
 );
 const dishes = computed(() =>
-  (snapshot.value?.inventory ?? []).filter((stack) => isDish(stack.itemId)),
+  (snapshot.value?.inventory ?? []).filter(
+    (stack) => isDish(stack.itemId) || isDish(stack.name),
+  ),
 );
 
 const carriedCount = computed(

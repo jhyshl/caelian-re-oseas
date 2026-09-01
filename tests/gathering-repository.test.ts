@@ -4,6 +4,7 @@ import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { GatheringRepository } from '@/storage/repositories/gathering-repository';
 import { GameRepository } from '@/storage/repository';
+import { rollHuntingRewards } from '@/content/cooking';
 
 const databases: CaelianDatabase[] = [];
 
@@ -20,6 +21,7 @@ async function setup(options: {
   region?: string;
   place?: string;
   now?: Date;
+  random?: () => number;
 } = {}) {
   const database = new CaelianDatabase(
     'alpha',
@@ -43,6 +45,7 @@ async function setup(options: {
   };
   const repository = new GatheringRepository(database, {
     now: () => new Date(clock.value.getTime()),
+    random: options.random,
   });
   return { clock, database, game, profile, repository };
 }
@@ -325,6 +328,96 @@ describe('GatheringRepository', () => {
       regionId: '未知荒原·伊拉亚城旧址',
       availableRegion: false,
       items: [],
+    });
+  });
+
+  it.each([
+    [0, 0, 'failure'],
+    [40.5 / 101, 40, 'failure'],
+    [41.5 / 101, 41, 'success'],
+    [80.5 / 101, 80, 'success'],
+    [81.5 / 101, 81, 'battle'],
+    [1, 100, 'battle'],
+  ] as const)('打猎随机值 %s 得到点数 %i 和 %s 结果', async (random, roll, outcome) => {
+    const { profile, repository } = await setup({ random: () => random });
+    await expect(repository.hunt(profile.id, 'mixed_tracks')).resolves.toMatchObject({
+      data: { roll, outcome },
+    });
+  });
+
+  it('成功打猎获得2至3种料理材料且每种1至10个', async () => {
+    const values = [50 / 101, 0.9, 0.2, 0.8, 0.4, 0.7, 0.3];
+    let index = 0;
+    const { database, profile, repository } = await setup({
+      random: () => values[index++] ?? 0.5,
+    });
+    const result = await repository.hunt(profile.id, 'mixed_tracks');
+    expect(result.data.outcome).toBe('success');
+    expect(result.data.rewards.length).toBeGreaterThanOrEqual(2);
+    expect(result.data.rewards.length).toBeLessThanOrEqual(3);
+    expect(new Set(result.data.rewards.map((item) => item.itemId)).size).toBe(
+      result.data.rewards.length,
+    );
+    for (const item of result.data.rewards) {
+      expect(item.quantity).toBeGreaterThanOrEqual(1);
+      expect(item.quantity).toBeLessThanOrEqual(10);
+      expect(await database.inventoryStacks.get(`${profile.id}:${item.itemId}`)).toMatchObject({
+        quantity: item.quantity,
+      });
+    }
+  });
+
+  it('混合兽踪会洗牌全部四种主材料，鱼肉可以进入奖励', () => {
+    const values = [0, 0, 0, 0.9, 0.1, 0.1, 0.1];
+    let index = 0;
+    const rewards = rollHuntingRewards(
+      () => values[index++] ?? 0,
+      ['鸡蛋', '鸡肉', '野猪肉', '鱼肉'],
+    );
+    expect(rewards.map((item) => item.itemId)).toContain('鱼肉');
+  });
+
+  it('只有81至100点生成的一次性凭证可以启动打猎战斗', async () => {
+    const { database, game, profile, repository } = await setup({
+      random: () => 1,
+    });
+    await game.execute(profile.id, {
+      id: 'hunting-player-create',
+      type: 'player.create',
+      payload: {
+        name: '猎人',
+        classMain: 'knight',
+        subclass: 'holy_knight',
+      },
+    });
+    await expect(
+      game.execute(profile.id, {
+        id: 'forged-hunting-battle',
+        type: 'battle.start',
+        payload: { huntingAnimalId: 'wild_fowl' },
+      }),
+    ).rejects.toThrow('请先在采集系统完成判定');
+
+    const encounter = await repository.hunt(profile.id, 'wild_fowl');
+    expect(encounter.data).toMatchObject({
+      outcome: 'battle',
+      battleToken: expect.any(String),
+    });
+    await expect(
+      game.execute(profile.id, {
+        id: 'legitimate-hunting-battle',
+        type: 'battle.start',
+        payload: {
+          huntingAnimalId: 'wild_fowl',
+          huntingToken: encounter.data.battleToken,
+        },
+      }),
+    ).resolves.toMatchObject({ status: 'applied' });
+    expect(
+      await database.gatheringStates.get(`${profile.id}:hunting-pending`),
+    ).toBeUndefined();
+    expect((await game.snapshot(profile.id)).battle?.state.huntingContext).toMatchObject({
+      animalId: 'wild_fowl',
     });
   });
 });

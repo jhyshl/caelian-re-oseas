@@ -642,12 +642,20 @@ export class AchievementRepository {
         }
         break;
       case 'trelao.pet':
-        if (payload.success === false || payload.positive === false) {
+        await this.incrementCounter('trelao.pet', 1);
+        if (
+          payload.reaction === 'down' ||
+          (payload.reaction === undefined && payload.success === false)
+        ) {
           await this.unlock('ach_trelao_pet_reject_first');
           await this.setCounter('trelao.petStreak', 0);
-        } else {
-          await this.incrementCounter('trelao.pet', 1);
+        } else if (
+          payload.reaction === 'up' ||
+          (payload.reaction === undefined && payload.positive !== false)
+        ) {
           await this.incrementCounter('trelao.petStreak', 1);
+        } else {
+          await this.setCounter('trelao.petStreak', 0);
         }
         break;
       case 'trelao.feed':

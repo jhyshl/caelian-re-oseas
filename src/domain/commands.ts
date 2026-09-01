@@ -366,6 +366,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       // substantially longer than user-authored ids.
       relatedQuestId: z.string().trim().max(2048).optional(),
       huntingAnimalId: z.string().trim().min(1).max(80).optional(),
+      huntingToken: z.string().trim().min(1).max(180).optional(),
       workshopTest: z
         .object({
           professionId: z.string().trim().min(1).max(100),

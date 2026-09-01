@@ -712,7 +712,7 @@ const localStatusDescriptions: Record<string, string> = {
   purified_power:
     '净化增伤：本回合攻击牌造成的伤害按显示数值提高。',
   damage_reduce: '固定减伤：受到伤害时减去显示数值，最低仍会受到 1 点伤害。',
-  defense_reflect: '防反：有护盾时，受攻击前先按当前护盾×防御力百分比反伤，防御力倍率最高200%。',
+  defense_reflect: '防反：有护盾时，受攻击前先按80%当前护盾×防御力百分比反伤，防御力倍率最高150%。',
   counterattack: '反击：受到敌方攻击后造成一次攻击力10%的反击伤害。',
   spell_double: '攻击翻倍：下一张攻击牌造成的伤害翻倍，触发后消耗 1 次。',
   wet: '湿润：当前作为特定卡牌的条件标记；不会自行增加雷系伤害或冻结回合。',

@@ -818,7 +818,7 @@ describe('本地战斗仓库', () => {
 
     await battles.endTurn(profile.id, session.id);
     session = (await database.battleSessions.get(session.id))!;
-    expect(session.state.enemies[0]).toMatchObject({ hp: 195, shield: 0 });
+    expect(session.state.enemies[0]).toMatchObject({ hp: 197, shield: 0 });
     expect(session.state.player.shield).toBe(19);
     expect(
       session.state.animations?.filter((event) => event.label === '防反'),
@@ -875,7 +875,7 @@ describe('本地战斗仓库', () => {
       targetIndex: 0,
     });
     session = (await database.battleSessions.get(session.id))!;
-    expect(session.state.player).toMatchObject({ hp: 185, shield: 0 });
+    expect(session.state.player).toMatchObject({ hp: 193, shield: 0 });
     expect(
       session.state.animations?.at(-2)?.label === '防反' ||
         session.state.animations?.at(-1)?.label === '防反',

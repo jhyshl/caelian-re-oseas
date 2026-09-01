@@ -368,6 +368,7 @@ export class BattleRepository {
       companionPresent?: boolean;
       relatedQuestId?: string;
       huntingAnimalId?: string;
+      huntingToken?: string;
       workshopTest?: WorkshopTestInput;
     },
   ): Promise<void> {
@@ -381,6 +382,9 @@ export class BattleRepository {
     if (existing) {
       throw new Error('请先结束或关闭当前战斗');
     }
+    const pendingHunt = input.huntingAnimalId
+      ? await this.pendingHuntingEncounter(profileId, input)
+      : undefined;
 
     const [
       player,
@@ -491,13 +495,12 @@ export class BattleRepository {
         : undefined,
       enemies,
       rewards: null,
-      ...(input.huntingAnimalId
+      ...(pendingHunt
         ? {
-            huntingContext: (() => {
-              const animal = huntingAnimal(input.huntingAnimalId);
-              if (!animal) throw new Error('打猎遭遇来源无效');
-              return { animalId: animal.id, animalName: animal.name };
-            })(),
+            huntingContext: {
+              animalId: pendingHunt.animalId,
+              animalName: pendingHunt.animalName,
+            },
           }
         : {}),
       bossMechanic: this.createBossMechanic(monster),
@@ -562,7 +565,27 @@ export class BattleRepository {
       state,
       updatedAt: now,
     };
-    await this.db.battleSessions.add(session);
+    if (pendingHunt) {
+      await this.db.transaction(
+        'rw',
+        [this.db.battleSessions, this.db.gatheringStates],
+        async () => {
+          const current = await this.db.gatheringStates.get(
+            `${profileId}:hunting-pending`,
+          );
+          if (
+            current?.pendingHunt?.token !== pendingHunt.token ||
+            current.pendingHunt.animalId !== pendingHunt.animalId
+          ) {
+            throw new Error('本次打猎遭遇凭证已失效，请重新打猎');
+          }
+          await this.db.battleSessions.add(session);
+          await this.db.gatheringStates.delete(current.id);
+        },
+      );
+    } else {
+      await this.db.battleSessions.add(session);
+    }
     const specialVictory = await this.applyBattleStartRelics(
       profileId,
       state,
@@ -575,6 +598,25 @@ export class BattleRepository {
     } else {
       await this.save(session);
     }
+  }
+
+  private async pendingHuntingEncounter(
+    profileId: string,
+    input: { huntingAnimalId?: string; huntingToken?: string },
+  ) {
+    const animal = huntingAnimal(String(input.huntingAnimalId ?? ''));
+    const pending = (
+      await this.db.gatheringStates.get(`${profileId}:hunting-pending`)
+    )?.pendingHunt;
+    if (
+      !animal ||
+      !input.huntingToken ||
+      pending?.token !== input.huntingToken ||
+      pending.animalId !== animal.id
+    ) {
+      throw new Error('打猎遭遇来源无效，请先在采集系统完成判定');
+    }
+    return pending;
   }
 
   async playCard(
@@ -3733,8 +3775,11 @@ export class BattleRepository {
     attacker: Combatant,
     preHitShield: number,
   ): void {
-    const ratio = this.clamp(defender.defense, 0, 200) / 100;
-    const amount = Math.max(0, Math.round(preHitShield * ratio));
+    const ratio = this.clamp(defender.defense, 0, 150) / 100;
+    const amount = Math.max(
+      0,
+      Math.round(preHitShield * 0.8 * ratio),
+    );
     if (amount <= 0) return;
     const defenderIdentity = this.combatantIdentity(state, defender);
     this.withReactionContext(() => {
