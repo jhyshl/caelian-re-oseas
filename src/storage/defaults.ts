@@ -111,6 +111,7 @@ export function defaultSettings(
     preserveAdventureSave: false,
     battleDifficulty: 'normal',
     uiTheme: 'default',
+    caelianHeartThemeUnlocked: false,
     updatedAt: now,
   };
 }
@@ -126,6 +127,7 @@ export function defaultGlobalSettings(
     sharedProfileId: undefined,
     battleDifficulty: 'normal',
     uiTheme: 'default',
+    caelianHeartThemeUnlocked: false,
     updatedAt: now,
   };
 }

@@ -2,6 +2,7 @@ export const CAELIAN_THEME_IDS = [
   'default',
   'tail-town-dog',
   'journey-ticket',
+  'caelian-heart',
 ] as const;
 
 export type CaelianThemeId = (typeof CAELIAN_THEME_IDS)[number];
@@ -24,4 +25,8 @@ export interface CaelianThemeOption {
 export interface CaelianThemeState {
   active: CaelianThemeId;
   available: readonly CaelianThemeOption[];
+}
+
+export interface CaelianThemeAvailability {
+  caelianHeartThemeUnlocked: boolean;
 }

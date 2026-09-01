@@ -932,6 +932,7 @@ export interface SettingsRecord {
   sharedProfileId?: string;
   battleDifficulty: 'easy' | 'normal' | 'hard' | 'hell';
   uiTheme: import('@/themes/types').CaelianThemeId;
+  caelianHeartThemeUnlocked: boolean;
   updatedAt: number;
 }
 

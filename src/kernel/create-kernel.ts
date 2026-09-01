@@ -92,12 +92,14 @@ import {
 import { normalizeRegion } from '@/worldbook/region-switcher';
 import {
   applyTheme,
+  CAELIAN_HEART_AFFINITY_THRESHOLD,
   clearAppliedTheme,
   listAvailableThemes,
   subscribeThemeEntitlements,
   themeIsAvailable,
 } from '@/themes/theme-manager';
 import type {
+  CaelianThemeAvailability,
   CaelianThemeId,
   CaelianThemeState,
 } from '@/themes/types';
@@ -171,6 +173,7 @@ export class CaelianKernel {
   private readonly missingQuestJudgeFloors = new Set<string>();
   private legalQuestItemCache?: Array<{ itemId: string; itemName: string }>;
   private activeTheme: CaelianThemeId = 'default';
+  private caelianHeartThemeUnlocked = false;
 
   constructor(options: KernelOptions) {
     this.channel = options.channel;
@@ -218,8 +221,22 @@ export class CaelianKernel {
   async initialize(): Promise<void> {
     this.notifications.mount();
     if (this.adapter.hasLegacyRuntime()) {
+      // Existing Alpha cards still load the legacy runtime before this bridge.
+      // Keep the new kernel read-only, but repair the managed variable schema
+      // and worldbook contract before returning so those cards can migrate
+      // beyond the old 0..100 affinity validator without a manual reinstall.
+      try {
+        await this.syncManagedContent(false);
+      } catch (error) {
+        this.notifyRuntime(
+          'warning',
+          error instanceof Error ? error.message : String(error),
+          '角色卡兼容修复暂未完成',
+        );
+      }
+      this.startManagedContentUpdates(false);
       this.status = 'blocked-by-legacy';
-      this.lastError = `检测到旧版 __CaelianRuntime；${this.channelLabel()} 已停止写入。`;
+      this.lastError = `检测到旧版 __CaelianRuntime；${this.channelLabel()} 新内核已停止写入，仅保留角色卡与世界书兼容修复。`;
       this.notifyRuntime('error', this.lastError, '旧版脚本仍在运行');
       await this.panels.open('shell');
       return;
@@ -240,6 +257,7 @@ export class CaelianKernel {
         }),
       );
       await this.activateCurrentProfile();
+      await this.ingestMvuNarrative();
       await this.syncThemeFromSettings(false);
       this.stateDisposers.push(
         subscribeThemeEntitlements(
@@ -247,12 +265,12 @@ export class CaelianKernel {
           () => void this.syncThemeFromSettings(true),
         ),
       );
-      await this.ingestMvuNarrative();
       await this.initializeWorldbook();
       await this.syncQuestContext();
       await this.scanCurrentAchievements();
       this.stateDisposers.push(
         this.events.on('state.changed', async ({ command }) => {
+          await this.unlockCaelianHeartThemeIfEligible();
           if (this.mvuIngestDepth > 0) return;
           await this.syncProjection({
             authoritativeAffinity: command.affinityChanged === true,
@@ -331,7 +349,11 @@ export class CaelianKernel {
       const requestedTheme = this.requestedTheme(command);
       if (
         requestedTheme &&
-        !themeIsAvailable(this.adapter.host, requestedTheme)
+        !themeIsAvailable(
+          this.adapter.host,
+          requestedTheme,
+          this.themeAvailability(),
+        )
       ) {
         return {
           id: this.commandId(command),
@@ -544,16 +566,60 @@ export class CaelianKernel {
   getThemeState(): CaelianThemeState {
     return {
       active: this.activeTheme,
-      available: listAvailableThemes(this.adapter.host),
+      available: listAvailableThemes(
+        this.adapter.host,
+        this.themeAvailability(),
+      ),
     };
   }
 
   private async syncThemeFromSettings(emit: boolean): Promise<void> {
     if (!this.profileId) return;
     const snapshot = await this.repository.snapshot(this.profileId);
-    const state = applyTheme(this.adapter.host, snapshot.settings.uiTheme);
+    let unlocked = snapshot.settings.caelianHeartThemeUnlocked === true;
+    if (
+      !unlocked &&
+      snapshot.social.affinity >= CAELIAN_HEART_AFFINITY_THRESHOLD
+    ) {
+      await this.repository.unlockCaelianHeartTheme(this.profileId);
+      unlocked = true;
+    }
+    this.caelianHeartThemeUnlocked = unlocked;
+    const state = applyTheme(
+      this.adapter.host,
+      snapshot.settings.uiTheme,
+      this.themeAvailability(),
+    );
     this.activeTheme = state.active;
     if (emit) await this.events.emit('theme.changed', state);
+  }
+
+  private themeAvailability(): CaelianThemeAvailability {
+    return {
+      caelianHeartThemeUnlocked: this.caelianHeartThemeUnlocked,
+    };
+  }
+
+  private async unlockCaelianHeartThemeIfEligible(): Promise<void> {
+    if (!this.profileId || this.caelianHeartThemeUnlocked) return;
+    const snapshot = await this.repository.snapshot(this.profileId);
+    if (
+      snapshot.settings.caelianHeartThemeUnlocked !== true &&
+      snapshot.social.affinity < CAELIAN_HEART_AFFINITY_THRESHOLD
+    ) {
+      return;
+    }
+    if (snapshot.settings.caelianHeartThemeUnlocked !== true) {
+      await this.repository.unlockCaelianHeartTheme(this.profileId);
+    }
+    this.caelianHeartThemeUnlocked = true;
+    const state = applyTheme(
+      this.adapter.host,
+      snapshot.settings.uiTheme,
+      this.themeAvailability(),
+    );
+    this.activeTheme = state.active;
+    await this.events.emit('theme.changed', state);
   }
 
   cancelQuestJudge(): boolean {
@@ -1030,6 +1096,7 @@ export class CaelianKernel {
     payload?: TavernEventPayload,
     generationEpoch = this.generationEpoch,
   ): Promise<void> {
+    const profileChanged = eventName === 'CHAT_CHANGED';
     if (eventName === 'ACHIEVEMENT_PATCH_CHANGED') {
       await this.syncAchievementPatches();
       if (this.profileId) {
@@ -1072,6 +1139,7 @@ export class CaelianKernel {
     try {
       await this.reconcileQuestFloors(eventName, payload);
       await this.ingestMvuNarrative();
+      if (profileChanged) await this.syncThemeFromSettings(true);
       if (endedCurrentGeneration) {
         await this.retryPendingAffinityProjection();
       }
@@ -1893,6 +1961,7 @@ export class CaelianKernel {
       },
     );
     this.profileId = profile.id;
+    this.caelianHeartThemeUnlocked = false;
     const snapshot = await this.repository.snapshot(profile.id);
     if (snapshot.player.created) {
       await this.repository.ensurePartySupportCard(
@@ -2136,10 +2205,17 @@ export class CaelianKernel {
     return (hash >>> 0).toString(36);
   }
 
-  private startManagedContentUpdates(): void {
-    void this.syncManagedContent(false);
+  private startManagedContentUpdates(runInitialSync = true): void {
+    if (runInitialSync) {
+      void this.syncManagedContent(false).catch(() => {
+        // A later polling cycle retries transient host/API failures.
+      });
+    }
     this.managedContentTimer = this.adapter.host.setInterval(
-      () => void this.syncManagedContent(false),
+      () =>
+        void this.syncManagedContent(false).catch(() => {
+          // Keep polling after transient host/API failures.
+        }),
       10 * 60 * 1_000,
     );
   }
@@ -2224,18 +2300,17 @@ export class CaelianKernel {
     force: boolean,
   ): Promise<ManagedContentSyncResult> {
     const result = await this.managedContent.sync({ force });
-    if (result.applied > 0) {
+    if (result.conflicts.length > 0 && (force || result.applied > 0)) {
+      this.notifyRuntime(
+        'warning',
+        `${result.applied > 0 ? `已更新 ${result.applied} 项；` : ''}${result.conflicts.length} 项未能安全写入，请在设置中重试并查看结果。`,
+        '凯利安内容更新未完全完成',
+      );
+    } else if (result.applied > 0) {
       this.notifyRuntime(
         'success',
         `已安全更新 ${result.applied} 项角色卡/世界书内容。`,
         '凯利安内容更新完成',
-      );
-    }
-    if (result.conflicts.length > 0 && force) {
-      this.notifyRuntime(
-        'warning',
-        `${result.conflicts.length} 项内容与玩家修改冲突，已保留玩家版本。`,
-        '凯利安内容更新已暂停',
       );
     }
     return result;
@@ -2393,7 +2468,8 @@ export class CaelianKernel {
     }
     return payload.uiTheme === 'default' ||
       payload.uiTheme === 'tail-town-dog' ||
-      payload.uiTheme === 'journey-ticket'
+      payload.uiTheme === 'journey-ticket' ||
+      payload.uiTheme === 'caelian-heart'
       ? payload.uiTheme
       : undefined;
   }

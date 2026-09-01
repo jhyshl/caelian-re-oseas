@@ -1,10 +1,11 @@
 import '@/bridge/alpha-entry';
 import type { PanelName } from '@/kernel/public-api';
 
-async function activateJourneyPreview(): Promise<void> {
-  const preview = new URLSearchParams(window.location.search).get(
-    'journey-preview',
-  );
+async function activateThemePreview(): Promise<void> {
+  const search = new URLSearchParams(window.location.search);
+  const heartPreview = search.get('heart-preview');
+  const journeyPreview = search.get('journey-preview');
+  const preview = heartPreview ?? journeyPreview;
   if (
     !import.meta.env.DEV ||
     !preview
@@ -16,16 +17,30 @@ async function activateJourneyPreview(): Promise<void> {
     await new Promise((resolve) => window.setTimeout(resolve, 50));
   }
   if (!window.Caelian) return;
-  window.__CaelianThemeEntitlements = {
-    version: 1,
-    ids: ['journey-ticket'],
-  };
-  window.dispatchEvent(new Event('caelian:theme-entitlements-changed'));
-  await window.Caelian.execute({
-    id: 'dev-preview-journey-theme',
-    type: 'settings.update',
-    payload: { uiTheme: 'journey-ticket' },
-  });
+  if (heartPreview) {
+    await window.Caelian.execute({
+      id: 'dev-preview-heart-affinity',
+      type: 'narrative.update',
+      payload: { companion: { affinity: 250 } },
+    });
+    await window.Caelian.execute({
+      id: 'dev-preview-heart-theme',
+      type: 'settings.update',
+      payload: { uiTheme: 'caelian-heart' },
+    });
+  } else {
+    window.__CaelianThemeEntitlements = {
+      version: 1,
+      ids: ['journey-ticket'],
+    };
+    window.dispatchEvent(new Event('caelian:theme-entitlements-changed'));
+    await window.Caelian.execute({
+      id: 'dev-preview-journey-theme',
+      type: 'settings.update',
+      payload: { uiTheme: 'journey-ticket' },
+    });
+  }
+  if (preview === 'launcher') return;
   if (preview !== 'menu') {
     await window.Caelian.openPanel(preview as PanelName);
     return;
@@ -35,7 +50,7 @@ async function activateJourneyPreview(): Promise<void> {
   }, 120);
 }
 
-void activateJourneyPreview();
+void activateThemePreview();
 
 const status = document.querySelector('#caelian-demo-status');
 

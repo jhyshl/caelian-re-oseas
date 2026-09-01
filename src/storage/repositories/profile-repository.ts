@@ -129,7 +129,13 @@ export class ProfileRepository {
 
   async ensureGlobalSettings(legacyValue = false) {
     const existing = await this.db.settings.get(GLOBAL_SETTINGS_ID);
-    if (existing) return existing;
+    if (existing) {
+      return {
+        ...existing,
+        caelianHeartThemeUnlocked:
+          existing.caelianHeartThemeUnlocked === true,
+      };
+    }
     const now = Date.now();
     const inferred = await this.db.settings
       .toCollection()
@@ -161,7 +167,22 @@ export class ProfileRepository {
       preserveAdventureSave: global.preserveAdventureSave,
       sharedProfileId: global.sharedProfileId,
       uiTheme: profileSettings.uiTheme ?? 'default',
+      caelianHeartThemeUnlocked:
+        profileSettings.caelianHeartThemeUnlocked === true,
     };
+  }
+
+  async unlockCaelianHeartTheme(profileId: string): Promise<boolean> {
+    return this.db.transaction('rw', this.db.settings, async () => {
+      const settings = await this.db.settings.get(profileId);
+      if (!settings) throw new Error('设置记录不存在');
+      if (settings.caelianHeartThemeUnlocked === true) return false;
+      await this.db.settings.update(profileId, {
+        caelianHeartThemeUnlocked: true,
+        updatedAt: Date.now(),
+      });
+      return true;
+    });
   }
 
   async updateSettings(

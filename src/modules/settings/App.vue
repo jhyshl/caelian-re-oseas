@@ -123,7 +123,7 @@ async function syncManagedContent() {
   }
   notice.value =
     result.conflicts.length > 0
-      ? `已更新 ${result.applied} 项；${result.conflicts.length} 项检测到玩家修改，已保留玩家版本。`
+      ? `已更新 ${result.applied} 项；${result.conflicts.length} 项未能安全写入，请稍后重试。`
       : result.applied > 0
         ? `已安全更新 ${result.applied} 项角色卡/世界书内容。`
         : '角色卡与绑定世界书内容已经是最新版本。';
@@ -250,7 +250,7 @@ onBeforeUnmount(() => {
         <div class="theme-heading">
           <div>
             <h2 class="ca-section-title">界面主题</h2>
-            <p>专属社区脚本只负责解锁主题；图片首次按需下载，之后从玩家本地缓存读取。</p>
+            <p>主题可由社区奖励或角色进度解锁；图片首次按需下载，之后从玩家本地缓存读取。</p>
           </div>
           <span>{{ themeState.available.length }} 个主题</span>
         </div>

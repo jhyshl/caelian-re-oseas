@@ -136,6 +136,7 @@ const snapshot: GameSnapshot = {
     preserveAdventureSave: false,
     battleDifficulty: 'normal',
     uiTheme: 'default',
+    caelianHeartThemeUnlocked: false,
     updatedAt: 1,
   },
 };

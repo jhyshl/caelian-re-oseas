@@ -363,12 +363,8 @@ export class TavernAdapter {
     for (const scope of this.apiScopes()) {
       const record = scope as unknown as Record<string, unknown>;
       const helper = record.TavernHelper;
-      if (typeof helper === 'object' && helper !== null) {
-        const api = helper as RegionWorldbookApi;
-        if (api.updateWorldbookWith || api.getCharWorldbookNames) return api;
-      }
-      const api = record as RegionWorldbookApi;
-      if (api.updateWorldbookWith || api.getCharWorldbookNames) return api;
+      if (isRegionWorldbookApi(helper)) return helper;
+      if (isRegionWorldbookApi(record)) return record;
     }
     return {};
   }
@@ -1228,4 +1224,14 @@ export class TavernAdapter {
     const value = this.host.localStorage.getItem(key);
     return value === '1' || value === 'true' || Boolean(value);
   }
+}
+
+function isRegionWorldbookApi(value: unknown): value is RegionWorldbookApi {
+  if (typeof value !== 'object' || value === null) return false;
+  const api = value as RegionWorldbookApi;
+  return (
+    typeof api.getCharWorldbookNames === 'function' &&
+    typeof api.getWorldbook === 'function' &&
+    typeof api.updateWorldbookWith === 'function'
+  );
 }

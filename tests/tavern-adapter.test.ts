@@ -67,6 +67,11 @@ afterEach(() => {
   delete window.eventOn;
   delete window.tavern_events;
   delete window.getCharAvatarPath;
+  const host = window as unknown as Record<string, unknown>;
+  delete host.TavernHelper;
+  delete host.getCharWorldbookNames;
+  delete host.getWorldbook;
+  delete host.updateWorldbookWith;
   vi.useRealTimers();
   document.querySelector('#user_avatar_block')?.remove();
   document
@@ -75,6 +80,26 @@ afterEach(() => {
 });
 
 describe('TavernAdapter', () => {
+  it('世界书适配器跳过残缺对象，只返回具备真实读写接口的作用域', () => {
+    const host = window as unknown as Record<string, unknown>;
+    host.TavernHelper = {
+      getCharWorldbookNames: () => ({ primary: null, additional: [] }),
+    };
+    const completeApi = {
+      getCharWorldbookNames: () => ({
+        primary: '孔雀开屏你说看不见',
+        additional: [],
+      }),
+      getWorldbook: vi.fn(async () => []),
+      updateWorldbookWith: vi.fn(async () => []),
+    };
+    Object.assign(host, completeApi);
+
+    const adapter = new TavernAdapter(window);
+
+    expect(adapter.regionWorldbookApi()).toBe(host);
+  });
+
   it('只替换 stat_data.caelian，并保留其他 MVU 数据', async () => {
     const replaceMvuData = vi.fn();
     window.Mvu = {
