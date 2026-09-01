@@ -208,10 +208,7 @@ export class AchievementRepository {
       );
       if (patch.claimDate && existingProgress?.unlocked) continue;
       await this.ensurePatchProgress(patch);
-      const ensuredMail = await this.ensurePatchMail(
-        patch,
-        signal.opened,
-      );
+      const ensuredMail = await this.ensurePatchMail(patch, signal.opened);
       let record = ensuredMail.record;
       if (ensuredMail.created && !patch.silentMailDelivery) {
         result.receivedMailIds.push(patch.mail.id);
@@ -222,14 +219,15 @@ export class AchievementRepository {
           profileId,
           record,
           patch,
+          false,
         );
-        await this.unlock(patch.achievement.id);
+        const newlyUnlocked = await this.unlock(patch.achievement.id);
+        if (newlyUnlocked) {
+          result.claimedAchievementIds.push(patch.achievement.id);
+        }
         if (newlyClaimed) {
           await this.syncCounterProgress('economy.goldGained');
           result.claimedRewardIds.push(patch.mail.id);
-          if (patch.presentLetterOnClaim) {
-            result.claimedAchievementIds.push(patch.achievement.id);
-          }
         }
         record = (await this.db.mailRecords.get(record.id)) ?? record;
       }
@@ -644,12 +642,20 @@ export class AchievementRepository {
         }
         break;
       case 'trelao.pet':
-        if (payload.success === false || payload.positive === false) {
+        await this.incrementCounter('trelao.pet', 1);
+        if (
+          payload.reaction === 'down' ||
+          (payload.reaction === undefined && payload.success === false)
+        ) {
           await this.unlock('ach_trelao_pet_reject_first');
           await this.setCounter('trelao.petStreak', 0);
-        } else {
-          await this.incrementCounter('trelao.pet', 1);
+        } else if (
+          payload.reaction === 'up' ||
+          (payload.reaction === undefined && payload.positive !== false)
+        ) {
           await this.incrementCounter('trelao.petStreak', 1);
+        } else {
+          await this.setCounter('trelao.petStreak', 0);
         }
         break;
       case 'trelao.feed':
@@ -723,6 +729,22 @@ export class AchievementRepository {
       }
 
       for (const [id, raw] of Object.entries(payload.unlocked ?? {})) {
+        const patch = Object.values(ACHIEVEMENT_PATCH_REGISTRY).find(
+          (entry) => entry.achievement.id === id,
+        );
+        if (patch?.preserveNativeUnread) {
+          await this.syncPatchEntitlements(profileId, [
+            { id: patch.id, opened: false },
+          ]);
+          continue;
+        }
+        if (
+          patch &&
+          (marker.value <= 0 ||
+            (await this.db.mailRecords.get(this.mailRecordId(patch.mail.id))))
+        ) {
+          continue;
+        }
         const fallback = this.normalizeExternalDefinition(id, raw);
         if (!definitions[id] && fallback) {
           definitions[id] = fallback;
@@ -791,12 +813,9 @@ export class AchievementRepository {
         await this.setCounter('collection.special', specialIds.length);
         await this.setProgress('ach_special_collectible_5', specialIds.length);
 
-        if (payload.oldPlayerPatch) {
-          await this.unlockSilently('ach_thanks_old_caelian');
-        }
-        if (payload.repoRewardPatch) {
-          await this.unlockSilently('ach_repo_reward');
-        }
+        // Standalone patch flags are synchronized through the native mailbox
+        // pipeline. Pre-unlocking them here would suppress the real toast and
+        // could leave the collectible/reward lifecycle incomplete.
         if (payload.poemRewardGranted) {
           await this.unlockSilently(
             PAST_PRESENT_POEM_ID,
@@ -1231,6 +1250,7 @@ export class AchievementRepository {
     profileId: string,
     record: MailRecord,
     patch: AchievementPatchCatalogEntry,
+    markOpened = true,
   ): Promise<boolean> {
     const newlyClaimed = await this.db.transaction(
       'rw',
@@ -1258,7 +1278,7 @@ export class AchievementRepository {
         await this.ensurePatchCollectible(profileId, patch);
         await this.db.mailRecords.put({
           ...current,
-          openedAt: current.openedAt ?? now,
+          openedAt: markOpened ? current.openedAt ?? now : current.openedAt,
           rewardClaimedAt: now,
           updatedAt: now,
         });
@@ -1273,7 +1293,7 @@ export class AchievementRepository {
 
   private async ensurePatchMail(
     patch: AchievementPatchCatalogEntry,
-    opened: boolean,
+    legacyOpened: boolean,
   ): Promise<{ record: MailRecord; created: boolean }> {
     return this.db.transaction('rw', this.db.mailRecords, async () => {
       const id = this.mailRecordId(patch.mail.id);
@@ -1281,7 +1301,9 @@ export class AchievementRepository {
       const now = Date.now();
       if (existing) {
         const record =
-          opened && !existing.openedAt
+          legacyOpened &&
+          !patch.preserveNativeUnread &&
+          !existing.openedAt
             ? { ...existing, openedAt: now, updatedAt: now }
             : existing;
         if (record !== existing) await this.db.mailRecords.put(record);
@@ -1293,7 +1315,8 @@ export class AchievementRepository {
         mailId: patch.mail.id,
         source: patch.mail.source,
         receivedAt: now,
-        openedAt: opened ? now : null,
+        openedAt:
+          legacyOpened && !patch.preserveNativeUnread ? now : null,
         rewardClaimedAt: null,
         updatedAt: now,
       };

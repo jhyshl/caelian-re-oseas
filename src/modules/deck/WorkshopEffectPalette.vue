@@ -15,9 +15,24 @@ interface EffectBlock {
   cardTypes?: string[];
 }
 
+interface WorkshopResourceOption {
+  mechanismId: string;
+  resourceId: string;
+  label: string;
+}
+
+interface WorkshopStatusOption {
+  mechanismId: string;
+  statusId: string;
+  label: string;
+  polarity: 'buff' | 'debuff';
+}
+
 const props = defineProps<{
   cardType: string;
   disabled?: boolean;
+  resourceOptions?: WorkshopResourceOption[];
+  statusOptions?: WorkshopStatusOption[];
 }>();
 const emit = defineEmits<{ add: [effect: CardEffect] }>();
 
@@ -45,11 +60,15 @@ const blocks: EffectBlock[] = [
   { id: 'damage_bonus', group: 'ongoing', label: '持续增伤', description: '若干回合内提高造成的伤害。', type: 'apply_buff', overrides: { buff: 'damage_bonus', value: 1, turns: 3 } },
   { id: 'spell_damage_bonus', group: 'ongoing', label: '法术强化', description: '若干回合内提高法术伤害。', type: 'apply_buff', overrides: { buff: 'spell_damage_bonus', value: 1, turns: 3 } },
   { id: 'damage_reduce', group: 'ongoing', label: '持续减伤', description: '若干回合内降低受到的伤害。', type: 'apply_buff', overrides: { buff: 'damage_reduce', value: 1, turns: 3 } },
+  { id: 'defense_reflect', group: 'ongoing', label: '防反', description: '有护盾时按攻击前80%护盾×防御力百分比反伤（上限150%）；重复施加仅延长回合。', type: 'apply_buff', overrides: { buff: 'defense_reflect', value: 1, turns: 3 } },
+  { id: 'counterattack', group: 'ongoing', label: '反击', description: '受攻击后反击一次；可与职业天赋叠加。', type: 'apply_buff', overrides: { buff: 'counterattack', value: 1, turns: 3 } },
+  { id: 'blood_burn', group: 'ongoing', label: '烧血', description: '每次行动前损失生命并提高本次伤害。', type: 'apply_buff', overrides: { buff: 'blood_burn', value: 20, turns: 3 } },
 
   { id: 'buff', group: 'status', label: '施加增益', description: '选择一种增益、数值和持续回合。', type: 'apply_buff' },
   { id: 'debuff', group: 'status', label: '施加减益', description: '选择一种减益、数值和持续回合。', type: 'apply_debuff' },
   { id: 'cleanse', group: 'status', label: '净化', description: '移除己方减益。', type: 'cleanse' },
   { id: 'dispel', group: 'status', label: '驱散', description: '移除敌方增益。', type: 'dispel' },
+  { id: 'apply_workshop_status', group: 'status', label: '施加自定义状态', description: '把玩家创建的 Buff 或 Debuff 施加给玩家、怪物或召唤物。', type: 'apply_workshop_status' },
 
   {
     id: 'conditional_group',
@@ -67,6 +86,7 @@ const blocks: EffectBlock[] = [
   { id: 'recover_discard', group: 'special', label: '回收弃牌', description: '从弃牌堆回收卡牌。', type: 'recover_discard' },
   { id: 'destroy_summon', group: 'special', label: '牺牲召唤物', description: '牺牲召唤物；若用作代价，请放入条件组。', type: 'destroy_summon' },
   { id: 'reveal_intent', group: 'special', label: '洞察意图', description: '显示敌人的行动意图。', type: 'reveal_intent' },
+  { id: 'workshop_resource_change', group: 'special', label: '增减自定义资源', description: '增加、减少或设置已启用的独立职业资源。', type: 'workshop_resource_change' },
   { id: 'summon', group: 'special', label: '创建召唤物', description: '配置召唤物生命和技能。', type: 'summon', cardTypes: ['summon'] },
 ];
 
@@ -93,6 +113,19 @@ function addBlock(block: EffectBlock): void {
     ...clone(option),
     ...(block.overrides ?? {}),
   } as unknown as CardEffect & { label?: string };
+  if (block.type === 'workshop_resource_change') {
+    const resource = props.resourceOptions?.[0];
+    if (!resource) return;
+    effect.mechanismId = resource.mechanismId;
+    effect.resourceId = resource.resourceId;
+  }
+  if (block.type === 'apply_workshop_status') {
+    const status = props.statusOptions?.[0];
+    if (!status) return;
+    effect.mechanismId = status.mechanismId;
+    effect.statusId = status.statusId;
+    effect.target = status.polarity === 'debuff' ? 'enemy' : 'self';
+  }
   delete effect.label;
   emit('add', effect);
 }
@@ -127,7 +160,7 @@ function addBlock(block: EffectBlock): void {
         :key="block.id"
         type="button"
         class="effect-block"
-        :disabled="disabled"
+        :disabled="disabled || (block.type === 'workshop_resource_change' && !resourceOptions?.length) || (block.type === 'apply_workshop_status' && !statusOptions?.length)"
         @click="addBlock(block)"
       >
         <span class="connector" aria-hidden="true"></span>

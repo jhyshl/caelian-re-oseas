@@ -333,6 +333,13 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...commandBase,
+    type: z.literal('hunt.attempt'),
+    payload: z.object({
+      animalId: z.string().trim().min(1).max(80),
+    }),
+  }),
+  z.object({
+    ...commandBase,
     type: z.literal('market.sell-item'),
     payload: z.object({
       itemId: z.string().trim().min(1).max(180),
@@ -358,6 +365,8 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       // Managed quest ids include the encoded SillyTavern chat id and can be
       // substantially longer than user-authored ids.
       relatedQuestId: z.string().trim().max(2048).optional(),
+      huntingAnimalId: z.string().trim().min(1).max(80).optional(),
+      huntingToken: z.string().trim().min(1).max(180).optional(),
       workshopTest: z
         .object({
           professionId: z.string().trim().min(1).max(100),
@@ -489,4 +498,5 @@ export interface CommandResult {
   message?: string;
   prompt?: string;
   affinityChanged?: boolean;
+  data?: unknown;
 }

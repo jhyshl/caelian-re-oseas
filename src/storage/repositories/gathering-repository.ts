@@ -8,13 +8,20 @@ import type {
   GatheringState,
   GatheringStockItem,
   GatheringView,
+  HuntingAttemptData,
   InventoryStackRecord,
   WorldStateRecord,
 } from '@/domain/types';
 import type { CaelianDatabase } from '@/storage/database';
+import {
+  HUNTING_ANIMALS,
+  huntingAnimal,
+  rollHuntingRewards,
+} from '@/content/cooking';
 
 export interface GatheringRepositoryOptions {
   now?: () => Date;
+  random?: () => number;
 }
 
 const STATE_VERSION = 1 as const;
@@ -37,12 +44,14 @@ const SEARCHABLE_RESOURCES = new Set([
 export class GatheringRepository {
   private catalog?: GatheringCatalog;
   private readonly now: () => Date;
+  private readonly random: () => number;
 
   constructor(
     private readonly db: CaelianDatabase,
     options: GatheringRepositoryOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.random = options.random ?? Math.random;
   }
 
   async prepare(): Promise<void> {
@@ -80,6 +89,7 @@ export class GatheringRepository {
             nextRefreshAt: nextGatheringRefresh(date).getTime(),
             availableRegion: false,
             items: [],
+            animals: huntingAnimalsView(),
           };
         }
 
@@ -97,6 +107,7 @@ export class GatheringRepository {
             nextRefreshAfterDayKey(state.refreshKey).getTime(),
           ),
           availableRegion: true,
+          animals: huntingAnimalsView(),
           items: state.items.flatMap((item) => {
             const definition = this.catalog?.resources[item.itemId];
             if (!definition) return [];
@@ -129,7 +140,7 @@ export class GatheringRepository {
   async collect(
     profileId: string,
     input: { listingKey: string; quantity: number },
-  ): Promise<void> {
+  ): Promise<{ message: string; data: Record<string, unknown> }> {
     await this.prepare();
     const listingKey = String(input.listingKey ?? '').trim();
     const quantity = Number(input.quantity);
@@ -138,7 +149,7 @@ export class GatheringRepository {
       throw new Error('采集数量必须是正整数');
     }
 
-    await this.db.transaction(
+    return this.db.transaction(
       'rw',
       [
         this.db.worldStates,
@@ -193,8 +204,97 @@ export class GatheringRepository {
           this.db.gatheringStates.put(state),
           this.db.inventoryStacks.put(stack),
         ]);
+        return {
+          message: `已${gatheringAction(item.itemId) === 'search' ? '搜寻' : '采集'}「${definition.name}」×${quantity}，背包现有 ${stack.quantity} 个。`,
+          data: {
+            itemId: item.itemId,
+            name: definition.name,
+            quantity,
+            ownedCount: stack.quantity,
+          },
+        };
       },
     );
+  }
+
+  async hunt(
+    profileId: string,
+    animalId: string,
+  ): Promise<{ message: string; data: HuntingAttemptData }> {
+    const animal = huntingAnimal(animalId);
+    if (!animal) throw new Error('请选择真实存在的猎物');
+    const world = await this.db.worldStates.get(profileId);
+    if (!world) throw new Error('打猎所需的世界状态尚未初始化');
+    const activeBattle = await this.db.battleSessions
+      .where('profileId')
+      .equals(profileId)
+      .filter((session) => session.active)
+      .first();
+    if (activeBattle) throw new Error('请先结束当前战斗再进行打猎');
+
+    const roll = Math.max(0, Math.min(100, Math.floor(this.random() * 101)));
+    if (roll <= 40) {
+      return {
+        message: `打猎点数 ${roll}：追踪失败，本轮没有获得物品。`,
+        data: { roll, outcome: 'failure', animalId: animal.id, animalName: animal.name, rewards: [] },
+      };
+    }
+    if (roll >= 81) {
+      const battleToken = this.huntingToken(profileId, animal.id);
+      const pendingState: GatheringState = {
+        id: `${profileId}:hunting-pending`,
+        profileId,
+        regionId: this.resolveRegion(world),
+        refreshKey: gatheringDayKey(this.now()),
+        version: STATE_VERSION,
+        items: [],
+        pendingHunt: {
+          token: battleToken,
+          animalId: animal.id,
+          animalName: animal.name,
+          createdAt: Date.now(),
+        },
+        updatedAt: Date.now(),
+      };
+      await this.db.gatheringStates.put(pendingState);
+      return {
+        message: `打猎点数 ${roll}：遭遇战斗！胜利后会在基础奖励外获得料理材料。`,
+        data: {
+          roll,
+          outcome: 'battle',
+          animalId: animal.id,
+          animalName: animal.name,
+          rewards: [],
+          battleToken,
+        },
+      };
+    }
+
+    const rewards = rollHuntingRewards(this.random, animal.primaryMaterialIds);
+    const now = Date.now();
+    for (const reward of rewards) {
+      const id = `${profileId}:${reward.itemId}`;
+      const current = await this.db.inventoryStacks.get(id);
+      await this.db.inventoryStacks.put({
+        id,
+        profileId,
+        itemId: reward.itemId,
+        name: reward.name,
+        quantity: (current?.quantity ?? 0) + reward.quantity,
+        updatedAt: now,
+      });
+    }
+    return {
+      message: `打猎点数 ${roll}：成功获得 ${rewards.map((item) => `${item.name}×${item.quantity}`).join('、')}。`,
+      data: { roll, outcome: 'success', animalId: animal.id, animalName: animal.name, rewards },
+    };
+  }
+
+  private huntingToken(profileId: string, animalId: string): string {
+    const id = globalThis.crypto?.randomUUID?.();
+    return id
+      ? `hunt:${profileId}:${animalId}:${id}`
+      : `hunt:${profileId}:${animalId}:${Date.now().toString(36)}`;
   }
 
   private async ensureState(
@@ -251,6 +351,14 @@ export class GatheringRepository {
         ),
     );
   }
+}
+
+function huntingAnimalsView() {
+  return HUNTING_ANIMALS.map(({ id, name, description }) => ({
+    id,
+    name,
+    description,
+  }));
 }
 
 export function gatheringDayKey(date = new Date()): string {

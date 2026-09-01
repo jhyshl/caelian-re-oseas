@@ -148,3 +148,22 @@ export function defaultSocialProgress(
     updatedAt: now,
   };
 }
+
+export function defaultTrelaoProgress(
+  profileId: string,
+  now: number,
+): SocialProgressRecord {
+  return {
+    id: `${profileId}:trelao`,
+    profileId,
+    characterId: 'trelao',
+    affinity: 0,
+    pendingAffinityDelta: 0,
+    mood: '警戒',
+    location: '凯利安身边',
+    clothing: '金色龙鳞',
+    innerThought: '',
+    relationshipStage: '警戒',
+    updatedAt: now,
+  };
+}

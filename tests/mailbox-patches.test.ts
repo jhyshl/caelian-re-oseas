@@ -252,6 +252,45 @@ describe('Achievement patch mailbox', () => {
     });
   });
 
+  it('旧脚本的 unlocked 记录不会抢先静默解锁补丁成就', async () => {
+    const { repository } = createRepository();
+    const profile = await repository.ensureProfile('legacy-patch-unlocked');
+    await repository.importLegacyAchievements(profile.id, {
+      definitions: {
+        ach_thanks_old_caelian: {
+          id: 'ach_thanks_old_caelian',
+          name: '感谢有你',
+          star: 5,
+          description: '如此有幸，再次相遇',
+        },
+      },
+      unlocked: {
+        ach_thanks_old_caelian: { unlocked: true },
+      },
+    });
+    expect(
+      (await repository.snapshot(profile.id)).achievements.find(
+        (entry) => entry.achievementId === 'ach_thanks_old_caelian',
+      )?.unlocked,
+    ).not.toBe(true);
+    expect((await repository.mailboxState(profile.id)).entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'mail_thanks_old_caelian',
+          unread: true,
+        }),
+      ]),
+    );
+
+    await expect(
+      repository.syncPatchEntitlements(profile.id, [
+        { id: 'old-player', opened: true },
+      ]),
+    ).resolves.toMatchObject({
+      claimedAchievementIds: ['ach_thanks_old_caelian'],
+    });
+  });
+
   it('已在旧补丁中读过的信自动迁移奖励，新冒险档只补藏品而不重复加金币', async () => {
     const { repository } = createRepository();
     const first = await repository.ensureProfile('mailbox-migrate-a');

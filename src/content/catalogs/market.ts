@@ -15,6 +15,7 @@ import type {
   MarketSourceItem,
   RelicDefinition,
 } from '@/content/types';
+import { COOKING_ITEMS, COOKING_RECIPES } from '@/content/cooking';
 
 export interface MarketMonsterDefinition {
   id: string;
@@ -34,6 +35,7 @@ export interface MarketCraftRecipe {
   name: string;
   output?: string;
   basePrice?: number;
+  category?: string;
 }
 
 export interface MarketCatalogs {
@@ -89,7 +91,17 @@ export async function loadMarketCatalogs(): Promise<MarketCatalogs> {
         string,
         MarketMonsterDefinition
       >,
-      recipes: recipeModule.default as MarketCraftRecipe[],
+      recipes: [
+        ...(recipeModule.default as MarketCraftRecipe[]),
+        ...COOKING_RECIPES,
+      ],
+    };
+    cache.items = { ...cache.items, ...COOKING_ITEMS };
+    cache.itemPrices = {
+      ...cache.itemPrices,
+      ...Object.fromEntries(
+        Object.entries(COOKING_ITEMS).map(([id, item]) => [id, item.basePrice]),
+      ),
     };
   }
   return cache;

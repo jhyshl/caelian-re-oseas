@@ -50,6 +50,7 @@ export interface AchievementPatchReward {
 export interface AchievementPatchCatalogEntry {
   id: string;
   eventAchievementId: string;
+  eventAliases?: readonly string[];
   windowFlag: string;
   activationStorageKeys: readonly string[];
   openedStorageKeys: readonly string[];
@@ -60,6 +61,8 @@ export interface AchievementPatchCatalogEntry {
   activateOnClaimDate?: boolean;
   presentLetterOnClaim?: boolean;
   silentMailDelivery?: boolean;
+  /** Keep a native unread archive copy after a standalone script was opened. */
+  preserveNativeUnread?: boolean;
 }
 
 export interface AchievementPatchSignal {
@@ -91,6 +94,8 @@ export const ACHIEVEMENT_PATCH_REGISTRY: Record<
   'old-player': {
     id: 'old-player',
     eventAchievementId: 'ach_thanks_old_caelian',
+    eventAliases: ['caelian_special_patch_old_player_v2'],
+    preserveNativeUnread: true,
     windowFlag: '__CAELIAN_SPECIAL_PATCH_OLD_PLAYER__',
     activationStorageKeys: [
       'caelian_special_patch_old_player_v1',
