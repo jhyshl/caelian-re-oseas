@@ -101,6 +101,16 @@ export interface WorkshopExtensionApi {
 type UnknownRecord = Record<string, unknown>;
 type Amount = number | 'all';
 
+export const WORKSHOP_SCALING_STATS = [
+  ['hp', '当前生命值'],
+  ['attack', '攻击力'],
+  ['shield', '当前护盾值'],
+  ['defense', '防御力'],
+  ['mp', '当前魔力'],
+] as const;
+
+type WorkshopScalingStat = (typeof WORKSHOP_SCALING_STATS)[number][0];
+
 const TARGET_MULTIPLIERS: Record<string, number> = {
   all_enemies: 1.6,
   all_allies: 1.5,
@@ -122,6 +132,8 @@ const ALLOWED_BUFFS = [
   'damage_reduce',
   'mp_regen',
   'blood_burn',
+  'defense_reflect',
+  'counterattack',
 ];
 const ALLOWED_DEBUFFS = [
   'burn',
@@ -178,6 +190,8 @@ const TALENT_LIMITS: Record<
   turn_start_cleanse: { min: 1, max: 1, defaultValue: 1 },
   turn_start_debuff_shield: { min: 0, max: 8, defaultValue: 2 },
   hand_limit_bonus: { min: 0, max: 5, defaultValue: 5 },
+  defense_reflect: { min: 0, max: 0, defaultValue: 0 },
+  counterattack: { min: 0, max: 0, defaultValue: 0 },
 };
 const CONDITION_DISCOUNTS: Record<string, number> = {
   self_has_shield: 0.86,
@@ -267,6 +281,8 @@ export const WORKSHOP_TALENT_OPTIONS = [
   ['turn_start_cleanse', '回合开始净化'],
   ['turn_start_debuff_shield', '有减益时回合开始获得护盾'],
   ['hand_limit_bonus', '手牌上限提高'],
+  ['defense_reflect', '防反：按护盾与防御反伤'],
+  ['counterattack', '反击：受击后造成10%攻击力伤害'],
 ] as const;
 
 function record(value: unknown): UnknownRecord {
@@ -350,6 +366,11 @@ function normalizeTarget(effect: UnknownRecord, type: string): string {
   );
   const enemyTargets = ['enemy', 'all_enemies', 'random_enemy'];
   const allyTargets = ['self', 'all_allies', 'random_allies', 'selected_allies'];
+  const summonTargets = [
+    'all_summons',
+    'random_summons',
+    'selected_summons',
+  ];
   const targetRules: Record<string, string[]> = {
     damage: enemyTargets,
     spend_mp_damage: enemyTargets,
@@ -357,7 +378,7 @@ function normalizeTarget(effect: UnknownRecord, type: string): string {
     damage_from_shield: enemyTargets,
     damage_per_debuff: enemyTargets,
     discard_blank_damage: enemyTargets,
-    strip_shield: enemyTargets,
+    strip_shield: [...enemyTargets, ...allyTargets, ...summonTargets],
     strip_buffs: enemyTargets,
     dispel: enemyTargets,
     shield: allyTargets,
@@ -379,6 +400,17 @@ function normalizeTarget(effect: UnknownRecord, type: string): string {
     : selfTypes.has(type)
       ? 'self'
       : 'enemy';
+}
+
+function normalizeScaling(value: unknown):
+  | { stat: WorkshopScalingStat; percent: number }
+  | undefined {
+  const source = record(value);
+  const stat = String(source.stat ?? '') as WorkshopScalingStat;
+  if (!WORKSHOP_SCALING_STATS.some(([key]) => key === stat)) return undefined;
+  const percent = clamp(source.percent, 0, 200);
+  if (percent <= 0) return undefined;
+  return { stat, percent };
 }
 
 function normalizeCondition(value: unknown): CardEffect | undefined {
@@ -569,7 +601,9 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
     if (!ALLOWED_BUFFS.includes(buff)) return undefined;
     result.buff = buff;
     result.turns = clamp(source.turns, 1, 99, 1);
-    result.value = clamp(source.value, 0, 999999, 1);
+    result.value = ['defense_reflect', 'counterattack'].includes(buff)
+      ? 1
+      : clamp(source.value, 0, 999999, 1);
   }
   if (type === 'apply_debuff') {
     const debuff = String(source.debuff ?? '');
@@ -620,6 +654,16 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
     ) {
       result.ratio = clamp(source.ratio ?? source.bonus, 0, 999999, 10);
     }
+  }
+  if (
+    typeof result.value === 'number' &&
+    !(
+      type === 'apply_buff' &&
+      ['defense_reflect', 'counterattack'].includes(String(result.buff))
+    )
+  ) {
+    const scaling = normalizeScaling(source.scaling);
+    if (scaling) result.scaling = scaling;
   }
   return result;
 }
@@ -699,7 +743,15 @@ function summonExpectedTurns(hpRatio: number): number {
 }
 
 function singleEffectScore(effect: CardEffect): number {
-  const value = number(effect.value);
+  const scaling = record(effect.scaling);
+  const scalingStat = String(scaling.stat ?? '');
+  const scalingPercent = clamp(scaling.percent, 0, 200);
+  const scalingValue =
+    scalingPercent *
+    ({ hp: 0.4, attack: 0.55, shield: 0.3, defense: 0.4, mp: 0.25 }[
+      scalingStat
+    ] ?? 0);
+  const value = number(effect.value) + scalingValue;
   const turns = Math.max(1, number(effect.turns, 1));
   const multiplier = targetMultiplier(effect);
   switch (effect.type) {
@@ -763,6 +815,8 @@ function singleEffectScore(effect: CardEffect): number {
           damage_reduce: 4,
           mp_regen: 1.2,
           blood_burn: 3,
+          defense_reflect: 14,
+          counterattack: 8,
         }[String(effect.buff)] ?? 5;
       return (
         perTurn *
@@ -893,6 +947,8 @@ export function talentScore(effects: CardEffect[]): number {
       return score + value * 1.2;
     }
     if (effect.type === 'hand_limit_bonus') return score + value * 3;
+    if (effect.type === 'defense_reflect') return score + 14;
+    if (effect.type === 'counterattack') return score + 10;
     return score + 6;
   }, 0);
 }

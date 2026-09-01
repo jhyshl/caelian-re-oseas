@@ -2,7 +2,10 @@
 /* global structuredClone */
 /* eslint-disable vue/no-mutating-props */
 import { computed } from 'vue';
-import { WORKSHOP_EFFECT_OPTIONS } from '@/workshop';
+import {
+  WORKSHOP_EFFECT_OPTIONS,
+  WORKSHOP_SCALING_STATS,
+} from '@/workshop';
 
 type EditableEffect = Record<string, any>;
 
@@ -15,8 +18,8 @@ const emit = defineEmits<{ remove: [] }>();
 const labels = Object.fromEntries(
   WORKSHOP_EFFECT_OPTIONS.map((option) => [option.type, option.label]),
 );
-const hasValue = computed(() =>
-  [
+const hasValue = computed(() => {
+  const supported = [
     'damage',
     'shield',
     'heal',
@@ -35,8 +38,13 @@ const hasValue = computed(() =>
     'spend_mp_shield',
     'mp_to_ap',
     'thorns',
-  ].includes(props.effect.type),
-);
+  ].includes(props.effect.type);
+  return !(
+    supported &&
+    props.effect.type === 'apply_buff' &&
+    ['defense_reflect', 'counterattack'].includes(props.effect.buff)
+  );
+});
 const hasAmount = computed(() =>
   [
     'cleanse',
@@ -53,6 +61,9 @@ const hasTurns = computed(() =>
   ['apply_buff', 'apply_debuff', 'thorns', 'blank_regen'].includes(
     props.effect.type,
   ),
+);
+const supportsScaling = computed(
+  () => hasValue.value && !['apply_buff', 'apply_debuff', 'thorns'].includes(props.effect.type),
 );
 const hasTarget = computed(
   () =>
@@ -153,6 +164,14 @@ const conditions = [
   ['destroy_summon', '牺牲召唤物'],
 ];
 
+function setScalingMode(mode: string): void {
+  if (mode === 'hybrid') {
+    props.effect.scaling ??= { stat: 'attack', percent: 10 };
+    return;
+  }
+  delete props.effect.scaling;
+}
+
 function cloneOption(type: string): EditableEffect {
   const option = WORKSHOP_EFFECT_OPTIONS.find((entry) => entry.type === type);
   if (!option) return { type: 'damage', value: 1, target: 'enemy' };
@@ -212,6 +231,40 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
         <span>数值</span>
         <input v-model.number="effect.value" type="number" min="0" step="1" />
       </label>
+      <label v-if="supportsScaling">
+        <span>数值公式</span>
+        <select
+          :value="effect.scaling ? 'hybrid' : 'fixed'"
+          @change="setScalingMode(($event.target as HTMLSelectElement).value)"
+        >
+          <option value="fixed">固定 x</option>
+          <option value="hybrid">x ＋ y% 属性</option>
+        </select>
+      </label>
+      <template v-if="supportsScaling && effect.scaling">
+        <label>
+          <span>属性</span>
+          <select v-model="effect.scaling.stat">
+            <option
+              v-for="[stat, label] in WORKSHOP_SCALING_STATS"
+              :key="stat"
+              :value="stat"
+            >
+              {{ label }}
+            </option>
+          </select>
+        </label>
+        <label>
+          <span>属性比例 y%</span>
+          <input
+            v-model.number="effect.scaling.percent"
+            type="number"
+            min="0"
+            max="200"
+            step="1"
+          />
+        </label>
+      </template>
       <label v-if="hasAmount">
         <span>数量 / 消耗</span>
         <input v-model.number="effect.amount" type="number" min="1" step="1" />
@@ -257,6 +310,8 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
           <option value="damage_reduce">减伤</option>
           <option value="mp_regen">每回合魔力</option>
           <option value="blood_burn">烧血</option>
+          <option value="defense_reflect">防反</option>
+          <option value="counterattack">反击</option>
         </select>
       </label>
       <label v-if="effect.type === 'apply_debuff'">

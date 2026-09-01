@@ -324,7 +324,11 @@ function addTalent(type: string): void {
     hand_limit_bonus: 5,
   };
   const effect: EditableEffect = { type };
-  if (type !== 'always_reveal_intent') effect.value = defaults[type] ?? 1;
+  if (
+    !['always_reveal_intent', 'defense_reflect', 'counterattack'].includes(type)
+  ) {
+    effect.value = defaults[type] ?? 1;
+  }
   editor.value.talent.effects.push(effect);
 }
 
@@ -1048,7 +1052,13 @@ async function startWorkshopTest(): Promise<void> {
                   }}
                 </strong>
                 <input
-                  v-if="effect.type !== 'always_reveal_intent'"
+                  v-if="
+                    ![
+                      'always_reveal_intent',
+                      'defense_reflect',
+                      'counterattack',
+                    ].includes(effect.type)
+                  "
                   v-model.number="effect.value"
                   type="number"
                   min="0"

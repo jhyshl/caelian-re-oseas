@@ -271,6 +271,8 @@ interface DamageOptions {
   ignoreVulnerable?: boolean;
   ignoreResist?: boolean;
   ignoreDamageHalve?: boolean;
+  origin?: 'attack' | 'defense_reflect' | 'counterattack' | 'effect';
+  fixedAmount?: boolean;
 }
 
 interface WorkshopTestInput {
@@ -306,6 +308,7 @@ export class BattleRepository {
   private animationSequence = 0;
   private mechanismDepth = 0;
   private mechanismSteps = 0;
+  private reactionDepth = 0;
   private activeMechanismCard?: {
     id: string;
     name: string;
@@ -2209,6 +2212,7 @@ export class BattleRepository {
     multiplier = 1,
     allyTargetId: BattleFriendlyTargetId = 'player',
   ): void {
+    effect = this.resolveWorkshopScaling(state, effect);
     const target = state.enemies[targetIndex];
     if (!target) return;
     const cardId = String(
@@ -2766,14 +2770,26 @@ export class BattleRepository {
         break;
       }
       case 'strip_shield': {
-        const removed = target.shield;
-        target.shield = 0;
-        if (removed > 0) {
+        const recipients = ['enemy', 'all_enemies', 'random_enemy'].includes(
+          String(effect.target ?? 'enemy'),
+        )
+          ? targets
+          : this.cardFriendlyTargets(
+              state,
+              effect.target,
+              allyTargetId,
+              this.number(effect.target_count, 1),
+            );
+        for (const recipient of recipients) {
+          const removed = recipient.shield;
+          recipient.shield = 0;
+          if (removed <= 0) continue;
+          const identity = this.combatantIdentity(state, recipient);
           this.animation(state, {
             kind: 'shield',
             sourceSide: 'player',
-            targetSide: 'enemy',
-            targetId: target.id,
+            targetSide: identity.side,
+            targetId: identity.id,
             amount: -removed,
             shieldAfter: 0,
             label: '破盾',
@@ -3419,12 +3435,27 @@ export class BattleRepository {
       typeof damageOptions === 'boolean'
         ? { ignoreDefense: damageOptions }
         : damageOptions;
+    if (source.hp <= 0 || target.hp <= 0) return 0;
     let ignoreDefense = options.ignoreDefense === true;
     const sourceIdentity = this.combatantIdentity(state, source);
     const targetIdentity = this.combatantIdentity(state, target);
+    const origin =
+      options.origin ??
+      (kind === 'enemy' ||
+      this.activeMechanismCard ||
+      sourceIdentity.side === 'companion' ||
+      sourceIdentity.side === 'summon'
+        ? 'attack'
+        : 'effect');
+    const opposingSides =
+      (sourceIdentity.side === 'enemy') !==
+      (targetIdentity.side === 'enemy');
+    const canReact =
+      origin === 'attack' && this.reactionDepth === 0 && opposingSides;
     const beforeDamage = this.runWorkshopMechanisms(state, 'before_damage', {
       amount: rawAmount,
       ignoreDefense,
+      origin,
       sourceSide: sourceIdentity.side,
       sourceId: sourceIdentity.id,
       targetSide: targetIdentity.side,
@@ -3474,62 +3505,82 @@ export class BattleRepository {
       this.spendEffectCharge(target.buffs, 'damage_immune');
       return 0;
     }
-    if (source.buffs.blood_burn) {
-      amount = Math.ceil(
-        amount * (1 + Math.max(0, this.effectValue(source.buffs.blood_burn)) / 100),
-      );
+    const preHitShield = target.shield;
+    if (
+      amount > 0 &&
+      canReact &&
+      preHitShield > 0 &&
+      this.hasDefenseReflect(state, target)
+    ) {
+      this.resolveDefenseReflect(state, target, source, preHitShield);
     }
-    if (!options.ignoreWeak && source.debuffs.weak) amount = Math.floor(amount * 0.75);
-    if (!options.ignoreStrength) amount += this.effectValue(source.buffs.strength);
-    if (source.buffs.monster_frenzy) {
-      amount = Math.ceil(
-        amount *
-          (1 + Math.max(0, this.effectValue(source.buffs.monster_frenzy)) / 100),
-      );
-    }
-    if (!options.ignoreVulnerable && target.debuffs.vulnerable) {
-      amount = Math.ceil(amount * 1.5);
-    }
-    if (target.debuffs.curse_mark) {
-      amount += Math.max(1, this.effectValue(target.debuffs.curse_mark));
-    }
-    if (target.debuffs.abyss_mark) {
-      amount += Math.max(
-        1,
-        this.effectValue(target.debuffs.abyss_mark) + Math.floor(amount * 0.08),
-      );
-    }
-    const damageResist = this.clamp(
-      this.effectValue(target.buffs.damage_resist),
-      0,
-      95,
-    );
-    if (damageResist > 0 && !options.ignoreResist) {
-      amount = Math.ceil((amount * (100 - damageResist)) / 100);
-    }
-    if (target.buffs.damage_halve && !options.ignoreDamageHalve) {
-      amount = Math.ceil(amount * 0.5);
-      this.spendEffectCharge(target.buffs, 'damage_halve');
-    }
-    if (!ignoreDefense) {
-      const defenseScale =
-        targetIdentity.side !== 'enemy'
-          ? this.rules?.playerDefenseScale ?? 0.28
-          : this.rules?.enemyDefenseScale ?? 0.26;
-      amount -=
-        Math.floor(target.defense * defenseScale) +
-        this.effectValue(target.buffs.fortitude);
-    }
-    if (targetIdentity.side === 'enemy' && target.buffs.evidence_barrier) {
-      amount *= Math.max(
+    if (!options.fixedAmount) {
+      if (source.buffs.blood_burn) {
+        amount = Math.ceil(
+          amount *
+            (1 +
+              Math.max(0, this.effectValue(source.buffs.blood_burn)) / 100),
+        );
+      }
+      if (!options.ignoreWeak && source.debuffs.weak) {
+        amount = Math.floor(amount * 0.75);
+      }
+      if (!options.ignoreStrength) {
+        amount += this.effectValue(source.buffs.strength);
+      }
+      if (source.buffs.monster_frenzy) {
+        amount = Math.ceil(
+          amount *
+            (1 +
+              Math.max(0, this.effectValue(source.buffs.monster_frenzy)) /
+                100),
+        );
+      }
+      if (!options.ignoreVulnerable && target.debuffs.vulnerable) {
+        amount = Math.ceil(amount * 1.5);
+      }
+      if (target.debuffs.curse_mark) {
+        amount += Math.max(1, this.effectValue(target.debuffs.curse_mark));
+      }
+      if (target.debuffs.abyss_mark) {
+        amount += Math.max(
+          1,
+          this.effectValue(target.debuffs.abyss_mark) +
+            Math.floor(amount * 0.08),
+        );
+      }
+      const damageResist = this.clamp(
+        this.effectValue(target.buffs.damage_resist),
         0,
-        1 - this.effectValue(target.buffs.evidence_barrier) / 100,
+        95,
       );
-    }
-    if (target === state.player) {
-      amount -=
-        this.passiveEffectValue(state, 'damage_reduction') +
-        this.effectValue(state.player.buffs.damage_reduce);
+      if (damageResist > 0 && !options.ignoreResist) {
+        amount = Math.ceil((amount * (100 - damageResist)) / 100);
+      }
+      if (target.buffs.damage_halve && !options.ignoreDamageHalve) {
+        amount = Math.ceil(amount * 0.5);
+        this.spendEffectCharge(target.buffs, 'damage_halve');
+      }
+      if (!ignoreDefense) {
+        const defenseScale =
+          targetIdentity.side !== 'enemy'
+            ? this.rules?.playerDefenseScale ?? 0.28
+            : this.rules?.enemyDefenseScale ?? 0.26;
+        amount -=
+          Math.floor(target.defense * defenseScale) +
+          this.effectValue(target.buffs.fortitude);
+      }
+      if (targetIdentity.side === 'enemy' && target.buffs.evidence_barrier) {
+        amount *= Math.max(
+          0,
+          1 - this.effectValue(target.buffs.evidence_barrier) / 100,
+        );
+      }
+      if (target === state.player) {
+        amount -=
+          this.passiveEffectValue(state, 'damage_reduction') +
+          this.effectValue(state.player.buffs.damage_reduce);
+      }
     }
     amount = Math.max(rawAmount > 0 ? 1 : 0, Math.round(amount));
     const absorbed = Math.min(target.shield, amount);
@@ -3636,10 +3687,115 @@ export class BattleRepository {
         },
       );
     }
+    if (
+      canReact &&
+      amount > 0 &&
+      target.hp > 0 &&
+      source.hp > 0
+    ) {
+      this.resolveCounterattacks(state, target, source);
+    }
     this.stabilizeWorkshopTest(state);
     this.stabilizePlayerSummons(state);
     this.stabilizeCompanion(state);
     return hpDamage;
+  }
+
+  private hasPassiveEffect(
+    state: LocalBattleState,
+    target: Combatant,
+    type: string,
+  ): boolean {
+    return (
+      target === state.player &&
+      (state.player.passiveEffects ?? []).some(
+        (effect) =>
+          effect &&
+          typeof effect === 'object' &&
+          (effect as CardEffect).type === type,
+      )
+    );
+  }
+
+  private hasDefenseReflect(
+    state: LocalBattleState,
+    target: Combatant,
+  ): boolean {
+    return Boolean(
+      target.buffs.defense_reflect ||
+        this.hasPassiveEffect(state, target, 'defense_reflect'),
+    );
+  }
+
+  private resolveDefenseReflect(
+    state: LocalBattleState,
+    defender: Combatant,
+    attacker: Combatant,
+    preHitShield: number,
+  ): void {
+    const ratio = this.clamp(defender.defense, 0, 200) / 100;
+    const amount = Math.max(0, Math.round(preHitShield * ratio));
+    if (amount <= 0) return;
+    const defenderIdentity = this.combatantIdentity(state, defender);
+    this.withReactionContext(() => {
+      this.damage(
+        state,
+        defender,
+        attacker,
+        amount,
+        defenderIdentity.side === 'enemy' ? 'enemy' : 'player',
+        '防反',
+        {
+          origin: 'defense_reflect',
+          fixedAmount: true,
+          ignoreAgility: true,
+          ignoreImmunity: true,
+        },
+      );
+    });
+  }
+
+  private resolveCounterattacks(
+    state: LocalBattleState,
+    defender: Combatant,
+    attacker: Combatant,
+  ): void {
+    const count =
+      (this.hasPassiveEffect(state, defender, 'counterattack') ? 1 : 0) +
+      (defender.buffs.counterattack ? 1 : 0);
+    if (count <= 0) return;
+    const defenderIdentity = this.combatantIdentity(state, defender);
+    for (
+      let index = 0;
+      index < count && defender.hp > 0 && attacker.hp > 0;
+      index += 1
+    ) {
+      this.triggerBloodBurnAction(state, defender, '反击');
+      if (defender.hp <= 0 || attacker.hp <= 0) break;
+      this.withReactionContext(() => {
+        this.damage(
+          state,
+          defender,
+          attacker,
+          Math.max(0, Math.round(defender.attack * 0.1)),
+          defenderIdentity.side === 'enemy' ? 'enemy' : 'player',
+          count > 1 ? `反击（${index + 1}/${count}）` : '反击',
+          { origin: 'counterattack' },
+        );
+      });
+    }
+  }
+
+  private withReactionContext<T>(action: () => T): T {
+    const previousCard = this.activeMechanismCard;
+    this.activeMechanismCard = undefined;
+    this.reactionDepth += 1;
+    try {
+      return action();
+    } finally {
+      this.reactionDepth -= 1;
+      this.activeMechanismCard = previousCard;
+    }
   }
 
   private heal(
@@ -3712,12 +3868,22 @@ export class BattleRepository {
     state: LocalBattleState,
     effectTarget: unknown,
     allyTargetId: BattleFriendlyTargetId,
+    targetCount = 1,
   ): Combatant[] {
     const companion = state.companion;
     const playerSummons = state.player.summons.map((summon) =>
       this.normalizePlayerSummon(summon),
     );
     if (effectTarget === 'all_summons') return playerSummons;
+    if (
+      effectTarget === 'random_summons' ||
+      effectTarget === 'selected_summons'
+    ) {
+      return this.shuffle([...playerSummons]).slice(
+        0,
+        Math.max(1, Math.floor(targetCount)),
+      );
+    }
     if (
       this.resolvingPlayerSummonEffect &&
       effectTarget === 'self' &&
@@ -3733,9 +3899,52 @@ export class BattleRepository {
         ...(companion?.summons.filter((summon) => summon.hp > 0) ?? []),
       ];
     }
+    if (effectTarget === 'random_allies') {
+      return this.shuffle(
+        this.cardFriendlyTargets(state, 'all_allies', allyTargetId),
+      ).slice(0, Math.max(1, Math.floor(targetCount)));
+    }
+    if (effectTarget === 'selected_allies') {
+      return allyTargetId === 'caelian' && companion
+        ? [companion]
+        : [state.player];
+    }
     return allyTargetId === 'caelian' && companion
       ? [companion]
       : [state.player];
+  }
+
+  private resolveWorkshopScaling(
+    state: LocalBattleState,
+    effect: CardEffect,
+  ): CardEffect {
+    if (!effect.scaling || typeof effect.scaling !== 'object') return effect;
+    const scaling = effect.scaling as Record<string, unknown>;
+    const source =
+      this.resolvingPlayerSummonEffect && this.activePlayerSummon
+        ? this.normalizePlayerSummon(this.activePlayerSummon)
+        : state.player;
+    const stat = String(scaling.stat ?? '');
+    const sourceValue =
+      stat === 'hp'
+        ? source.hp
+        : stat === 'attack'
+          ? source.attack
+          : stat === 'shield'
+            ? source.shield
+            : stat === 'defense'
+              ? source.defense
+              : stat === 'mp' && source === state.player
+                ? state.player.mp
+                : 0;
+    const percent = this.clamp(this.number(scaling.percent), 0, 200);
+    return {
+      ...effect,
+      value: Math.max(
+        0,
+        Math.round(this.number(effect.value) + (sourceValue * percent) / 100),
+      ),
+    };
   }
 
   private isInjuredCompanion(
@@ -6582,6 +6791,26 @@ export class BattleRepository {
     > = {},
   ): void {
     const existing = target[key];
+    if (
+      existing &&
+      (key === 'defense_reflect' || key === 'counterattack')
+    ) {
+      const previous = this.timedEffectInstances(existing)[0];
+      const addedTurns = turns < 0 ? -1 : Math.max(1, turns);
+      const mergedTurns =
+        previous?.turns === -1 || addedTurns === -1
+          ? -1
+          : Math.max(1, this.number(existing.turns, 1) + addedTurns);
+      this.rebuildTimedEffect(target, key, [
+        {
+          value: 1,
+          turns: mergedTurns,
+          ...(previous?.fresh ? { fresh: true } : {}),
+          ...(options.undispellable ? { undispellable: true } : {}),
+        },
+      ]);
+      return;
+    }
     const instances = existing
       ? this.timedEffectInstances(existing)
       : [];
