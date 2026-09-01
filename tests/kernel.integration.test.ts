@@ -471,25 +471,21 @@ describe('CaelianKernel integration', () => {
         uid: 85,
         name: '主线｜总控 [AUTO_MAINQUEST_GLOBAL]',
         enabled: true,
-        disable: false,
       },
       {
         uid: 43,
         name: '全局设定 [AUTO_GLOBAL]',
         enabled: false,
-        disable: true,
       },
       {
         uid: 79,
         name: '伊拉亚资料 [AUTO_REGION:伊拉亚城]',
         enabled: false,
-        disable: true,
       },
       {
         uid: 78,
         name: '学院资料 [AUTO_REGION:圣德里安学院]',
         enabled: true,
-        disable: false,
       },
       { uid: 500, name: '玩家自建资料', enabled: true },
     ];
@@ -499,13 +495,18 @@ describe('CaelianKernel integration', () => {
         primary: '孔雀开屏你说看不见',
         additional: [],
       }),
+      getWorldbook: vi.fn(async () => structuredClone(worldbook)),
       updateWorldbookWith: vi.fn(
         async (
           _name: string,
           updater: (entries: typeof worldbook) => typeof worldbook,
         ) => {
-          worldbook = updater(worldbook);
-          return worldbook;
+          const updated = updater(structuredClone(worldbook));
+          if (updated.some((entry) => 'disable' in entry)) {
+            throw new Error('TavernHelper WorldbookEntry 不接受 disable 字段');
+          }
+          worldbook = structuredClone(updated);
+          return structuredClone(worldbook);
         },
       ),
     };
@@ -523,11 +524,9 @@ describe('CaelianKernel integration', () => {
     expect(worldbook.map((entry) => entry.uid)).toEqual([43, 79, 78, 500]);
     expect(worldbook.find((entry) => entry.uid === 79)).toMatchObject({
       enabled: false,
-      disable: true,
     });
     expect(worldbook.find((entry) => entry.uid === 78)).toMatchObject({
       enabled: true,
-      disable: false,
     });
 
     chat.push({ mes: '从伊拉亚城前往圣德里安学院', is_user: true });
@@ -541,7 +540,6 @@ describe('CaelianKernel integration', () => {
     ).toMatchObject({ status: 'applied', touched: 1 });
     expect(worldbook.find((entry) => entry.uid === 79)).toMatchObject({
       enabled: true,
-      disable: false,
     });
     expect(
       await kernel.api.switchRegionWorldbook(
@@ -551,7 +549,6 @@ describe('CaelianKernel integration', () => {
     ).toMatchObject({ status: 'applied', touched: 2 });
     expect(worldbook.find((entry) => entry.uid === 79)).toMatchObject({
       enabled: false,
-      disable: true,
     });
     expect(worldbook.find((entry) => entry.uid === 78)?.enabled).toBe(true);
     expect(await kernel.api.getRegionWorldbookStatus()).toMatchObject({
@@ -566,6 +563,8 @@ describe('CaelianKernel integration', () => {
       name: '玩家自建资料',
       enabled: true,
     });
+    expect(worldbook.every((entry) => !('disable' in entry))).toBe(true);
+    expect(helper.getWorldbook).toHaveBeenCalled();
 
     await kernel.api.shutdown();
   });
@@ -1783,7 +1782,7 @@ describe('CaelianKernel integration', () => {
     databaseNames.push(unmatchedDatabaseName);
     const unmatchedKernel = createKernel({
       channel: 'alpha',
-      version: '0.2.0-alpha.64',
+      version: '0.2.0-alpha.65',
       buildId: 'unmatched-release-test-build',
       databaseName: unmatchedDatabaseName,
       sourceWindow: window,
@@ -1798,9 +1797,9 @@ describe('CaelianKernel integration', () => {
       '[data-caelian-panel="release-notes"]',
     );
     expect(historicalAnnouncement?.textContent).toContain(
-      '当前构建 0.2.0-alpha.64 暂无独立公告',
+      '当前构建 0.2.0-alpha.65 暂无独立公告',
     );
-    expect(historicalAnnouncement?.textContent).toContain('Alpha 63');
+    expect(historicalAnnouncement?.textContent).toContain('Alpha 64');
     expect(
       historicalAnnouncement?.querySelector('.current-badge'),
     ).toBeNull();

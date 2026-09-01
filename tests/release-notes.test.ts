@@ -9,26 +9,39 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.63');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.64');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.63');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.64');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('边框与悬浮入口');
-    expect(latestText).toContain('统一重制并加粗');
-    expect(latestText).toContain('主面板、快捷菜单、弹窗、内部模块和入口单元格');
-    expect(latestText).toContain('略高于宽度的紧凑纵向比例');
-    expect(latestText).toContain('留白均衡');
-    expect(latestText).toContain('旅程主题');
-    expect(latestText).toContain('纯直线边段');
-    expect(latestText).toContain('宝石拆为独立清晰覆盖层');
-    expect(latestText).toContain('对齐边框中线');
-    expect(latestText).toContain('25% 可见度');
-    expect(latestText).toContain('顶部页眉、侧边/底部导航');
-    expect(latestText).toContain('与快捷菜单');
-    expect(latestText).toContain('完整实心框体');
-    expect(latestText).toContain('人物原图抠图保持完整居中');
+    expect(latestText).toContain('单层九宫格结构');
+    expect(latestText).toContain('完全显示的蓝白金底纹');
+    expect(latestText).toContain('页眉、导航和内容层保持透明');
+    expect(latestText).toContain('移除额外叠加的中央宝石装饰');
+    expect(latestText).toContain('人物放大居中');
+    expect(latestText).toContain('文字对比度');
+    expect(latestText).toContain('蓝底白字');
+    expect(latestText).toContain('enabled 字段');
+    expect(latestText).toContain('重新读取世界书');
+    const alpha63Text =
+      releases
+        .find((release) => release.version === '0.2.0-alpha.63')
+        ?.changes.join('\n') ?? '';
+    expect(alpha63Text).toContain('边框与悬浮入口');
+    expect(alpha63Text).toContain('统一重制并加粗');
+    expect(alpha63Text).toContain('主面板、快捷菜单、弹窗、内部模块和入口单元格');
+    expect(alpha63Text).toContain('略高于宽度的紧凑纵向比例');
+    expect(alpha63Text).toContain('留白均衡');
+    expect(alpha63Text).toContain('旅程主题');
+    expect(alpha63Text).toContain('纯直线边段');
+    expect(alpha63Text).toContain('宝石拆为独立清晰覆盖层');
+    expect(alpha63Text).toContain('对齐边框中线');
+    expect(alpha63Text).toContain('25% 可见度');
+    expect(alpha63Text).toContain('顶部页眉、侧边/底部导航');
+    expect(alpha63Text).toContain('与快捷菜单');
+    expect(alpha63Text).toContain('完整实心框体');
+    expect(alpha63Text).toContain('人物原图抠图保持完整居中');
     const alpha62Text =
       releases
         .find((release) => release.version === '0.2.0-alpha.62')
@@ -172,14 +185,14 @@ describe('release notes', () => {
   });
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
-    expect(releaseHistoryFor('alpha', '0.2.0-alpha.64')[0]?.version).toBe(
-      '0.2.0-alpha.63',
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.65')[0]?.version).toBe(
+      '0.2.0-alpha.64',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.63',
+      '0.2.0-alpha.64',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });

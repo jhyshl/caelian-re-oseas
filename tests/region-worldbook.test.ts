@@ -19,13 +19,18 @@ function createSwitcher(options: {
       primary: options.worldbookName ?? '孔雀开屏你说看不见',
       additional: [],
     }),
+    getWorldbook: vi.fn(async () => structuredClone(entries)),
     updateWorldbookWith: vi.fn(
       async (
         _name: string,
         updater: (current: RegionWorldbookEntry[]) => RegionWorldbookEntry[],
       ) => {
-        entries = updater(entries);
-        return entries;
+        const updated = updater(structuredClone(entries));
+        if (updated.some((entry) => 'disable' in entry)) {
+          throw new Error('TavernHelper WorldbookEntry 不接受 disable 字段');
+        }
+        entries = structuredClone(updated);
+        return structuredClone(entries);
       },
     ),
   };
@@ -55,7 +60,6 @@ describe('地区世界书', () => {
           {
             name: '银月资料 [AUTO_REGION:银月之城]',
             enabled: false,
-            disable: true,
           },
         ],
       });
@@ -79,7 +83,6 @@ describe('地区世界书', () => {
         {
           name: '学院资料 [AUTO_REGION:圣德里安学院]',
           enabled: false,
-          disable: true,
         },
       ],
     });
@@ -96,25 +99,21 @@ describe('地区世界书', () => {
           uid: 1,
           name: '全局资料 [AUTO_GLOBAL]',
           enabled: false,
-          disable: true,
         },
         {
           uid: 2,
           name: '伊拉亚资料 [AUTO_REGION:伊拉亚城]',
           enabled: false,
-          disable: true,
         },
         {
           uid: 3,
           name: '学院资料 [AUTO_REGION:圣德里安学院]',
           enabled: true,
-          disable: false,
         },
         {
           uid: 4,
           name: '手动资料 [AUTO_MANUAL]',
           enabled: true,
-          disable: false,
         },
         { uid: 5, name: '玩家自建资料', enabled: true },
       ],
@@ -136,10 +135,10 @@ describe('地区世界书', () => {
       changed: 1,
     });
     expect(harness.entries()).toEqual([
-      expect.objectContaining({ uid: 1, enabled: false, disable: true }),
-      expect.objectContaining({ uid: 2, enabled: true, disable: false }),
-      expect.objectContaining({ uid: 3, enabled: true, disable: false }),
-      expect.objectContaining({ uid: 4, enabled: true, disable: false }),
+      expect.objectContaining({ uid: 1, enabled: false }),
+      expect.objectContaining({ uid: 2, enabled: true }),
+      expect.objectContaining({ uid: 3, enabled: true }),
+      expect.objectContaining({ uid: 4, enabled: true }),
       { uid: 5, name: '玩家自建资料', enabled: true },
     ]);
     expect(
@@ -150,8 +149,73 @@ describe('地区世界书', () => {
       touched: 2,
       changed: 1,
     });
-    expect(harness.entries()[1]).toMatchObject({ enabled: false, disable: true });
-    expect(harness.entries()[2]).toMatchObject({ enabled: true, disable: false });
+    expect(harness.entries()[1]).toMatchObject({ enabled: false });
+    expect(harness.entries()[2]).toMatchObject({ enabled: true });
+    expect(harness.entries().every((entry) => !('disable' in entry))).toBe(true);
+    expect(harness.api.getWorldbook).toHaveBeenCalled();
+  });
+
+  it('状态读取只调用 getWorldbook，不用更新接口伪装读取', async () => {
+    const harness = createSwitcher({
+      entries: [
+        {
+          uid: 7,
+          name: '学院资料 [AUTO_REGION:圣德里安学院]',
+          enabled: true,
+        },
+      ],
+    });
+
+    await expect(harness.switcher.inspect()).resolves.toMatchObject({
+      status: 'current',
+      regions: [
+        expect.objectContaining({
+          region: '圣德里安学院',
+          state: 'on',
+        }),
+      ],
+    });
+    expect(harness.api.getWorldbook).toHaveBeenCalledOnce();
+    expect(harness.api.updateWorldbookWith).not.toHaveBeenCalled();
+  });
+
+  it('宿主未真正保存 enabled 时写后回读失败，不向界面谎报成功', async () => {
+    const entries: RegionWorldbookEntry[] = [
+      {
+        uid: 9,
+        name: '伊拉亚资料 [AUTO_REGION:伊拉亚城]',
+        enabled: false,
+      },
+    ];
+    const api = {
+      getCurrentCharacterName: () => '凯利安',
+      getCharWorldbookNames: () => ({
+        primary: '孔雀开屏你说看不见',
+        additional: [],
+      }),
+      getWorldbook: vi.fn(async () => structuredClone(entries)),
+      updateWorldbookWith: vi.fn(
+        async (
+          _name: string,
+          updater: (current: RegionWorldbookEntry[]) => RegionWorldbookEntry[],
+        ) => updater(structuredClone(entries)),
+      ),
+    };
+    const switcher = new RegionWorldbookSwitcher(
+      () => api,
+      async () => '凯利安',
+    );
+
+    await expect(
+      switcher.setRegionEnabled('伊拉亚城', true),
+    ).resolves.toMatchObject({
+      status: 'failed',
+      touched: 1,
+      changed: 1,
+      message: expect.stringContaining('写入后回读不一致'),
+    });
+    expect(api.getWorldbook).toHaveBeenCalledOnce();
+    expect(entries[0]?.enabled).toBe(false);
   });
 
   it('支持 comment、name 和 extra.comment 上的地区标记', () => {

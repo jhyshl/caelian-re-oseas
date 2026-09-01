@@ -2843,6 +2843,10 @@ body.caelian-theme-journey .worldbook-floater .worldbook-footer {
    layout contract while using independent portrait and nine-slice assets. */
 body.caelian-theme-heart {
   color-scheme: light;
+  --ca-heart-ink: #173d69;
+  --ca-heart-ink-strong: #0f3158;
+  --ca-heart-ink-muted: #4b6680;
+  --ca-heart-gold-ink: #76551a;
 }
 
 body.caelian-theme-heart .caelian-shell-host .shell {
@@ -2955,15 +2959,16 @@ body.caelian-theme-heart .caelian-shell-host .orb > i.ready {
 body.caelian-theme-heart .caelian-shell-host .wheel {
   position: absolute !important;
   isolation: isolate !important;
-  width: min(320px, calc(100vw - 16px)) !important;
-  min-height: 326px !important;
+  box-sizing: border-box !important;
+  width: min(302px, calc(100vw - 16px)) !important;
+  min-height: 304px !important;
   max-height: calc(100dvh - 90px) !important;
-  padding: 28px 24px 22px !important;
+  padding: 22px 20px 17px !important;
   overflow: visible !important;
   border: 1px solid transparent !important;
   border-image-source: var(--ca-heart-menu-frame) !important;
   border-image-slice: 200 190 190 190 fill !important;
-  border-image-width: 40px !important;
+  border-image-width: 34px !important;
   border-image-outset: 0 !important;
   border-image-repeat: stretch !important;
   border-radius: 0 !important;
@@ -2977,32 +2982,13 @@ body.caelian-theme-heart .caelian-shell-host .wheel {
 }
 
 body.caelian-theme-heart .caelian-shell-host .wheel::before {
-  content: "" !important;
-  position: absolute !important;
-  inset: 12px !important;
-  z-index: 0 !important;
-  border-radius: 15px !important;
-  pointer-events: none !important;
-  background:
-    linear-gradient(rgba(250, 253, 255, 0.75), rgba(244, 250, 255, 0.75)),
-    var(--ca-heart-pattern) center / 410px 410px !important;
-  opacity: 1 !important;
+  content: none !important;
+  display: none !important;
 }
 
 body.caelian-theme-heart .caelian-shell-host .wheel::after {
-  content: "" !important;
-  position: absolute !important;
-  /* Half the rendered gem height sits on each side of the border line. */
-  inset: -23px !important;
-  z-index: 2 !important;
-  display: block !important;
-  pointer-events: none !important;
-  background-image:
-    var(--ca-heart-frame-center-gem),
-    var(--ca-heart-frame-center-gem) !important;
-  background-position: center top, center bottom !important;
-  background-size: 150px auto, 150px auto !important;
-  background-repeat: no-repeat !important;
+  content: none !important;
+  display: none !important;
 }
 
 body.caelian-theme-heart .caelian-shell-host .wheel > * {
@@ -3015,8 +3001,8 @@ body.caelian-theme-heart .caelian-shell-host .wheel-header {
   align-items: center !important;
   justify-content: space-between !important;
   gap: 10px !important;
-  margin: 0 0 8px !important;
-  padding: 0 2px 8px !important;
+  margin: 0 0 6px !important;
+  padding: 0 2px 6px !important;
   border-bottom: 1px solid rgba(185, 147, 77, 0.42) !important;
   text-align: left !important;
 }
@@ -3062,28 +3048,29 @@ body.caelian-theme-heart .caelian-shell-host .order-trigger:focus-visible {
 
 body.caelian-theme-heart .caelian-shell-host .wheel-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-  gap: 7px !important;
+  gap: 6px !important;
 }
 
 body.caelian-theme-heart .caelian-shell-host .wheel-page-viewport {
-  min-height: 195px !important;
+  min-height: 182px !important;
   overflow: hidden !important;
 }
 
 body.caelian-theme-heart .caelian-shell-host .wheel-grid button {
+  box-sizing: border-box !important;
   min-width: 0 !important;
-  min-height: 94px !important;
+  min-height: 0 !important;
+  aspect-ratio: 8 / 9 !important;
+  grid-template-rows: minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  justify-items: center !important;
   gap: 2px !important;
-  padding: 7px 3px 6px !important;
-  border: 1px solid transparent !important;
-  border-image-source: var(--ca-heart-menu-cell) !important;
-  border-image-slice: 200 190 190 190 fill !important;
-  border-image-width: 17px !important;
-  border-image-outset: 0 !important;
-  border-image-repeat: stretch !important;
+  padding: 8px 4px 10px !important;
+  border: 0 !important;
+  border-image: none !important;
   border-radius: 0 !important;
   color: #153963 !important;
-  background: transparent !important;
+  background: transparent var(--ca-heart-menu-cell) center / contain no-repeat !important;
   box-shadow: none !important;
   clip-path: none !important;
   image-rendering: auto !important;
@@ -3098,9 +3085,9 @@ body.caelian-theme-heart .caelian-shell-host .wheel-grid button:focus-visible {
 }
 
 body.caelian-theme-heart .caelian-shell-host .wheel-grid button b.theme-menu-icon {
-  width: 46px !important;
-  height: 46px !important;
-  margin: -2px auto -1px !important;
+  width: 52px !important;
+  height: 52px !important;
+  margin: 0 auto -2px !important;
   justify-self: center !important;
   align-self: center !important;
   border-radius: 0 !important;
@@ -3204,13 +3191,13 @@ body.caelian-theme-heart .caelian-panel-host .ca-frame {
   position: relative !important;
   isolation: isolate !important;
   height: min(840px, calc(100dvh - 74px)) !important;
-  padding: 26px !important;
+  padding: 14px !important;
   overflow: visible !important;
   border: 1px solid transparent !important;
   border-image-source: var(--ca-heart-menu-frame) !important;
   border-image-slice: 200 190 190 190 fill !important;
   border-image-width: 40px !important;
-  border-image-outset: 14px !important;
+  border-image-outset: 0 !important;
   border-image-repeat: stretch !important;
   border-radius: 0 !important;
   color: var(--ca-text) !important;
@@ -3222,25 +3209,8 @@ body.caelian-theme-heart .caelian-panel-host .ca-frame {
 
 body.caelian-theme-heart .caelian-panel-host .ca-frame::before,
 body.caelian-theme-heart .caelian-panel-host .ca-frame::after {
-  content: "" !important;
-  position: absolute !important;
-  left: 50% !important;
-  z-index: 3 !important;
-  width: 150px !important;
-  height: 46px !important;
-  display: block !important;
-  pointer-events: none !important;
-  background: transparent var(--ca-heart-frame-center-gem) center / contain no-repeat !important;
-}
-
-body.caelian-theme-heart .caelian-panel-host .ca-frame::before {
-  top: -35px !important;
-  transform: translateX(-50%) !important;
-}
-
-body.caelian-theme-heart .caelian-panel-host .ca-frame::after {
-  bottom: -35px !important;
-  transform: translateX(-50%) rotate(180deg) !important;
+  content: none !important;
+  display: none !important;
 }
 
 body.caelian-theme-heart .caelian-panel-host .ca-frame > * {
@@ -3251,9 +3221,8 @@ body.caelian-theme-heart .caelian-panel-host .ca-frame > * {
 body.caelian-theme-heart .caelian-panel-host .ca-header {
   border-bottom: 1px solid rgba(183, 145, 72, 0.45) !important;
   color: #173e6c !important;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.75), rgba(237, 247, 255, 0.75)),
-    var(--ca-heart-pattern) center / 700px 700px !important;
+  background-color: transparent !important;
+  background-image: none !important;
   box-shadow: inset 0 -1px rgba(53, 100, 151, 0.08) !important;
 }
 
@@ -3269,9 +3238,8 @@ body.caelian-theme-heart .caelian-panel-host .ca-date {
 
 body.caelian-theme-heart .caelian-panel-host .ca-navigation {
   border-color: rgba(185, 147, 74, 0.42) !important;
-  background:
-    linear-gradient(rgba(242, 249, 255, 0.75), rgba(225, 240, 252, 0.75)),
-    var(--ca-heart-pattern) center / 700px 700px !important;
+  background-color: transparent !important;
+  background-image: none !important;
   box-shadow: inset -1px 0 rgba(255, 255, 255, 0.72) !important;
 }
 
@@ -3306,9 +3274,9 @@ body.caelian-theme-heart .caelian-panel-host .ca-nav-icon.theme-nav-icon {
 
 body.caelian-theme-heart .caelian-panel-host .ca-page {
   color: var(--ca-text) !important;
-  background:
-    linear-gradient(rgba(248, 252, 255, 0.75), rgba(239, 248, 255, 0.75)),
-    var(--ca-heart-pattern) center / 700px 700px !important;
+  padding: 12px 14px 20px !important;
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 body.caelian-theme-heart .caelian-panel-host :is(
@@ -3341,12 +3309,16 @@ body.caelian-theme-heart .caelian-panel-host :is(
   box-shadow: 0 8px 22px rgba(31, 74, 119, 0.15) !important;
   clip-path: none !important;
   image-rendering: auto !important;
-  padding: 20px !important;
+  padding: 20px 16px !important;
 }
 
 body.caelian-theme-heart .caelian-panel-host .ca-section.ca-section {
   border-image-outset: 0 !important;
-  padding: 34px 32px 29px !important;
+  padding: 28px 24px !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .ca-section + .ca-section {
+  margin-top: 8px !important;
 }
 
 body.caelian-theme-heart .caelian-panel-host .theme-card {
@@ -3463,6 +3435,218 @@ body.caelian-theme-heart .caelian-panel-host .sell-list article :is(p, small, sp
   color: #59738e !important;
 }
 
+/* Heart uses navy framed sections with selected light paper surfaces inside.
+   Keep section copy pale, but restore dark ink on every light surface. */
+body.caelian-theme-heart .caelian-panel-host :is(
+  .card,
+  .gathering-card,
+  .refresh-status,
+  .gathering-notice,
+  .sold-out-status,
+  .boundary-grid article,
+  .judge-toggle,
+  .achievement-grid article,
+  .quest-list article,
+  .task-grid article,
+  .exploration-ready,
+  .battle-result,
+  .mail-heading
+) {
+  --ca-text: var(--ca-heart-ink) !important;
+  --ca-text-bright: var(--ca-heart-ink-strong) !important;
+  --ca-muted: var(--ca-heart-ink-muted) !important;
+  --ca-gold: var(--ca-heart-gold-ink) !important;
+  --ca-gold-dark: var(--ca-heart-gold-ink) !important;
+  --ca-gold-light: var(--ca-heart-gold-ink) !important;
+  color: var(--ca-heart-ink) !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host :is(
+  .card,
+  .gathering-card,
+  .refresh-status,
+  .gathering-notice,
+  .sold-out-status,
+  .boundary-grid article,
+  .judge-toggle,
+  .achievement-grid article,
+  .quest-list article,
+  .task-grid article,
+  .exploration-ready,
+  .battle-result,
+  .mail-heading
+) :is(h1, h2, h3, h4, strong, b, legend) {
+  color: var(--ca-heart-ink-strong) !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host :is(
+  .card,
+  .gathering-card,
+  .refresh-status,
+  .gathering-notice,
+  .sold-out-status,
+  .boundary-grid article,
+  .judge-toggle,
+  .achievement-grid article,
+  .quest-list article,
+  .task-grid article,
+  .exploration-ready,
+  .battle-result,
+  .mail-heading
+) :is(p, small, span, label, dt, dd) {
+  color: var(--ca-heart-ink-muted) !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host :is(
+  .filters,
+  .inventory-tabs,
+  .crafting-tabs,
+  .gathering-tabs,
+  .market-mode,
+  .market-categories,
+  .achievement-filters,
+  .guild-tabs
+) button {
+  border-color: rgba(169, 132, 61, 0.58) !important;
+  color: var(--ca-heart-ink) !important;
+  background: rgba(249, 252, 255, 0.9) !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host :is(
+  .filters,
+  .inventory-tabs,
+  .crafting-tabs,
+  .gathering-tabs,
+  .market-mode,
+  .market-categories,
+  .achievement-filters,
+  .guild-tabs
+) button.active {
+  border-color: #c79d4e !important;
+  color: #ffffff !important;
+  background: linear-gradient(145deg, #347fc8, #1a559b) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24) !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .card-grid .card header > b,
+body.caelian-theme-heart .caelian-panel-host .refresh-status strong,
+body.caelian-theme-heart .caelian-panel-host .gathering-card :is(.resource-meta, .resource-meta > span, .resource-counts b),
+body.caelian-theme-heart .caelian-panel-host :is(.market-wallet strong, .goods-bottom b, .sell-list b),
+body.caelian-theme-heart .caelian-panel-host :is(.inventory-count strong, .recipe-count strong, .achievement-summary dd),
+body.caelian-theme-heart .caelian-panel-host .mail-heading > :is(span, strong),
+body.caelian-theme-heart .caelian-panel-host :is(.quest-list, .task-grid) header span,
+body.caelian-theme-heart .caelian-panel-host :is(.exploration-stats, .reward-grid, .reward-choices) strong {
+  color: var(--ca-heart-gold-ink) !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .achievement-grid header span {
+  color: var(--ca-heart-gold-ink) !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .achievement-grid .unlocked header > b {
+  color: #246b49 !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .achievement-grid .achievement-icon {
+  color: #e2c171 !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .achievement-grid .progress > small {
+  color: #f7fbff !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .gathering-notice.success {
+  color: #246b49 !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .gathering-notice.error {
+  color: #9a2f34 !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .theme-preview:not(.artwork),
+body.caelian-theme-heart .caelian-panel-host .theme-preview:not(.artwork) b {
+  color: var(--ca-heart-gold-ink) !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host :is(
+  .item-grid,
+  .equipment-list,
+  .consumable-grid,
+  .loadout-grid
+) :is(span, small),
+body.caelian-theme-heart .caelian-panel-host .ca-section .ca-empty {
+  color: #b9cfe2 !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .ca-section :is(
+  .setting-row span,
+  .runtime-grid span
+) {
+  color: #b9cfe2 !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .mail-list button {
+  color: #c9ddec !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .mail-list button:hover,
+body.caelian-theme-heart .caelian-panel-host .mail-list button.active {
+  color: #ffffff !important;
+  background: rgba(52, 127, 200, 0.24) !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .mail-list :is(small, time) {
+  color: #9fb9cf !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .mail-list button.unread :is(i, b) {
+  color: #efd68e !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .letter-paper,
+body.caelian-theme-heart .caelian-panel-host .letter-paper p {
+  color: #4b2b15 !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .letter-paper .reward {
+  color: #70400f !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host .letter-paper > small {
+  color: #765f4a !important;
+}
+
+body.caelian-theme-heart .caelian-panel-host :is(
+  .setting-row select,
+  .judge-form input:not([type="checkbox"]),
+  .judge-form select
+) {
+  border-color: rgba(169, 132, 61, 0.58) !important;
+  color: var(--ca-heart-ink) !important;
+  background: rgba(249, 252, 255, 0.96) !important;
+}
+
+@media (max-width: 759px) {
+  body.caelian-theme-heart .caelian-panel-host .mail-list button {
+    --ca-text: var(--ca-heart-ink) !important;
+    --ca-text-bright: var(--ca-heart-ink-strong) !important;
+    --ca-muted: var(--ca-heart-ink-muted) !important;
+    color: var(--ca-heart-ink) !important;
+  }
+
+  body.caelian-theme-heart .caelian-panel-host .mail-list button b {
+    color: var(--ca-heart-ink-strong) !important;
+  }
+
+  body.caelian-theme-heart .caelian-panel-host .mail-list button :is(small, time) {
+    color: var(--ca-heart-ink-muted) !important;
+  }
+
+  body.caelian-theme-heart .caelian-panel-host .mail-list button.unread :is(i, b) {
+    color: var(--ca-heart-gold-ink) !important;
+  }
+}
+
 body.caelian-theme-heart :is(.feedback-overlay, .survey-overlay, .release-overlay) {
   background: rgba(18, 47, 82, 0.58) !important;
   -webkit-backdrop-filter: blur(8px) !important;
@@ -3574,6 +3758,16 @@ body.caelian-theme-heart .worldbook-floater .region-row.on {
   background: linear-gradient(135deg, #367fc4, #1d579c) !important;
 }
 
+body.caelian-theme-heart .worldbook-floater .region-row.on :is(
+  .region-copy,
+  .region-copy b,
+  .region-copy strong,
+  .region-copy small,
+  .region-action
+) {
+  color: #ffffff !important;
+}
+
 body.caelian-theme-heart :is(.feedback-dialog, .survey-dialog) :is(input, textarea, select) {
   border-color: rgba(177, 144, 79, 0.62) !important;
   color: #17375f !important;
@@ -3605,7 +3799,7 @@ body.caelian-theme-heart .current .version-rail {
 
 /* Keep the region quick switcher inside the painted frame at every row count. */
 body.caelian-theme-heart .worldbook-floater {
-  --ca-heart-worldbook-frame-inset: 40px;
+  --ca-heart-worldbook-frame-inset: 32px;
   box-sizing: border-box !important;
   min-width: 0 !important;
   padding: var(--ca-heart-worldbook-frame-inset) !important;
@@ -3727,37 +3921,26 @@ body.caelian-theme-heart .worldbook-floater .worldbook-footer {
   }
 
   body.caelian-theme-heart .caelian-shell-host .wheel {
-    width: min(306px, calc(100vw - 8px)) !important;
-    min-height: 309px !important;
+    width: min(286px, calc(100vw - 8px)) !important;
+    min-height: 288px !important;
     max-height: calc(100dvh - 88px) !important;
-    padding: 24px 20px 20px !important;
-    border-image-width: 32px !important;
+    padding: 19px 16px 14px !important;
+    border-image-width: 28px !important;
     /* Keep the complete thick frame inside the box at every viewport edge. */
     border-image-outset: 0 !important;
   }
 
-  body.caelian-theme-heart .caelian-shell-host .wheel::before {
-    inset: 10px !important;
-    background-size: auto, 360px 360px !important;
-  }
-
-  body.caelian-theme-heart .caelian-shell-host .wheel::after {
-    inset: -17px !important;
-    background-size: 110px auto, 110px auto !important;
-  }
-
   body.caelian-theme-heart .caelian-shell-host .wheel-grid button {
-    min-height: 90px !important;
-    border-image-width: 15px !important;
+    min-height: 0 !important;
   }
 
   body.caelian-theme-heart .caelian-shell-host .wheel-grid button b.theme-menu-icon {
-    width: 43px !important;
-    height: 43px !important;
+    width: 48px !important;
+    height: 48px !important;
   }
 
   body.caelian-theme-heart .caelian-shell-host .wheel-page-viewport {
-    min-height: 187px !important;
+    min-height: 170px !important;
   }
 
   body.caelian-theme-heart .caelian-panel-host {
@@ -3770,28 +3953,14 @@ body.caelian-theme-heart .worldbook-floater .worldbook-footer {
 
   body.caelian-theme-heart .caelian-panel-host .ca-frame {
     height: calc(100dvh - 46px) !important;
-    padding: 26px !important;
+    padding: 8px !important;
     border: 1px solid transparent !important;
     border-image-source: var(--ca-heart-menu-frame) !important;
     border-image-slice: 200 190 190 190 fill !important;
     border-image-width: 32px !important;
-    border-image-outset: 6px !important;
+    border-image-outset: 0 !important;
     border-image-repeat: stretch !important;
     border-radius: 0 !important;
-  }
-
-  body.caelian-theme-heart .caelian-panel-host .ca-frame::before,
-  body.caelian-theme-heart .caelian-panel-host .ca-frame::after {
-    width: 110px !important;
-    height: 34px !important;
-  }
-
-  body.caelian-theme-heart .caelian-panel-host .ca-frame::before {
-    top: -20px !important;
-  }
-
-  body.caelian-theme-heart .caelian-panel-host .ca-frame::after {
-    bottom: -20px !important;
   }
 
   body.caelian-theme-heart .caelian-panel-host .ca-header {
@@ -3800,12 +3969,7 @@ body.caelian-theme-heart .worldbook-floater .worldbook-footer {
 
   body.caelian-theme-heart .caelian-panel-host .ca-navigation {
     border-top-color: rgba(185, 147, 74, 0.48) !important;
-    background-size: auto, 560px 560px !important;
     box-shadow: 0 -5px 18px rgba(39, 78, 119, 0.13) !important;
-  }
-
-  body.caelian-theme-heart .caelian-panel-host .ca-header {
-    background-size: auto, 560px 560px !important;
   }
 
   body.caelian-theme-heart .caelian-panel-host .ca-nav-icon.theme-nav-icon {
@@ -3816,9 +3980,11 @@ body.caelian-theme-heart .worldbook-floater .worldbook-footer {
 
   body.caelian-theme-heart .caelian-panel-host .ca-page,
   body.caelian-theme-heart .caelian-panel-host .ca-frame--battle .ca-page {
-    padding-left: max(10px, env(safe-area-inset-left)) !important;
-    padding-right: max(10px, env(safe-area-inset-right)) !important;
-    background-size: auto, 560px 560px !important;
+    padding:
+      8px
+      max(10px, env(safe-area-inset-right))
+      12px
+      max(10px, env(safe-area-inset-left)) !important;
   }
 
   body.caelian-theme-heart .caelian-panel-host :is(
@@ -3838,12 +4004,12 @@ body.caelian-theme-heart .worldbook-floater .worldbook-footer {
   ) {
     border-image-width: 24px 20px !important;
     border-image-outset: 6px !important;
-    padding: 18px !important;
+    padding: 18px 14px !important;
   }
 
   body.caelian-theme-heart .caelian-panel-host .ca-section.ca-section {
     border-image-outset: 0 !important;
-    padding: 29px 24px 25px !important;
+    padding: 24px 20px !important;
   }
 
   body.caelian-theme-heart .caelian-panel-host .guild-card .rank-panel {
@@ -3885,7 +4051,7 @@ body.caelian-theme-heart .worldbook-floater .worldbook-footer {
   }
 
   body.caelian-theme-heart .worldbook-floater {
-    --ca-heart-worldbook-frame-inset: 32px;
+    --ca-heart-worldbook-frame-inset: 26px;
     border-image-outset: 6px !important;
     --ca-heart-worldbook-top: max(
       66px,

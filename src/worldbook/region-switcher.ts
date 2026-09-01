@@ -159,7 +159,6 @@ export interface RegionWorldbookEntry {
   comment?: string;
   content?: string;
   enabled?: boolean;
-  disable?: boolean;
   keys?: string[] | string;
   extra?: Record<string, unknown>;
   [key: string]: unknown;
@@ -170,6 +169,9 @@ export interface RegionWorldbookApi {
   getCharWorldbookNames?: (
     characterName: 'current',
   ) => { primary: string | null; additional: string[] };
+  getWorldbook?: (
+    worldbookName: string,
+  ) => Promise<RegionWorldbookEntry[]>;
   updateWorldbookWith?: (
     worldbookName: string,
     updater: (entries: RegionWorldbookEntry[]) => RegionWorldbookEntry[],
@@ -337,28 +339,21 @@ export class RegionWorldbookSwitcher {
     if ('status' in target) {
       return { status: target.status, regions: [], message: target.message };
     }
-    const updateWorldbookWith = target.api.updateWorldbookWith;
-    if (!updateWorldbookWith) return { status: 'unavailable', regions: [] };
+    const getWorldbook = target.api.getWorldbook;
+    if (!getWorldbook) return { status: 'unavailable', regions: [] };
     const counts = new Map<string, { total: number; enabled: number }>();
     try {
-      await updateWorldbookWith.call(
-        target.api,
-        target.worldbookName,
-        (entries) => {
-          for (const entry of entries) {
-            for (const region of entryRegions(entry)) {
-              const current = counts.get(region) ?? { total: 0, enabled: 0 };
-              current.total += 1;
-              if (entry.enabled === true && entry.disable !== true) {
-                current.enabled += 1;
-              }
-              counts.set(region, current);
-            }
+      const entries = await getWorldbook.call(target.api, target.worldbookName);
+      for (const entry of entries) {
+        for (const region of entryRegions(entry)) {
+          const current = counts.get(region) ?? { total: 0, enabled: 0 };
+          current.total += 1;
+          if (entry.enabled === true) {
+            current.enabled += 1;
           }
-          return entries;
-        },
-        { render: 'debounced' },
-      );
+          counts.set(region, current);
+        }
+      }
     } catch (error) {
       return {
         status: 'failed',
@@ -391,7 +386,10 @@ export class RegionWorldbookSwitcher {
     const target = await this.resolveWorldbook();
     if ('status' in target) return emptyResult(target.status, region, target.message);
     const updateWorldbookWith = target.api.updateWorldbookWith;
-    if (!updateWorldbookWith) return emptyResult('unavailable', region);
+    const getWorldbook = target.api.getWorldbook;
+    if (!updateWorldbookWith || !getWorldbook) {
+      return emptyResult('unavailable', region);
+    }
     let touched = 0;
     let changed = 0;
     try {
@@ -402,20 +400,35 @@ export class RegionWorldbookSwitcher {
           entries.map((entry) => {
             if (!entryRegions(entry).includes(region)) return entry;
             touched += 1;
-            if (entry.enabled === enabled && entry.disable === !enabled) return entry;
+            if (entry.enabled === enabled) return entry;
             changed += 1;
-            return { ...entry, enabled, disable: !enabled };
+            return { ...entry, enabled };
           }),
         { render: 'immediate' },
       );
-    } catch (error) {
-      return emptyResult(
-        'failed',
-        region,
-        error instanceof Error ? error.message : String(error),
+      if (touched === 0) return emptyResult('no-tagged-entries', region);
+      const persisted = await getWorldbook.call(
+        target.api,
+        target.worldbookName,
       );
+      const persistedTargets = persisted.filter((entry) =>
+        entryRegions(entry).includes(region),
+      );
+      if (
+        persistedTargets.length !== touched ||
+        persistedTargets.some((entry) => entry.enabled !== enabled)
+      ) {
+        return verificationFailure(region, touched, changed);
+      }
+    } catch (error) {
+      return {
+        status: 'failed',
+        region,
+        touched,
+        changed,
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
-    if (touched === 0) return emptyResult('no-tagged-entries', region);
     return {
       status: changed > 0 ? 'applied' : 'current',
       region,
@@ -432,7 +445,10 @@ export class RegionWorldbookSwitcher {
     const target = await this.resolveWorldbook();
     if ('status' in target) return emptyResult(target.status, nextRegion, target.message);
     const updateWorldbookWith = target.api.updateWorldbookWith;
-    if (!updateWorldbookWith) return emptyResult('unavailable', nextRegion);
+    const getWorldbook = target.api.getWorldbook;
+    if (!updateWorldbookWith || !getWorldbook) {
+      return emptyResult('unavailable', nextRegion);
+    }
     let touched = 0;
     let changed = 0;
     let nextTagged = 0;
@@ -451,29 +467,47 @@ export class RegionWorldbookSwitcher {
                 : null;
             if (shouldEnable === null) return entry;
             touched += 1;
-            if (
-              entry.enabled === shouldEnable &&
-              entry.disable === !shouldEnable
-            ) {
-              return entry;
-            }
+            if (entry.enabled === shouldEnable) return entry;
             changed += 1;
-            return {
-              ...entry,
-              enabled: shouldEnable,
-              disable: !shouldEnable,
-            };
+            return { ...entry, enabled: shouldEnable };
           }),
         { render: 'immediate' },
       );
-    } catch (error) {
-      return emptyResult(
-        'failed',
-        nextRegion,
-        error instanceof Error ? error.message : String(error),
+      if (nextTagged === 0) {
+        return emptyResult('no-tagged-entries', nextRegion);
+      }
+      const persisted = await getWorldbook.call(
+        target.api,
+        target.worldbookName,
       );
+      const persistedTargets = persisted
+        .map((entry) => ({
+          entry,
+          enabled: switchedRegionState(entry, previousRegion, nextRegion),
+        }))
+        .filter(
+          (candidate): candidate is {
+            entry: RegionWorldbookEntry;
+            enabled: boolean;
+          } => candidate.enabled !== null,
+        );
+      if (
+        persistedTargets.length !== touched ||
+        persistedTargets.some(
+          ({ entry, enabled }) => entry.enabled !== enabled,
+        )
+      ) {
+        return verificationFailure(nextRegion, touched, changed);
+      }
+    } catch (error) {
+      return {
+        status: 'failed',
+        region: nextRegion,
+        touched,
+        changed,
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
-    if (nextTagged === 0) return emptyResult('no-tagged-entries', nextRegion);
     return {
       status: changed > 0 ? 'applied' : 'current',
       region: nextRegion,
@@ -490,7 +524,11 @@ export class RegionWorldbookSwitcher {
       }
   > {
     const api = this.resolveApi();
-    if (!api.getCharWorldbookNames || !api.updateWorldbookWith) {
+    if (
+      !api.getCharWorldbookNames ||
+      !api.getWorldbook ||
+      !api.updateWorldbookWith
+    ) {
       return { status: 'unavailable' };
     }
     const directName = api.getCurrentCharacterName?.call(api)?.trim();
@@ -582,6 +620,31 @@ function emptyResult(
   message?: string,
 ): RegionWorldbookSyncResult {
   return { status, region, touched: 0, changed: 0, message };
+}
+
+function switchedRegionState(
+  entry: RegionWorldbookEntry,
+  previousRegion: string,
+  nextRegion: string,
+): boolean | null {
+  const regions = entryRegions(entry);
+  if (regions.includes(nextRegion)) return true;
+  if (previousRegion && regions.includes(previousRegion)) return false;
+  return null;
+}
+
+function verificationFailure(
+  region: string,
+  touched: number,
+  changed: number,
+): RegionWorldbookSyncResult {
+  return {
+    status: 'failed',
+    region,
+    touched,
+    changed,
+    message: '世界书写入后回读不一致，条目启用状态未被酒馆保存。',
+  };
 }
 
 function cleanupResult(

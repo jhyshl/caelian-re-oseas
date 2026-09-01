@@ -101,17 +101,15 @@ describe('心动主题资源与解锁合同', () => {
     }
   });
 
-  it('所有主题边框使用 Journey 同类九宫格切片且菜单保留入口名称', async () => {
+  it('按 Journey 最终结构用单层九宫格承载完整底纹且菜单保留入口名称', async () => {
     const css = await readFile('src/styles/alpha.css', 'utf8');
     const heartCss = css.slice(css.indexOf('/* Caelian affinity 250 theme'));
+    const themeManager = await readFile('src/themes/theme-manager.ts', 'utf8');
     expect(heartCss).toContain(
       'body.caelian-theme-heart .caelian-shell-host .wheel {',
     );
     expect(heartCss).toContain(
       'border-image-source: var(--ca-heart-menu-frame)',
-    );
-    expect(heartCss).toContain(
-      'border-image-source: var(--ca-heart-menu-cell)',
     );
     expect(heartCss).toContain(
       'border-image-source: var(--ca-heart-section-frame)',
@@ -120,36 +118,21 @@ describe('心动主题资源与解锁合同', () => {
     expect(heartCss).toContain('border-image-slice: 116 100 fill');
     expect(heartCss).toContain('border-image-width: 28px 24px');
     expect(heartCss).toContain('border-image-width: 24px 20px');
-    expect(heartCss).toContain('border-image-width: 17px');
-    expect(heartCss).toContain('border-image-width: 15px');
     expect(heartCss).toContain('border-image-width: 40px');
     expect(heartCss).toContain('border-image-width: 32px');
+    expect(heartCss).toContain('box-sizing: border-box');
+    expect(heartCss).toContain('width: min(302px, calc(100vw - 16px))');
+    expect(heartCss).toContain('width: min(286px, calc(100vw - 8px))');
+    expect(heartCss).toContain('padding: 22px 20px 17px');
+    expect(heartCss).toContain('padding: 19px 16px 14px');
+    expect(heartCss).toContain('content: none');
+    expect(heartCss).toContain('display: none');
+    expect(heartCss).toContain('aspect-ratio: 8 / 9');
     expect(heartCss).toContain(
-      'linear-gradient(rgba(248, 252, 255, 0.75), rgba(239, 248, 255, 0.75))',
+      'background: transparent var(--ca-heart-menu-cell) center / contain no-repeat',
     );
-    expect(heartCss).toContain(
-      'linear-gradient(rgba(255, 255, 255, 0.75), rgba(237, 247, 255, 0.75))',
-    );
-    expect(heartCss).toContain(
-      'linear-gradient(rgba(242, 249, 255, 0.75), rgba(225, 240, 252, 0.75))',
-    );
-    expect(heartCss).toContain(
-      'linear-gradient(rgba(250, 253, 255, 0.75), rgba(244, 250, 255, 0.75))',
-    );
-    expect(heartCss).toContain('inset: 12px');
-    expect(heartCss).toContain('inset: 10px');
-    expect(heartCss).toContain('padding: 28px 24px 22px');
-    expect(heartCss).toContain('padding: 24px 20px 20px');
-    expect(heartCss).toContain('width: min(320px, calc(100vw - 16px))');
-    expect(heartCss).toContain('width: min(306px, calc(100vw - 8px))');
-    expect(heartCss).toContain('min-height: 94px');
-    expect(heartCss).toContain('min-height: 90px');
-    expect(heartCss).toContain('inset: -23px');
-    expect(heartCss).toContain('inset: -17px');
-    expect(heartCss).toContain('top: -35px');
-    expect(heartCss).toContain('bottom: -35px');
-    expect(heartCss).toContain('top: -20px');
-    expect(heartCss).toContain('bottom: -20px');
+    expect(heartCss).toContain('width: 52px');
+    expect(heartCss).toContain('width: 48px');
     expect(heartCss).toContain('.ca-section.ca-section');
     expect(heartCss).toContain('grid-template-columns: 58px minmax(0, 1fr)');
     expect(heartCss).toContain(
@@ -161,12 +144,51 @@ describe('心动主题资源与解锁合同', () => {
     expect(heartCss).toContain(
       'background-image: var(--ca-heart-launcher-stub)',
     );
-    expect(heartCss).toContain('var(--ca-heart-frame-center-gem)');
-    expect(heartCss).toContain('border-image-outset: 14px');
-    expect(heartCss).toContain('z-index: 3');
+    expect(heartCss).toContain('border-image-outset: 0');
+    expect(heartCss).not.toContain('var(--ca-heart-frame-center-gem)');
+    expect(heartCss).toContain('background-color: transparent');
+    expect(heartCss).toContain('background-image: none');
+    expect(heartCss).not.toContain(
+      'border-image-source: var(--ca-heart-menu-cell)',
+    );
+    expect(heartCss).not.toContain('rgba(248, 252, 255, 0.75)');
+    expect(heartCss).not.toContain('rgba(255, 255, 255, 0.75)');
+    expect(heartCss).not.toContain('rgba(242, 249, 255, 0.75)');
+    expect(heartCss).not.toContain('rgba(250, 253, 255, 0.75)');
     expect(heartCss).not.toContain('background-size: 100% 100%');
+    expect(themeManager).toContain(
+      "import caelianHeartMenuCell from '@/assets/themes/caelian-heart/menu-cell.png'",
+    );
+    expect(themeManager).not.toContain(
+      "import caelianHeartPattern from '@/assets/themes/caelian-heart/pattern.png'",
+    );
+    expect(themeManager).not.toContain("property: '--ca-heart-pattern'");
+    expect(themeManager).not.toContain(
+      "import caelianHeartFrameCenterGem from '@/assets/themes/caelian-heart/frame-center-gem.png'",
+    );
+    expect(themeManager).not.toContain(
+      "property: '--ca-heart-frame-center-gem'",
+    );
 
     const shell = await readFile('src/modules/shell/App.vue', 'utf8');
     expect(shell).toContain('<span>{{ item.label }}</span>');
+  });
+
+  it('浅色纸面使用深蓝字且筛选按钮有清晰选中态', async () => {
+    const css = await readFile('src/styles/alpha.css', 'utf8');
+    const heartCss = css.slice(css.indexOf('/* Caelian affinity 250 theme'));
+    expect(heartCss).toContain('--ca-heart-ink: #173d69');
+    expect(heartCss).toContain('.card-grid .card');
+    expect(heartCss).toContain('.gathering-card');
+    expect(heartCss).toContain('.boundary-grid article');
+    expect(heartCss).toContain('.achievement-grid article');
+    expect(heartCss).toContain('.letter-paper p');
+    expect(heartCss).toContain('.filters,');
+    expect(heartCss).toContain('.achievement-filters,');
+    expect(heartCss).toContain('button.active');
+    expect(heartCss).toContain('.region-row.on :is(');
+    expect(heartCss).toContain(
+      'background: linear-gradient(145deg, #347fc8, #1a559b)',
+    );
   });
 });

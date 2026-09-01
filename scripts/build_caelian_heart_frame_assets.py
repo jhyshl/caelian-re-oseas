@@ -5,7 +5,7 @@ from collections import deque
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageFilter, ImageOps
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -116,20 +116,21 @@ def save_battle_cutout(character_sheet: Path) -> None:
             f"Unexpected character sheet dimensions: {source.size}; expected (1216, 832)",
         )
 
-    # Image #4 top-left sticker. Only the neutral background connected to this
-    # crop's outer edge is removed; enclosed hair, clothing and white outline
-    # pixels are retained exactly as foreground.
-    crop = source.crop((55, 35, 430, 405))
+    # Image #4 top-left sticker. Detect only neutral gray background that is
+    # connected to the crop edge. Enclosed gray/beige hair pixels can therefore
+    # never be removed as background.
+    crop = source.crop((68, 32, 432, 408))
     rgb = np.asarray(crop)
-    red = rgb[:, :, 0].astype(np.int16)
-    green = rgb[:, :, 1].astype(np.int16)
-    blue = rgb[:, :, 2].astype(np.int16)
-    minimum = np.minimum(np.minimum(red, green), blue)
-    maximum = np.maximum(np.maximum(red, green), blue)
+    softened = np.asarray(crop.filter(ImageFilter.GaussianBlur(0.8))).astype(
+        np.int16,
+    )
+    minimum = softened.min(axis=2)
+    maximum = softened.max(axis=2)
+    luminance = softened.mean(axis=2)
     background_candidate = (
-        (minimum >= 195)
-        & (maximum <= 248)
-        & ((maximum - minimum) <= 12)
+        ((maximum - minimum) <= 18)
+        & (luminance >= 204)
+        & (luminance <= 242)
     )
 
     height, width = background_candidate.shape
@@ -156,18 +157,52 @@ def save_battle_cutout(character_sheet: Path) -> None:
         if x + 1 < width:
             queue.append((y, x + 1))
 
-    alpha = Image.fromarray(
-        np.where(background, 0, 255).astype(np.uint8),
-        "L",
-    ).filter(ImageFilter.GaussianBlur(0.55))
-    rgba = Image.fromarray(np.dstack((rgb, np.asarray(alpha))), "RGBA")
+    # Discard isolated non-background specks outside the sticker while filling
+    # every enclosed pixel inside its continuous white outline.
+    foreground_candidate = ~background
+    seen = np.zeros_like(foreground_candidate, dtype=bool)
+    largest: list[tuple[int, int]] = []
+    for start_y, start_x in zip(*np.where(foreground_candidate)):
+        if seen[start_y, start_x]:
+            continue
+        component: list[tuple[int, int]] = []
+        stack = [(int(start_y), int(start_x))]
+        seen[start_y, start_x] = True
+        while stack:
+            y, x = stack.pop()
+            component.append((y, x))
+            for next_y, next_x in (
+                (y - 1, x),
+                (y + 1, x),
+                (y, x - 1),
+                (y, x + 1),
+            ):
+                if (
+                    0 <= next_y < height
+                    and 0 <= next_x < width
+                    and foreground_candidate[next_y, next_x]
+                    and not seen[next_y, next_x]
+                ):
+                    seen[next_y, next_x] = True
+                    stack.append((next_y, next_x))
+        if len(component) > len(largest):
+            largest = component
+
+    foreground = np.zeros_like(foreground_candidate, dtype=bool)
+    for y, x in largest:
+        foreground[y, x] = True
+    alpha = foreground.astype(np.uint8) * 255
+    rgba = Image.fromarray(np.dstack((rgb, alpha)), "RGBA")
     bounds = rgba.getbbox()
     if not bounds:
         raise ValueError("Could not isolate Image #4 top-left character")
     rgba = rgba.crop(bounds)
-    scale = min(466 / rgba.width, 466 / rgba.height)
+    scale = min(464 / rgba.width, 464 / rgba.height)
     size = (round(rgba.width * scale), round(rgba.height * scale))
-    rgba = rgba.resize(size, Image.Resampling.LANCZOS)
+    rgba = rgba.convert("RGBa").resize(
+        size,
+        Image.Resampling.LANCZOS,
+    ).convert("RGBA")
     canvas = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
     canvas.alpha_composite(
         rgba,
@@ -220,11 +255,50 @@ def main(character_sheet: Path | None = None) -> None:
         & (y >= top[None, :])
         & (y <= bottom[None, :])
     )
-    alpha = np.where(inside_rows & inside_columns, 255, 0).astype(np.uint8)
-    safe_frame = Image.fromarray(np.dstack((rgb, alpha)), "RGBA")
-    safe_frame.save(ASSET_DIR / "menu-frame-9slice.png", optimize=True)
-    # The compact entry cards deliberately reuse the ornament-safe frame atlas.
-    # Its four corners remain fixed while only straight edge/center tiles scale.
+    contour_alpha = np.where(inside_rows & inside_columns, 255, 0).astype(np.uint8)
+
+    # The painted source has a near-white center joined to the empty strips
+    # inside all four rails. Those pixels used to stay opaque in the nine-slice
+    # atlas and became a large white gutter whenever the frame was rendered.
+    # Remove every neutral light fill pixel while retaining every blue/gold rail
+    # and corner pixel. This also clears the anti-aliased white rim that is not
+    # necessarily connected to the exact center after resampling.
+    minimum = rgb.min(axis=2).astype(np.int16)
+    maximum = rgb.max(axis=2).astype(np.int16)
+    luminance = rgb.mean(axis=2)
+    neutral_fill = (
+        (contour_alpha > 0)
+        & ((maximum - minimum) <= 28)
+        & (luminance >= 220)
+    )
+
+    transparent_fill = np.asarray(
+        Image.fromarray(neutral_fill.astype(np.uint8) * 255, "L").filter(
+            ImageFilter.GaussianBlur(0.65),
+        ),
+    )
+    rail_alpha = np.minimum(contour_alpha, 255 - transparent_fill).astype(
+        np.uint8,
+    )
+    safe_frame = Image.fromarray(np.dstack((rgb, rail_alpha)), "RGBA")
+
+    # Journey's final frame implementation keeps the painted paper and the
+    # nine-slice rails in one border-image layer. Build the Heart equivalent by
+    # placing the original pattern at full opacity inside the traced contour,
+    # then compositing only the blue/gold rails above it.
+    pattern = ImageOps.fit(
+        Image.open(ASSET_DIR / "pattern.png").convert("RGB"),
+        (width, height),
+        method=Image.Resampling.LANCZOS,
+    )
+    patterned_frame = Image.fromarray(
+        np.dstack((np.asarray(pattern), contour_alpha)),
+        "RGBA",
+    )
+    patterned_frame.alpha_composite(safe_frame)
+    patterned_frame.save(ASSET_DIR / "menu-frame-9slice.png", optimize=True)
+    # Retain the former atlas for cache and older-manifest compatibility. The
+    # current compact entry cards use the untouched original menu-cell artwork.
     safe_frame.save(ASSET_DIR / "menu-cell-9slice.png", optimize=True)
     save_center_gem()
     if character_sheet is not None:

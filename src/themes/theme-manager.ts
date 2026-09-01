@@ -35,12 +35,10 @@ import caelianHeartReleaseNotesIcon from '@/assets/themes/caelian-heart/icons/re
 import caelianHeartSettingsIcon from '@/assets/themes/caelian-heart/icons/settings.png';
 import caelianHeartSurveysIcon from '@/assets/themes/caelian-heart/icons/surveys.png';
 import caelianHeartWorldbookIcon from '@/assets/themes/caelian-heart/icons/worldbook.png';
-import caelianHeartFrameCenterGem from '@/assets/themes/caelian-heart/frame-center-gem.png';
 import caelianHeartLauncherFrame from '@/assets/themes/caelian-heart/launcher-frame.png';
 import caelianHeartLauncherPreview from '@/assets/themes/caelian-heart/launcher-preview.png';
-import caelianHeartMenuCell from '@/assets/themes/caelian-heart/menu-cell-9slice.png';
+import caelianHeartMenuCell from '@/assets/themes/caelian-heart/menu-cell.png';
 import caelianHeartMenuFrame from '@/assets/themes/caelian-heart/menu-frame-9slice.png';
-import caelianHeartPattern from '@/assets/themes/caelian-heart/pattern.png';
 import caelianHeartSectionFrame from '@/assets/themes/caelian-heart/section-frame-9slice.png';
 import journeyPattern from '@/assets/themes/journey/journey-pattern-v2.png';
 import journeyTicket from '@/assets/themes/journey/launcher-ticket-transparent.png';
@@ -187,9 +185,7 @@ const CAELIAN_HEART_CSS_ASSETS: readonly ThemeCssAsset[] = [
   { property: '--ca-heart-launcher-frame', sourceUrl: caelianHeartLauncherFrame },
   { property: '--ca-heart-launcher-main', sourceUrl: caelianHeartBattleIcon },
   { property: '--ca-heart-launcher-stub', sourceUrl: caelianHeartReleaseNotesIcon },
-  { property: '--ca-heart-pattern', sourceUrl: caelianHeartPattern },
   { property: '--ca-heart-menu-frame', sourceUrl: caelianHeartMenuFrame },
-  { property: '--ca-heart-frame-center-gem', sourceUrl: caelianHeartFrameCenterGem },
   { property: '--ca-heart-menu-cell', sourceUrl: caelianHeartMenuCell },
   { property: '--ca-heart-section-frame', sourceUrl: caelianHeartSectionFrame },
 ];
