@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref } from 'vue';
 import type { PanelContext, PanelName } from '@/kernel/public-api';
 import {
+  CAELIAN_HEART_THEME_ID,
   JOURNEY_THEME_ID,
   subscribeThemeAssets,
   themeMenuIconAsset,
@@ -38,7 +39,10 @@ let disposeThemeAssets: (() => void) | undefined;
 const themeAssetRevision = ref(0);
 
 function navigationIconStyle(panel: PanelName): Record<string, string> | undefined {
-  if (activeTheme.value !== JOURNEY_THEME_ID) return undefined;
+  if (
+    activeTheme.value !== JOURNEY_THEME_ID &&
+    activeTheme.value !== CAELIAN_HEART_THEME_ID
+  ) return undefined;
   void themeAssetRevision.value;
   const host = props.context.document.defaultView ?? globalThis.window;
   const asset = themeMenuIconAsset(host, activeTheme.value, panel);

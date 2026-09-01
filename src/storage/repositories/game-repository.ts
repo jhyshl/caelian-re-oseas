@@ -108,6 +108,10 @@ export class GameRepository {
     return this.profiles.resolve(chatId, defaults);
   }
 
+  unlockCaelianHeartTheme(profileId: string): Promise<boolean> {
+    return this.profiles.unlockCaelianHeartTheme(profileId);
+  }
+
   async snapshot(profileId: string): Promise<GameSnapshot> {
     const [
       profile,

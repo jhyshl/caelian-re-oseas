@@ -250,7 +250,7 @@ onBeforeUnmount(() => {
         <div class="theme-heading">
           <div>
             <h2 class="ca-section-title">界面主题</h2>
-            <p>专属社区脚本只负责解锁主题；图片首次按需下载，之后从玩家本地缓存读取。</p>
+            <p>主题可由社区奖励或角色进度解锁；图片首次按需下载，之后从玩家本地缓存读取。</p>
           </div>
           <span>{{ themeState.available.length }} 个主题</span>
         </div>

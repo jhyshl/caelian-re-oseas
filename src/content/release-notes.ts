@@ -9,6 +9,14 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.62',
+    label: 'Alpha 62',
+    releasedAt: '2026-09-01',
+    changes: [
+      '新增好感度达到 250 后永久解锁的“心动主题”：采用蓝白金配色与凯利安原图抠图人物资源，悬浮入口实时显示凯利安好感度，快捷菜单保留具体入口名称，主题边框沿用九宫格切片以适配大小缩放。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.61',
     label: 'Alpha 61',
     releasedAt: '2026-09-01',

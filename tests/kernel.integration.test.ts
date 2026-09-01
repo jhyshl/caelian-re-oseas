@@ -62,6 +62,7 @@ describe('CaelianKernel integration', () => {
         { id: 'default', locked: false },
         { id: 'tail-town-dog', locked: true },
         { id: 'journey-ticket', locked: true },
+        { id: 'caelian-heart', locked: true },
       ],
     });
     await expect(
@@ -78,7 +79,7 @@ describe('CaelianKernel integration', () => {
     await kernel.api.navigatePanel('settings');
     await expect
       .poll(() => document.querySelectorAll('.theme-card').length)
-      .toBe(3);
+      .toBe(4);
     const journeyLockedTheme = Array.from(
       document.querySelectorAll<HTMLButtonElement>('.theme-card.locked'),
     ).find((button) => button.textContent?.includes('旅程主题'));
@@ -189,6 +190,185 @@ describe('CaelianKernel integration', () => {
     expect(document.body.classList.contains('caelian-theme-journey')).toBe(
       false,
     );
+    expect(document.body.classList.contains('caelian-theme-heart')).toBe(
+      false,
+    );
+  });
+
+  it('凯利安好感度达到 250 后永久解锁并应用心动主题', async () => {
+    const databaseName = `caelian-alpha-heart-theme-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.heart-theme-test',
+      buildId: 'heart-theme-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    expect(
+      kernel.api
+        .getThemeState()
+        .available.find((theme) => theme.id === 'caelian-heart'),
+    ).toMatchObject({
+      name: '心动主题',
+      locked: true,
+    });
+    await expect(
+      kernel.api.execute({
+        id: 'select-locked-caelian-heart-theme',
+        type: 'settings.update',
+        payload: { uiTheme: 'caelian-heart' },
+      }),
+    ).resolves.toMatchObject({
+      status: 'rejected',
+      message: '尚未解锁这个界面主题',
+    });
+
+    await kernel.api.execute({
+      id: 'heart-theme-affinity-249-5',
+      type: 'narrative.update',
+      payload: { companion: { affinity: 249.5 } },
+    });
+    expect(
+      kernel.api
+        .getThemeState()
+        .available.find((theme) => theme.id === 'caelian-heart')?.locked,
+    ).toBe(true);
+
+    const themeChanged = vi.fn();
+    const disposeThemeChanged = kernel.api.on('theme.changed', themeChanged);
+    await kernel.api.execute({
+      id: 'heart-theme-affinity-250',
+      type: 'narrative.update',
+      payload: { companion: { affinity: 250 } },
+    });
+    expect(
+      kernel.api
+        .getThemeState()
+        .available.find((theme) => theme.id === 'caelian-heart')?.locked,
+    ).toBe(false);
+    expect((await kernel.api.query('state')).settings).toMatchObject({
+      caelianHeartThemeUnlocked: true,
+    });
+    expect(themeChanged).toHaveBeenCalledWith(
+      expect.objectContaining({
+        available: expect.arrayContaining([
+          expect.objectContaining({ id: 'caelian-heart', locked: false }),
+        ]),
+      }),
+    );
+
+    await expect(
+      kernel.api.execute({
+        id: 'select-unlocked-caelian-heart-theme',
+        type: 'settings.update',
+        payload: { uiTheme: 'caelian-heart' },
+      }),
+    ).resolves.toMatchObject({ status: 'applied' });
+    expect(kernel.api.getThemeState().active).toBe('caelian-heart');
+    expect(document.body.classList.contains('caelian-theme-heart')).toBe(true);
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLElement>(
+            '.caelian-shell-host .orb-affinity',
+          )?.textContent,
+      )
+      .toContain('250');
+    await expect
+      .poll(() =>
+        document.body.style.getPropertyValue('--ca-heart-launcher-main'),
+      )
+      .toContain('url(');
+    await expect
+      .poll(() =>
+        document.body.style.getPropertyValue('--ca-heart-section-frame'),
+      )
+      .toContain('url(');
+
+    await kernel.api.execute({
+      id: 'heart-theme-affinity-later-lower',
+      type: 'narrative.update',
+      payload: { companion: { affinity: 12 } },
+    });
+    await expect
+      .poll(
+        () =>
+          document.querySelector<HTMLElement>(
+            '.caelian-shell-host .orb-affinity',
+          )?.textContent,
+      )
+      .toContain('12');
+    expect(kernel.api.getThemeState()).toMatchObject({
+      active: 'caelian-heart',
+      available: expect.arrayContaining([
+        expect.objectContaining({ id: 'caelian-heart', locked: false }),
+      ]),
+    });
+    expect((await kernel.api.query('state')).settings).toMatchObject({
+      caelianHeartThemeUnlocked: true,
+    });
+    document
+      .querySelector<HTMLButtonElement>('.caelian-shell-host .orb')
+      ?.click();
+    await expect
+      .poll(
+        () =>
+          Array.from(
+            document.querySelectorAll<HTMLElement>(
+              '.caelian-shell-host .wheel-grid button span',
+            ),
+          ).map((element) => element.textContent?.trim()),
+      )
+      .toEqual(['角色', '凯利安', '牌组', '卡牌广场', '背包', '合成']);
+
+    disposeThemeChanged();
+    await kernel.api.shutdown();
+    expect(document.body.classList.contains('caelian-theme-heart')).toBe(false);
+  });
+
+  it('启动时先摄取 MVU 好感度再判定心动主题解锁', async () => {
+    const databaseName = `caelian-alpha-heart-theme-mvu-${crypto.randomUUID()}`;
+    databaseNames.push(databaseName);
+    let mvuData: Record<string, unknown> = {
+      stat_data: {
+        凯利安: {
+          好感度: 250,
+          情绪: '期待',
+          当前位置: '伊拉亚城',
+          衣着: '学院制服',
+          内心想法: '今天似乎值得纪念。',
+        },
+      },
+    };
+    window.Mvu = {
+      getMvuData: () => mvuData,
+      replaceMvuData: (next) => {
+        mvuData = next;
+      },
+    };
+    const kernel = createKernel({
+      channel: 'alpha',
+      version: '0.2.0-alpha.heart-theme-mvu-test',
+      buildId: 'heart-theme-mvu-test-build',
+      databaseName,
+      sourceWindow: window,
+    });
+
+    await kernel.initialize();
+    expect((await kernel.api.query('state'))).toMatchObject({
+      social: { affinity: 250 },
+      settings: { caelianHeartThemeUnlocked: true },
+    });
+    expect(
+      kernel.api
+        .getThemeState()
+        .available.find((theme) => theme.id === 'caelian-heart')?.locked,
+    ).toBe(false);
+
+    await kernel.api.shutdown();
   });
 
   it('首次领取同行的记忆后弹出旧信纸风格信件，重启不重复弹出', async () => {
@@ -1603,7 +1783,7 @@ describe('CaelianKernel integration', () => {
     databaseNames.push(unmatchedDatabaseName);
     const unmatchedKernel = createKernel({
       channel: 'alpha',
-      version: '0.2.0-alpha.62',
+      version: '0.2.0-alpha.63',
       buildId: 'unmatched-release-test-build',
       databaseName: unmatchedDatabaseName,
       sourceWindow: window,
@@ -1618,9 +1798,9 @@ describe('CaelianKernel integration', () => {
       '[data-caelian-panel="release-notes"]',
     );
     expect(historicalAnnouncement?.textContent).toContain(
-      '当前构建 0.2.0-alpha.62 暂无独立公告',
+      '当前构建 0.2.0-alpha.63 暂无独立公告',
     );
-    expect(historicalAnnouncement?.textContent).toContain('Alpha 61');
+    expect(historicalAnnouncement?.textContent).toContain('Alpha 62');
     expect(
       historicalAnnouncement?.querySelector('.current-badge'),
     ).toBeNull();

@@ -36,6 +36,7 @@ import {
   prioritizeLauncherPanels,
 } from '@/modules/shell/launcher-order';
 import {
+  CAELIAN_HEART_THEME_ID,
   JOURNEY_THEME_ID,
   subscribeThemeAssets,
   themeMenuIconAsset,
@@ -51,6 +52,14 @@ const MOUSE_RESIZE_EDGE = 9;
 const TOUCH_RESIZE_EDGE = 18;
 
 const themeState = ref(props.context.api.getThemeState());
+const isCaelianHeartTheme = computed(
+  () => themeState.value.active === CAELIAN_HEART_THEME_ID,
+);
+const usesArtworkLauncher = computed(
+  () =>
+    themeState.value.active === JOURNEY_THEME_ID ||
+    isCaelianHeartTheme.value,
+);
 const viewport = ref(readViewport());
 const launcherFootprint = ref(readLauncherFootprint(viewport.value.width));
 const launcherSize = computed(() => launcherFootprint.value.width);
@@ -72,13 +81,21 @@ const pageIndex = ref(0);
 const pageDirection = ref<-1 | 1>(1);
 const ordering = ref(false);
 const pendingSubmission = ref(false);
+const affinity = ref(0);
+const affinityText = computed(() => {
+  const value = Math.round(affinity.value * 10) / 10;
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+});
 const wheelTitle = computed(() =>
-  themeState.value.active === JOURNEY_THEME_ID ? '快捷菜单' : 'RE∞ OSEAS',
+  usesArtworkLauncher.value ? '快捷菜单' : 'RE∞ OSEAS',
 );
 let disposeSubmission: (() => void) | undefined;
 let disposeTheme: (() => void) | undefined;
 let disposeThemeAssets: (() => void) | undefined;
 let disposePanelClosed: (() => void) | undefined;
+let disposeStateChanged: (() => void) | undefined;
+let disposeTavernChanged: (() => void) | undefined;
+let affinityRefreshRevision = 0;
 const themeAssetRevision = ref(0);
 
 let idleTimer: number | undefined;
@@ -174,7 +191,7 @@ const renderedPosition = computed(() => {
       viewport.value,
       launcherFootprint.value,
       dockSide.value,
-      themeState.value.active === JOURNEY_THEME_ID
+      usesArtworkLauncher.value
         ? JOURNEY_DOCK_PEEK
         : undefined,
     );
@@ -214,16 +231,31 @@ const wheelStyle = computed<Record<string, string>>(() => ({
 }));
 
 const launcherLabel = computed(() => {
+  const affinityLabel = isCaelianHeartTheme.value
+    ? `，凯利安当前好感度 ${affinityText.value}`
+    : '';
   if (dragging.value) return '正在移动 Re∞：欧西亚斯悬浮入口';
   if (dockSide.value) {
     return expanded.value
-      ? '关闭 Re∞：欧西亚斯冒险者面板'
-      : '展开侧边栏中的 Re∞：欧西亚斯悬浮入口';
+      ? `关闭 Re∞：欧西亚斯冒险者面板${affinityLabel}`
+      : `展开侧边栏中的 Re∞：欧西亚斯悬浮入口${affinityLabel}`;
   }
   return expanded.value
-    ? '关闭 Re∞：欧西亚斯冒险者面板'
-    : '打开或拖动 Re∞：欧西亚斯悬浮入口；双击查看凯利安状态';
+    ? `关闭 Re∞：欧西亚斯冒险者面板${affinityLabel}`
+    : `打开或拖动 Re∞：欧西亚斯悬浮入口；双击查看凯利安状态${affinityLabel}`;
 });
+
+async function refreshAffinity(): Promise<void> {
+  const revision = ++affinityRefreshRevision;
+  try {
+    const snapshot = await props.context.api.query('state');
+    if (revision !== affinityRefreshRevision) return;
+    const nextAffinity = Number(snapshot.social.affinity);
+    affinity.value = Number.isFinite(nextAffinity) ? nextAffinity : 0;
+  } catch {
+    // The launcher remains usable while the active profile is still loading.
+  }
+}
 
 function themeIconStyle(panel: PanelName): Record<string, string> | undefined {
   void themeAssetRevision.value;
@@ -318,7 +350,7 @@ function readViewport(): ViewportRect {
 function readLauncherFootprint(width: number): LauncherFootprint {
   return launcherFootprintForViewport(
     width,
-    themeState.value.active === JOURNEY_THEME_ID,
+    usesArtworkLauncher.value,
   );
 }
 
@@ -913,6 +945,7 @@ function handleResize(): void {
 
 onMounted(() => {
   const win = hostWindow();
+  void refreshAffinity();
   disposeThemeAssets = subscribeThemeAssets(win, () => {
     themeAssetRevision.value += 1;
   });
@@ -961,6 +994,14 @@ onMounted(() => {
     themeState.value = state;
     handleResize();
   });
+  disposeStateChanged = props.context.api.on(
+    'state.changed',
+    () => void refreshAffinity(),
+  );
+  disposeTavernChanged = props.context.api.on(
+    'tavern.changed',
+    () => void refreshAffinity(),
+  );
   disposePanelClosed = props.context.api.on('panel.closed', ({ panel }) => {
     if (panel === 'shell') return;
     wake();
@@ -970,6 +1011,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   const win = hostWindow();
+  affinityRefreshRevision += 1;
   finishResizeSession(true);
   clearIdleTimer();
   clearActivationTimer();
@@ -977,6 +1019,8 @@ onUnmounted(() => {
   disposeTheme?.();
   disposeThemeAssets?.();
   disposePanelClosed?.();
+  disposeStateChanged?.();
+  disposeTavernChanged?.();
   props.context.document.removeEventListener(
     'pointerdown',
     handleOutsidePointerDown,
@@ -1130,6 +1174,10 @@ onUnmounted(() => {
       @click="handleClick"
     >
       <span>∞</span>
+      <strong v-if="isCaelianHeartTheme" class="orb-affinity" aria-live="polite">
+        <small>好感</small>
+        {{ affinityText }}
+      </strong>
       <i :class="{ ready: info.status === 'ready' }"></i>
     </button>
   </div>

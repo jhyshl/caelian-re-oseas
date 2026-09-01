@@ -9,16 +9,24 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.61');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.62');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.61');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.62');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('感谢有你');
-    expect(latestText).toContain('打猎分页');
-    expect(latestText).toContain('护盾×80%');
-    expect(latestText).toContain('自定义状态与自定义资源');
+    expect(latestText).toContain('心动主题');
+    expect(latestText).toContain('好感度达到 250');
+    expect(latestText).toContain('实时显示凯利安好感度');
+    expect(latestText).toContain('九宫格切片');
+    const alpha61Text =
+      releases
+        .find((release) => release.version === '0.2.0-alpha.61')
+        ?.changes.join('\n') ?? '';
+    expect(alpha61Text).toContain('感谢有你');
+    expect(alpha61Text).toContain('打猎分页');
+    expect(alpha61Text).toContain('护盾×80%');
+    expect(alpha61Text).toContain('自定义状态与自定义资源');
     const alpha60Text =
       releases
         .find((release) => release.version === '0.2.0-alpha.60')
@@ -146,14 +154,14 @@ describe('release notes', () => {
   });
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
-    expect(releaseHistoryFor('alpha', '0.2.0-alpha.62')[0]?.version).toBe(
-      '0.2.0-alpha.61',
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.63')[0]?.version).toBe(
+      '0.2.0-alpha.62',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.61',
+      '0.2.0-alpha.62',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });

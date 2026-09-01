@@ -3,7 +3,9 @@ import { loadEquipmentDefinitions } from '@/content/catalogs/inventory';
 import { scaleEquipmentStatsByStars } from '@/equipment-stats';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
+import { GLOBAL_SETTINGS_ID } from '@/storage/defaults';
 import { GameRepository } from '@/storage/repository';
+import type { SettingsRecord } from '@/domain/types';
 
 const databases: CaelianDatabase[] = [];
 
@@ -17,6 +19,41 @@ afterEach(async () => {
 });
 
 describe('GameRepository', () => {
+  it('旧设置安全回退且心动主题永久解锁写入幂等', async () => {
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-heart-theme-unlock-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const repository = new GameRepository(database, new EventBus());
+    const profile = await repository.ensureProfile('chat:caelian-heart-theme');
+
+    expect((await repository.snapshot(profile.id)).settings).toMatchObject({
+      caelianHeartThemeUnlocked: false,
+    });
+    expect(await database.settings.get(GLOBAL_SETTINGS_ID)).toMatchObject({
+      caelianHeartThemeUnlocked: false,
+    });
+
+    const current = (await database.settings.get(profile.id))!;
+    const legacy = { ...current } as Partial<SettingsRecord>;
+    delete legacy.caelianHeartThemeUnlocked;
+    await database.settings.put(legacy as SettingsRecord);
+    expect((await repository.snapshot(profile.id)).settings).toMatchObject({
+      caelianHeartThemeUnlocked: false,
+    });
+
+    await expect(repository.unlockCaelianHeartTheme(profile.id)).resolves.toBe(
+      true,
+    );
+    await expect(repository.unlockCaelianHeartTheme(profile.id)).resolves.toBe(
+      false,
+    );
+    expect((await repository.snapshot(profile.id)).settings).toMatchObject({
+      caelianHeartThemeUnlocked: true,
+    });
+  });
+
   it('穿戴上限装备时加减生命魔力仍按有效上限恢复和截断', async () => {
     const database = new CaelianDatabase(
       'alpha',
