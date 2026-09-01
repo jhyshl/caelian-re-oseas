@@ -42,7 +42,7 @@ import type {
   SurveyTokenRecord,
 } from '@/surveys/types';
 
-export const DATABASE_SCHEMA_VERSION = 9;
+export const DATABASE_SCHEMA_VERSION = 10;
 
 export class CaelianDatabase extends Dexie {
   profiles!: Table<ProfileRecord, string>;
@@ -202,5 +202,61 @@ export class CaelianDatabase extends Dexie {
     this.version(9).stores({
       gatheringStates: 'id, profileId, regionId, refreshKey, updatedAt',
     });
+
+    this.version(10)
+      .stores({})
+      .upgrade(async (transaction) => {
+        if (
+          !transaction.storeNames.includes('profiles') ||
+          !transaction.storeNames.includes('socialProgress')
+        ) {
+          return;
+        }
+        const profiles = await transaction
+          .table<ProfileRecord, string>('profiles')
+          .toArray();
+        const social = transaction.table<SocialProgressRecord, string>(
+          'socialProgress',
+        );
+        const now = Date.now();
+        for (const profile of profiles) {
+          const id = `${profile.id}:trelao`;
+          const current = await social.get(id);
+          if (current) {
+            const affinity = Math.max(
+              0,
+              Math.min(1000, Number(current.affinity) || 0),
+            );
+            await social.put({
+              ...current,
+              affinity,
+              relationshipStage: trelaoStage(affinity),
+              updatedAt: current.updatedAt || now,
+            });
+            continue;
+          }
+          await social.add({
+            id,
+            profileId: profile.id,
+            characterId: 'trelao',
+            affinity: 0,
+            pendingAffinityDelta: 0,
+            mood: '警戒',
+            location: '凯利安身边',
+            clothing: '金色龙鳞',
+            innerThought: '',
+            relationshipStage: '警戒',
+            updatedAt: now,
+          });
+        }
+      });
   }
+}
+
+function trelaoStage(affinity: number): string {
+  if (affinity >= 800) return '挚友';
+  if (affinity >= 600) return '依赖';
+  if (affinity >= 400) return '亲近';
+  if (affinity >= 200) return '熟悉';
+  return '警戒';
 }

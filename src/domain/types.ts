@@ -580,6 +580,8 @@ export interface LocalBattleState {
   companion?: BattleCompanionState;
   enemies: BattleEnemyState[];
   rewards: BattleRewards | null;
+  /** Present only for encounters entered through the gathering hunting tab. */
+  huntingContext?: HuntingBattleContext;
   bossMechanic?: {
     id: string;
     phase: number;
@@ -729,7 +731,12 @@ export interface MailboxState {
 }
 
 export type MarketListingKind = 'item' | 'equipment' | 'relic' | 'card';
-export type MarketListingTab = 'specialty' | 'gear' | 'loot' | 'cards';
+export type MarketListingTab =
+  | 'specialty'
+  | 'cooking'
+  | 'gear'
+  | 'loot'
+  | 'cards';
 
 export interface MarketListing {
   key: string;
@@ -749,7 +756,7 @@ export interface MarketListing {
 }
 
 export interface MarketInventory {
-  version: 1;
+  version: 1 | 2;
   listings: MarketListing[];
 }
 
@@ -831,6 +838,30 @@ export interface GatheringView {
   nextRefreshAt: number;
   availableRegion: boolean;
   items: GatheringItem[];
+  animals: Array<{
+    id: string;
+    name: string;
+    description: string;
+  }>;
+}
+
+export interface HuntingRewardItem {
+  itemId: string;
+  name: string;
+  quantity: number;
+}
+
+export interface HuntingAttemptData {
+  roll: number;
+  outcome: 'failure' | 'success' | 'battle';
+  animalId: string;
+  animalName: string;
+  rewards: HuntingRewardItem[];
+}
+
+export interface HuntingBattleContext {
+  animalId: string;
+  animalName: string;
 }
 
 export interface CraftingDraftRecord {
@@ -952,6 +983,8 @@ export interface GameSnapshot {
   regionAccess: RegionAccessRecord[];
   storyFlags: StoryFlagRecord[];
   social: SocialProgressRecord;
+  /** Local-only Trelao relationship row; older exported snapshots may omit it. */
+  trelao?: SocialProgressRecord;
   guild: GuildRecord;
   quests: QuestRecord[];
   questHistory: QuestHistoryRecord[];

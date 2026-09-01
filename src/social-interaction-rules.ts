@@ -1,4 +1,9 @@
 import { AFFINITY_MAX } from '@/mvu/contracts';
+import {
+  COOKING_DISHES,
+  COOKING_MATERIALS,
+  COOKING_RECIPES,
+} from '@/content/cooking';
 
 export type InteractionItemTag =
   | 'specialty'
@@ -179,6 +184,38 @@ export function trelaoFeedMeta(
   name: string,
   isConsumable = false,
 ): TrelaoFeedMeta {
+  const material = COOKING_MATERIALS[name];
+  if (material) {
+    const tags = interactionItemTags(name, false);
+    return {
+      allowed: true,
+      result: 'like',
+      tags,
+      category: 'feedable',
+      source: '料理材料',
+    };
+  }
+  const dish = COOKING_DISHES[name];
+  if (dish) {
+    const ingredients = Object.keys(
+      COOKING_RECIPES.find((entry) => entry.output === name)?.inputs ?? {},
+    );
+    const tags = interactionItemTags(name, false);
+    if (ingredients.some((item) => /鸡肉|野猪肉|鱼肉|火腿/.test(item))) {
+      tags.push('meat');
+    }
+    if (ingredients.some((item) => /糖|奶油|黄油|牛奶/.test(item))) {
+      tags.push('dessert');
+    }
+    if (dish.containsPlant) tags.push('vegetable');
+    return {
+      allowed: true,
+      result: dish.containsPlant ? 'dislike' : 'like',
+      tags: [...new Set(tags)],
+      category: 'feedable',
+      source: '成品料理',
+    };
+  }
   const tags = interactionItemTags(name, isConsumable);
   const isSpecialty = tags.includes('specialty');
   const foodLike =

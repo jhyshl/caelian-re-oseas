@@ -69,6 +69,7 @@ import {
 } from '@/player/progression';
 import { updateGuildRank } from '@/guild-progression';
 import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
+import { huntingAnimal, rollHuntingRewards } from '@/content/cooking';
 import {
   evaluateWorkshopCondition,
   evaluateWorkshopFormula,
@@ -363,6 +364,7 @@ export class BattleRepository {
       storyTriggered?: boolean;
       companionPresent?: boolean;
       relatedQuestId?: string;
+      huntingAnimalId?: string;
       workshopTest?: WorkshopTestInput;
     },
   ): Promise<void> {
@@ -486,6 +488,15 @@ export class BattleRepository {
         : undefined,
       enemies,
       rewards: null,
+      ...(input.huntingAnimalId
+        ? {
+            huntingContext: (() => {
+              const animal = huntingAnimal(input.huntingAnimalId);
+              if (!animal) throw new Error('打猎遭遇来源无效');
+              return { animalId: animal.id, animalName: animal.name };
+            })(),
+          }
+        : {}),
       bossMechanic: this.createBossMechanic(monster),
       log: [],
       animations: [],
@@ -5585,6 +5596,20 @@ export class BattleRepository {
       return;
     }
     const fullRewards = this.calculateRewards(state);
+    if (status === 'victory' && state.huntingContext) {
+      const animal = huntingAnimal(state.huntingContext.animalId);
+      if (animal) {
+        fullRewards.items.push(
+          ...rollHuntingRewards(this.random, animal.primaryMaterialIds).map(
+            (item) => ({
+              id: item.itemId,
+              name: item.name,
+              quantity: item.quantity,
+            }),
+          ),
+        );
+      }
+    }
     const rewards =
       status === 'victory'
         ? fullRewards

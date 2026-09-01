@@ -26,6 +26,7 @@ const categories: Array<{
 }> = [
   { id: 'all', label: '全部' },
   { id: 'specialty', label: '区域特产' },
+  { id: 'cooking', label: '料理' },
   { id: 'gear', label: '装备与藏品' },
   { id: 'loot', label: '材料' },
   { id: 'cards', label: '通用卡牌' },
@@ -177,7 +178,7 @@ onUnmounted(() => {
           <span>REGIONAL BAZAAR</span>
           <h1>{{ market.regionId }}集市</h1>
           <p>
-            商品来自旧版区域、装备、藏品、采集、掉落、合成与通用卡牌数据库
+            商品来自区域、料理、装备、藏品、采集、掉落、合成与通用卡牌数据库
           </p>
         </div>
         <div class="market-wallet">

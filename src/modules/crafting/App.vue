@@ -12,7 +12,7 @@ import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
 const recipes = ref<readonly CraftingRecipeDefinition[]>([]);
-const tab = ref<'items' | 'equipment'>('items');
+const tab = ref<'items' | 'cooking' | 'equipment'>('items');
 const selectedRecipeId = ref('');
 const craftCount = ref(1);
 const notice = ref('');
@@ -20,6 +20,13 @@ const busy = ref(false);
 
 const selectedRecipe = computed(
   () => recipes.value.find((recipe) => recipe.id === selectedRecipeId.value),
+);
+const visibleRecipes = computed(() =>
+  recipes.value.filter((recipe) =>
+    tab.value === 'cooking'
+      ? recipe.category === '料理'
+      : recipe.category !== '料理',
+  ),
 );
 
 function owned(material: string): number {
@@ -43,6 +50,13 @@ const selectedMax = computed(() =>
 
 watch([selectedRecipeId, selectedMax], () => {
   craftCount.value = Math.max(1, Math.min(craftCount.value, selectedMax.value || 1));
+});
+
+watch(tab, () => {
+  if (tab.value === 'equipment') return;
+  if (!visibleRecipes.value.some((recipe) => recipe.id === selectedRecipeId.value)) {
+    selectedRecipeId.value = visibleRecipes.value[0]?.id ?? '';
+  }
 });
 
 const mergeGroups = computed(() => {
@@ -165,6 +179,9 @@ onMounted(async () => {
         <button :class="{ active: tab === 'items' }" @click="tab = 'items'">
           道具合成
         </button>
+        <button :class="{ active: tab === 'cooking' }" @click="tab = 'cooking'">
+          料理制作
+        </button>
         <button
           :class="{ active: tab === 'equipment' }"
           @click="tab = 'equipment'"
@@ -175,11 +192,11 @@ onMounted(async () => {
 
       <p v-if="notice" class="crafting-notice" role="status">{{ notice }}</p>
 
-      <div v-if="tab === 'items'" class="crafting-layout">
+      <div v-if="tab === 'items' || tab === 'cooking'" class="crafting-layout">
         <section class="ca-section recipe-list">
           <h2 class="ca-section-title">配方</h2>
           <button
-            v-for="recipe in recipes"
+            v-for="recipe in visibleRecipes"
             :key="recipe.id"
             type="button"
             :class="{ active: recipe.id === selectedRecipeId }"

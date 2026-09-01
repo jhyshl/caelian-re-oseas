@@ -30,6 +30,17 @@ import {
   trelaoFeedMeta,
 } from '@/social-interaction-rules';
 import type { CaelianDatabase } from '@/storage/database';
+import {
+  COOKING_DISHES,
+  isCookingMaterial,
+  isDish,
+} from '@/content/cooking';
+import { defaultTrelaoProgress } from '@/storage/defaults';
+import {
+  clampTrelaoAffinity,
+  pickTrelaoTouchReaction,
+  trelaoStageLabel,
+} from '@/trelao';
 
 export type SocialInteractionInput = Extract<
   DomainCommand,
@@ -88,7 +99,7 @@ export class SocialInteractionRepository {
     if (!player) throw new Error('玩家档案不存在');
 
     const gifts = inventory
-      .filter((stack) => stack.quantity > 0)
+      .filter((stack) => stack.quantity > 0 && !isCookingMaterial(stack.itemId))
       .flatMap((stack) => {
         const price = this.giftPrice(stack);
         if (price <= 0) return [];
@@ -101,7 +112,11 @@ export class SocialInteractionRepository {
             quantity: stack.quantity,
             price,
             tags,
-            affinityDelta: giftAffinityDelta(tags),
+            affinityDelta: isDish(stack.itemId)
+              ? COOKING_DISHES[stack.itemId]?.caelianLiked
+                ? 0.5
+                : -1
+              : giftAffinityDelta(tags),
           },
         ];
       })
@@ -168,7 +183,7 @@ export class SocialInteractionRepository {
     if (input.action === 'caelian.invite') {
       return this.invite(profileId, input.regionId, input.place);
     }
-    if (input.action === 'trelao.pet') return this.pet();
+    if (input.action === 'trelao.pet') return this.pet(profileId);
     return this.feed(profileId, input.itemId);
   }
 
@@ -204,6 +219,9 @@ export class SocialInteractionRepository {
     itemId: string,
   ): Promise<SocialInteractionOutcome> {
     const stack = await this.ownedStack(profileId, itemId);
+    if (isCookingMaterial(stack.itemId)) {
+      throw new Error('料理材料只能投喂特莱奥，不能赠送给凯利安');
+    }
     if (this.giftPrice(stack) <= 0) {
       throw new Error('这个物品不能在集市出售，无法作为礼物');
     }
@@ -211,7 +229,12 @@ export class SocialInteractionRepository {
       stack.name,
       this.isConsumable(stack),
     );
-    const requestedDelta = giftAffinityDelta(tags);
+    const dish = COOKING_DISHES[stack.itemId];
+    const requestedDelta = dish
+      ? dish.caelianLiked
+        ? 0.5
+        : -(1 + Math.floor(this.random() * 5))
+      : giftAffinityDelta(tags);
     const social = await this.db.socialProgress.get(`${profileId}:caelian`);
     if (!social) throw new Error('凯利安状态不存在');
     const affinity = clampInteractionAffinity(
@@ -239,7 +262,9 @@ export class SocialInteractionRepository {
       .filter(Boolean)
       .join(' ') || 'normal';
     const favorText = this.deltaText(appliedDelta);
-    const reaction = tags.includes('weird_or_dirty')
+    const reaction = dish && !dish.caelianLiked
+      ? '凯利安尝了一口便安静地放下餐具；这道料理显然不合他的口味。'
+      : tags.includes('weird_or_dirty')
       ? '凯利安收下时的微笑有一瞬间变得很勉强。'
       : tags.includes('specialty')
         ? '他似乎多看了一眼这份特产。'
@@ -295,19 +320,29 @@ export class SocialInteractionRepository {
     };
   }
 
-  private pet(): SocialInteractionOutcome {
-    const rejected = this.random() < 0.08;
-    const feedback = pickInteractionFeedback(
-      rejected ? TRELAO_PET_REJECT_FEEDBACK : TRELAO_PET_FEEDBACK,
-      this.random(),
-    );
+  private async pet(profileId: string): Promise<SocialInteractionOutcome> {
+    const social = await this.ensureTrelao(profileId);
+    const reaction = pickTrelaoTouchReaction(social.affinity, this.random);
+    const magnitude = reaction.direction === 'neutral'
+      ? 0
+      : 1 + Math.floor(this.random() * 10);
+    const requestedDelta = reaction.direction === 'down' ? -magnitude : magnitude;
+    const affinity = clampTrelaoAffinity(social.affinity + requestedDelta);
+    const appliedDelta = affinity - social.affinity;
+    await this.db.socialProgress.put({
+      ...social,
+      affinity,
+      relationshipStage: trelaoStageLabel(affinity),
+      mood: reaction.direction === 'down' ? '不满' : reaction.direction === 'up' ? '开心' : '平静',
+      updatedAt: Date.now(),
+    });
     return {
-      message: feedback,
+      message: `${reaction.text}${this.trelaoDeltaText(appliedDelta)}`,
       achievement: {
         event: 'trelao.pet',
-        success: !rejected,
-        positive: !rejected,
-        reaction: rejected ? '躲开' : '喜欢',
+        success: reaction.direction !== 'down',
+        positive: reaction.direction !== 'down',
+        reaction: reaction.direction,
       },
     };
   }
@@ -324,7 +359,21 @@ export class SocialInteractionRepository {
       (TRELAO_DISLIKED_ITEMS.has(stack.name) ||
         meta.tags.includes('weird_or_dirty') ||
         this.random() < 0.28);
-    await this.consume(stack);
+    const social = await this.ensureTrelao(profileId);
+    const magnitude = 1 + Math.floor(this.random() * 10);
+    const requestedDelta = meta.result === 'like' ? magnitude : -magnitude;
+    const affinity = clampTrelaoAffinity(social.affinity + requestedDelta);
+    const appliedDelta = affinity - social.affinity;
+    await Promise.all([
+      this.consume(stack),
+      this.db.socialProgress.put({
+        ...social,
+        affinity,
+        relationshipStage: trelaoStageLabel(affinity),
+        mood: meta.result === 'like' ? '满足' : '嫌弃',
+        updatedAt: Date.now(),
+      }),
+    ]);
     const feedback = badReaction
       ? '特莱奥不喜欢吃这个，他被你喂吐了。'
       : pickInteractionFeedback(
@@ -334,7 +383,7 @@ export class SocialInteractionRepository {
           this.random(),
         ).replaceAll('{item}', stack.name);
     return {
-      message: feedback,
+      message: `${feedback}${this.trelaoDeltaText(appliedDelta)}`,
       achievement: {
         event: 'trelao.feed',
         success: true,
@@ -352,6 +401,15 @@ export class SocialInteractionRepository {
     const stack = await this.db.inventoryStacks.get(`${profileId}:${itemId}`);
     if (!stack || stack.quantity <= 0) throw new Error('背包中没有这个物品');
     return stack;
+  }
+
+  private async ensureTrelao(profileId: string) {
+    const id = `${profileId}:trelao`;
+    const current = await this.db.socialProgress.get(id);
+    if (current) return current;
+    const created = defaultTrelaoProgress(profileId, Date.now());
+    await this.db.socialProgress.put(created);
+    return created;
   }
 
   private consume(stack: InventoryStackRecord): Promise<unknown> {
@@ -392,6 +450,12 @@ export class SocialInteractionRepository {
     if (delta > 0) return ` +${delta}`;
     if (delta < 0) return ` ${delta}`;
     return '没有变化';
+  }
+
+  private trelaoDeltaText(delta: number): string {
+    if (delta > 0) return ` 特莱奥好感度 +${delta}。`;
+    if (delta < 0) return ` 特莱奥好感度 ${delta}。`;
+    return ' 特莱奥好感度没有变化。';
   }
 
   private marketCatalog(): MarketCatalogs {

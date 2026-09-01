@@ -15,6 +15,7 @@ import type {
 import { scaleEquipmentStatsByStars } from '@/equipment-stats';
 import type { CaelianDatabase } from '@/storage/database';
 import { GLOBAL_ACHIEVEMENT_PROFILE_ID } from '@/achievements/catalog';
+import { cookingMarketRows } from '@/content/cooking';
 
 interface Candidate {
   key: string;
@@ -32,7 +33,7 @@ interface Candidate {
   stars?: number;
 }
 
-const REGION_STOCK_VERSION = 1;
+const REGION_STOCK_VERSION = 2;
 const COMMON_CARD_BASE_PRICE: Record<string, number> = {
   common: 50,
   uncommon: 90,
@@ -332,6 +333,7 @@ export class MarketRepository {
     }
     const candidates = [
       ...this.buildSpecialties(regionId),
+      ...this.buildCooking(regionId),
       ...(await this.buildGearAndRelics(
         profileId,
         regionId,
@@ -347,7 +349,7 @@ export class MarketRepository {
       regionId,
       refreshKey,
       inventory: {
-        version: 1,
+        version: REGION_STOCK_VERSION,
         listings: candidates.map((candidate) =>
           this.toListing(candidate, regionId, refreshKey),
         ),
@@ -395,7 +397,7 @@ export class MarketRepository {
       regionId: '__common_cards__',
       refreshKey,
       inventory: {
-        version: 1,
+        version: REGION_STOCK_VERSION,
         listings: candidates.map((candidate) =>
           this.toListing(candidate, 'all-regions', refreshKey),
         ),
@@ -429,6 +431,22 @@ export class MarketRepository {
         stockMax: row.stockMax * 50,
         basePrice: row.basePrice,
       }));
+  }
+
+  private buildCooking(regionId: string): Candidate[] {
+    return cookingMarketRows(regionId).map((row) => ({
+      key: row.id,
+      kind: 'item',
+      tab: 'cooking',
+      itemId: row.name,
+      name: row.name,
+      rarity: row.rarity || 'common',
+      source: row.id.startsWith('dish:') ? '地区料理' : '料理材料',
+      detail: this.catalog().items[row.name]?.desc ?? '',
+      stockMin: row.stockMin,
+      stockMax: row.stockMax,
+      basePrice: row.basePrice,
+    }));
   }
 
   private async buildGearAndRelics(
@@ -593,7 +611,9 @@ export class MarketRepository {
         }
       }
     }
-    for (const recipe of this.catalog().recipes) {
+    for (const recipe of this.catalog().recipes.filter(
+      (entry) => entry.category !== '料理',
+    )) {
       const price = Number(recipe.basePrice ?? 0);
       const rarity =
         price > 1000
