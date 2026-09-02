@@ -169,6 +169,11 @@ export interface QuestPendingItemSubmission {
 }
 
 export interface QuestProgressSnapshot extends QuestDeferredProgressSnapshot {
+  /** Active state to restore after the player manually pauses tracking. */
+  resumeTrackerState?: Extract<
+    QuestTrackerState,
+    'armed' | 'tracking' | 'detour'
+  >;
   pendingItemSubmission?: QuestPendingItemSubmission;
 }
 
@@ -775,6 +780,8 @@ export interface MarketSellItem {
   quantity: number;
   detail: string;
   price: number;
+  tab: MarketListingTab;
+  cookingKind?: 'dish' | 'material';
 }
 
 export interface MarketSellEquipment {
@@ -783,6 +790,7 @@ export interface MarketSellEquipment {
   description: string;
   stars: number;
   price: number;
+  tab: 'gear';
 }
 
 export interface MarketView {

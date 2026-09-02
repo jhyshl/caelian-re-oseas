@@ -15,7 +15,11 @@ import type {
 import { scaleEquipmentStatsByStars } from '@/equipment-stats';
 import type { CaelianDatabase } from '@/storage/database';
 import { GLOBAL_ACHIEVEMENT_PROFILE_ID } from '@/achievements/catalog';
-import { cookingMarketRows } from '@/content/cooking';
+import {
+  cookingMarketRows,
+  isCookingMaterial,
+  isDish,
+} from '@/content/cooking';
 
 interface Candidate {
   key: string;
@@ -98,26 +102,58 @@ export class MarketRepository {
     const isMerchant =
       player.classMain === 'merchant' || player.subclass === 'merchant';
     const localMarketItems = this.localMarketItemKeys(regionState);
+    const specialtyItems = this.specialtyItemKeys(regionState);
     const sellItems = inventory
       .filter((stack) => stack.quantity > 0)
-      .map((stack) => ({
-        itemId: stack.itemId,
-        name: stack.name,
-        quantity: stack.quantity,
-        detail: this.catalog().items[stack.itemId]?.desc ?? '',
-        price: this.sellItemPrice(
-          stack.itemId,
-          stack.name,
-          regionId,
-          refreshKey,
-          this.hasMerchantTalentSellBonus(
-            isMerchant,
+      .map((stack) => {
+        const cookingKind = isDish(stack.itemId) || isDish(stack.name)
+          ? 'dish' as const
+          : isCookingMaterial(stack.itemId) || isCookingMaterial(stack.name)
+            ? 'material' as const
+            : undefined;
+        return {
+          itemId: stack.itemId,
+          name: stack.name,
+          quantity: stack.quantity,
+          detail: this.catalog().items[stack.itemId]?.desc ?? '',
+          price: this.sellItemPrice(
             stack.itemId,
             stack.name,
-            localMarketItems,
+            regionId,
+            refreshKey,
+            this.hasMerchantTalentSellBonus(
+              isMerchant,
+              stack.itemId,
+              stack.name,
+              localMarketItems,
+            ),
           ),
-        ),
-      }));
+          tab: cookingKind
+            ? 'cooking' as const
+            : specialtyItems.has(stack.itemId) || specialtyItems.has(stack.name)
+              ? 'specialty' as const
+              : 'loot' as const,
+          ...(cookingKind ? { cookingKind } : {}),
+        };
+      })
+      .sort((left, right) => {
+        const tabOrder: Record<MarketListingTab, number> = {
+          specialty: 0,
+          cooking: 1,
+          gear: 2,
+          loot: 3,
+          cards: 4,
+        };
+        const tabDifference = tabOrder[left.tab] - tabOrder[right.tab];
+        if (tabDifference !== 0) return tabDifference;
+        if (left.tab === 'cooking' && right.tab === 'cooking') {
+          const cookingDifference =
+            (left.cookingKind === 'dish' ? 0 : 1) -
+            (right.cookingKind === 'dish' ? 0 : 1);
+          if (cookingDifference !== 0) return cookingDifference;
+        }
+        return left.name.localeCompare(right.name, 'zh-CN');
+      });
     const equipped = new Set(
       [loadout.weaponId, loadout.armorId, loadout.accessoryId].filter(Boolean),
     );
@@ -130,7 +166,13 @@ export class MarketRepository {
             description: entry.description,
             stars: entry.stars,
             price: this.sellEquipmentPrice(entry, regionId, refreshKey),
+            tab: 'gear' as const,
           }))
+          .sort(
+            (left, right) =>
+              right.stars - left.stars ||
+              left.name.localeCompare(right.name, 'zh-CN'),
+          )
       : [];
 
     return {
@@ -873,6 +915,16 @@ export class MarketRepository {
       local.add(listing.name);
     }
     return local;
+  }
+
+  private specialtyItemKeys(state: MarketStateRecord): Set<string> {
+    const specialties = new Set<string>();
+    for (const listing of state.inventory.listings) {
+      if (listing.kind !== 'item' || listing.tab !== 'specialty') continue;
+      specialties.add(listing.itemId);
+      specialties.add(listing.name);
+    }
+    return specialties;
   }
 
   private hasMerchantTalentSellBonus(

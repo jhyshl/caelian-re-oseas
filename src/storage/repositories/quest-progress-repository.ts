@@ -236,14 +236,23 @@ export class QuestProgressRepository {
         const id = this.trackerId(profileId, questId);
         const existing = await this.db.questTrackerStates.get(id);
         const current = existing?.current ?? baseline;
+        const trackerState =
+          current.status !== 'active'
+            ? 'ended'
+            : current.trackerState === 'manualPaused'
+              ? current.resumeTrackerState ?? 'armed'
+              : ['armed', 'tracking', 'detour'].includes(current.trackerState)
+                ? current.trackerState
+                : 'armed';
+        const resumed = { ...current };
+        delete resumed.resumeTrackerState;
         const selected: QuestTrackerRecord = {
           ...(existing ??
             this.createTracker(profileId, quest, Date.now(), baseline)),
           selected: true,
           current: {
-            ...current,
-            trackerState:
-              current.status === 'active' ? 'armed' : 'ended',
+            ...resumed,
+            trackerState,
           },
           updatedAt: Date.now(),
         };
@@ -262,9 +271,30 @@ export class QuestProgressRepository {
     if (state === 'armed' && tracker.current.status !== 'active') {
       throw new Error('已经结束的任务不能继续追踪');
     }
+    const current = tracker.current;
+    const activeState = ['armed', 'tracking', 'detour'].includes(
+      current.trackerState,
+    )
+      ? (current.trackerState as 'armed' | 'tracking' | 'detour')
+      : undefined;
+    const nextCurrent: QuestProgressSnapshot =
+      state === 'manualPaused'
+        ? {
+            ...current,
+            trackerState: state,
+            resumeTrackerState:
+              activeState ?? current.resumeTrackerState ?? 'armed',
+          }
+        : (() => {
+            const {
+              resumeTrackerState = 'armed',
+              ...resumed
+            } = current;
+            return { ...resumed, trackerState: resumeTrackerState };
+          })();
     const updated: QuestTrackerRecord = {
       ...tracker,
-      current: { ...tracker.current, trackerState: state },
+      current: nextCurrent,
       updatedAt: Date.now(),
     };
     await this.db.questTrackerStates.put(updated);

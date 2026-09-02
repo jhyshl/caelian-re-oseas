@@ -1836,7 +1836,7 @@ describe('CaelianKernel integration', () => {
     databaseNames.push(unmatchedDatabaseName);
     const unmatchedKernel = createKernel({
       channel: 'alpha',
-      version: '0.2.0-alpha.66',
+      version: '0.2.0-alpha.67',
       buildId: 'unmatched-release-test-build',
       databaseName: unmatchedDatabaseName,
       sourceWindow: window,
@@ -1851,9 +1851,9 @@ describe('CaelianKernel integration', () => {
       '[data-caelian-panel="release-notes"]',
     );
     expect(historicalAnnouncement?.textContent).toContain(
-      '当前构建 0.2.0-alpha.66 暂无独立公告',
+      '当前构建 0.2.0-alpha.67 暂无独立公告',
     );
-    expect(historicalAnnouncement?.textContent).toContain('Alpha 65');
+    expect(historicalAnnouncement?.textContent).toContain('Alpha 66');
     expect(
       historicalAnnouncement?.querySelector('.current-badge'),
     ).toBeNull();
@@ -2477,7 +2477,7 @@ describe('CaelianKernel integration', () => {
     textarea.remove();
   });
 
-  it('只在生成完成后判定，复用任务判定打开采集页，并在删除楼层时保留已确认节点', async () => {
+  it('只在生成完成后判定，复用任务判定打开采集页，并在删除楼层时保留已确认节点', { timeout: 15_000 }, async () => {
     const databaseName = `caelian-alpha-quest-floor-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
     const handlers = new Map<unknown, (...args: unknown[]) => void>();
@@ -2546,10 +2546,18 @@ describe('CaelianKernel integration', () => {
     const judgeResponseGate = new Promise<void>((resolve) => {
       releaseJudgeResponse = resolve;
     });
+    let releaseResumedJudgeResponse!: () => void;
+    const resumedJudgeResponseGate = new Promise<void>((resolve) => {
+      releaseResumedJudgeResponse = resolve;
+    });
+    let judgeRequestCount = 0;
     const fetchMock = vi.spyOn(window, 'fetch').mockImplementation(
       async (input) => {
         if (String(input).includes('judge.example')) {
-          await judgeResponseGate;
+          judgeRequestCount += 1;
+          await (judgeRequestCount === 1
+            ? judgeResponseGate
+            : resumedJudgeResponseGate);
           return new Response(
               JSON.stringify({
                 choices: [
@@ -2683,6 +2691,30 @@ describe('CaelianKernel integration', () => {
         String(input).includes('judge.example'),
       ),
     ).toHaveLength(1);
+
+    const resumed = await kernel.api.resumeTrackedQuest();
+    expect(resumed?.tracker.current.trackerState).toBe('tracking');
+    chat.push({
+      mes: '重新追踪后，这条回复应继续交给副 API 判定。',
+      is_user: false,
+    });
+    handlers.get('generation-ended')?.(3);
+    await expect
+      .poll(
+        () =>
+          fetchMock.mock.calls.filter(([input]) =>
+            String(input).includes('judge.example'),
+          ).length,
+        { timeout: 10_000 },
+      )
+      .toBe(2);
+    await expect
+      .poll(() => document.body.textContent, { timeout: 10_000 })
+      .toContain('正在推进剧情');
+    releaseResumedJudgeResponse();
+    await expect
+      .poll(() => document.body.textContent, { timeout: 10_000 })
+      .not.toContain('正在推进剧情');
 
     await kernel.api.shutdown();
     fetchMock.mockRestore();

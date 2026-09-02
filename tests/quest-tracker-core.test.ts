@@ -1394,4 +1394,70 @@ describe('副 API 与楼层编排', () => {
       progress.listCheckpoints('profile', questRecord.id),
     ).resolves.toEqual([]);
   });
+
+  it.each(['tracking', 'detour'] as const)(
+    '取消追踪后再次追踪会恢复原来的 %s 状态，不重新触发地点门槛',
+    async (trackerState) => {
+      const database = new CaelianDatabase(
+        'alpha',
+        `caelian-tracker-resume-${trackerState}-${crypto.randomUUID()}`,
+      );
+      databases.push(database);
+      const questRecord: QuestRecord = {
+        id: `profile:side:${flora.id}`,
+        profileId: 'profile',
+        definitionId: flora.id,
+        kind: 'side',
+        title: flora.name,
+        region: flora.region,
+        objective: flora.nodes[0]?.objective ?? '',
+        status: 'active',
+        currentStage: 1,
+        totalStages: 3,
+        rewardExperience: 120,
+        rewardGold: 240,
+        rewardGuildExperience: 45,
+        updatedAt: 1,
+      };
+      await database.questRecords.put(questRecord);
+      const progress = new QuestProgressRepository(database);
+      await progress.selectQuest(
+        'profile',
+        questRecord.id,
+        initialQuestProgress(flora),
+      );
+      const trackerId = `profile:quest-tracker:${encodeURIComponent(questRecord.id)}`;
+      const selected = await database.questTrackerStates.get(trackerId);
+      if (!selected) throw new Error('测试追踪器未创建');
+      await database.questTrackerStates.put({
+        ...selected,
+        current: { ...selected.current, trackerState },
+      });
+
+      const paused = await progress.setSelectedTrackerState(
+        'profile',
+        'manualPaused',
+      );
+      expect(paused?.current).toMatchObject({
+        trackerState: 'manualPaused',
+        resumeTrackerState: trackerState,
+      });
+
+      const resumed = await progress.setSelectedTrackerState(
+        'profile',
+        'armed',
+      );
+      expect(resumed?.current.trackerState).toBe(trackerState);
+      expect(resumed?.current.resumeTrackerState).toBeUndefined();
+
+      await progress.setSelectedTrackerState('profile', 'manualPaused');
+      const reselected = await progress.selectQuest(
+        'profile',
+        questRecord.id,
+        initialQuestProgress(flora),
+      );
+      expect(reselected.current.trackerState).toBe(trackerState);
+      expect(reselected.current.resumeTrackerState).toBeUndefined();
+    },
+  );
 });

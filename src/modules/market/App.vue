@@ -14,6 +14,7 @@ const market = ref<MarketView>();
 const mode = ref<'buy' | 'sell'>('buy');
 const category = ref<'all' | MarketListingTab>('all');
 const quantities = ref<Record<string, number>>({});
+const sellQuantities = ref<Record<string, number>>({});
 const busy = ref('');
 const notice = ref('');
 const error = ref('');
@@ -37,6 +38,25 @@ const visibleListings = computed(() =>
     (listing) =>
       category.value === 'all' || listing.tab === category.value,
   ),
+);
+
+const visibleSellItems = computed(() =>
+  (market.value?.sellItems ?? []).filter(
+    (entry) => category.value === 'all' || entry.tab === category.value,
+  ),
+);
+
+const visibleSellEquipment = computed(() =>
+  category.value === 'all' || category.value === 'gear'
+    ? market.value?.sellEquipment ?? []
+    : [],
+);
+
+const hasVisibleSellEntries = computed(
+  () =>
+    visibleSellItems.value.length + visibleSellEquipment.value.length > 0 ||
+    category.value === 'all' ||
+    category.value === 'gear',
 );
 
 const refreshLabel = computed(() => {
@@ -74,6 +94,23 @@ function setQuantity(listing: MarketListing, value: string): void {
   quantities.value[listing.key] = Math.max(
     1,
     Math.min(listing.stock, Math.floor(Number(value) || 1)),
+  );
+}
+
+function sellQuantityFor(entry: MarketView['sellItems'][number]): number {
+  return Math.max(
+    1,
+    Math.min(entry.quantity, sellQuantities.value[entry.itemId] ?? 1),
+  );
+}
+
+function setSellQuantity(
+  entry: MarketView['sellItems'][number],
+  value: string,
+): void {
+  sellQuantities.value[entry.itemId] = Math.max(
+    1,
+    Math.min(entry.quantity, Math.floor(Number(value) || 1)),
   );
 }
 
@@ -197,18 +234,18 @@ onUnmounted(() => {
         </button>
       </nav>
 
-      <template v-if="mode === 'buy'">
-        <nav class="market-categories">
-          <button
-            v-for="entry in categories"
-            :key="entry.id"
-            :class="{ active: category === entry.id }"
-            @click="category = entry.id"
-          >
-            {{ entry.label }}
-          </button>
-        </nav>
+      <nav class="market-categories">
+        <button
+          v-for="entry in categories"
+          :key="entry.id"
+          :class="{ active: category === entry.id }"
+          @click="category = entry.id"
+        >
+          {{ entry.label }}
+        </button>
+      </nav>
 
+      <template v-if="mode === 'buy'">
         <div v-if="visibleListings.length === 0" class="ca-empty">
           本轮该分类没有商品
         </div>
@@ -258,53 +295,76 @@ onUnmounted(() => {
       </template>
 
       <template v-else>
-        <section class="ca-section sell-section">
+        <div v-if="!hasVisibleSellEntries" class="ca-empty">
+          当前分类没有可出售内容
+        </div>
+        <section
+          v-if="visibleSellItems.length > 0"
+          class="ca-section sell-section"
+        >
           <h2 class="ca-section-title">物品背包</h2>
-          <div v-if="market.sellItems.length === 0" class="ca-empty">
-            没有可出售物品
-          </div>
-          <div v-else class="sell-list">
-            <article v-for="entry in market.sellItems" :key="entry.itemId">
+          <div class="sell-list">
+            <article v-for="entry in visibleSellItems" :key="entry.itemId">
               <div>
                 <strong>{{ entry.name }} ×{{ entry.quantity }}</strong>
                 <span v-if="entry.detail">{{ entry.detail }}</span>
               </div>
-              <b>¤ {{ entry.price }}/件</b>
+              <div class="sell-price">
+                <b>¤ {{ entry.price }}/件</b>
+                <small>
+                  合计 ¤ {{ entry.price * sellQuantityFor(entry) }}
+                </small>
+              </div>
+              <label class="sell-quantity">
+                <span>数量</span>
+                <input
+                  type="number"
+                  min="1"
+                  :max="entry.quantity"
+                  :value="sellQuantityFor(entry)"
+                  @input="
+                    setSellQuantity(
+                      entry,
+                      ($event.target as HTMLInputElement).value,
+                    )
+                  "
+                />
+              </label>
               <button
                 type="button"
                 class="ca-button"
                 :disabled="busy !== ''"
-                @click="sellItem(entry.itemId, 1, entry.name)"
+                @click="
+                  sellItem(
+                    entry.itemId,
+                    sellQuantityFor(entry),
+                    entry.name,
+                  )
+                "
               >
-                卖出 1 件
-              </button>
-              <button
-                v-if="entry.quantity > 1"
-                type="button"
-                class="ca-button"
-                :disabled="busy !== ''"
-                @click="sellItem(entry.itemId, entry.quantity, entry.name)"
-              >
-                全部卖出
+                {{ busy === `sell-item:${entry.itemId}` ? '交易中' : '出售' }}
               </button>
             </article>
           </div>
         </section>
 
-        <section class="ca-section sell-section">
+        <section
+          v-if="category === 'all' || category === 'gear'"
+          class="ca-section sell-section"
+        >
           <h2 class="ca-section-title">装备背包</h2>
           <p v-if="!market.isMerchant" class="merchant-note">
             沿用旧版规则：只有商人职业可以出售未装备的装备。
           </p>
           <div
-            v-else-if="market.sellEquipment.length === 0"
+            v-else-if="visibleSellEquipment.length === 0"
             class="ca-empty"
           >
             没有可出售的未装备装备
           </div>
           <div v-else class="sell-list">
             <article
-              v-for="entry in market.sellEquipment"
+              v-for="entry in visibleSellEquipment"
               :key="entry.instanceId"
             >
               <div>
@@ -509,7 +569,7 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.02);
 }
 
-.sell-list article > div {
+.sell-list article > div:first-child {
   min-width: 0;
   display: grid;
   gap: 3px;
@@ -525,6 +585,35 @@ onUnmounted(() => {
 .merchant-note {
   color: var(--ca-muted);
   font-size: 10px;
+}
+
+.sell-price {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.sell-price small {
+  color: var(--ca-muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.sell-quantity {
+  display: grid;
+  gap: 2px;
+  color: var(--ca-muted);
+  font-size: 9px;
+}
+
+.sell-quantity input {
+  width: 68px;
+  padding: 6px;
+  border: 1px solid var(--ca-border);
+  border-radius: 7px;
+  color: var(--ca-text);
+  background: #0c0f15;
 }
 
 .market-notice,
@@ -567,8 +656,12 @@ onUnmounted(() => {
     flex-direction: column;
   }
 
-  .sell-list article > div {
+  .sell-list article > div:first-child {
     margin: 0;
+  }
+
+  .sell-price {
+    text-align: left;
   }
 }
 </style>

@@ -9,6 +9,16 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.66',
+    label: 'Alpha 66',
+    releasedAt: '2026-09-02',
+    changes: [
+      '修复主线或支线取消追踪后再次追踪时副 API 不再运行的问题：取消时会保留任务原本的追踪中或临时离场状态，恢复与重新点击追踪都会回到取消前状态，不再误触发首次进入场景的位置门槛；重新追踪后的下一轮 AI 回复会正常显示“正在推进剧情”并调用已启用的副 API。',
+      '集市出售页新增与购买页一致的区域特产、料理、装备与藏品、材料、通用卡牌分类；料理分类统一把成品料理排在料理材料之前，出售物品可输入 1 到当前持有量之间的任意数量，并实时显示预计总价。',
+      '装备背包默认按星级倒序，再按武器、防具、饰品二次排列；新增全部、武器、防具、饰品分页，并支持按名称、星级、稀有度、标签、描述和生命、魔力、攻击、防御、吸血等词条组合检索。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.65',
     label: 'Alpha 65',
     releasedAt: '2026-09-01',
@@ -695,6 +705,16 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 ] as const;
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.13.0-beta.1',
+    label: 'Beta 1.13',
+    releasedAt: '2026-09-02',
+    changes: [
+      '修复任务取消追踪后再次追踪时副 API 静默停止的问题：恢复与重新选择任务都会回到取消前的真实追踪状态，下一轮 AI 回复会正常显示判定通知并调用已启用的副 API。',
+      '集市出售页同步购买分类，料理成品统一排在材料之前；出售数量可在持有范围内自由填写，并显示本次出售总价。',
+      '装备背包新增星级倒序与武器、防具、饰品二级分类，支持通过名称、星级、稀有度、标签、描述和装备词条组合检索。',
+    ],
+  },
   {
     version: '1.12.0-beta.1',
     label: 'Beta 1.12',

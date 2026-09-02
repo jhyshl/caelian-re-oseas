@@ -193,7 +193,7 @@ export function cookingMarketRows(regionId: string): MarketSourceItem[] {
       marketKind: 'item' as const,
     };
   });
-  return [...materials, ...dishes];
+  return [...dishes, ...materials];
 }
 
 export function isCookingMaterial(itemId: string): boolean {
