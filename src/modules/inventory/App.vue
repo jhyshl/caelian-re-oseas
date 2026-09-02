@@ -21,12 +21,19 @@ import {
   isInventoryUsableEffect,
 } from '@/battle/consumables';
 import { isCookingMaterial, isDish } from '@/content/cooking';
+import {
+  equipmentTags,
+  filterAndSortEquipment,
+  type EquipmentCategory,
+} from '@/modules/inventory/equipment-view';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
 const items = ref<Record<string, BattleItemDefinition>>({});
 const relics = ref<Record<string, RelicDefinition>>({});
 const tab = ref<'items' | 'consumables' | 'cooking' | 'equipment' | 'relics'>('items');
+const equipmentCategory = ref<EquipmentCategory>('all');
+const equipmentQuery = ref('');
 const notice = ref('');
 const noticeTone = ref<'error' | 'success'>('error');
 const disposers: Array<() => void> = [];
@@ -88,6 +95,13 @@ const equipped = computed(() => {
     ),
   };
 });
+const visibleEquipment = computed(() =>
+  filterAndSortEquipment(
+    snapshot.value?.equipment ?? [],
+    equipmentCategory.value,
+    equipmentQuery.value,
+  ),
+);
 
 function isEquipped(instanceId: string) {
   const loadout = snapshot.value?.loadout;
@@ -450,16 +464,56 @@ onUnmounted(() => {
           </div>
         </section>
         <section class="ca-section">
-          <h2 class="ca-section-title">装备背包</h2>
+          <div class="equipment-heading">
+            <div>
+              <h2 class="ca-section-title">装备背包</h2>
+              <p>默认按星级倒序，并按武器、防具、饰品二次排列。</p>
+            </div>
+            <label class="equipment-search">
+              <span>检索标签 / 词条</span>
+              <input
+                v-model="equipmentQuery"
+                type="search"
+                placeholder="如：三星、稀有、攻击、吸血"
+              />
+            </label>
+          </div>
+          <nav class="equipment-filters" aria-label="装备部位分类">
+            <button
+              v-for="entry in ([
+                ['all', '全部'],
+                ['weapon', '武器'],
+                ['armor', '防具'],
+                ['accessory', '饰品'],
+              ] as const)"
+              :key="entry[0]"
+              type="button"
+              :class="{ active: equipmentCategory === entry[0] }"
+              @click="equipmentCategory = entry[0]"
+            >
+              {{ entry[1] }}
+            </button>
+          </nav>
           <div v-if="snapshot.equipment.length === 0" class="ca-empty">
             暂无装备实例
           </div>
+          <div v-else-if="visibleEquipment.length === 0" class="ca-empty">
+            没有符合当前部位与关键词的装备
+          </div>
           <div v-else class="equipment-list">
-            <article v-for="entry in snapshot.equipment" :key="entry.id">
+            <article v-for="entry in visibleEquipment" :key="entry.id">
               <i>◇</i>
               <div>
                 <strong>{{ entry.name }} {{ '★'.repeat(entry.stars) }}</strong>
                 <span>{{ equipmentInstanceDescription(entry) }}</span>
+                <div class="equipment-tags">
+                  <small
+                    v-for="tag in equipmentTags(entry)"
+                    :key="`${entry.id}:${tag}`"
+                  >
+                    {{ tag }}
+                  </small>
+                </div>
               </div>
               <button
                 type="button"
@@ -785,6 +839,77 @@ onUnmounted(() => {
   gap: 7px;
 }
 
+.equipment-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.equipment-heading p {
+  margin: -2px 0 10px;
+  color: var(--ca-muted);
+  font-size: 10px;
+}
+
+.equipment-search {
+  min-width: min(260px, 45%);
+  display: grid;
+  gap: 4px;
+  margin-bottom: 10px;
+  color: var(--ca-muted);
+  font-size: 9px;
+}
+
+.equipment-search input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--ca-border);
+  border-radius: 9px;
+  color: var(--ca-text);
+  background: rgba(4, 9, 18, 0.58);
+  font: inherit;
+  font-size: 11px;
+}
+
+.equipment-filters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.equipment-filters button {
+  padding: 6px 12px;
+  border: 1px solid var(--ca-border);
+  border-radius: 999px;
+  color: var(--ca-muted);
+  background: var(--ca-surface);
+  font: 700 10px var(--ca-ui);
+  cursor: pointer;
+}
+
+.equipment-filters button.active {
+  border-color: var(--ca-gold);
+  color: var(--ca-gold-light);
+  background: rgba(212, 168, 67, 0.1);
+}
+
+.equipment-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.equipment-tags small {
+  padding: 2px 6px;
+  border: 1px solid rgba(212, 168, 67, 0.2);
+  border-radius: 999px;
+  color: var(--ca-gold-light);
+  background: rgba(212, 168, 67, 0.07);
+  font-size: 8px;
+}
+
 .collectible-group + .collectible-group {
   margin-top: 15px;
 }
@@ -837,6 +962,14 @@ onUnmounted(() => {
 
   .consumable-heading {
     display: grid;
+  }
+
+  .equipment-heading {
+    display: grid;
+  }
+
+  .equipment-search {
+    min-width: 0;
   }
 }
 </style>

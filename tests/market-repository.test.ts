@@ -79,6 +79,10 @@ describe('MarketRepository integration', () => {
         (listing) => listing.source === '地区料理',
       );
 
+      expect(cooking.map((listing) => listing.name)).toEqual([
+        ...expectedDishes,
+        ...MARKET_COOKING_MATERIALS,
+      ]);
       expect(materials.map((listing) => listing.name).sort()).toEqual(
         [...MARKET_COOKING_MATERIALS].sort(),
       );
@@ -95,6 +99,75 @@ describe('MarketRepository integration', () => {
 
     expect(new Set(Object.values(REGION_DISHES).map((rows) => rows.join('|'))).size)
       .toBe(Object.keys(REGION_DISHES).length);
+  });
+
+  it('出售按购买分类展示，成品料理排在材料前，并支持指定出售数量', async () => {
+    const marketDate = new Date(2026, 8, 1, 12, 30);
+    const database = new CaelianDatabase(
+      'alpha',
+      `caelian-alpha-market-sell-categories-${crypto.randomUUID()}`,
+    );
+    databases.push(database);
+    const game = new GameRepository(database, new EventBus());
+    const profile = await game.ensureProfile('market-sell-categories');
+    await database.playerStates.update(profile.id, { gold: 0 });
+    const marketRepository = new MarketRepository(database, () => marketDate);
+    const initial = await marketRepository.view(profile.id);
+    const specialty = initial.listings.find(
+      (listing) => listing.kind === 'item' && listing.tab === 'specialty',
+    );
+    expect(specialty).toBeDefined();
+
+    const stacks = [
+      { itemId: '盐', name: '盐', quantity: 4 },
+      { itemId: '晨露煎蛋', name: '晨露煎蛋', quantity: 5 },
+      {
+        itemId: specialty!.itemId,
+        name: specialty!.name,
+        quantity: 2,
+      },
+      { itemId: '测试掉落物', name: '测试掉落物', quantity: 1 },
+    ];
+    for (const stack of stacks) {
+      await database.inventoryStacks.put({
+        id: `${profile.id}:${stack.itemId}`,
+        profileId: profile.id,
+        ...stack,
+        updatedAt: Date.now(),
+      });
+    }
+
+    const view = await marketRepository.view(profile.id);
+    expect(view.sellItems.find((entry) => entry.itemId === '盐')).toMatchObject({
+      tab: 'cooking',
+      cookingKind: 'material',
+    });
+    expect(
+      view.sellItems.find((entry) => entry.itemId === '晨露煎蛋'),
+    ).toMatchObject({ tab: 'cooking', cookingKind: 'dish' });
+    expect(
+      view.sellItems.find((entry) => entry.itemId === specialty!.itemId),
+    ).toMatchObject({ tab: 'specialty' });
+    expect(
+      view.sellItems.find((entry) => entry.itemId === '测试掉落物'),
+    ).toMatchObject({ tab: 'loot' });
+    const cooking = view.sellItems.filter((entry) => entry.tab === 'cooking');
+    expect(cooking.findIndex((entry) => entry.itemId === '晨露煎蛋')).toBeLessThan(
+      cooking.findIndex((entry) => entry.itemId === '盐'),
+    );
+
+    const dishPrice = view.sellItems.find(
+      (entry) => entry.itemId === '晨露煎蛋',
+    )!.price;
+    await marketRepository.sellItem(profile.id, {
+      itemId: '晨露煎蛋',
+      quantity: 3,
+    });
+    expect((await database.inventoryStacks.get(`${profile.id}:晨露煎蛋`))?.quantity)
+      .toBe(2);
+    expect((await database.playerStates.get(profile.id))?.gold).toBe(
+      dishPrice * 3,
+    );
   });
 
   it('完整读取旧版物品、装备、区域商品和通用卡牌库', async () => {
