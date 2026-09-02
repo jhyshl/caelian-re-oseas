@@ -9,6 +9,15 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.67',
+    label: 'Alpha 67',
+    releasedAt: '2026-09-02',
+    changes: [
+      '背包的藏品页面新增可独立关闭的详情弹窗：点击可携带或不可装备的藏品即可查看完整文本，查看操作不会误触携带或卸下。普通藏品只显示展示文本；特殊藏品会把展示文本与原始效果文本分区显示，任务纪念藏品不会被误标为拥有特殊效果。',
+      '补齐旧存档藏品的名称与展示文本回退：带有本地藏品记录的可携带藏品会优先显示真实名称和纪念文本，不再把内部编号当作玩家可见名称。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.66',
     label: 'Alpha 66',
     releasedAt: '2026-09-02',
@@ -705,6 +714,15 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 ] as const;
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.14.0-beta.1',
+    label: 'Beta 1.14',
+    releasedAt: '2026-09-02',
+    changes: [
+      '背包藏品页新增详情弹窗：普通藏品只显示展示文本，特殊藏品分区显示展示文本与完整效果文本；点击查看不会触发携带或卸下，任务纪念藏品也不会被误标为特殊效果藏品。',
+      '旧存档中的可携带纪念藏品会优先读取本地保存的真实名称与展示文本，不再显示内部藏品编号。',
+    ],
+  },
   {
     version: '1.13.0-beta.1',
     label: 'Beta 1.13',

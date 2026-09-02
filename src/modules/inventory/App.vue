@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* global HTMLElement, KeyboardEvent */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { loadItemCatalog, loadRelics } from '@/content/catalogs/inventory';
 import type {
@@ -9,6 +10,8 @@ import type {
   EquipmentSlot,
   GameSnapshot,
   InventoryStackRecord,
+  OwnedRelicRecord,
+  SpecialCollectibleRecord,
 } from '@/domain/types';
 import { equipmentInstanceDescription } from '@/equipment-stats';
 import { commandId } from '@/kernel/ids';
@@ -26,6 +29,12 @@ import {
   filterAndSortEquipment,
   type EquipmentCategory,
 } from '@/modules/inventory/equipment-view';
+import CollectibleDetailsDialog from '@/modules/inventory/CollectibleDetailsDialog.vue';
+import {
+  collectibleDetailsFromRecord,
+  collectibleDetailsFromRelic,
+  type CollectibleDetails,
+} from '@/modules/inventory/collectible-details';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -34,9 +43,14 @@ const relics = ref<Record<string, RelicDefinition>>({});
 const tab = ref<'items' | 'consumables' | 'cooking' | 'equipment' | 'relics'>('items');
 const equipmentCategory = ref<EquipmentCategory>('all');
 const equipmentQuery = ref('');
+const selectedCollectible = ref<CollectibleDetails>();
 const notice = ref('');
 const noticeTone = ref<'error' | 'success'>('error');
 const disposers: Array<() => void> = [];
+const collectibleDialogTarget =
+  props.context.document.querySelector<HTMLElement>(
+    '[data-caelian-panel="inventory"]',
+  ) ?? props.context.document.body;
 
 const itemInventory = computed(() =>
   (snapshot.value?.inventory ?? []).filter(
@@ -149,6 +163,55 @@ function setCarried(relicId: string, carried: boolean) {
   });
 }
 
+function collectibleRecordForRelic(
+  relic: OwnedRelicRecord,
+): SpecialCollectibleRecord | undefined {
+  return snapshot.value?.specialCollectibles.find(
+    (entry) => entry.id === relic.id || entry.collectibleId === relic.relicId,
+  );
+}
+
+function relicName(record: OwnedRelicRecord): string {
+  return (
+    collectibleRecordForRelic(record)?.name ??
+    relics.value[record.relicId]?.name ??
+    record.relicId
+  );
+}
+
+function relicPreview(record: OwnedRelicRecord): string {
+  return (
+    collectibleRecordForRelic(record)?.summary ??
+    relics.value[record.relicId]?.description ??
+    ''
+  );
+}
+
+function openCollectibleRecord(record: SpecialCollectibleRecord): void {
+  selectedCollectible.value = collectibleDetailsFromRecord(
+    record,
+    relics.value[record.collectibleId],
+  );
+}
+
+function openRelic(record: OwnedRelicRecord): void {
+  selectedCollectible.value = collectibleDetailsFromRelic(
+    record,
+    relics.value[record.relicId],
+    collectibleRecordForRelic(record),
+  );
+}
+
+function closeCollectibleDetails(): void {
+  selectedCollectible.value = undefined;
+}
+
+function handleDocumentKeydown(event: KeyboardEvent): void {
+  if (event.key === 'Escape' && selectedCollectible.value) {
+    closeCollectibleDetails();
+  }
+}
+
 function itemDefinition(itemId: string, name: string) {
   return items.value[itemId] ?? items.value[name];
 }
@@ -253,6 +316,13 @@ onMounted(async () => {
   for (const event of ['state.changed', 'tavern.changed'] as const) {
     disposers.push(props.context.api.on(event, refreshSnapshot));
   }
+  props.context.document.addEventListener('keydown', handleDocumentKeydown);
+  disposers.push(() =>
+    props.context.document.removeEventListener(
+      'keydown',
+      handleDocumentKeydown,
+    ),
+  );
 });
 
 onUnmounted(() => {
@@ -546,11 +616,18 @@ onUnmounted(() => {
           <h3>特殊藏品</h3>
           <div class="equipment-list">
             <article v-for="entry in specialOnlyCollectibles" :key="entry.id">
-              <i>✧</i>
-              <div>
-                <strong>{{ entry.name }}</strong>
-                <span>{{ entry.summary }}</span>
-              </div>
+              <button
+                type="button"
+                class="collectible-summary"
+                :aria-label="`查看藏品「${entry.name}」详情`"
+                @click="openCollectibleRecord(entry)"
+              >
+                <i>✧</i>
+                <div>
+                  <strong>{{ entry.name }}</strong>
+                  <span>{{ entry.summary }}</span>
+                </div>
+              </button>
               <small>不可装备</small>
             </article>
           </div>
@@ -559,11 +636,18 @@ onUnmounted(() => {
           <h3 v-if="specialOnlyCollectibles.length > 0">可携带藏品</h3>
           <div class="equipment-list">
             <article v-for="entry in snapshot.relics" :key="entry.id">
-              <i>✦</i>
-              <div>
-                <strong>{{ relics[entry.relicId]?.name ?? entry.relicId }}</strong>
-                <span>{{ relics[entry.relicId]?.description ?? '' }}</span>
-              </div>
+              <button
+                type="button"
+                class="collectible-summary"
+                :aria-label="`查看藏品「${relicName(entry)}」详情`"
+                @click="openRelic(entry)"
+              >
+                <i>✦</i>
+                <div>
+                  <strong>{{ relicName(entry) }}</strong>
+                  <span>{{ relicPreview(entry) }}</span>
+                </div>
+              </button>
               <button
                 type="button"
                 class="ca-button"
@@ -579,6 +663,12 @@ onUnmounted(() => {
       </section>
     </template>
   </AdventurerFrame>
+  <CollectibleDetailsDialog
+    v-if="selectedCollectible"
+    :details="selectedCollectible"
+    :teleport-target="collectibleDialogTarget"
+    @close="closeCollectibleDetails"
+  />
 </template>
 
 <style scoped>
@@ -924,6 +1014,39 @@ onUnmounted(() => {
   flex: 0 0 auto;
   color: var(--ca-muted);
   font-size: 9px;
+}
+
+.collectible-summary {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.collectible-summary > div {
+  min-width: 0;
+  display: grid;
+  flex: 1;
+  gap: 3px;
+}
+
+.collectible-summary:hover strong,
+.collectible-summary:focus-visible strong {
+  color: var(--ca-gold-light);
+}
+
+.collectible-summary:focus-visible {
+  outline: 2px solid var(--ca-gold);
+  outline-offset: 4px;
+  border-radius: 7px;
 }
 
 .relic-note {

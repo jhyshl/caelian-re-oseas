@@ -9,15 +9,16 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.66');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.67');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.66');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.67');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('取消追踪');
-    expect(latestText).toContain('任意数量');
-    expect(latestText).toContain('词条组合检索');
+    expect(latestText).toContain('藏品页面新增');
+    expect(latestText).toContain('普通藏品只显示展示文本');
+    expect(latestText).toContain('特殊藏品');
+    expect(latestText).toContain('内部编号');
     const alpha65Text =
       releases
         .find((release) => release.version === '0.2.0-alpha.65')
@@ -139,10 +140,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.13.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.14.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.14',
       'Beta 1.13',
       'Beta 1.12',
       'Beta 1.11',
@@ -159,9 +161,10 @@ describe('release notes', () => {
       'Beta 1.0',
     ]);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('副 API');
-    expect(latestText).toContain('出售数量');
-    expect(latestText).toContain('装备词条组合检索');
+    expect(latestText).toContain('藏品页新增详情弹窗');
+    expect(latestText).toContain('普通藏品只显示展示文本');
+    expect(latestText).toContain('完整效果文本');
+    expect(latestText).toContain('内部藏品编号');
     const beta112Text = releases
       .find((release) => release.version === '1.12.0-beta.1')
       ?.changes.join('\n');
@@ -219,14 +222,14 @@ describe('release notes', () => {
   });
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
-    expect(releaseHistoryFor('alpha', '0.2.0-alpha.67')[0]?.version).toBe(
-      '0.2.0-alpha.66',
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.68')[0]?.version).toBe(
+      '0.2.0-alpha.67',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.66',
+      '0.2.0-alpha.67',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });
