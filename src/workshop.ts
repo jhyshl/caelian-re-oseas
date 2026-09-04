@@ -5,8 +5,15 @@ import {
   saveWorkshopMechanism,
   type WorkshopMechanismManifest,
 } from '@/workshop-mechanisms';
+import {
+  WORKSHOP_ASSESSMENT_VERSION,
+  registerWorkshopFingerprintContext,
+  workshopCombatFingerprint,
+} from '@/workshop-certification';
 
 export const WORKSHOP_STORAGE_KEY = 'caelian_custom_workshop_packs_v1';
+export const WORKSHOP_TEST_STORAGE_KEY =
+  'caelian_custom_workshop_test_packs_v1';
 export const WORKSHOP_DRAFT_STORAGE_KEY = 'caelian_custom_workshop_drafts_v1';
 export const WORKSHOP_EXTENSION_STORAGE_KEY =
   'caelian_custom_workshop_extensions_v1';
@@ -59,6 +66,20 @@ export interface WorkshopPack {
   classes: WorkshopClass[];
   /** Declarative or script mechanisms bundled for portable profession imports. */
   mechanisms?: WorkshopMechanismManifest[];
+  /** Per-profession proof written only after the current combat assessment passes. */
+  certifications?: Record<string, WorkshopCertification>;
+}
+
+export interface WorkshopCertification {
+  evaluatorVersion: string;
+  combatHash: string;
+}
+
+export interface WorkshopTestCandidate {
+  pack: WorkshopPack;
+  profession: WorkshopClass;
+  /** Candidate-local definitions override installed definitions only in tests. */
+  mechanisms: WorkshopMechanismManifest[];
 }
 
 export interface WorkshopDraft {
@@ -1357,6 +1378,13 @@ function validateWorkshopResourceReferences(
   );
   for (const profession of classes) {
     const enabled = new Set(profession.mechanismIds ?? []);
+    for (const mechanismId of enabled) {
+      if (!manifests.has(mechanismId)) {
+        throw new Error(
+          `职业「${profession.name}」引用了不存在的底层机制 ${mechanismId}。`,
+        );
+      }
+    }
     for (const reference of workshopResourceReferences({
       cards: profession.cards,
       talent: profession.talent.effects,
@@ -1396,6 +1424,30 @@ function validateWorkshopResourceReferences(
   }
 }
 
+function normalizeWorkshopCertifications(
+  value: unknown,
+  classIds: ReadonlySet<string>,
+): Record<string, WorkshopCertification> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('职业包的自动评定认证标记无效。');
+  }
+  const result: Record<string, WorkshopCertification> = {};
+  for (const [classId, entry] of Object.entries(value)) {
+    if (!classIds.has(classId)) continue;
+    const source = record(entry);
+    const evaluatorVersion = String(source.evaluatorVersion ?? '').trim();
+    const combatHash = String(source.combatHash ?? '').trim();
+    if (
+      !evaluatorVersion ||
+      !/^[0-9a-f]{32,128}$/.test(combatHash)
+    ) {
+      throw new Error(`职业「${classId}」的自动评定认证标记无效。`);
+    }
+    result[classId] = { evaluatorVersion, combatHash };
+  }
+  return result;
+}
+
 export function normalizeWorkshopPack(value: unknown): WorkshopPack {
   const source = record(value);
   const classesSource = Array.isArray(source.classes)
@@ -1414,6 +1466,13 @@ export function normalizeWorkshopPack(value: unknown): WorkshopPack {
     ...new Map(mechanisms.map((entry) => [entry.id, entry])).values(),
   ];
   validateWorkshopResourceReferences(classes, uniqueMechanisms);
+  const certifications =
+    source.certifications === undefined
+      ? undefined
+      : normalizeWorkshopCertifications(
+          source.certifications,
+          new Set(classes.map((entry) => entry.id)),
+        );
   return {
     format: WORKSHOP_FORMAT,
     version: 1,
@@ -1425,6 +1484,7 @@ export function normalizeWorkshopPack(value: unknown): WorkshopPack {
     exported_at: String(source.exported_at ?? new Date().toISOString()),
     classes,
     ...(uniqueMechanisms.length ? { mechanisms: uniqueMechanisms } : {}),
+    ...(certifications !== undefined ? { certifications } : {}),
   };
 }
 
@@ -1444,26 +1504,222 @@ export function workshopPassiveId(classId: string): string {
   return `custom_passive_${classId.replace(/^custom_class_/, '')}`;
 }
 
-export function readWorkshopPacks(): WorkshopPack[] {
+export function workshopMechanismsForPack(
+  pack: WorkshopPack,
+  profession: WorkshopClass,
+): WorkshopMechanismManifest[] {
+  const requested = new Set(profession.mechanismIds ?? []);
+  return [
+    ...new Map(
+      [
+        ...readWorkshopMechanisms(),
+        ...(pack.mechanisms ?? []),
+      ].map((entry) => [entry.id, entry]),
+    ).values(),
+  ].filter((entry) => requested.has(entry.id));
+}
+
+function publishedWorkshopMechanisms(
+  profession: WorkshopClass,
+): WorkshopMechanismManifest[] {
+  const requested = new Set(profession.mechanismIds ?? []);
+  return readWorkshopMechanisms().filter((entry) => requested.has(entry.id));
+}
+
+function registerPublishedPackFingerprintContext(
+  pack: WorkshopPack,
+): WorkshopPack {
+  // Published battles resolve mechanisms from the installed global catalog,
+  // never from the portable snapshot bundled inside the stored pack.
+  validateWorkshopResourceReferences(pack.classes, []);
+  for (const profession of pack.classes) {
+    registerWorkshopFingerprintContext(profession, []);
+  }
+  return pack;
+}
+
+function registerTestPackFingerprintContext(pack: WorkshopPack): WorkshopPack {
+  for (const profession of pack.classes) {
+    const requested = new Set(profession.mechanismIds ?? []);
+    registerWorkshopFingerprintContext(
+      profession,
+      (pack.mechanisms ?? []).filter((entry) => requested.has(entry.id)),
+    );
+  }
+  return pack;
+}
+
+function readWorkshopStorageValues(storageKey: string): unknown[] {
   try {
-    const raw = localStorage.getItem(WORKSHOP_STORAGE_KEY);
-    const values: unknown[] = raw ? JSON.parse(raw) : [];
-    return Array.isArray(values)
-      ? values.flatMap((entry) => {
-          try {
-            return [normalizeWorkshopPack(entry)];
-          } catch {
-            return [];
-          }
-        })
-      : [];
+    const parsed: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
-function writeWorkshopPacks(packs: WorkshopPack[]): void {
+function readStoredWorkshopPacks(
+  storageKey: string,
+  register: (pack: WorkshopPack) => WorkshopPack,
+): WorkshopPack[] {
+  return readWorkshopStorageValues(storageKey).flatMap((entry) => {
+    try {
+      return [register(normalizeWorkshopPack(entry))];
+    } catch {
+      return [];
+    }
+  });
+}
+
+function workshopCertificationMatches(
+  pack: WorkshopPack,
+  profession: WorkshopClass,
+): boolean {
+  if (pack.certifications === undefined) return true;
+  const certification = pack.certifications[profession.id];
+  return Boolean(
+    certification &&
+      certification.evaluatorVersion === WORKSHOP_ASSESSMENT_VERSION &&
+      certification.combatHash === workshopCombatFingerprint(profession),
+  );
+}
+
+export function readWorkshopPacks(): WorkshopPack[] {
+  return readStoredWorkshopPacks(
+    WORKSHOP_STORAGE_KEY,
+    registerPublishedPackFingerprintContext,
+  ).flatMap((pack) => {
+    const classes = pack.classes.filter((profession) =>
+      workshopCertificationMatches(pack, profession),
+    );
+    return classes.length ? [{ ...pack, classes }] : [];
+  });
+}
+
+export function readWorkshopTestPacks(): WorkshopPack[] {
+  return readStoredWorkshopPacks(
+    WORKSHOP_TEST_STORAGE_KEY,
+    registerTestPackFingerprintContext,
+  );
+}
+
+/** True only for an installed Workshop class whose persisted proof is stale. */
+export function isWorkshopProfessionCertificationInvalid(
+  classId: string,
+): boolean {
+  const normalizedClassId = classId.trim();
+  if (!normalizedClassId) return false;
+  const rawPack = [...readWorkshopStorageValues(WORKSHOP_STORAGE_KEY)]
+    .reverse()
+    .find((entry) => rawWorkshopClassIds(entry).includes(normalizedClassId));
+  if (rawPack === undefined) return false;
+  try {
+    const pack = registerPublishedPackFingerprintContext(
+      normalizeWorkshopPack(rawPack),
+    );
+    const profession = pack.classes.find(
+      (entry) => entry.id === normalizedClassId,
+    );
+    if (!profession) return true;
+    if (pack.certifications === undefined) return false;
+    return !workshopCertificationMatches(pack, profession);
+  } catch {
+    // A raw installed class must fail closed. readWorkshopPacks intentionally
+    // hides malformed/dependency-broken packs, but battle gates cannot treat
+    // that absence as proof that the class is a built-in profession.
+    return true;
+  }
+}
+
+function rawWorkshopClassIds(value: unknown): string[] {
+  const source = record(value);
+  const classes = Array.isArray(source.classes)
+    ? source.classes
+    : source.id
+      ? [source]
+      : [];
+  return classes
+    .map((entry) => String(record(entry).id ?? '').trim())
+    .filter(Boolean);
+}
+
+function storedPacksWithoutClasses(
+  storageKey: string,
+  classIds: ReadonlySet<string>,
+): unknown[] {
+  return readWorkshopStorageValues(storageKey).flatMap((entry) => {
+    const source = record(entry);
+    if (!Array.isArray(source.classes)) {
+      return rawWorkshopClassIds(entry).some((classId) => classIds.has(classId))
+        ? []
+        : [entry];
+    }
+    const removedIds: string[] = [];
+    const classes = source.classes.filter((profession) => {
+      const classId = String(record(profession).id ?? '').trim();
+      if (!classIds.has(classId)) return true;
+      removedIds.push(classId);
+      return false;
+    });
+    if (!removedIds.length) return [entry];
+    if (!classes.length) return [];
+    const certifications =
+      source.certifications &&
+      typeof source.certifications === 'object' &&
+      !Array.isArray(source.certifications)
+        ? { ...(source.certifications as Record<string, unknown>) }
+        : undefined;
+    for (const classId of removedIds) delete certifications?.[classId];
+    return [
+      {
+        ...source,
+        classes,
+        ...(certifications ? { certifications } : {}),
+      },
+    ];
+  });
+}
+
+function deleteStoredWorkshopClass(
+  storageKey: string,
+  classId: string,
+): boolean {
+  let removed = false;
+  const next = readWorkshopStorageValues(storageKey).flatMap((entry) => {
+    const source = record(entry);
+    if (!Array.isArray(source.classes)) return [entry];
+    const classes = source.classes.filter((profession) => {
+      if (String(record(profession).id ?? '').trim() !== classId) return true;
+      removed = true;
+      return false;
+    });
+    if (classes.length === source.classes.length) return [entry];
+    if (!classes.length) return [];
+    const certifications =
+      source.certifications &&
+      typeof source.certifications === 'object' &&
+      !Array.isArray(source.certifications)
+        ? { ...(source.certifications as Record<string, unknown>) }
+        : undefined;
+    if (certifications) delete certifications[classId];
+    return [
+      {
+        ...source,
+        classes,
+        ...(certifications ? { certifications } : {}),
+      },
+    ];
+  });
+  if (removed) localStorage.setItem(storageKey, JSON.stringify(next));
+  return removed;
+}
+
+function writeWorkshopPacks(packs: unknown[]): void {
   localStorage.setItem(WORKSHOP_STORAGE_KEY, JSON.stringify(packs));
+}
+
+function writeWorkshopTestPacks(packs: unknown[]): void {
+  localStorage.setItem(WORKSHOP_TEST_STORAGE_KEY, JSON.stringify(packs));
 }
 
 export function saveWorkshopPack(value: unknown): WorkshopPack {
@@ -1472,25 +1728,108 @@ export function saveWorkshopPack(value: unknown): WorkshopPack {
     saveWorkshopMechanism(mechanism);
   }
   const classIds = new Set(normalized.classes.map((entry) => entry.id));
-  const kept = readWorkshopPacks().filter(
-    (pack) => !pack.classes.some((entry) => classIds.has(entry.id)),
-  );
+  const kept = storedPacksWithoutClasses(WORKSHOP_STORAGE_KEY, classIds);
   writeWorkshopPacks([...kept, normalized]);
-  return normalized;
+  return registerPublishedPackFingerprintContext(normalized);
+}
+
+export function readWorkshopTestClasses(): WorkshopClass[] {
+  const byId = new Map<string, WorkshopClass>();
+  for (const pack of [...readWorkshopPacks(), ...readWorkshopTestPacks()]) {
+    for (const profession of pack.classes) byId.set(profession.id, profession);
+  }
+  return [...byId.values()];
+}
+
+function workshopCandidateFromPacks(
+  packs: WorkshopPack[],
+  classId: string,
+): { pack: WorkshopPack; profession: WorkshopClass } | undefined {
+  for (let index = packs.length - 1; index >= 0; index -= 1) {
+    const pack = packs[index];
+    const profession = pack?.classes.find((entry) => entry.id === classId);
+    if (pack && profession) return { pack, profession };
+  }
+  return undefined;
+}
+
+/**
+ * Resolves the exact class snapshot used by an isolated Workshop battle.
+ * A saved candidate wins over a published class with the same id, while its
+ * bundled mechanisms remain local to that candidate.
+ */
+export function readWorkshopTestCandidate(
+  classId: string,
+): WorkshopTestCandidate | undefined {
+  const rawTestPack = [...readWorkshopStorageValues(WORKSHOP_TEST_STORAGE_KEY)]
+    .reverse()
+    .find((entry) => rawWorkshopClassIds(entry).includes(classId));
+  if (rawTestPack !== undefined) {
+    let pack: WorkshopPack;
+    try {
+      pack = registerTestPackFingerprintContext(
+        normalizeWorkshopPack(rawTestPack),
+      );
+    } catch (caught) {
+      const reason = caught instanceof Error ? caught.message : String(caught);
+      throw new Error(
+        `测试候选仍保存在本机，但当前无法载入：${reason} 请重新导入或恢复它依赖的底层机制、资源或状态；恢复后可继续编辑和重新评定。`,
+        { cause: caught },
+      );
+    }
+    const profession = pack.classes.find((entry) => entry.id === classId);
+    if (!profession) {
+      throw new Error(
+        '测试候选仍保存在本机，但职业标识已损坏；请导出本地备份后重新导入或重新保存。',
+      );
+    }
+    return {
+      pack,
+      profession,
+      mechanisms: workshopMechanismsForPack(pack, profession),
+    };
+  }
+  const testCandidate = workshopCandidateFromPacks(
+    readWorkshopTestPacks(),
+    classId,
+  );
+  if (testCandidate) {
+    return {
+      ...testCandidate,
+      mechanisms: workshopMechanismsForPack(
+        testCandidate.pack,
+        testCandidate.profession,
+      ),
+    };
+  }
+  const published = workshopCandidateFromPacks(readWorkshopPacks(), classId);
+  return published
+    ? {
+        ...published,
+        mechanisms: publishedWorkshopMechanisms(published.profession),
+      }
+    : undefined;
+}
+
+/**
+ * Persists a validated test candidate without adding it to character creation
+ * or reclassification catalogs. Bundled mechanisms remain inside the candidate
+ * pack and are resolved only by the isolated battle engine.
+ */
+export function saveWorkshopTestPack(value: unknown): WorkshopPack {
+  const normalized = normalizeWorkshopPack(value);
+  const classIds = new Set(normalized.classes.map((entry) => entry.id));
+  const kept = storedPacksWithoutClasses(WORKSHOP_TEST_STORAGE_KEY, classIds);
+  writeWorkshopTestPacks([...kept, normalized]);
+  return registerTestPackFingerprintContext(normalized);
+}
+
+export function deleteWorkshopTestClass(classId: string): boolean {
+  return deleteStoredWorkshopClass(WORKSHOP_TEST_STORAGE_KEY, classId);
 }
 
 export function deleteWorkshopClass(classId: string): boolean {
-  let removed = false;
-  const next = readWorkshopPacks().flatMap((pack) => {
-    const classes = pack.classes.filter((entry) => {
-      if (entry.id !== classId) return true;
-      removed = true;
-      return false;
-    });
-    return classes.length ? [{ ...pack, classes }] : [];
-  });
-  if (removed) writeWorkshopPacks(next);
-  return removed;
+  return deleteStoredWorkshopClass(WORKSHOP_STORAGE_KEY, classId);
 }
 
 export function exportWorkshopPack(value?: unknown): WorkshopPack {
@@ -1517,8 +1856,8 @@ function attachReferencedMechanisms(pack: WorkshopPack): WorkshopPack {
   );
   if (!required.size) return pack;
   const candidates = [
-    ...(pack.mechanisms ?? []),
     ...readWorkshopMechanisms(),
+    ...(pack.mechanisms ?? []),
   ];
   const mechanisms = [
     ...new Map(
@@ -1659,7 +1998,7 @@ export function importWorkshopArtifact(value: unknown): WorkshopImportResult {
   if (source.format === WORKSHOP_EXTENSION_FORMAT) {
     return { kind: 'extension', extension: saveWorkshopExtension(value) };
   }
-  return { kind: 'class-pack', pack: saveWorkshopPack(value) };
+  return { kind: 'class-pack', pack: saveWorkshopTestPack(value) };
 }
 
 export function createWorkshopExtensionApi(): WorkshopExtensionApi {

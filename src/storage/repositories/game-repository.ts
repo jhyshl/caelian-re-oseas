@@ -656,6 +656,11 @@ export class GameRepository {
           profileId,
           command.payload.battleId,
         );
+      case 'battle.cancel-workshop-test':
+        return this.battles.cancelWorkshopTest(
+          profileId,
+          command.payload.battleId,
+        );
       case 'battle.finish':
         return this.battles.finish(profileId, command.payload.battleId);
       case 'battle.claim-reward':

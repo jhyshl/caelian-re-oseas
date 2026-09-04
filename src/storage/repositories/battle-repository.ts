@@ -68,7 +68,12 @@ import {
   STAT_POINTS_PER_LEVEL,
 } from '@/player/progression';
 import { updateGuildRank } from '@/guild-progression';
-import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
+import {
+  isWorkshopProfessionCertificationInvalid,
+  readWorkshopPacks,
+  readWorkshopTestCandidate,
+  readWorkshopTestPacks,
+} from '@/workshop';
 import { huntingAnimal, rollHuntingRewards } from '@/content/cooking';
 import {
   evaluateWorkshopCondition,
@@ -281,6 +286,11 @@ interface DamageOptions {
 
 interface WorkshopTestInput {
   professionId: string;
+  deckIds?: string[];
+  opponentMode?: 'dummy' | 'random-single' | 'random-multi';
+  randomTier?: 'low' | 'high' | 'mixed';
+  randomSeed?: number;
+  enemyScale?: number;
   mechanismIds: string[];
   dummyCount: number;
   dummyHp: number;
@@ -330,34 +340,37 @@ export class BattleRepository {
 
   async prepare(): Promise<void> {
     if (
-      this.cards &&
-      this.monsters &&
-      this.rules &&
-      this.passives &&
-      this.battleItems &&
-      this.relics &&
-      this.equipment
+      !this.cards ||
+      !this.monsters ||
+      !this.rules ||
+      !this.passives ||
+      !this.battleItems ||
+      !this.relics ||
+      !this.equipment
     ) {
-      return;
+      [
+        this.cards,
+        this.monsters,
+        this.rules,
+        this.passives,
+        this.battleItems,
+        this.relics,
+        this.equipment,
+      ] = await Promise.all([
+        loadCardCatalog(),
+        loadMonsterCatalog(),
+        loadBattleRules(),
+        loadPassiveCatalog(),
+        loadBattleItems(),
+        loadRelics(),
+        loadEquipmentDefinitions(),
+      ]);
     }
-    [
-      this.cards,
-      this.monsters,
-      this.rules,
-      this.passives,
-      this.battleItems,
-      this.relics,
-      this.equipment,
-    ] = await Promise.all([
-      loadCardCatalog(),
-      loadMonsterCatalog(),
-      loadBattleRules(),
-      loadPassiveCatalog(),
-      loadBattleItems(),
-      loadRelics(),
-      loadEquipmentDefinitions(),
-    ]);
-    if (readWorkshopMechanisms().some(isWorkshopScriptMechanism)) {
+    const scriptMechanisms = [
+      ...readWorkshopMechanisms(),
+      ...readWorkshopTestPacks().flatMap((pack) => pack.mechanisms ?? []),
+    ];
+    if (scriptMechanisms.some(isWorkshopScriptMechanism)) {
       await prepareWorkshopScriptRuntime();
     }
   }
@@ -377,7 +390,6 @@ export class BattleRepository {
     },
   ): Promise<void> {
     this.assertPrepared();
-    await this.prepareInstalledWorkshopScripts();
     const existing = await this.db.battleSessions
       .where('profileId')
       .equals(profileId)
@@ -422,6 +434,11 @@ export class BattleRepository {
     if (input.workshopTest) {
       await this.startWorkshopTest(profileId, player, input.workshopTest);
       return;
+    }
+    if (isWorkshopProfessionCertificationInvalid(player.subclass)) {
+      throw new Error(
+        '当前自制职业的自动评定认证已失效，请在创意工坊重新评定后再进入正式战斗',
+      );
     }
     if (!deck || deck.cardIds.length === 0) {
       throw new Error('请先准备至少一张卡牌的出战牌组');
@@ -536,7 +553,7 @@ export class BattleRepository {
     for (const enemy of enemies) {
       const definition = this.monsters?.[enemy.definitionId];
       enemy.intent = definition
-        ? this.chooseIntent(definition, enemy, enemies.length)
+        ? this.chooseIntent(definition, enemy, enemies)
         : null;
     }
     const encounterNames = [
@@ -639,7 +656,7 @@ export class BattleRepository {
     this.assertNoPendingCardChoice(state);
     const cardInstance = state.player.hand[input.handIndex];
     if (!cardInstance) throw new Error('这张手牌已经不存在');
-    const card = this.cards?.[cardInstance.cardId];
+    const card = this.cardDefinition(state, cardInstance.cardId);
     if (!card) throw new Error('卡牌数据不存在');
     if (card.unplayable === true) {
       throw new Error('空白牌无法打出，只有「真相揭晓」可以将其揭晓');
@@ -827,7 +844,7 @@ export class BattleRepository {
     }
     const cardId = pending.choices[input.choiceIndex];
     if (!cardId) throw new Error('占星候选牌数据不存在');
-    const card = this.cards?.[cardId];
+    const card = this.cardDefinition(state, cardId);
     if (!card) throw new Error('占星候选牌数据不存在');
 
     const instance = {
@@ -1056,7 +1073,10 @@ export class BattleRepository {
       return;
     }
 
-    if (state.workshopTest && !state.workshopTest.dummyAttackEnabled) {
+    if (
+      state.workshopTest?.opponentMode === 'dummy' &&
+      !state.workshopTest.dummyAttackEnabled
+    ) {
       this.log(state, 'system', '测试木桩已设置为不主动攻击。');
     } else {
       for (const enemy of this.enemyTurnOrder(state)) {
@@ -1140,11 +1160,11 @@ export class BattleRepository {
     this.triggerBlankGenerators(state);
     this.drawCards(state, state.player.drawPerTurn);
     this.runWorkshopMechanisms(state, 'turn_start');
-    const aliveEnemyCount = this.aliveEnemies(state).length;
-    for (const enemy of this.aliveEnemies(state)) {
+    const aliveEnemies = this.aliveEnemies(state);
+    for (const enemy of aliveEnemies) {
       const monster = this.monsters?.[enemy.definitionId];
       enemy.intent = monster
-        ? this.chooseIntent(monster, enemy, aliveEnemyCount)
+        ? this.chooseIntent(monster, enemy, aliveEnemies)
         : null;
     }
     this.log(
@@ -1167,7 +1187,9 @@ export class BattleRepository {
   }
 
   async surrender(profileId: string, battleId: string): Promise<void> {
-    const session = await this.getOngoing(profileId, battleId);
+    const session = await this.getOngoing(profileId, battleId, {
+      allowInvalidCertification: true,
+    });
     if (session.state.workshopTest) {
       session.state.status = 'surrendered';
       session.state.phase = 'ended';
@@ -1203,6 +1225,19 @@ export class BattleRepository {
       'system',
       `撤退成功：损失 ${hpLoss} HP 与 ${goldLoss} 金币`,
     );
+    await this.save(session);
+  }
+
+  async cancelWorkshopTest(profileId: string, battleId: string): Promise<void> {
+    const session = await this.getOngoing(profileId, battleId, {
+      allowInvalidCertification: true,
+    });
+    if (!session.state.workshopTest) {
+      throw new Error('只能由自动评定关闭创意工坊隔离战斗');
+    }
+    session.state.status = 'surrendered';
+    session.state.phase = 'ended';
+    this.log(session.state, 'system', '自动评定已结束当前隔离战斗；正式角色数据未发生变化。');
     await this.save(session);
   }
 
@@ -1312,13 +1347,44 @@ export class BattleRepository {
     input: WorkshopTestInput,
   ): Promise<void> {
     if (!player.created) throw new Error('请先创建角色，再进入创意工坊测试场');
-    const profession = readWorkshopPacks()
-      .flatMap((pack) => pack.classes)
-      .find((entry) => entry.id === input.professionId);
-    if (!profession) throw new Error('请选择一个已经保存到本地的自制职业');
-    const deckIds = [...profession.starterDeck];
-    if (!deckIds.length || deckIds.some((cardId) => !this.cards?.[cardId])) {
+    const candidate = readWorkshopTestCandidate(input.professionId);
+    const profession = candidate?.profession;
+    if (!candidate || !profession) {
+      throw new Error('请选择一个已经保存到本地的自制职业');
+    }
+    const candidateCards = Object.fromEntries(
+      profession.cards.map((card) => [card.id, structuredClone(card)]),
+    );
+    const deckIds = [...(input.deckIds ?? profession.starterDeck)];
+    if (deckIds.length !== 15) {
+      throw new Error('创意工坊测试牌组必须正好包含 15 张卡牌');
+    }
+    if (deckIds.some((cardId) => !candidateCards[cardId])) {
       throw new Error('该职业的测试牌组不完整，请重新校验并保存职业');
+    }
+    const poolCounts = profession.cardPool.reduce<Record<string, number>>(
+      (counts, cardId) => {
+        counts[cardId] = (counts[cardId] ?? 0) + 1;
+        return counts;
+      },
+      {},
+    );
+    const deckCounts = deckIds.reduce<Record<string, number>>(
+      (counts, cardId) => {
+        counts[cardId] = (counts[cardId] ?? 0) + 1;
+        return counts;
+      },
+      {},
+    );
+    if (Object.values(deckCounts).some((count) => count > 3)) {
+      throw new Error('创意工坊测试牌组中，同名卡牌最多放入 3 张');
+    }
+    if (
+      Object.entries(deckCounts).some(
+        ([cardId, count]) => count > (poolCounts[cardId] ?? 0),
+      )
+    ) {
+      throw new Error('创意工坊测试牌组数量不能超过候选职业卡池持有数');
     }
 
     const attributeBudget = 99 * STAT_POINTS_PER_LEVEL;
@@ -1340,16 +1406,22 @@ export class BattleRepository {
     const requestedMechanisms = [
       ...new Set([...(profession.mechanismIds ?? []), ...input.mechanismIds]),
     ];
-    const availableMechanisms = new Set(
-      readWorkshopMechanisms().map((entry) => entry.id),
+    const mechanismCatalog = new Map(
+      [
+        ...readWorkshopMechanisms(),
+        ...candidate.mechanisms,
+      ].map((entry) => [entry.id, entry]),
     );
     const missingMechanisms = requestedMechanisms.filter(
-      (id) => !availableMechanisms.has(id),
+      (id) => !mechanismCatalog.has(id),
     );
     if (missingMechanisms.length) {
       throw new Error(`缺少职业依赖的底层机制：${missingMechanisms.join('、')}`);
     }
-
+    const candidateMechanisms = requestedMechanisms.flatMap((id) => {
+      const mechanism = mechanismCatalog.get(id);
+      return mechanism ? [structuredClone(mechanism)] : [];
+    });
     const testPlayerRecord: PlayerRecord = {
       ...player,
       name: `${player.name} · 测试`,
@@ -1377,13 +1449,14 @@ export class BattleRepository {
       pendingBattleEffects: [],
     };
     const battlePlayer = this.makePlayer(testPlayerRecord, deckIds, []);
+    const opponentMode = input.opponentMode ?? 'dummy';
     const dummyCount = this.clamp(Math.floor(input.dummyCount), 1, 8);
     const dummyHp = this.clamp(Math.floor(input.dummyHp), 1, 1_000_000);
     const dummyAttack = this.clamp(Math.floor(input.dummyAttack), 0, 100_000);
     const dummyDefense = this.clamp(Math.floor(input.dummyDefense), 0, 100_000);
-    const enemies: BattleEnemyState[] = Array.from(
-      { length: dummyCount },
-      (_, index) => ({
+    const enemies: BattleEnemyState[] =
+      opponentMode === 'dummy'
+        ? Array.from({ length: dummyCount }, (_, index) => ({
         id: `workshop_dummy:${index}:${Math.floor(this.random() * 1_000_000)}`,
         definitionId: 'workshop_dummy',
         name: dummyCount > 1 ? `测试木桩 ${index + 1}` : '测试木桩',
@@ -1410,8 +1483,15 @@ export class BattleRepository {
               hits: 1,
             }
           : null,
-      }),
-    );
+          }))
+        : this.makeWorkshopRandomEnemies(
+            battlePlayer,
+            opponentMode,
+            input.randomTier ?? 'mixed',
+            dummyCount,
+            input.enemyScale ?? 1,
+            input.randomSeed,
+          );
     const state: LocalBattleState = {
       schemaVersion: 1,
       difficulty: 'normal',
@@ -1424,6 +1504,13 @@ export class BattleRepository {
       rewards: null,
       workshopTest: {
         professionId: profession.id,
+        opponentMode,
+        candidateCards,
+        candidateTalent: {
+          name: profession.talent.name || `${profession.name}天赋`,
+          effects: structuredClone(profession.talent.effects),
+        },
+        candidateMechanisms,
         dummyInvincible: input.dummyInvincible,
         dummyAttackEnabled: input.dummyAttackEnabled,
         autoRespawn: input.autoRespawn,
@@ -1441,12 +1528,28 @@ export class BattleRepository {
       requestedMechanisms,
     );
     this.drawCards(state, battlePlayer.initialDraw);
-    this.applyBattleStartPassives(state, [workshopPassiveId(profession.id)]);
+    this.applyBattleStartEffectList(
+      state,
+      profession.talent.name || `${profession.name}天赋`,
+      profession.talent.effects,
+    );
     this.runWorkshopMechanisms(state, 'battle_start');
+    if (opponentMode !== 'dummy') {
+      for (const enemy of enemies) {
+        const definition = this.monsters?.[enemy.definitionId];
+        enemy.intent = definition
+          ? this.chooseIntent(definition, enemy, enemies)
+          : null;
+      }
+    }
     this.log(
       state,
       'system',
-      `创意工坊测试开始：Lv.100 ${profession.name}，${dummyCount} 个测试木桩。`,
+      opponentMode === 'dummy'
+        ? `创意工坊测试开始：Lv.100 ${profession.name}，${dummyCount} 个测试木桩。`
+        : `创意工坊实战测试开始：Lv.100 ${profession.name}，对手为${enemies
+            .map((enemy) => enemy.name)
+            .join('、')}。`,
     );
     const now = Date.now();
     const session: BattleSessionRecord = {
@@ -1462,6 +1565,89 @@ export class BattleRepository {
       updatedAt: now,
     };
     await this.db.battleSessions.add(session);
+  }
+
+  private makeWorkshopRandomEnemies(
+    player: BattlePlayerState,
+    mode: 'random-single' | 'random-multi',
+    tier: 'low' | 'high' | 'mixed',
+    requestedCount: number,
+    rawScale: number,
+    seed?: number,
+  ): BattleEnemyState[] {
+    const random = this.seededWorkshopRandom(seed);
+    const entries = Object.entries(this.monsters ?? {}).filter(
+      (entry): entry is [string, MonsterDefinition] =>
+        Boolean(entry[1]) &&
+        !this.isBossMonster(entry[1]) &&
+        Object.keys(entry[1].skills ?? {}).length > 0,
+    );
+    const low = entries.filter(([, monster]) =>
+      ['easy', 'normal'].includes(String(monster.difficulty ?? 'normal')),
+    );
+    const high = entries.filter(([, monster]) =>
+      ['hard', 'nightmare'].includes(String(monster.difficulty ?? 'normal')),
+    );
+    const count = mode === 'random-single'
+      ? 1
+      : this.clamp(Math.floor(requestedCount), 2, 5);
+    const selected: Array<[string, MonsterDefinition]> = [];
+    const take = (source: Array<[string, MonsterDefinition]>): void => {
+      const available = source.filter(
+        ([id]) => !selected.some(([selectedId]) => selectedId === id),
+      );
+      const pool = available.length ? available : source;
+      if (!pool.length) return;
+      selected.push(pool[Math.floor(random() * pool.length)]!);
+    };
+
+    if (mode === 'random-multi' && tier === 'mixed') {
+      take(low);
+      take(high);
+    }
+    while (selected.length < count) {
+      const pool =
+        tier === 'low'
+          ? low
+          : tier === 'high'
+            ? high
+            : random() < 0.5
+              ? low
+              : high;
+      take(pool.length ? pool : entries);
+    }
+    if (!selected.length) throw new Error('当前怪物目录没有可用于测试的普通怪物');
+
+    const scale = this.clamp(rawScale, 0.5, 2.5);
+    const packScale = this.packStrengthMultiplier(selected.length);
+    return selected.map(([id, monster], index) => {
+      const enemy = this.makeEnemy(
+        id,
+        monster,
+        100,
+        'normal',
+        '伊拉亚城',
+        player,
+        packScale,
+        index,
+      );
+      enemy.hpMax = Math.max(1, Math.round(enemy.hpMax * scale));
+      enemy.hp = enemy.hpMax;
+      enemy.attack = Math.max(1, Math.round(enemy.attack * scale));
+      enemy.defense = Math.max(0, Math.round(enemy.defense * scale));
+      return enemy;
+    });
+  }
+
+  private seededWorkshopRandom(seed?: number): () => number {
+    if (!Number.isFinite(seed)) return this.random;
+    let state = (Math.floor(seed ?? 0) >>> 0) || 0x9e3779b9;
+    return () => {
+      state ^= state << 13;
+      state ^= state >>> 17;
+      state ^= state << 5;
+      return (state >>> 0) / 0x1_0000_0000;
+    };
   }
 
   private makePlayer(
@@ -1862,6 +2048,8 @@ export class BattleRepository {
             ...(affix.onHitDebuff ? { onHitDebuff: affix.onHitDebuff } : {}),
           }
         : {}),
+      patternIndex: 0,
+      nonDamageActionStreak: 0,
       intent: null,
     };
     this.applyEnemyInitialStatuses(enemy, monster, affix);
@@ -1926,24 +2114,90 @@ export class BattleRepository {
   private chooseIntent(
     monster: MonsterDefinition,
     enemy: BattleEnemyState,
-    allyCount = 1,
+    allies: BattleEnemyState[] = [enemy],
   ): BattleIntent | null {
+    const lowHpReady =
+      enemy.lastSpecial !== 'low_hp' &&
+      enemy.hp / Math.max(1, enemy.hpMax) < 0.35;
     const skills = Object.entries(monster.skills ?? {}).filter(
-      ([, skill]) =>
-        allyCount > 1 ||
-        !skill.effects?.some(
-          (effect) =>
-            effect.target === 'all_enemies' ||
-            effect.target === 'enemy_team',
-        ),
+      ([skillId, skill]) =>
+        (skillId !== 'low_hp' || lowHpReady) &&
+        this.enemySkillIsAvailable(skill, enemy, allies),
     );
     if (skills.length === 0) return null;
-    const chosen = this.weightedChoice(skills, ([, skill]) =>
-      Math.max(1, this.number(skill.weight, 1)),
+
+    const damagingSkills = skills.filter(([, skill]) =>
+      this.enemySkillDealsDamage(skill),
+    );
+    let chosen: [string, MonsterSkillDefinition] | undefined;
+    if ((enemy.nonDamageActionStreak ?? 0) >= 2 && damagingSkills.length > 0) {
+      chosen = this.chooseWeightedEnemySkill(damagingSkills, enemy);
+    }
+
+    const lowHpSkill = skills.find(([skillId]) => skillId === 'low_hp');
+    if (
+      !chosen &&
+      lowHpSkill &&
+      lowHpReady
+    ) {
+      chosen = lowHpSkill;
+      enemy.lastSpecial = 'low_hp';
+    }
+
+    const actionSkills = skills.filter(([skillId]) =>
+      skillId.startsWith('action_'),
+    );
+    if (!chosen && actionSkills.length > 0) {
+      chosen = this.chooseWeightedEnemySkill(actionSkills, enemy);
+    }
+
+    if (!chosen && (monster.patterns?.length ?? 0) > 0) {
+      const patterns = monster.patterns!;
+      const start = Math.max(0, Math.floor(enemy.patternIndex ?? 0));
+      let scheduled:
+        | { entry: [string, MonsterSkillDefinition]; index: number }
+        | undefined;
+      for (let offset = 0; offset < patterns.length; offset += 1) {
+        const index = (start + offset) % patterns.length;
+        const skillId = patterns[index]!;
+        const entry = skills.find(([candidateId]) => candidateId === skillId);
+        if (entry) {
+          scheduled = { entry, index };
+          break;
+        }
+      }
+      if (scheduled) {
+        const patternIds = new Set(patterns);
+        const supplemental = skills.filter(
+          ([skillId, skill]) =>
+            skillId !== 'low_hp' &&
+            !patternIds.has(skillId) &&
+            this.enemySkillTargetsTeam(skill),
+        );
+        chosen = supplemental.length
+          ? this.chooseWeightedEnemySkill(
+              [scheduled.entry, ...supplemental],
+              enemy,
+            )
+          : scheduled.entry;
+        if (chosen?.[0] === scheduled.entry[0]) {
+          enemy.patternIndex = (scheduled.index + 1) % patterns.length;
+        } else {
+          enemy.patternIndex = scheduled.index;
+        }
+      }
+    }
+
+    chosen ??= this.chooseWeightedEnemySkill(
+      skills.filter(([skillId]) => skillId !== 'low_hp'),
+      enemy,
     );
     if (!chosen) return null;
     const [skillId, skill] = chosen;
-    const damageEffect = skill.effects?.find((effect) => effect.type === 'damage');
+    if (skillId === 'low_hp') enemy.lastSpecial = 'low_hp';
+    const damageEffect = skill.effects?.find((effect) =>
+      ['damage', 'lifesteal_damage', 'true_damage'].includes(effect.type),
+    );
     const hits = Math.max(1, this.number(damageEffect?.hits, 1));
     const amount = damageEffect
       ? this.enemyEffectAmount(enemy, damageEffect)
@@ -1956,6 +2210,69 @@ export class BattleRepository {
       amount,
       hits,
     };
+  }
+
+  private chooseWeightedEnemySkill(
+    skills: Array<[string, MonsterSkillDefinition]>,
+    enemy: BattleEnemyState,
+  ): [string, MonsterSkillDefinition] | undefined {
+    const enabled = skills.filter(
+      ([, skill]) => this.enemySkillWeight(skill) > 0,
+    );
+    return this.weightedChoice(enabled, ([skillId, skill]) => {
+      const repeatScale = enemy.lastSkillId === skillId ? 0.35 : 1;
+      return this.enemySkillWeight(skill) * repeatScale;
+    });
+  }
+
+  private enemySkillWeight(skill: MonsterSkillDefinition): number {
+    if (skill.weight === undefined) return 1;
+    return typeof skill.weight === 'number' && Number.isFinite(skill.weight)
+      ? Math.max(0, skill.weight)
+      : 1;
+  }
+
+  private enemySkillDealsDamage(skill: MonsterSkillDefinition): boolean {
+    return Boolean(
+      skill.effects?.some((effect) =>
+        [
+          'damage',
+          'lifesteal_damage',
+          'true_damage',
+          'hp_percent_damage',
+        ].includes(effect.type),
+      ),
+    );
+  }
+
+  private enemySkillTargetsTeam(skill: MonsterSkillDefinition): boolean {
+    return Boolean(
+      skill.effects?.some(
+        (effect) =>
+          effect.target === 'all_enemies' || effect.target === 'enemy_team',
+      ),
+    );
+  }
+
+  private enemySkillIsAvailable(
+    skill: MonsterSkillDefinition,
+    enemy: BattleEnemyState,
+    allies: BattleEnemyState[],
+  ): boolean {
+    const effects = skill.effects ?? [];
+    if (effects.length === 0) return false;
+    const teamAction = this.enemySkillTargetsTeam(skill);
+    if (teamAction && allies.length <= 1) return false;
+    const targets = teamAction ? allies.filter((ally) => ally.hp > 0) : [enemy];
+    return effects.some((effect) => {
+      if (effect.type === 'heal') {
+        return targets.some((target) => target.hp < target.hpMax);
+      }
+      if (effect.type === 'cleanse') {
+        return targets.some((target) => Object.keys(target.debuffs).length > 0);
+      }
+      return true;
+    });
   }
 
   private resolveEnemyAction(
@@ -1984,6 +2301,8 @@ export class BattleRepository {
       });
       this.damage(state, enemy, friendlyTarget, amount, 'enemy', enemy.name);
       this.applyOnHitResponses(state, enemy, friendlyTarget);
+      enemy.nonDamageActionStreak = 0;
+      enemy.lastSkillId = undefined;
       this.stabilizeCompanion(state);
       return;
     }
@@ -2001,16 +2320,36 @@ export class BattleRepository {
       label: skill.name,
     });
     for (const effect of skill.effects ?? []) {
-      if (effect.type === 'damage') {
+      if (effect.type === 'damage' || effect.type === 'lifesteal_damage') {
         if (this.triggerTrap(state, enemy)) break;
         const hits = Math.max(1, this.number(effect.hits, 1));
+        let hpDamage = 0;
         for (let hit = 0; hit < hits; hit += 1) {
           const amount = Math.max(
             1,
-            Math.round(this.enemyEffectAmount(enemy, effect) * (0.9 + this.random() * 0.24)),
+            Math.round(
+              this.enemyEffectAmount(enemy, effect) *
+                (0.9 + this.random() * 0.24),
+            ),
           );
-          this.damage(state, enemy, friendlyTarget, amount, 'enemy', enemy.name);
+          hpDamage += this.damage(
+            state,
+            enemy,
+            friendlyTarget,
+            amount,
+            'enemy',
+            enemy.name,
+          );
           if (friendlyTarget.hp <= 0) break;
+        }
+        if (effect.type === 'lifesteal_damage' && hpDamage > 0 && enemy.hp > 0) {
+          const ratio = this.clamp(
+            this.number(effect.lifesteal ?? effect.lifesteal_ratio, 0.35),
+            0,
+            1,
+          );
+          const restored = Math.floor(hpDamage * ratio);
+          if (restored > 0) this.heal(state, enemy, restored, '吸血', false);
         }
         this.applyOnHitResponses(state, enemy, friendlyTarget);
       } else if (effect.type === 'true_damage') {
@@ -2026,6 +2365,19 @@ export class BattleRepository {
           if (friendlyTarget.hp <= 0) break;
         }
         this.applyOnHitResponses(state, enemy, friendlyTarget);
+      } else if (effect.type === 'hp_percent_damage') {
+        if (this.triggerTrap(state, enemy)) break;
+        const percent = this.clamp(this.number(effect.percent), 0, 100);
+        const uncapped = Math.max(
+          percent > 0 ? 1 : 0,
+          Math.floor((friendlyTarget.hpMax * percent) / 100),
+        );
+        const cap = Math.max(0, this.number(effect.cap));
+        const amount = cap > 0 ? Math.min(uncapped, cap) : uncapped;
+        if (amount > 0) {
+          this.directHpLoss(state, friendlyTarget, amount, skill.name);
+          this.applyOnHitResponses(state, enemy, friendlyTarget);
+        }
       } else if (effect.type === 'strip_player_shield') {
         const removed =
           effect.amount === 'all'
@@ -2121,6 +2473,29 @@ export class BattleRepository {
             `${enemy.name} 为怪物队伍净化了 ${removed} 个减益`,
           );
         }
+      } else if (effect.type === 'dispel_player_buff') {
+        const target = state.player;
+        const targetIdentity = this.combatantIdentity(state, target);
+        const removed = this.removeEffects(
+          target.buffs,
+          effect.amount ?? effect.value ?? 1,
+        );
+        if (removed > 0) {
+          this.log(
+            state,
+            'enemy',
+            `${enemy.name} 驱散了${target.name} ${removed} 个强化`,
+          );
+          this.animation(state, {
+            kind: 'status',
+            sourceSide: 'enemy',
+            sourceId: enemy.id,
+            targetSide: targetIdentity.side,
+            targetId: targetIdentity.id,
+            amount: removed,
+            label: '驱散',
+          });
+        }
       } else if (effect.type === 'debuff' || effect.type === 'apply_debuff') {
         const effectName = String(effect.debuff ?? 'weak');
         this.tryApplyDebuff(
@@ -2145,6 +2520,10 @@ export class BattleRepository {
         });
       }
     }
+    enemy.lastSkillId = enemy.intent?.skillId;
+    enemy.nonDamageActionStreak = this.enemySkillDealsDamage(skill)
+      ? 0
+      : (enemy.nonDamageActionStreak ?? 0) + 1;
   }
 
   private cardUsesFriendlyTarget(card: CardDefinition): boolean {
@@ -3041,7 +3420,7 @@ export class BattleRepository {
       }
       case 'discard_blank_damage': {
         const blanks = state.player.hand.filter((instance) =>
-          this.isBlankCard(instance.cardId),
+          this.isBlankCard(state, instance.cardId),
         );
         const blankIds = new Set(blanks.map((instance) => instance.instanceId));
         state.player.hand = state.player.hand.filter(
@@ -3110,7 +3489,9 @@ export class BattleRepository {
           index -= 1
         ) {
           const instance = state.player.discardPile[index];
-          const definition = instance ? this.cards?.[instance.cardId] : undefined;
+          const definition = instance
+            ? this.cardDefinition(state, instance.cardId)
+            : undefined;
           const eligible =
             definition &&
             (effect.type === 'recover_discard_summon'
@@ -3489,6 +3870,7 @@ export class BattleRepository {
     const test = state.workshopTest;
     if (!test) return;
     if (test.playerInvincible && state.player.hp <= 0) state.player.hp = 1;
+    if ((test.opponentMode ?? 'dummy') !== 'dummy') return;
     for (const enemy of state.enemies) {
       if (enemy.hp > 0) continue;
       if (test.dummyInvincible) {
@@ -4159,6 +4541,22 @@ export class BattleRepository {
     });
   }
 
+  private cardDefinition(
+    state: LocalBattleState,
+    cardId: string,
+  ): CardDefinition | undefined {
+    return state.workshopTest?.candidateCards?.[cardId] ?? this.cards?.[cardId];
+  }
+
+  private cardCatalogForState(
+    state: LocalBattleState,
+  ): Record<string, CardDefinition> {
+    return {
+      ...(this.cards ?? {}),
+      ...(state.workshopTest?.candidateCards ?? {}),
+    };
+  }
+
   private drawCards(state: LocalBattleState, requested: number): void {
     let drawn = 0;
     while (
@@ -4187,10 +4585,10 @@ export class BattleRepository {
     }
   }
 
-  private isBlankCard(cardId: string): boolean {
+  private isBlankCard(state: LocalBattleState, cardId: string): boolean {
     return (
       cardId === MAGICIAN_BLANK_CARD_ID ||
-      this.cards?.[cardId]?.protectedFromDiscard === true
+      this.cardDefinition(state, cardId)?.protectedFromDiscard === true
     );
   }
 
@@ -4199,7 +4597,7 @@ export class BattleRepository {
       ...state.player.hand,
       ...state.player.drawPile,
       ...state.player.discardPile,
-    ].filter((instance) => this.isBlankCard(instance.cardId)).length;
+    ].filter((instance) => this.isBlankCard(state, instance.cardId)).length;
   }
 
   private discardableHandCount(
@@ -4209,7 +4607,7 @@ export class BattleRepository {
     return state.player.hand.filter(
       (instance) =>
         instance.instanceId !== excludedInstanceId &&
-        !this.isBlankCard(instance.cardId),
+        !this.isBlankCard(state, instance.cardId),
     ).length;
   }
 
@@ -4219,7 +4617,7 @@ export class BattleRepository {
     order: 'front' | 'back' | 'random' = 'front',
   ) {
     const eligible = state.player.hand.filter(
-      (instance) => !this.isBlankCard(instance.cardId),
+      (instance) => !this.isBlankCard(state, instance.cardId),
     );
     const ordered =
       order === 'random'
@@ -5010,33 +5408,41 @@ export class BattleRepository {
         effect.type === 'multi' && Array.isArray(effect.effects)
           ? (effect.effects as CardEffect[])
           : [effect];
-      state.player.passiveEffects ??= [];
-      state.player.passiveEffects.push(...effects);
-      for (const child of effects) {
-        if (child.type === 'battle_start_shield') {
-          state.player.shield += this.number(child.value);
-        } else if (child.type === 'battle_start_mp') {
-          state.player.mp = Math.min(
-            state.player.mpMax,
-            state.player.mp + this.number(child.value),
-          );
-        } else if (child.type === 'extra_draw') {
-          state.player.drawPerTurn += this.number(child.value);
-        } else if (child.type === 'hand_limit_bonus') {
-          state.player.handLimit += this.number(child.value);
-        } else if (child.type === 'first_turn_ap') {
-          state.player.ap += this.number(child.value);
-        } else if (child.type === 'apply_workshop_status') {
-          this.applyWorkshopTalentStatus(state, child);
-        } else if (
-          child.type === 'workshop_resource_change' &&
-          child.trigger === 'battle_start'
-        ) {
-          this.applyWorkshopTalentResourceChange(state, child);
-        }
-      }
-      this.log(state, 'system', `被动「${passive.name}」生效`);
+      this.applyBattleStartEffectList(state, passive.name, effects);
     }
+  }
+
+  private applyBattleStartEffectList(
+    state: LocalBattleState,
+    name: string,
+    effects: CardEffect[],
+  ): void {
+    state.player.passiveEffects ??= [];
+    state.player.passiveEffects.push(...structuredClone(effects));
+    for (const child of effects) {
+      if (child.type === 'battle_start_shield') {
+        state.player.shield += this.number(child.value);
+      } else if (child.type === 'battle_start_mp') {
+        state.player.mp = Math.min(
+          state.player.mpMax,
+          state.player.mp + this.number(child.value),
+        );
+      } else if (child.type === 'extra_draw') {
+        state.player.drawPerTurn += this.number(child.value);
+      } else if (child.type === 'hand_limit_bonus') {
+        state.player.handLimit += this.number(child.value);
+      } else if (child.type === 'first_turn_ap') {
+        state.player.ap += this.number(child.value);
+      } else if (child.type === 'apply_workshop_status') {
+        this.applyWorkshopTalentStatus(state, child);
+      } else if (
+        child.type === 'workshop_resource_change' &&
+        child.trigger === 'battle_start'
+      ) {
+        this.applyWorkshopTalentResourceChange(state, child);
+      }
+    }
+    this.log(state, 'system', `被动「${name}」生效`);
   }
 
   private applyTurnStartPassives(
@@ -5505,7 +5911,7 @@ export class BattleRepository {
           (state.player.lastCardName === this.activeMechanismCard.name ||
             (!state.player.lastCardName &&
               state.player.lastCardId &&
-              this.cards?.[state.player.lastCardId]?.name ===
+              this.cardDefinition(state, state.player.lastCardId)?.name ===
                 this.activeMechanismCard.name)),
         );
       case 'same_card_played_this_turn': {
@@ -5521,7 +5927,8 @@ export class BattleRepository {
         if (state.player.cardNamesPlayedThisTurn) return false;
         return Object.entries(state.player.cardsPlayedThisTurn ?? {}).some(
           ([playedId, count]) =>
-            count > 0 && this.cards?.[playedId]?.name === current.name,
+            count > 0 &&
+            this.cardDefinition(state, playedId)?.name === current.name,
         );
       }
       case 'summon_died_this_battle':
@@ -5901,7 +6308,7 @@ export class BattleRepository {
         for (const [playedId, rawCount] of Object.entries(
           state.player.cardsPlayedThisTurn ?? {},
         )) {
-          const playedName = this.cards?.[playedId]?.name;
+          const playedName = this.cardDefinition(state, playedId)?.name;
           const count = Math.max(0, Math.floor(this.number(rawCount)));
           if (!playedName || count === 0) continue;
           const historyKey = cardNameHistoryKey(playedName);
@@ -6488,14 +6895,16 @@ export class BattleRepository {
     subclass: string,
     additionalIds: string[] = [],
   ): void {
-    const profession = readWorkshopPacks()
-      .flatMap((pack) => pack.classes)
-      .find((entry) => entry.id === subclass);
+    const profession = state.workshopTest
+      ? undefined
+      : readWorkshopPacks()
+          .flatMap((pack) => pack.classes)
+          .find((entry) => entry.id === subclass);
     const ids = [
       ...new Set([...(profession?.mechanismIds ?? []), ...additionalIds]),
     ];
     if (!ids.length) return;
-    const manifests = readWorkshopMechanisms().filter((entry) =>
+    const manifests = this.workshopMechanismCatalog(state).filter((entry) =>
       ids.includes(entry.id),
     );
     const resources: Record<string, number> = {};
@@ -6513,10 +6922,17 @@ export class BattleRepository {
     };
   }
 
-  private async prepareInstalledWorkshopScripts(): Promise<void> {
-    if (readWorkshopMechanisms().some(isWorkshopScriptMechanism)) {
-      await prepareWorkshopScriptRuntime();
-    }
+  private workshopMechanismCatalog(
+    state: LocalBattleState,
+  ): WorkshopMechanismManifest[] {
+    return [
+      ...new Map(
+        [
+          ...readWorkshopMechanisms(),
+          ...(state.workshopTest?.candidateMechanisms ?? []),
+        ].map((entry) => [entry.id, entry]),
+      ).values(),
+    ];
   }
 
   private runWorkshopMechanisms(
@@ -6530,7 +6946,7 @@ export class BattleRepository {
     if (this.mechanismDepth === 0) this.mechanismSteps = 0;
     this.mechanismDepth += 1;
     try {
-      const manifests = readWorkshopMechanisms().filter(
+      const manifests = this.workshopMechanismCatalog(state).filter(
         (entry) =>
           runtime.ids.includes(entry.id) &&
           (!onlyManifestId || entry.id === onlyManifestId),
@@ -6664,7 +7080,7 @@ export class BattleRepository {
   private workshopScriptBattleSnapshot(
     state: LocalBattleState,
   ): WorkshopScriptBattleSnapshot {
-    const cards = this.cards ?? {};
+    const cards = this.cardCatalogForState(state);
     const cardSnapshot = (cardId: string) => {
       const card = cards[cardId];
       return {
@@ -6774,7 +7190,7 @@ export class BattleRepository {
       }
     | undefined {
     if (!state.workshopMechanisms?.ids.includes(mechanismId)) return undefined;
-    const manifest = readWorkshopMechanisms().find(
+    const manifest = this.workshopMechanismCatalog(state).find(
       (entry) => entry.id === mechanismId,
     );
     const definition = manifest?.resources.find(
@@ -6798,7 +7214,7 @@ export class BattleRepository {
     | { manifest: WorkshopMechanismManifest; status: WorkshopMechanismStatus }
     | undefined {
     if (!state.workshopMechanisms?.ids.includes(mechanismId)) return undefined;
-    const manifest = readWorkshopMechanisms().find(
+    const manifest = this.workshopMechanismCatalog(state).find(
       (entry) => entry.id === mechanismId,
     );
     const status = manifest?.statuses.find((entry) => entry.id === statusId);
@@ -6907,7 +7323,7 @@ export class BattleRepository {
   ): Array<{ effect: WorkshopMechanismStatusEffect; stacks: number }> {
     const runtime = state.workshopMechanisms;
     if (!runtime) return [];
-    return readWorkshopMechanisms()
+    return this.workshopMechanismCatalog(state)
       .filter((manifest) => runtime.ids.includes(manifest.id))
       .flatMap((manifest) =>
         manifest.statuses.flatMap((status) => {
@@ -7121,6 +7537,7 @@ export class BattleRepository {
   private async getOngoing(
     profileId: string,
     battleId: string,
+    options: { allowInvalidCertification?: boolean } = {},
   ): Promise<BattleSessionRecord> {
     const session = await this.db.battleSessions.get(battleId);
     if (
@@ -7130,6 +7547,17 @@ export class BattleRepository {
       session.state.status !== 'ongoing'
     ) {
       throw new Error('当前战斗不存在或已经结束');
+    }
+    if (
+      !options.allowInvalidCertification &&
+      !session.state.workshopTest &&
+      isWorkshopProfessionCertificationInvalid(
+        session.state.player.subclass ?? '',
+      )
+    ) {
+      throw new Error(
+        '当前自制职业的自动评定认证已失效，请撤退并在创意工坊重新评定',
+      );
     }
     for (const summon of session.state.player.summons) {
       this.normalizePlayerSummon(summon);

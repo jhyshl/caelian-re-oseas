@@ -83,6 +83,29 @@ let rulesCache: BattleRules | undefined;
 let passiveCache: Record<string, PassiveDefinition> | undefined;
 const installedWorkshopPassiveIds = new Set<string>();
 
+function normalizeMonsterSkills(
+  value: unknown,
+): Record<string, MonsterSkillDefinition> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+
+  const source = value as Record<string, unknown>;
+  const normalized = Object.fromEntries(
+    Object.entries(source).filter(
+      ([key, skill]) =>
+        key !== 'actions' &&
+        Boolean(skill) &&
+        typeof skill === 'object' &&
+        !Array.isArray(skill),
+    ),
+  ) as Record<string, MonsterSkillDefinition>;
+  const actions = Array.isArray(source.actions) ? source.actions : [];
+  for (const [index, action] of actions.entries()) {
+    if (!action || typeof action !== 'object' || Array.isArray(action)) continue;
+    normalized[`action_${index + 1}`] = action as MonsterSkillDefinition;
+  }
+  return normalized;
+}
+
 // These additions live beside the generated legacy catalog so content:verify can
 // continue to guarantee that the imported source data itself was not rewritten.
 const MONSTER_TEAM_SKILL_OVERLAYS: Record<
@@ -232,18 +255,19 @@ export async function loadMonsterCatalog() {
       MonsterDefinition
     >;
     monsterCache = Object.fromEntries(
-      Object.entries(generated).map(([id, monster]) => [
-        id,
-        MONSTER_TEAM_SKILL_OVERLAYS[id]
-          ? {
-              ...monster,
-              skills: {
-                ...(monster.skills ?? {}),
-                ...MONSTER_TEAM_SKILL_OVERLAYS[id],
-              },
-            }
-          : monster,
-      ]),
+      Object.entries(generated).map(([id, monster]) => {
+        const skills = normalizeMonsterSkills(monster.skills);
+        return [
+          id,
+          {
+            ...monster,
+            skills: {
+              ...skills,
+              ...(MONSTER_TEAM_SKILL_OVERLAYS[id] ?? {}),
+            },
+          },
+        ];
+      }),
     );
   }
   return monsterCache;

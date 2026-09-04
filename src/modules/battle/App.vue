@@ -1964,7 +1964,13 @@ onUnmounted(() => {
           <div>
             <strong>
               <template v-if="state.workshopTest">
-                创意工坊测试 · 木桩复活 {{ state.workshopTest.respawns }} 次 ·
+                创意工坊测试 ·
+                <template v-if="(state.workshopTest.opponentMode ?? 'dummy') === 'dummy'">
+                  木桩复活 {{ state.workshopTest.respawns }} 次 ·
+                </template>
+                <template v-else>
+                  {{ state.workshopTest.opponentMode === 'random-single' ? '随机单怪' : '随机怪群' }} ·
+                </template>
               </template>
               第 {{ state.turn }} 回合 ·
               {{

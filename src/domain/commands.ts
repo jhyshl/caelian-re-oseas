@@ -370,6 +370,16 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       workshopTest: z
         .object({
           professionId: z.string().trim().min(1).max(100),
+          deckIds: z
+            .array(z.string().trim().min(1).max(180))
+            .length(15)
+            .optional(),
+          opponentMode: z
+            .enum(['dummy', 'random-single', 'random-multi'])
+            .optional(),
+          randomTier: z.enum(['low', 'high', 'mixed']).optional(),
+          randomSeed: z.number().int().min(0).max(0x7fffffff).optional(),
+          enemyScale: z.number().min(0.5).max(2.5).optional(),
           mechanismIds: z
             .array(z.string().trim().min(1).max(100))
             .max(20)
@@ -453,6 +463,13 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   z.object({
     ...commandBase,
     type: z.literal('battle.surrender'),
+    payload: z.object({
+      battleId: z.string().trim().min(1).max(2048),
+    }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('battle.cancel-workshop-test'),
     payload: z.object({
       battleId: z.string().trim().min(1).max(2048),
     }),

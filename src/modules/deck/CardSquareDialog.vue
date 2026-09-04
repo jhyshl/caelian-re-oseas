@@ -32,8 +32,13 @@ import {
   exportWorkshopPack,
   normalizeWorkshopPack,
   readWorkshopPacks,
-  saveWorkshopPack,
+  saveWorkshopTestPack,
 } from '@/workshop';
+import {
+  activateAssessedWorkshopTestPack,
+  assessWorkshopProfession,
+  readWorkshopAssessment,
+} from '@/workshop-assessment';
 import {
   isWorkshopScriptMechanism,
   normalizeWorkshopMechanism,
@@ -347,7 +352,25 @@ async function installProfession(
 ): Promise<void> {
   const normalized = normalizeWorkshopPack(entry.payload);
   if (!(await approveCodeMechanisms(normalized.mechanisms ?? []))) return;
-  const pack = saveWorkshopPack(normalized);
+  const candidate = saveWorkshopTestPack(normalized);
+  for (const profession of candidate.classes) {
+    notice.value = `正在对「${profession.name}」执行三轮真实战斗评定…`;
+    const report = await assessWorkshopProfession(
+      props.context.api,
+      profession,
+      (completed, total) => {
+        notice.value = `正在对「${profession.name}」执行三轮真实战斗评定：${completed}/${total}`;
+      },
+    );
+    if (!report.passed) {
+      throw new Error(
+        report.status === 'overpowered'
+          ? `职业「${profession.name}」已通过敌方 ×${report.strengthRange[0]} 的承压上限场景，未安装为可用职业。`
+          : report.unsafeReason || `职业「${profession.name}」评定异常，未安装。`,
+      );
+    }
+  }
+  const pack = activateAssessedWorkshopTestPack(candidate);
   await refreshWorkshopCatalogs();
   const profession = pack.classes[0];
   if (!profession) throw new Error('职业包中没有可用职业。');
@@ -401,6 +424,7 @@ async function useEntry(entry: CardSquareEntry, reclass = false): Promise<void> 
       const normalized = normalizeWorkshopMechanism(entry.payload);
       if (!(await approveCodeMechanisms([normalized]))) return;
       const mechanism = saveWorkshopMechanism(normalized);
+      await refreshWorkshopCatalogs();
       notice.value = `底层机制「${mechanism.name}」已安装。只有声明依赖它的职业会在战斗中启用。`;
     }
   } catch (caught) {
@@ -490,6 +514,13 @@ async function submit(): Promise<void> {
       tags: [...submitTags.value],
       payload: submissionPayload(),
     };
+    if (draft.kind === 'custom_class') {
+      const profession = normalizeWorkshopPack(draft.payload).classes[0];
+      const report = profession ? readWorkshopAssessment(profession) : undefined;
+      if (!report?.passed) {
+        throw new Error('该职业没有与当前内容匹配的三轮实战评定，暂不能投稿。请回到创意工坊重新评定并启用。');
+      }
+    }
     const currentReceipt = editingReceipt.value;
     const result = currentReceipt
       ? await updateCardSquareSubmission(

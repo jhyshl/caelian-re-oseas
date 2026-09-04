@@ -1,3 +1,6 @@
+import type { CardDefinition, CardEffect } from '@/content/types';
+import type { WorkshopMechanismManifest } from '@/workshop-mechanisms';
+
 export type ReleaseChannel = 'alpha' | 'beta' | 'release';
 
 export type RuntimeStatus =
@@ -478,6 +481,14 @@ export interface BattleEnemyState {
   affix?: string;
   affixName?: string;
   onHitDebuff?: string;
+  /** Next position in the legacy monster action pattern. */
+  patternIndex?: number;
+  /** Last resolved skill, used to discourage repeated boss/support actions. */
+  lastSkillId?: string;
+  /** One-shot conditional skill already used in this battle. */
+  lastSpecial?: string;
+  /** Consecutive resolved actions that did not directly damage a friendly target. */
+  nonDamageActionStreak?: number;
   intent: BattleIntent | null;
 }
 
@@ -607,6 +618,14 @@ export interface LocalBattleState {
   /** Isolated Creative Workshop battle. It never writes rewards or player loss. */
   workshopTest?: {
     professionId: string;
+    opponentMode?: 'dummy' | 'random-single' | 'random-multi';
+    /** Immutable candidate definitions scoped to this isolated battle only. */
+    candidateCards?: Record<string, CardDefinition>;
+    candidateTalent?: {
+      name: string;
+      effects: CardEffect[];
+    };
+    candidateMechanisms?: WorkshopMechanismManifest[];
     dummyInvincible: boolean;
     dummyAttackEnabled: boolean;
     autoRespawn: boolean;
