@@ -881,7 +881,7 @@ describe('创意工坊自定义状态与资源', () => {
           mechanismId: status.id,
           statusId: 'guard',
           target: 'self',
-          value: 1,
+          value: 25,
           turns: -1,
         },
         {
@@ -975,7 +975,7 @@ describe('创意工坊自定义状态与资源', () => {
     const statusKey = workshopStatusKey(status.id, 'guard');
     const resourceKey = `${resource.id}:energy`;
     expect(session.state.player.buffs[statusKey]).toMatchObject({
-      value: 1,
+      value: 25,
       turns: -1,
     });
     expect(session.state.workshopMechanisms?.resources[resourceKey]).toBe(2);

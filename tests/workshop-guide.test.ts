@@ -1,81 +1,50 @@
 import { readFileSync } from 'node:fs';
-import path from 'node:path';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import {
-  cardLimit,
-  cardScore,
-  rarityFromScore,
-  talentScore,
-} from '@/workshop';
 
 const guide = readFileSync(
-  path.join(process.cwd(), 'public', 'docs', 'caelian-workshop-ai-guide.md'),
+  resolve(process.cwd(), 'public/docs/caelian-workshop-ai-guide.md'),
   'utf8',
 );
+const currentWorkshopSurfaces = [
+  'src/modules/deck/WorkshopDialog.vue',
+  'src/modules/deck/WorkshopEffectEditor.vue',
+  'src/modules/deck/WorkshopEffectPalette.vue',
+  'src/modules/deck/CardSquareDialog.vue',
+]
+  .map((path) => readFileSync(resolve(process.cwd(), path), 'utf8'))
+  .join('\n');
 
 describe('创意工坊 AI 制作手册', () => {
-  it('使用简化标题，并把可复制指令放在职业格式之前', () => {
-    expect(guide).toMatch(/^# 凯利安创意工坊 AI 制作手册/m);
-    expect(guide).not.toContain('奥西斯再临');
-    expect(guide.indexOf('## 最先复制给 AI 的制作指令')).toBeLessThan(
-      guide.indexOf('## 一、职业包'),
+  it('把可复制指令放在职业格式之前，并说明保存后直接启用', () => {
+    expect(guide.startsWith('# 凯利安创意工坊 AI 制作手册')).toBe(true);
+    expect(guide.indexOf('## 可复制给 AI 的制作指令')).toBeLessThan(
+      guide.indexOf('## 职业包格式'),
+    );
+    expect(guide).toContain('直接保存并启用');
+    expect(guide).toContain('隔离测试场是作者主动使用的工具，不是保存步骤');
+  });
+
+  it('只说明结构、引用与沙箱规则，不再提供评分或折扣字段', () => {
+    expect(guide).not.toMatch(/强度|平衡|评定|静态预算|powerScore|discount/);
+    expect(guide).toContain('稀有度由作者选择');
+    expect(guide).toContain('同名卡可放入任意份数');
+    expect(guide).toContain('结构、引用和脚本沙箱校验');
+  });
+
+  it('当前工坊界面不再展示强度门槛或旧同名卡限制', () => {
+    expect(currentWorkshopSurfaces).not.toMatch(
+      /三轮评定|强度评分|强度限制|数值平衡|静态预算|可支配强度|同名卡最多\s*3/,
     );
   });
 
-  it('费用上限与创意工坊现有校验器完全一致', () => {
-    const documented = [10, 22, 36, 52, 68, 86, 106, 128, 152, 178, 206];
-    expect(Array.from({ length: 11 }, (_, cost) => cardLimit(cost))).toEqual(
-      documented,
-    );
-    expect(guide).toContain(`| 上限 | ${documented.join(' | ')} |`);
-  });
-
-  it('关键卡牌、稀有度和天赋数值与现有校验器保持同源', () => {
-    expect(
-      cardScore({
-        effects: [
-          { type: 'damage', value: 10, lifesteal_ratio: 0.5, target: 'all_enemies' },
-          { type: 'draw', value: 2, target: 'self' },
-          { type: 'gain_ap', value: 1, target: 'self' },
-        ],
-      }),
-    ).toBe(46.6);
-    expect(guide).toContain(
-      '| `damage` | `(value + lifesteal_ratio × 12) × M` |',
-    );
-    expect(guide).toContain('| `draw` | `value × 6` |');
-    expect(guide).toContain('| `gain_ap` | `value × 9` |');
-    expect(guide).toContain(
-      '| `blank_regen` | `value × 6 × turns × D` |',
-    );
-    expect(guide).toContain('`hand_limit_bonus`：`value × 3`');
-    expect(guide).toContain('空白牌仅存在于本场战斗');
-    expect(guide).toContain('`same_card_played_this_turn=0.78`');
-    expect(guide).toContain('`previous_card_same_name=0.72`');
-    expect(guide).toContain('两个同名卡牌条件都以当前正在使用的卡牌名称为准');
-
-    expect([29, 30, 58, 90, 130].map(rarityFromScore)).toEqual([
-      'common',
-      'uncommon',
-      'rare',
-      'epic',
-      'legendary',
-    ]);
-    expect(
-      talentScore([
-        { type: 'battle_start_shield', value: 10 },
-        { type: 'extra_draw', value: 1 },
-        { type: 'damage_reduction', value: 1 },
-      ]),
-    ).toBe(22);
-    expect(guide).toContain('天赋最多 4 个不同类型词条，总分必须 `≤24`');
-  });
-
-  it('说明玩家标签、代码机制格式与沙箱边界', () => {
-    expect(guide).toContain('"tags": ["melee", "weapon", "fire"]');
-    expect(guide).toContain('"format": "caelian_workshop_script_mechanism"');
-    expect(guide).toContain('`before_damage` 可修改 `amount`、`ignoreDefense`、`cancel`');
-    expect(guide).toContain('沙箱内没有 `window`、`document`、`fetch`、`localStorage`');
-    expect(guide).toContain('## 新职业制作流程（AI 必须按顺序完成）');
+  it('说明玩家标签、条件格式、代码机制和沙箱边界', () => {
+    expect(guide).toContain('代码机制可读取');
+    expect(guide).toContain('conditional_group');
+    expect(guide).toContain('caelian_workshop_script_mechanism');
+    expect(guide).toContain('单次执行限时 50ms');
+    expect(guide).toContain('沙箱内存 8MB');
+    expect(guide).toContain('返回值 64KB');
+    expect(guide).toContain('动作链最多 64 步');
   });
 });

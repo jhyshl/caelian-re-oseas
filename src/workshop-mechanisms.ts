@@ -524,7 +524,7 @@ function normalizeStatuses(value: unknown): WorkshopMechanismStatus[] {
                 : Math.max(
                     0,
                     Math.min(
-                      type === 'damage_reduction' ? 90 : 999_999,
+                      type === 'damage_reduction' ? 100 : 999_999,
                       finite(effect.value),
                     ),
                   ),
@@ -685,17 +685,29 @@ export function readWorkshopMechanisms(): WorkshopMechanismManifest[] {
 }
 
 export function saveWorkshopMechanism(value: unknown): WorkshopMechanismManifest {
-  const normalized = normalizeWorkshopMechanism(value);
+  const normalized = saveWorkshopMechanisms([value]);
+  return normalized[0]!;
+}
+
+export function saveWorkshopMechanisms(
+  values: readonly unknown[],
+): WorkshopMechanismManifest[] {
+  const normalized = [
+    ...new Map(
+      values
+        .map((value) => normalizeWorkshopMechanism(value))
+        .map((value) => [value.id, value]),
+    ).values(),
+  ];
   const existing = readWorkshopMechanisms();
-  const kept = existing.filter(
-    (entry) => entry.id !== normalized.id,
-  );
-  if (kept.length >= 40) {
+  const replacing = new Set(normalized.map((entry) => entry.id));
+  const kept = existing.filter((entry) => !replacing.has(entry.id));
+  if (kept.length + normalized.length > 40) {
     throw new Error('自定义状态与资源已达到 40 个，请先删除一个再保存。');
   }
   localStorage.setItem(
     WORKSHOP_MECHANISM_STORAGE_KEY,
-    JSON.stringify([...kept, normalized]),
+    JSON.stringify([...kept, ...normalized]),
   );
   return normalized;
 }

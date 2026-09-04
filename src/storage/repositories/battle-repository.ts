@@ -34,6 +34,7 @@ import {
 } from '@/battle/consumables';
 import { cardNameHistoryKey } from '@/battle/card-history';
 import { createCaelianCompanion } from '@/battle/caelian-companion';
+import { safeCardEffectHits } from '@/battle/execution-limits';
 import {
   bloodBurnAction,
   bloodBurnCardUnavailableReason,
@@ -69,10 +70,8 @@ import {
 } from '@/player/progression';
 import { updateGuildRank } from '@/guild-progression';
 import {
-  isWorkshopProfessionCertificationInvalid,
   readWorkshopPacks,
   readWorkshopTestCandidate,
-  readWorkshopTestPacks,
 } from '@/workshop';
 import { huntingAnimal, rollHuntingRewards } from '@/content/cooking';
 import {
@@ -366,10 +365,7 @@ export class BattleRepository {
         loadEquipmentDefinitions(),
       ]);
     }
-    const scriptMechanisms = [
-      ...readWorkshopMechanisms(),
-      ...readWorkshopTestPacks().flatMap((pack) => pack.mechanisms ?? []),
-    ];
+    const scriptMechanisms = readWorkshopMechanisms();
     if (scriptMechanisms.some(isWorkshopScriptMechanism)) {
       await prepareWorkshopScriptRuntime();
     }
@@ -434,11 +430,6 @@ export class BattleRepository {
     if (input.workshopTest) {
       await this.startWorkshopTest(profileId, player, input.workshopTest);
       return;
-    }
-    if (isWorkshopProfessionCertificationInvalid(player.subclass)) {
-      throw new Error(
-        '当前自制职业的自动评定认证已失效，请在创意工坊重新评定后再进入正式战斗',
-      );
     }
     if (!deck || deck.cardIds.length === 0) {
       throw new Error('请先准备至少一张卡牌的出战牌组');
@@ -1187,9 +1178,7 @@ export class BattleRepository {
   }
 
   async surrender(profileId: string, battleId: string): Promise<void> {
-    const session = await this.getOngoing(profileId, battleId, {
-      allowInvalidCertification: true,
-    });
+    const session = await this.getOngoing(profileId, battleId);
     if (session.state.workshopTest) {
       session.state.status = 'surrendered';
       session.state.phase = 'ended';
@@ -1225,19 +1214,6 @@ export class BattleRepository {
       'system',
       `撤退成功：损失 ${hpLoss} HP 与 ${goldLoss} 金币`,
     );
-    await this.save(session);
-  }
-
-  async cancelWorkshopTest(profileId: string, battleId: string): Promise<void> {
-    const session = await this.getOngoing(profileId, battleId, {
-      allowInvalidCertification: true,
-    });
-    if (!session.state.workshopTest) {
-      throw new Error('只能由自动评定关闭创意工坊隔离战斗');
-    }
-    session.state.status = 'surrendered';
-    session.state.phase = 'ended';
-    this.log(session.state, 'system', '自动评定已结束当前隔离战斗；正式角色数据未发生变化。');
     await this.save(session);
   }
 
@@ -1376,9 +1352,6 @@ export class BattleRepository {
       },
       {},
     );
-    if (Object.values(deckCounts).some((count) => count > 3)) {
-      throw new Error('创意工坊测试牌组中，同名卡牌最多放入 3 张');
-    }
     if (
       Object.entries(deckCounts).some(
         ([cardId, count]) => count > (poolCounts[cardId] ?? 0),
@@ -2683,9 +2656,10 @@ export class BattleRepository {
                 )
               : 0) +
             resolvedBonus;
-          const hits = Math.max(1, this.number(effect.hits, 1));
+          const hits = safeCardEffectHits(effect.hits);
           const beforeHp = enemy.hp;
           for (let hit = 0; hit < hits; hit += 1) {
+            if (enemy.hp <= 0) break;
             totalDamage += this.damage(
               state,
               this.activePlayerSummonCombatant() ?? state.player,
@@ -4052,7 +4026,7 @@ export class BattleRepository {
       const customReduction = this.clamp(
         this.workshopStatusEffectValue(state, target, 'damage_reduction'),
         0,
-        90,
+        100,
       );
       if (customReduction > 0) {
         amount = Math.ceil((amount * (100 - customReduction)) / 100);
@@ -7277,7 +7251,7 @@ export class BattleRepository {
         found.manifest,
         found.status.id,
         target,
-        Math.max(1, Math.min(10, Math.round(this.number(effect.value, 1)))),
+        Math.max(1, Math.round(this.number(effect.value, 1))),
         turns,
       );
     }
@@ -7308,7 +7282,7 @@ export class BattleRepository {
         found.manifest,
         found.status.id,
         summon,
-        Math.max(1, Math.min(10, Math.round(this.number(effect.value, 1)))),
+        Math.max(1, Math.round(this.number(effect.value, 1))),
         requestedTurns < 0
           ? -1
           : Math.max(1, Math.min(99, Math.round(requestedTurns))),
@@ -7537,7 +7511,6 @@ export class BattleRepository {
   private async getOngoing(
     profileId: string,
     battleId: string,
-    options: { allowInvalidCertification?: boolean } = {},
   ): Promise<BattleSessionRecord> {
     const session = await this.db.battleSessions.get(battleId);
     if (
@@ -7547,17 +7520,6 @@ export class BattleRepository {
       session.state.status !== 'ongoing'
     ) {
       throw new Error('当前战斗不存在或已经结束');
-    }
-    if (
-      !options.allowInvalidCertification &&
-      !session.state.workshopTest &&
-      isWorkshopProfessionCertificationInvalid(
-        session.state.player.subclass ?? '',
-      )
-    ) {
-      throw new Error(
-        '当前自制职业的自动评定认证已失效，请撤退并在创意工坊重新评定',
-      );
     }
     for (const summon of session.state.player.summons) {
       this.normalizePlayerSummon(summon);

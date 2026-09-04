@@ -9,6 +9,16 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.69',
+    label: 'Alpha 69',
+    releasedAt: '2026-09-04',
+    changes: [
+      '创意工坊移除卡牌与天赋强度评分、费用对应上限、数值平衡钳制和自动稀有度；作者可自由填写卡牌数值并选择稀有度，保存时只保留数据结构、机制引用与脚本沙箱安全校验。',
+      '自制职业保存、导入或从卡牌广场安装后立即启用，不再要求模拟测试或三轮战斗评定；上一版保存在测试区的有效职业会自动迁移到正式目录，可选隔离测试场继续保留。',
+      '卡牌广场中的新职业与新构筑，以及它们的后续修改，现均在格式校验后立即公开，不再进入后台审核；底层机制投稿仍保留安全审核与事后管理能力。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.68',
     label: 'Alpha 68',
     releasedAt: '2026-09-03',
@@ -724,6 +734,16 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 ] as const;
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.16.0-beta.1',
+    label: 'Beta 1.16',
+    releasedAt: '2026-09-04',
+    changes: [
+      '创意工坊取消卡牌与天赋强度评分、数值平衡门槛和强制模拟评定；职业保存、导入和安装后直接启用，旧测试区作品会自动迁移，可选测试场与脚本沙箱继续保留。',
+      '卡牌广场中的职业与构筑首次投稿及修改均直接公开，不再需要后台预审；底层机制继续进入审核队列。',
+      '卡牌稀有度改为作者手动选择，同名卡构筑不再受三张限制，同时继续校验职业包结构、依赖引用和运行安全。',
+    ],
+  },
   {
     version: '1.15.0-beta.1',
     label: 'Beta 1.15',

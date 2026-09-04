@@ -32,13 +32,8 @@ import {
   exportWorkshopPack,
   normalizeWorkshopPack,
   readWorkshopPacks,
-  saveWorkshopTestPack,
+  saveWorkshopPack,
 } from '@/workshop';
-import {
-  activateAssessedWorkshopTestPack,
-  assessWorkshopProfession,
-  readWorkshopAssessment,
-} from '@/workshop-assessment';
 import {
   isWorkshopScriptMechanism,
   normalizeWorkshopMechanism,
@@ -200,7 +195,7 @@ async function refreshOneReceipt(
   try {
     const updated = await refreshCardSquareReceipt(receipt, sourceWindow());
     receipts.value = readCardSquareReceipts(sourceWindow());
-    notice.value = `《${updated.title}》的审核状态已更新为“${statusNames[updated.status]}”。`;
+    notice.value = `《${updated.title}》的投稿状态已更新为“${statusNames[updated.status]}”。`;
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught);
   } finally {
@@ -352,25 +347,7 @@ async function installProfession(
 ): Promise<void> {
   const normalized = normalizeWorkshopPack(entry.payload);
   if (!(await approveCodeMechanisms(normalized.mechanisms ?? []))) return;
-  const candidate = saveWorkshopTestPack(normalized);
-  for (const profession of candidate.classes) {
-    notice.value = `正在对「${profession.name}」执行三轮真实战斗评定…`;
-    const report = await assessWorkshopProfession(
-      props.context.api,
-      profession,
-      (completed, total) => {
-        notice.value = `正在对「${profession.name}」执行三轮真实战斗评定：${completed}/${total}`;
-      },
-    );
-    if (!report.passed) {
-      throw new Error(
-        report.status === 'overpowered'
-          ? `职业「${profession.name}」已通过敌方 ×${report.strengthRange[0]} 的承压上限场景，未安装为可用职业。`
-          : report.unsafeReason || `职业「${profession.name}」评定异常，未安装。`,
-      );
-    }
-  }
-  const pack = activateAssessedWorkshopTestPack(candidate);
+  const pack = saveWorkshopPack(normalized);
   await refreshWorkshopCatalogs();
   const profession = pack.classes[0];
   if (!profession) throw new Error('职业包中没有可用职业。');
@@ -399,7 +376,7 @@ async function approveCodeMechanisms(
   if (!scripts.length) return true;
   if (
     !window.confirm(
-      `该作品包含 ${scripts.length} 个可执行代码机制。代码会在隔离且限时的战斗沙箱中运行，但仍可能改变战斗平衡或造成短暂卡顿。是否继续校验并安装？`,
+      `该作品包含 ${scripts.length} 个可执行代码机制。代码会在隔离且限时的战斗沙箱中运行，但仍可能造成异常战斗结果或短暂卡顿。是否继续校验并安装？`,
     )
   ) {
     return false;
@@ -514,13 +491,6 @@ async function submit(): Promise<void> {
       tags: [...submitTags.value],
       payload: submissionPayload(),
     };
-    if (draft.kind === 'custom_class') {
-      const profession = normalizeWorkshopPack(draft.payload).classes[0];
-      const report = profession ? readWorkshopAssessment(profession) : undefined;
-      if (!report?.passed) {
-        throw new Error('该职业没有与当前内容匹配的三轮实战评定，暂不能投稿。请回到创意工坊重新评定并启用。');
-      }
-    }
     const currentReceipt = editingReceipt.value;
     const result = currentReceipt
       ? await updateCardSquareSubmission(
@@ -534,15 +504,14 @@ async function submit(): Promise<void> {
           props.context.api.getRuntimeInfo(),
           sourceWindow(),
         );
-    notice.value =
-      currentReceipt
-        ? '投稿修改已保存，旧审核结果已清空，作品已重新进入待审核队列。'
-        : result.status === 'published'
-        ? '构筑已公开发布到卡牌广场，并已保存本机投稿回执。'
-        : '投稿已进入作者审核队列；可在“我的投稿”查看审核结果。';
+    notice.value = result.status === 'published'
+      ? `${draft.kind === 'custom_class' ? '职业' : '构筑'}已公开发布到卡牌广场，并已保存本机投稿回执。`
+      : currentReceipt
+        ? '机制投稿修改已保存，并重新进入审核队列。'
+        : '机制投稿已进入作者审核队列；可在“我的投稿”查看审核结果。';
     receipts.value = readCardSquareReceipts(sourceWindow());
     resetSubmissionForm();
-    if (!currentReceipt && result.status === 'published') {
+    if (result.status === 'published') {
       await refresh();
       tab.value = 'browse';
     } else {
@@ -575,7 +544,7 @@ watch(tab, (next) => {
           <div>
             <small>COMMUNITY CARD SQUARE</small>
             <h2 id="square-title">卡牌广场</h2>
-            <p>发现构筑、职业与机制。自制内容公开前均经过作者审核。</p>
+            <p>发现构筑、职业与机制。职业和构筑提交后立即公开，底层机制仍需审核。</p>
           </div>
           <button type="button" aria-label="关闭" @click="emit('close')">×</button>
         </header>
@@ -689,7 +658,7 @@ watch(tab, (next) => {
                 <input type="file" accept="application/json,.json" @change="importReceiptFile" />
               </label>
               <button type="button" class="ca-button primary" :disabled="busy || receipts.length === 0" @click="refreshReceipts">
-                {{ busy ? '正在查询……' : '查询审核结果' }}
+                {{ busy ? '正在查询……' : '查询投稿状态' }}
               </button>
             </div>
           </div>
@@ -733,9 +702,10 @@ watch(tab, (next) => {
 
         <main v-else class="square-submit">
           <section class="submit-explainer">
-            <strong>{{ editingReceipt ? '修改投稿并重新送审' : '投稿规则' }}</strong>
-            <p v-if="editingReceipt">保存任何修改后，作品都会先从公开列表撤下，清空旧审核意见并重新进入作者审核队列。投稿类型不可更换。</p>
-            <p v-else>官方职业卡组构筑通过格式校验后直接公开；自制职业和底层机制必须先由作者审核。作品名称为必填项，可选择匿名发布。</p>
+            <strong>{{ editingReceipt ? '修改投稿' : '投稿规则' }}</strong>
+            <p v-if="editingReceipt && submitKind === 'mechanism'">保存机制修改后会清空旧审核意见，并重新进入审核队列。投稿类型不可更换。</p>
+            <p v-else-if="editingReceipt">保存职业或构筑修改后会立即更新公开内容。投稿类型不可更换。</p>
+            <p v-else>官方职业构筑和自制职业通过格式校验后直接公开；底层机制仍需作者审核。作品名称为必填项，可选择匿名发布。</p>
           </section>
           <div class="submit-grid">
             <label><span>投稿类型</span><select v-model="submitKind" :disabled="Boolean(editingReceipt)"><option value="deck_build">已保存的官方职业构筑</option><option value="custom_class">本地自制职业</option><option value="mechanism">本地底层机制</option></select></label>
@@ -772,7 +742,7 @@ watch(tab, (next) => {
           </div>
           <footer class="submit-actions">
             <button type="button" class="ca-button" @click="cancelSubmission">{{ editingReceipt ? '取消修改' : '返回广场' }}</button>
-            <button type="button" class="ca-button primary" :disabled="busy" @click="submit">{{ busy ? '正在提交……' : editingReceipt ? '保存修改并重新送审' : '提交作品' }}</button>
+            <button type="button" class="ca-button primary" :disabled="busy" @click="submit">{{ busy ? '正在提交……' : editingReceipt ? '保存修改' : '提交作品' }}</button>
           </footer>
         </main>
 

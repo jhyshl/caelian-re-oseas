@@ -238,7 +238,7 @@ function saveResource(): void {
           <select :value="effect.type" @change="setStatusEffectType(effect, ($event.target as HTMLSelectElement).value as WorkshopMechanismStatusEffect['type'])">
             <option v-for="[type, label] in statusEffectOptions" :key="type" :value="type">{{ label }}</option>
           </select>
-          <input v-if="effect.type !== 'debuff_immunity'" v-model.number="effect.value" type="number" min="0" :max="effect.type === 'damage_reduction' ? 90 : undefined" />
+          <input v-if="effect.type !== 'debuff_immunity'" v-model.number="effect.value" type="number" min="0" :max="effect.type === 'damage_reduction' ? 100 : undefined" />
           <span v-else>完全免疫新减益</span>
           <button type="button" @click="statusDraft.effects.splice(index, 1)">×</button>
         </div>

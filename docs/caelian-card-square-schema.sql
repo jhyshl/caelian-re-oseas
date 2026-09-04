@@ -1,7 +1,7 @@
 -- Caelian public card square.
--- Browser clients can read published entries and submit new immutable entries.
--- Deck builds publish immediately; custom classes and mechanisms always enter
--- the private moderation queue.
+-- Browser clients can read published entries and submit new entries.
+-- Deck builds and custom classes publish immediately. Mechanisms continue to
+-- enter the private moderation queue.
 
 create extension if not exists pgcrypto;
 
@@ -71,13 +71,13 @@ create unique index if not exists caelian_card_square_submission_token_idx
   on public.caelian_card_square_entries (submission_token);
 
 comment on table public.caelian_card_square_entries is
-  'Public Caelian deck builds plus moderated custom classes and mechanism packages.';
+  'Public Caelian deck builds and custom classes plus moderated mechanism packages.';
 comment on column public.caelian_card_square_entries.author_name is
   'Optional public pen name. Null means the player selected anonymous submission.';
 comment on column public.caelian_card_square_entries.payload is
   'Player-authored deck, class, or declarative mechanism JSON. Never chat, save, MVU, or player identity data.';
 comment on column public.caelian_card_square_entries.submission_token is
-  'Private bearer receipt used only by the submitting terminal to query moderation state.';
+  'Private bearer receipt used only by the submitting terminal to query and manage submission state.';
 
 alter table public.caelian_card_square_entries enable row level security;
 revoke all on table public.caelian_card_square_entries from anon, authenticated;
@@ -121,8 +121,8 @@ create policy "caelian_card_square_submit"
       )
       or (
         kind = 'custom_class'
-        and status = 'pending'
-        and published_at is null
+        and status = 'published'
+        and published_at is not null
         and payload ->> 'format' = 'caelian_workshop_class_pack'
       )
       or (
@@ -155,8 +155,9 @@ create index if not exists caelian_feedback_status_created_idx
 grant select, update, delete on table public.caelian_feedback to service_role;
 grant select on table public.caelian_survey_responses to service_role;
 
--- Author-console review examples (the deployed console performs these through
--- its authenticated moderation function):
+-- Author-console mechanism-review examples (the deployed console performs
+-- these through its authenticated moderation function). The same console can
+-- still unpublish or delete any entry after publication:
 -- update public.caelian_card_square_entries
 -- set status = 'published', reviewed_at = now(), published_at = now()
 -- where id = '<entry id>' and status = 'pending';

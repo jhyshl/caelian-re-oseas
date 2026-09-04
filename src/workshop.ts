@@ -1,19 +1,18 @@
 import type { CardDefinition, CardEffect } from '@/content/types';
+import { safeCardEffectHits } from '@/battle/execution-limits';
 import {
   normalizeWorkshopMechanism,
   readWorkshopMechanisms,
-  saveWorkshopMechanism,
+  saveWorkshopMechanisms,
+  WORKSHOP_MECHANISM_STORAGE_KEY,
   type WorkshopMechanismManifest,
 } from '@/workshop-mechanisms';
-import {
-  WORKSHOP_ASSESSMENT_VERSION,
-  registerWorkshopFingerprintContext,
-  workshopCombatFingerprint,
-} from '@/workshop-certification';
 
 export const WORKSHOP_STORAGE_KEY = 'caelian_custom_workshop_packs_v1';
 export const WORKSHOP_TEST_STORAGE_KEY =
   'caelian_custom_workshop_test_packs_v1';
+const LEGACY_WORKSHOP_ASSESSMENT_STORAGE_KEY =
+  'caelian_workshop_assessments_v1';
 export const WORKSHOP_DRAFT_STORAGE_KEY = 'caelian_custom_workshop_drafts_v1';
 export const WORKSHOP_EXTENSION_STORAGE_KEY =
   'caelian_custom_workshop_extensions_v1';
@@ -39,7 +38,6 @@ export interface WorkshopCard extends CardDefinition {
   /** Player-defined classification used by imported script mechanisms. */
   tags: string[];
   custom: true;
-  powerScore: number;
 }
 
 export interface WorkshopClass {
@@ -66,13 +64,6 @@ export interface WorkshopPack {
   classes: WorkshopClass[];
   /** Declarative or script mechanisms bundled for portable profession imports. */
   mechanisms?: WorkshopMechanismManifest[];
-  /** Per-profession proof written only after the current combat assessment passes. */
-  certifications?: Record<string, WorkshopCertification>;
-}
-
-export interface WorkshopCertification {
-  evaluatorVersion: string;
-  combatHash: string;
 }
 
 export interface WorkshopTestCandidate {
@@ -132,12 +123,6 @@ export const WORKSHOP_SCALING_STATS = [
 
 type WorkshopScalingStat = (typeof WORKSHOP_SCALING_STATS)[number][0];
 
-const TARGET_MULTIPLIERS: Record<string, number> = {
-  all_enemies: 1.6,
-  all_allies: 1.5,
-  all_summons: 1.4,
-};
-const CARD_LIMITS = [10, 22, 36, 52, 68, 86, 106, 128, 152, 178, 206];
 const ALLOWED_BUFFS = [
   'strength',
   'fortitude',
@@ -198,47 +183,51 @@ const VALID_CARD_EFFECT_TYPES = new Set([
   'workshop_resource_change',
   'apply_workshop_status',
 ]);
-const TALENT_LIMITS: Record<
-  string,
-  { min: number; max: number; defaultValue: number }
-> = {
-  battle_start_shield: { min: 0, max: 20, defaultValue: 5 },
-  turn_start_heal: { min: 0, max: 5, defaultValue: 1 },
-  attack_bonus: { min: 0, max: 5, defaultValue: 1 },
-  shield_bonus: { min: 0, max: 0.5, defaultValue: 0.1 },
-  extra_draw: { min: 0, max: 2, defaultValue: 1 },
-  first_turn_ap: { min: 0, max: 2, defaultValue: 1 },
-  damage_reduction: { min: 0, max: 3, defaultValue: 1 },
-  always_reveal_intent: { min: 0, max: 0, defaultValue: 0 },
-  turn_start_cleanse: { min: 1, max: 1, defaultValue: 1 },
-  turn_start_debuff_shield: { min: 0, max: 8, defaultValue: 2 },
-  hand_limit_bonus: { min: 0, max: 5, defaultValue: 5 },
-  defense_reflect: { min: 0, max: 0, defaultValue: 0 },
-  counterattack: { min: 0, max: 0, defaultValue: 0 },
+const TALENT_DEFAULTS: Record<string, number | undefined> = {
+  battle_start_shield: 5,
+  turn_start_heal: 1,
+  attack_bonus: 1,
+  shield_bonus: 0.1,
+  extra_draw: 1,
+  first_turn_ap: 1,
+  damage_reduction: 1,
+  always_reveal_intent: undefined,
+  turn_start_cleanse: 1,
+  turn_start_debuff_shield: 2,
+  hand_limit_bonus: 5,
+  defense_reflect: undefined,
+  counterattack: undefined,
 };
-const CONDITION_DISCOUNTS: Record<string, number> = {
-  self_has_shield: 0.86,
-  self_no_shield: 0.9,
-  enemy_has_shield: 0.86,
-  enemy_no_shield: 0.9,
-  enemy_has_debuff: 0.84,
-  enemy_no_debuff: 0.92,
-  enemy_has_specific_debuff: 0.8,
-  enemy_no_specific_debuff: 0.9,
-  self_has_buff: 0.9,
-  self_no_buff: 0.92,
-  self_full_hp: 0.82,
-  self_not_full_hp: 0.88,
-  has_summon: 0.82,
-  no_summon: 0.95,
-  same_card_played_this_turn: 0.78,
-  previous_card_same_name: 0.72,
-  spend_mp: 0.74,
-  spend_hp: 0.9,
-  discard: 0.78,
-  destroy_summon: 0.62,
-  spend_workshop_resource: 0.72,
-};
+const VALID_CONDITION_TYPES = new Set([
+  'self_has_shield',
+  'self_no_shield',
+  'enemy_has_shield',
+  'enemy_no_shield',
+  'enemy_has_debuff',
+  'enemy_no_debuff',
+  'enemy_has_specific_debuff',
+  'enemy_no_specific_debuff',
+  'self_has_buff',
+  'self_no_buff',
+  'self_full_hp',
+  'self_not_full_hp',
+  'has_summon',
+  'no_summon',
+  'same_card_played_this_turn',
+  'previous_card_same_name',
+  'spend_mp',
+  'spend_hp',
+  'discard',
+  'destroy_summon',
+  'spend_workshop_resource',
+]);
+const WORKSHOP_RARITIES = new Set([
+  'common',
+  'uncommon',
+  'rare',
+  'epic',
+  'legendary',
+]);
 
 export const WORKSHOP_EFFECT_OPTIONS = [
   { type: 'damage', label: '造成伤害', value: 8, target: 'enemy' },
@@ -458,7 +447,7 @@ function normalizeScaling(value: unknown):
   const source = record(value);
   const stat = String(source.stat ?? '') as WorkshopScalingStat;
   if (!WORKSHOP_SCALING_STATS.some(([key]) => key === stat)) return undefined;
-  const percent = clamp(source.percent, 0, 200);
+  const percent = clamp(source.percent, 0, 999_999);
   if (percent <= 0) return undefined;
   return { stat, percent };
 }
@@ -466,12 +455,8 @@ function normalizeScaling(value: unknown):
 function normalizeCondition(value: unknown): CardEffect | undefined {
   const source = record(value);
   const type = String(source.type ?? source.condition ?? '');
-  const baseDiscount = CONDITION_DISCOUNTS[type];
-  if (!baseDiscount) return undefined;
-  const result: CardEffect = {
-    type,
-    discount: clamp(source.discount, 0.1, 1, baseDiscount),
-  };
+  if (!VALID_CONDITION_TYPES.has(type)) return undefined;
+  const result: CardEffect = { type };
   if (type === 'spend_workshop_resource') {
     const mechanismId = extensionId(source.mechanismId, '');
     const resourceId = extensionId(source.resourceId, '');
@@ -494,13 +479,6 @@ function normalizeCondition(value: unknown): CardEffect | undefined {
         : amount(source.amount ?? source.value, 1);
     result.amount = normalized === 'all' ? 'all' : Math.max(1, normalized);
     result.value = normalized === 'all' ? 99 : Math.max(1, normalized);
-    if (type === 'spend_hp' && source.discount === undefined) {
-      const hpCost = Number(result.amount) || 1;
-      result.discount = Math.max(
-        0.42,
-        0.92 - Math.min(20, hpCost) * 0.024,
-      );
-    }
   }
   if (type === 'destroy_summon') {
     result.target = String(source.target ?? 'random_summons');
@@ -558,10 +536,8 @@ function normalizeSummon(value: UnknownRecord): CardEffect | undefined {
     target: 'self',
     name: String(source.name ?? '召唤物').trim().slice(0, 18) || '召唤物',
     attackable,
-    hp_ratio: attackable ? clamp(source.hp_ratio, 1, 200, 35) : 0,
-    duration: attackable
-      ? summonExpectedTurns(clamp(source.hp_ratio, 1, 200, 35))
-      : Math.max(1, Math.floor(number(source.duration, 3))),
+    hp_ratio: attackable ? clamp(source.hp_ratio, 1, 999_999, 35) : 0,
+    duration: Math.max(1, Math.floor(number(source.duration, 3))),
     mechanical: !attackable,
     unique_by_name: source.unique_by_name !== false,
     skills,
@@ -594,7 +570,7 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
       target: normalizeTarget(source, type),
       mechanismId,
       statusId,
-      value: clamp(source.value, 1, 10, 1),
+      value: clamp(source.value, 1, 999_999, 1),
       turns: clamp(source.turns, 1, 99, 2),
     };
   }
@@ -640,7 +616,6 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
       conditions,
       then_effects: thenEffects,
       else_effects: elseEffects,
-      discount: conditionDiscount(conditions, logic),
     };
   }
   const result: CardEffect = {
@@ -660,6 +635,8 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
       result[key] =
         key === 'turns'
           ? clamp(source[key], 1, 99, 1)
+          : key === 'hits'
+            ? safeCardEffectHits(source[key])
           : clamp(source[key], 0, 999999);
     }
   }
@@ -703,13 +680,13 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
     }
   }
   if (type === 'damage' && source.lifesteal_ratio !== undefined) {
-    result.lifesteal_ratio = clamp(source.lifesteal_ratio, 0, 0.6);
+    result.lifesteal_ratio = clamp(source.lifesteal_ratio, 0, 999_999);
   }
   if (type === 'damage_from_shield') {
-    result.ratio = clamp(source.ratio, 0, 1, 0.5);
+    result.ratio = clamp(source.ratio, 0, 999_999, 0.5);
   }
   if (type === 'thorns') {
-    result.value = clamp(source.value, 0, 16);
+    result.value = clamp(source.value, 0, 999_999);
   }
   if (type === 'conditional_bonus') {
     const allowed = [
@@ -771,7 +748,7 @@ export function normalizeTalentEffect(value: unknown): CardEffect | undefined {
         : 'self',
       mechanismId,
       statusId,
-      value: clamp(source.value, 1, 10, 1),
+      value: clamp(source.value, 1, 999_999, 1),
       turns: rawTurns === -1 ? -1 : clamp(rawTurns, 1, 99, 1),
     };
   }
@@ -789,16 +766,11 @@ export function normalizeTalentEffect(value: unknown): CardEffect | undefined {
       value: clamp(source.value, -999_999, 999_999),
     };
   }
-  const rule = TALENT_LIMITS[type];
-  if (!rule) return undefined;
+  if (!(type in TALENT_DEFAULTS)) return undefined;
   const effect: CardEffect = { type };
-  if (rule.max > 0) {
-    effect.value = clamp(
-      source.value,
-      rule.min,
-      rule.max,
-      rule.defaultValue,
-    );
+  const defaultValue = TALENT_DEFAULTS[type];
+  if (defaultValue !== undefined) {
+    effect.value = clamp(source.value, 0, 999_999, defaultValue);
   }
   return effect;
 }
@@ -853,265 +825,6 @@ function ensureUniqueEffects(effects: CardEffect[], cardName: string): void {
   }
 }
 
-function durationDiscount(turns: unknown): number {
-  const value = Math.max(1, number(turns, 1));
-  if (value <= 1) return 1;
-  if (value === 2) return 0.85;
-  if (value === 3) return 0.75;
-  if (value === 4) return 0.65;
-  return 0.6;
-}
-
-function targetMultiplier(effect: CardEffect): number {
-  const target = String(effect.target ?? '');
-  const count = Math.max(1, number(effect.target_count, 1));
-  if (target === 'random_enemy' || target === 'random_allies') {
-    return 0.85 * count;
-  }
-  if (target === 'selected_allies') return 1 + (count - 1) * 0.55;
-  if (target === 'random_summons') return 0.75 * count;
-  if (target === 'selected_summons') return 0.9 * count;
-  return TARGET_MULTIPLIERS[target] ?? 1;
-}
-
-function amountCost(value: unknown, one: number, all: number): number {
-  return value === 'all' ? all : Math.max(1, number(value, 1)) * one;
-}
-
-function summonExpectedTurns(hpRatio: number): number {
-  if (hpRatio <= 20) return 1;
-  if (hpRatio <= 35) return 2;
-  if (hpRatio <= 50) return 3;
-  if (hpRatio <= 75) return 4;
-  return 5;
-}
-
-function singleEffectScore(effect: CardEffect): number {
-  const scaling = record(effect.scaling);
-  const scalingStat = String(scaling.stat ?? '');
-  const scalingPercent = clamp(scaling.percent, 0, 200);
-  const scalingValue =
-    scalingPercent *
-    ({ hp: 0.4, attack: 0.55, shield: 0.3, defense: 0.4, mp: 0.25 }[
-      scalingStat
-    ] ?? 0);
-  const value = number(effect.value) + scalingValue;
-  const turns = Math.max(1, number(effect.turns, 1));
-  const multiplier = targetMultiplier(effect);
-  switch (effect.type) {
-    case 'damage':
-      return (value + number(effect.lifesteal_ratio) * 12) * multiplier;
-    case 'shield':
-      return value * 0.75 * multiplier;
-    case 'heal':
-      return value * 0.85 * multiplier;
-    case 'draw':
-      return value * 6;
-    case 'gain_ap':
-      return value * 9;
-    case 'gain_mp':
-      return value * 0.75;
-    case 'mp_to_ap':
-      return Math.max(0, value * 9 - number(effect.amount) * 0.65);
-    case 'spend_mp_damage':
-      return (
-        Math.max(
-          0,
-          value * Math.max(1, number(effect.amount, 1)) * 0.85 -
-            number(effect.amount) * 0.55,
-        ) * multiplier
-      );
-    case 'spend_mp_shield':
-      return (
-        Math.max(
-          0,
-          value * Math.max(1, number(effect.amount, 1)) * 0.62 -
-            number(effect.amount) * 0.55,
-        ) * multiplier
-      );
-    case 'apply_debuff':
-      return (
-        ({
-          freeze: 14,
-          entangle: 10,
-          weak: 7,
-          vulnerable: 8,
-          burn: 4,
-          poison: 4,
-        }[String(effect.debuff)] ?? 6) *
-        turns *
-        multiplier
-      );
-    case 'apply_buff': {
-      const perTurn =
-        {
-          strength: 6,
-          fortitude: 5,
-          agility: 5,
-          regen: 4,
-          thorns: 4,
-          ap_regen: 9,
-          draw_regen: 7,
-          shield_regen: 3,
-          heal_regen: 3.5,
-          damage_bonus: 4,
-          spell_damage_bonus: 4,
-          damage_reduce: 4,
-          mp_regen: 1.2,
-          blood_burn: 3,
-          defense_reflect: 14,
-          counterattack: 8,
-        }[String(effect.buff)] ?? 5;
-      return (
-        perTurn *
-        Math.max(1, value || 1) *
-        turns *
-        durationDiscount(turns) *
-        multiplier *
-        (effect.buff === 'blood_burn' ? 0.72 : 1)
-      );
-    }
-    case 'cleanse':
-      return amountCost(effect.amount, 6, 18) * multiplier;
-    case 'dispel':
-      return amountCost(effect.amount, 6, 14) * multiplier;
-    case 'strip_shield':
-      return 8 * multiplier;
-    case 'strip_buffs':
-      return 14 * multiplier;
-    case 'trap':
-      return value * 0.8 * multiplier;
-    case 'damage_from_shield':
-      return number(effect.ratio) * 16 * multiplier;
-    case 'damage_per_debuff':
-      return value * 2.2 * multiplier;
-    case 'discard':
-      return effect.amount === 'all' ? 6 : number(effect.amount) * 2;
-    case 'recover_discard':
-      return effect.amount === 'all' ? 18 : number(effect.amount) * 5;
-    case 'destroy_summon':
-      return effect.amount === 'all' ? -30 : -number(effect.amount, 1) * 14;
-    case 'discard_all_damage':
-      return value * 5 * multiplier;
-    case 'generate_blank_to_draw':
-      return value * 6;
-    case 'blank_regen':
-      return value * 6 * turns * durationDiscount(turns);
-    case 'discard_blank_damage':
-      return value * 5 * multiplier;
-    case 'reveal_intent':
-      return 5;
-    case 'summon': {
-      const skills = Array.isArray(effect.skills) ? effect.skills : [];
-      const expected = skills.reduce((sum, rawSkill) => {
-        const skill = record(rawSkill);
-        const effects = Array.isArray(skill.effects)
-          ? (skill.effects as CardEffect[])
-          : [];
-        return (
-          sum +
-          effects.reduce(
-            (skillSum, child) => skillSum + singleEffectScore(child),
-            0,
-          ) *
-            number(skill.weight, 0)
-        );
-      }, 0);
-      if (effect.attackable === false) {
-        return expected * Math.max(1, number(effect.duration, 3)) * 1.15;
-      }
-      const hpRatio = Math.max(1, number(effect.hp_ratio, 35));
-      return hpRatio * 0.28 + expected * summonExpectedTurns(hpRatio);
-    }
-    case 'conditional_group': {
-      const thenScore = (Array.isArray(effect.then_effects)
-        ? (effect.then_effects as CardEffect[])
-        : []
-      ).reduce((sum, child) => sum + singleEffectScore(child), 0);
-      const elseScore = (Array.isArray(effect.else_effects)
-        ? (effect.else_effects as CardEffect[])
-        : []
-      ).reduce((sum, child) => sum + singleEffectScore(child), 0);
-      return Math.max(thenScore * number(effect.discount, 1), elseScore);
-    }
-    case 'workshop_resource_change':
-      return Math.abs(number(effect.value)) * 1.5;
-    case 'apply_workshop_status':
-      return Math.max(1, number(effect.value, 1)) *
-        Math.max(1, number(effect.turns, 1)) * 5;
-    case 'conditional_bonus':
-      if (
-        ['bonus_by_lost_hp_ratio', 'bonus_by_max_hp_ratio'].includes(
-          String(effect.condition),
-        )
-      ) {
-        return number(effect.ratio) * 1.1 + 8;
-      }
-      if (effect.condition === 'bonus_per_self_buff') {
-        return number(effect.bonus) * 3 + 8;
-      }
-      return (
-        number(effect.bonus) * 0.75 +
-        (effect.condition === 'enemy_has_specific_debuff' ? 3 : 5)
-      );
-    default:
-      return 0;
-  }
-}
-
-export function cardScore(card: Pick<CardDefinition, 'effects'>): number {
-  return (card.effects ?? []).reduce(
-    (sum, effect) => sum + singleEffectScore(effect),
-    0,
-  );
-}
-
-export function cardLimit(cost: number): number {
-  return CARD_LIMITS[Math.max(0, Math.min(10, Math.floor(cost)))] ?? 10;
-}
-
-export function rarityFromScore(score: number): string {
-  if (score >= 130) return 'legendary';
-  if (score >= 90) return 'epic';
-  if (score >= 58) return 'rare';
-  if (score >= 30) return 'uncommon';
-  return 'common';
-}
-
-export function talentScore(effects: CardEffect[]): number {
-  return effects.reduce((score, effect) => {
-    const value = number(effect.value);
-    if (effect.type === 'apply_workshop_status') {
-      const turns = number(effect.turns, -1);
-      const durationWeight = turns === -1 ? 2 : Math.min(2, 0.5 + turns * 0.3);
-      return score + Math.max(1, value) * 3 * durationWeight;
-    }
-    if (effect.type === 'workshop_resource_change') {
-      const triggerWeight = effect.trigger === 'turn_start' ? 1.5 : 0.75;
-      const modeWeight = effect.mode === 'set' ? 1.2 : 1;
-      return score + Math.min(24, Math.abs(value) * triggerWeight * modeWeight);
-    }
-    if (effect.type === 'battle_start_shield') return score + value * 0.7;
-    if (effect.type === 'turn_start_heal') return score + value * 4;
-    if (effect.type === 'attack_bonus') return score + value * 4;
-    if (effect.type === 'shield_bonus') return score + value * 35;
-    if (effect.type === 'extra_draw') return score + value * 9;
-    if (effect.type === 'first_turn_ap') return score + value * 9;
-    if (effect.type === 'damage_reduction') return score + value * 6;
-    if (effect.type === 'always_reveal_intent') return score + 8;
-    if (effect.type === 'turn_start_cleanse') {
-      return score + number(effect.value, 1) * 10;
-    }
-    if (effect.type === 'turn_start_debuff_shield') {
-      return score + value * 1.2;
-    }
-    if (effect.type === 'hand_limit_bonus') return score + value * 3;
-    if (effect.type === 'defense_reflect') return score + 14;
-    if (effect.type === 'counterattack') return score + 10;
-    return score + 6;
-  }, 0);
-}
-
 export function normalizeWorkshopCard(
   value: unknown,
   classId: string,
@@ -1125,7 +838,7 @@ export function normalizeWorkshopCard(
   )
     ? String(source.type)
     : 'skill';
-  const cost = clamp(source.cost, 0, 10, 1);
+  const cost = clamp(source.cost, 0, 999_999, 1);
   const effects = (Array.isArray(source.effects) ? source.effects : [])
     .slice(0, 8)
     .flatMap((entry) => {
@@ -1161,7 +874,9 @@ export function normalizeWorkshopCard(
     name,
     type,
     cost,
-    rarity: 'common',
+    rarity: WORKSHOP_RARITIES.has(String(source.rarity))
+      ? String(source.rarity)
+      : 'common',
     description,
     brief: description,
     tags,
@@ -1169,17 +884,7 @@ export function normalizeWorkshopCard(
     cat: `sub_${classId}`,
     cls: 'custom',
     custom: true,
-    powerScore: 0,
   };
-  const score = cardScore(card);
-  card.rarity = rarityFromScore(score);
-  card.powerScore = Math.round(score);
-  const limit = cardLimit(cost);
-  if (score > limit) {
-    throw new Error(
-      `卡牌「${name}」强度过高（${Math.round(score)}/${limit}），请提高费用或降低数值。`,
-    );
-  }
   return card;
 }
 
@@ -1218,12 +923,6 @@ export function normalizeWorkshopClass(
       );
     }
     talentTypes.add(key);
-  }
-  const talentPower = talentScore(talentEffects);
-  if (talentPower > 24) {
-    throw new Error(
-      `职业「${name}」的天赋强度过高（${Math.round(talentPower)}/24），请减少数值或删除部分词条。`,
-    );
   }
   const rawCards = Array.isArray(source.cards) ? source.cards : [];
   if (rawCards.length < 8 || rawCards.length > 16) {
@@ -1269,9 +968,6 @@ export function normalizeWorkshopClass(
     },
     {},
   );
-  if (Object.values(starterCounts).some((count) => count > 3)) {
-    throw new Error(`职业「${name}」的基础构筑中，同名卡牌最多放入 3 张。`);
-  }
   const poolCounts = cardPool.reduce<Record<string, number>>(
     (result, cardId) => {
       result[cardId] = (result[cardId] ?? 0) + 1;
@@ -1424,30 +1120,6 @@ function validateWorkshopResourceReferences(
   }
 }
 
-function normalizeWorkshopCertifications(
-  value: unknown,
-  classIds: ReadonlySet<string>,
-): Record<string, WorkshopCertification> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('职业包的自动评定认证标记无效。');
-  }
-  const result: Record<string, WorkshopCertification> = {};
-  for (const [classId, entry] of Object.entries(value)) {
-    if (!classIds.has(classId)) continue;
-    const source = record(entry);
-    const evaluatorVersion = String(source.evaluatorVersion ?? '').trim();
-    const combatHash = String(source.combatHash ?? '').trim();
-    if (
-      !evaluatorVersion ||
-      !/^[0-9a-f]{32,128}$/.test(combatHash)
-    ) {
-      throw new Error(`职业「${classId}」的自动评定认证标记无效。`);
-    }
-    result[classId] = { evaluatorVersion, combatHash };
-  }
-  return result;
-}
-
 export function normalizeWorkshopPack(value: unknown): WorkshopPack {
   const source = record(value);
   const classesSource = Array.isArray(source.classes)
@@ -1466,13 +1138,6 @@ export function normalizeWorkshopPack(value: unknown): WorkshopPack {
     ...new Map(mechanisms.map((entry) => [entry.id, entry])).values(),
   ];
   validateWorkshopResourceReferences(classes, uniqueMechanisms);
-  const certifications =
-    source.certifications === undefined
-      ? undefined
-      : normalizeWorkshopCertifications(
-          source.certifications,
-          new Set(classes.map((entry) => entry.id)),
-        );
   return {
     format: WORKSHOP_FORMAT,
     version: 1,
@@ -1484,39 +1149,11 @@ export function normalizeWorkshopPack(value: unknown): WorkshopPack {
     exported_at: String(source.exported_at ?? new Date().toISOString()),
     classes,
     ...(uniqueMechanisms.length ? { mechanisms: uniqueMechanisms } : {}),
-    ...(certifications !== undefined ? { certifications } : {}),
   };
-}
-
-function conditionDiscount(
-  conditions: CardEffect[],
-  logic: 'and' | 'or',
-): number {
-  const discounts = conditions.map((condition) =>
-    number(condition.discount, 1),
-  );
-  return logic === 'or'
-    ? Math.max(...discounts)
-    : discounts.reduce((result, discount) => result * discount, 1);
 }
 
 export function workshopPassiveId(classId: string): string {
   return `custom_passive_${classId.replace(/^custom_class_/, '')}`;
-}
-
-export function workshopMechanismsForPack(
-  pack: WorkshopPack,
-  profession: WorkshopClass,
-): WorkshopMechanismManifest[] {
-  const requested = new Set(profession.mechanismIds ?? []);
-  return [
-    ...new Map(
-      [
-        ...readWorkshopMechanisms(),
-        ...(pack.mechanisms ?? []),
-      ].map((entry) => [entry.id, entry]),
-    ).values(),
-  ].filter((entry) => requested.has(entry.id));
 }
 
 function publishedWorkshopMechanisms(
@@ -1526,109 +1163,46 @@ function publishedWorkshopMechanisms(
   return readWorkshopMechanisms().filter((entry) => requested.has(entry.id));
 }
 
-function registerPublishedPackFingerprintContext(
-  pack: WorkshopPack,
-): WorkshopPack {
-  // Published battles resolve mechanisms from the installed global catalog,
-  // never from the portable snapshot bundled inside the stored pack.
+function validatePublishedPackReferences(pack: WorkshopPack): WorkshopPack {
+  // Installed battles resolve mechanisms from the global catalog. Portable
+  // snapshots are installed before this validation runs.
   validateWorkshopResourceReferences(pack.classes, []);
-  for (const profession of pack.classes) {
-    registerWorkshopFingerprintContext(profession, []);
-  }
-  return pack;
-}
-
-function registerTestPackFingerprintContext(pack: WorkshopPack): WorkshopPack {
-  for (const profession of pack.classes) {
-    const requested = new Set(profession.mechanismIds ?? []);
-    registerWorkshopFingerprintContext(
-      profession,
-      (pack.mechanisms ?? []).filter((entry) => requested.has(entry.id)),
-    );
-  }
   return pack;
 }
 
 function readWorkshopStorageValues(storageKey: string): unknown[] {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(storageKey) ?? '[]');
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    const sanitized = parsed.map(stripLegacyWorkshopMetadata);
+    if (JSON.stringify(sanitized) !== JSON.stringify(parsed)) {
+      localStorage.setItem(storageKey, JSON.stringify(sanitized));
+    }
+    return sanitized;
   } catch {
     return [];
   }
 }
 
-function readStoredWorkshopPacks(
-  storageKey: string,
-  register: (pack: WorkshopPack) => WorkshopPack,
-): WorkshopPack[] {
+function stripLegacyWorkshopMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripLegacyWorkshopMetadata);
+  if (!value || typeof value !== 'object') return value;
+  const result: UnknownRecord = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (['certifications', 'powerScore', 'discount'].includes(key)) continue;
+    result[key] = stripLegacyWorkshopMetadata(child);
+  }
+  return result;
+}
+
+function readStoredWorkshopPacks(storageKey: string): WorkshopPack[] {
   return readWorkshopStorageValues(storageKey).flatMap((entry) => {
     try {
-      return [register(normalizeWorkshopPack(entry))];
+      return [validatePublishedPackReferences(normalizeWorkshopPack(entry))];
     } catch {
       return [];
     }
   });
-}
-
-function workshopCertificationMatches(
-  pack: WorkshopPack,
-  profession: WorkshopClass,
-): boolean {
-  if (pack.certifications === undefined) return true;
-  const certification = pack.certifications[profession.id];
-  return Boolean(
-    certification &&
-      certification.evaluatorVersion === WORKSHOP_ASSESSMENT_VERSION &&
-      certification.combatHash === workshopCombatFingerprint(profession),
-  );
-}
-
-export function readWorkshopPacks(): WorkshopPack[] {
-  return readStoredWorkshopPacks(
-    WORKSHOP_STORAGE_KEY,
-    registerPublishedPackFingerprintContext,
-  ).flatMap((pack) => {
-    const classes = pack.classes.filter((profession) =>
-      workshopCertificationMatches(pack, profession),
-    );
-    return classes.length ? [{ ...pack, classes }] : [];
-  });
-}
-
-export function readWorkshopTestPacks(): WorkshopPack[] {
-  return readStoredWorkshopPacks(
-    WORKSHOP_TEST_STORAGE_KEY,
-    registerTestPackFingerprintContext,
-  );
-}
-
-/** True only for an installed Workshop class whose persisted proof is stale. */
-export function isWorkshopProfessionCertificationInvalid(
-  classId: string,
-): boolean {
-  const normalizedClassId = classId.trim();
-  if (!normalizedClassId) return false;
-  const rawPack = [...readWorkshopStorageValues(WORKSHOP_STORAGE_KEY)]
-    .reverse()
-    .find((entry) => rawWorkshopClassIds(entry).includes(normalizedClassId));
-  if (rawPack === undefined) return false;
-  try {
-    const pack = registerPublishedPackFingerprintContext(
-      normalizeWorkshopPack(rawPack),
-    );
-    const profession = pack.classes.find(
-      (entry) => entry.id === normalizedClassId,
-    );
-    if (!profession) return true;
-    if (pack.certifications === undefined) return false;
-    return !workshopCertificationMatches(pack, profession);
-  } catch {
-    // A raw installed class must fail closed. readWorkshopPacks intentionally
-    // hides malformed/dependency-broken packs, but battle gates cannot treat
-    // that absence as proof that the class is a built-in profession.
-    return true;
-  }
 }
 
 function rawWorkshopClassIds(value: unknown): string[] {
@@ -1643,73 +1217,49 @@ function rawWorkshopClassIds(value: unknown): string[] {
     .filter(Boolean);
 }
 
+function withoutLegacyWorkshopMetadata(source: UnknownRecord): UnknownRecord {
+  const cleaned = { ...source };
+  delete cleaned.certifications;
+  return cleaned;
+}
+
+function packsWithoutClasses(
+  packs: unknown[],
+  classIds: ReadonlySet<string>,
+): unknown[] {
+  return packs.flatMap((entry) => {
+    const source = record(entry);
+    const cleaned = withoutLegacyWorkshopMetadata(source);
+    if (!Array.isArray(source.classes)) {
+      return rawWorkshopClassIds(entry).some((classId) => classIds.has(classId))
+        ? []
+        : [cleaned];
+    }
+    const classes = source.classes.filter((profession) => {
+      const classId = String(record(profession).id ?? '').trim();
+      return !classIds.has(classId);
+    });
+    if (!classes.length) return [];
+    return [{ ...cleaned, classes }];
+  });
+}
+
 function storedPacksWithoutClasses(
   storageKey: string,
   classIds: ReadonlySet<string>,
 ): unknown[] {
-  return readWorkshopStorageValues(storageKey).flatMap((entry) => {
-    const source = record(entry);
-    if (!Array.isArray(source.classes)) {
-      return rawWorkshopClassIds(entry).some((classId) => classIds.has(classId))
-        ? []
-        : [entry];
-    }
-    const removedIds: string[] = [];
-    const classes = source.classes.filter((profession) => {
-      const classId = String(record(profession).id ?? '').trim();
-      if (!classIds.has(classId)) return true;
-      removedIds.push(classId);
-      return false;
-    });
-    if (!removedIds.length) return [entry];
-    if (!classes.length) return [];
-    const certifications =
-      source.certifications &&
-      typeof source.certifications === 'object' &&
-      !Array.isArray(source.certifications)
-        ? { ...(source.certifications as Record<string, unknown>) }
-        : undefined;
-    for (const classId of removedIds) delete certifications?.[classId];
-    return [
-      {
-        ...source,
-        classes,
-        ...(certifications ? { certifications } : {}),
-      },
-    ];
-  });
+  return packsWithoutClasses(readWorkshopStorageValues(storageKey), classIds);
 }
 
 function deleteStoredWorkshopClass(
   storageKey: string,
   classId: string,
 ): boolean {
-  let removed = false;
-  const next = readWorkshopStorageValues(storageKey).flatMap((entry) => {
-    const source = record(entry);
-    if (!Array.isArray(source.classes)) return [entry];
-    const classes = source.classes.filter((profession) => {
-      if (String(record(profession).id ?? '').trim() !== classId) return true;
-      removed = true;
-      return false;
-    });
-    if (classes.length === source.classes.length) return [entry];
-    if (!classes.length) return [];
-    const certifications =
-      source.certifications &&
-      typeof source.certifications === 'object' &&
-      !Array.isArray(source.certifications)
-        ? { ...(source.certifications as Record<string, unknown>) }
-        : undefined;
-    if (certifications) delete certifications[classId];
-    return [
-      {
-        ...source,
-        classes,
-        ...(certifications ? { certifications } : {}),
-      },
-    ];
-  });
+  const current = readWorkshopStorageValues(storageKey);
+  const next = packsWithoutClasses(current, new Set([classId]));
+  const removed =
+    current.flatMap(rawWorkshopClassIds).includes(classId) &&
+    !next.flatMap(rawWorkshopClassIds).includes(classId);
   if (removed) localStorage.setItem(storageKey, JSON.stringify(next));
   return removed;
 }
@@ -1718,27 +1268,107 @@ function writeWorkshopPacks(packs: unknown[]): void {
   localStorage.setItem(WORKSHOP_STORAGE_KEY, JSON.stringify(packs));
 }
 
-function writeWorkshopTestPacks(packs: unknown[]): void {
-  localStorage.setItem(WORKSHOP_TEST_STORAGE_KEY, JSON.stringify(packs));
+function restoreWorkshopStorage(
+  snapshots: ReadonlyArray<readonly [string, string | null]>,
+): void {
+  for (const [key, value] of snapshots) {
+    try {
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, value);
+    } catch {
+      // Preserve the original error. Restoring a smaller previous value should
+      // normally succeed even after a quota failure.
+    }
+  }
+}
+
+/**
+ * Alpha 68/Beta 1.15 stored newly saved professions as test candidates. Move
+ * every valid candidate into the normal catalog once, with the newest candidate
+ * replacing an older installed copy of the same profession.
+ */
+export function migrateLegacyWorkshopTestPacks(): number {
+  const snapshots = [
+    [WORKSHOP_STORAGE_KEY, localStorage.getItem(WORKSHOP_STORAGE_KEY)],
+    [WORKSHOP_TEST_STORAGE_KEY, localStorage.getItem(WORKSHOP_TEST_STORAGE_KEY)],
+    [
+      WORKSHOP_MECHANISM_STORAGE_KEY,
+      localStorage.getItem(WORKSHOP_MECHANISM_STORAGE_KEY),
+    ],
+    [
+      LEGACY_WORKSHOP_ASSESSMENT_STORAGE_KEY,
+      localStorage.getItem(LEGACY_WORKSHOP_ASSESSMENT_STORAGE_KEY),
+    ],
+  ] as const;
+  try {
+    const legacy = readWorkshopStorageValues(WORKSHOP_TEST_STORAGE_KEY);
+    if (!legacy.length) {
+      localStorage.removeItem(LEGACY_WORKSHOP_ASSESSMENT_STORAGE_KEY);
+      return 0;
+    }
+    let installed = readWorkshopStorageValues(WORKSHOP_STORAGE_KEY);
+    const retained: unknown[] = [];
+    const bundledMechanisms: WorkshopMechanismManifest[] = [];
+    let migrated = 0;
+    for (const entry of legacy) {
+      try {
+        const pack = normalizeWorkshopPack(entry);
+        bundledMechanisms.push(...(pack.mechanisms ?? []));
+        const classIds = new Set(
+          pack.classes.map((profession) => profession.id),
+        );
+        installed = [...packsWithoutClasses(installed, classIds), pack];
+        migrated += pack.classes.length;
+      } catch {
+        // Never discard a legacy candidate that cannot be normalized safely.
+        retained.push(entry);
+      }
+    }
+    if (bundledMechanisms.length) {
+      saveWorkshopMechanisms(bundledMechanisms);
+    }
+    if (migrated > 0) writeWorkshopPacks(installed);
+    if (retained.length) {
+      localStorage.setItem(WORKSHOP_TEST_STORAGE_KEY, JSON.stringify(retained));
+    } else {
+      localStorage.removeItem(WORKSHOP_TEST_STORAGE_KEY);
+    }
+    localStorage.removeItem(LEGACY_WORKSHOP_ASSESSMENT_STORAGE_KEY);
+    return migrated;
+  } catch {
+    restoreWorkshopStorage(snapshots);
+    return 0;
+  }
+}
+
+export function readWorkshopPacks(): WorkshopPack[] {
+  localStorage.removeItem(LEGACY_WORKSHOP_ASSESSMENT_STORAGE_KEY);
+  migrateLegacyWorkshopTestPacks();
+  return readStoredWorkshopPacks(WORKSHOP_STORAGE_KEY);
 }
 
 export function saveWorkshopPack(value: unknown): WorkshopPack {
+  migrateLegacyWorkshopTestPacks();
   const normalized = normalizeWorkshopPack(value);
-  for (const mechanism of normalized.mechanisms ?? []) {
-    saveWorkshopMechanism(mechanism);
-  }
   const classIds = new Set(normalized.classes.map((entry) => entry.id));
   const kept = storedPacksWithoutClasses(WORKSHOP_STORAGE_KEY, classIds);
-  writeWorkshopPacks([...kept, normalized]);
-  return registerPublishedPackFingerprintContext(normalized);
-}
-
-export function readWorkshopTestClasses(): WorkshopClass[] {
-  const byId = new Map<string, WorkshopClass>();
-  for (const pack of [...readWorkshopPacks(), ...readWorkshopTestPacks()]) {
-    for (const profession of pack.classes) byId.set(profession.id, profession);
+  const snapshots = [
+    [WORKSHOP_STORAGE_KEY, localStorage.getItem(WORKSHOP_STORAGE_KEY)],
+    [
+      WORKSHOP_MECHANISM_STORAGE_KEY,
+      localStorage.getItem(WORKSHOP_MECHANISM_STORAGE_KEY),
+    ],
+  ] as const;
+  try {
+    if (normalized.mechanisms?.length) {
+      saveWorkshopMechanisms(normalized.mechanisms);
+    }
+    writeWorkshopPacks([...kept, normalized]);
+    return validatePublishedPackReferences(normalized);
+  } catch (error) {
+    restoreWorkshopStorage(snapshots);
+    throw error;
   }
-  return [...byId.values()];
 }
 
 function workshopCandidateFromPacks(
@@ -1753,82 +1383,21 @@ function workshopCandidateFromPacks(
   return undefined;
 }
 
-/**
- * Resolves the exact class snapshot used by an isolated Workshop battle.
- * A saved candidate wins over a published class with the same id, while its
- * bundled mechanisms remain local to that candidate.
- */
+/** Resolves a saved profession for the optional isolated test arena. */
 export function readWorkshopTestCandidate(
   classId: string,
 ): WorkshopTestCandidate | undefined {
-  const rawTestPack = [...readWorkshopStorageValues(WORKSHOP_TEST_STORAGE_KEY)]
-    .reverse()
-    .find((entry) => rawWorkshopClassIds(entry).includes(classId));
-  if (rawTestPack !== undefined) {
-    let pack: WorkshopPack;
-    try {
-      pack = registerTestPackFingerprintContext(
-        normalizeWorkshopPack(rawTestPack),
-      );
-    } catch (caught) {
-      const reason = caught instanceof Error ? caught.message : String(caught);
-      throw new Error(
-        `测试候选仍保存在本机，但当前无法载入：${reason} 请重新导入或恢复它依赖的底层机制、资源或状态；恢复后可继续编辑和重新评定。`,
-        { cause: caught },
-      );
-    }
-    const profession = pack.classes.find((entry) => entry.id === classId);
-    if (!profession) {
-      throw new Error(
-        '测试候选仍保存在本机，但职业标识已损坏；请导出本地备份后重新导入或重新保存。',
-      );
-    }
-    return {
-      pack,
-      profession,
-      mechanisms: workshopMechanismsForPack(pack, profession),
-    };
-  }
-  const testCandidate = workshopCandidateFromPacks(
-    readWorkshopTestPacks(),
-    classId,
-  );
-  if (testCandidate) {
-    return {
-      ...testCandidate,
-      mechanisms: workshopMechanismsForPack(
-        testCandidate.pack,
-        testCandidate.profession,
-      ),
-    };
-  }
-  const published = workshopCandidateFromPacks(readWorkshopPacks(), classId);
-  return published
+  const saved = workshopCandidateFromPacks(readWorkshopPacks(), classId);
+  return saved
     ? {
-        ...published,
-        mechanisms: publishedWorkshopMechanisms(published.profession),
+        ...saved,
+        mechanisms: publishedWorkshopMechanisms(saved.profession),
       }
     : undefined;
 }
 
-/**
- * Persists a validated test candidate without adding it to character creation
- * or reclassification catalogs. Bundled mechanisms remain inside the candidate
- * pack and are resolved only by the isolated battle engine.
- */
-export function saveWorkshopTestPack(value: unknown): WorkshopPack {
-  const normalized = normalizeWorkshopPack(value);
-  const classIds = new Set(normalized.classes.map((entry) => entry.id));
-  const kept = storedPacksWithoutClasses(WORKSHOP_TEST_STORAGE_KEY, classIds);
-  writeWorkshopTestPacks([...kept, normalized]);
-  return registerTestPackFingerprintContext(normalized);
-}
-
-export function deleteWorkshopTestClass(classId: string): boolean {
-  return deleteStoredWorkshopClass(WORKSHOP_TEST_STORAGE_KEY, classId);
-}
-
 export function deleteWorkshopClass(classId: string): boolean {
+  migrateLegacyWorkshopTestPacks();
   return deleteStoredWorkshopClass(WORKSHOP_STORAGE_KEY, classId);
 }
 
@@ -1998,7 +1567,7 @@ export function importWorkshopArtifact(value: unknown): WorkshopImportResult {
   if (source.format === WORKSHOP_EXTENSION_FORMAT) {
     return { kind: 'extension', extension: saveWorkshopExtension(value) };
   }
-  return { kind: 'class-pack', pack: saveWorkshopTestPack(value) };
+  return { kind: 'class-pack', pack: saveWorkshopPack(value) };
 }
 
 export function createWorkshopExtensionApi(): WorkshopExtensionApi {

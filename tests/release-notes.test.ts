@@ -9,16 +9,16 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.68');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.69');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.68');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.69');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('创意工坊职业强度评定');
-    expect(latestText).toContain('随机单怪');
-    expect(latestText).toContain('敌方承压倍率');
-    expect(latestText).toContain('连续辅助后会主动攻击');
+    expect(latestText).toContain('移除卡牌与天赋强度评分');
+    expect(latestText).toContain('不再要求模拟测试');
+    expect(latestText).toContain('新职业与新构筑');
+    expect(latestText).toContain('立即公开');
     const alpha67Text =
       releases
         .find((release) => release.version === '0.2.0-alpha.67')
@@ -148,10 +148,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.15.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.16.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.16',
       'Beta 1.15',
       'Beta 1.14',
       'Beta 1.13',
@@ -170,10 +171,13 @@ describe('release notes', () => {
       'Beta 1.0',
     ]);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('创意工坊职业');
-    expect(latestText).toContain('随机怪群');
-    expect(latestText).toContain('敌方承压倍率');
-    expect(latestText).toContain('只强化、防御而不攻击');
+    expect(latestText).toContain('强制模拟评定');
+    expect(latestText).toContain('职业与构筑');
+    expect(latestText).toContain('直接公开');
+    const beta115Text = releases
+      .find((release) => release.version === '1.15.0-beta.1')
+      ?.changes.join('\n');
+    expect(beta115Text).toContain('只强化、防御而不攻击');
     const beta114Text = releases
       .find((release) => release.version === '1.14.0-beta.1')
       ?.changes.join('\n');
@@ -238,14 +242,14 @@ describe('release notes', () => {
   });
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
-    expect(releaseHistoryFor('alpha', '0.2.0-alpha.69')[0]?.version).toBe(
-      '0.2.0-alpha.68',
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.70')[0]?.version).toBe(
+      '0.2.0-alpha.69',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.68',
+      '0.2.0-alpha.69',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });

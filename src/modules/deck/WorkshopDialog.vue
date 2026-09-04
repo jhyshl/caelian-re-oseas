@@ -35,8 +35,6 @@ import {
 import {
   WORKSHOP_MAIN_CLASSES,
   WORKSHOP_TALENT_OPTIONS,
-  cardLimit,
-  cardScore,
   deleteWorkshopClass,
   deleteWorkshopExtension,
   exportWorkshopPack,
@@ -45,20 +43,13 @@ import {
   readWorkshopDrafts,
   readWorkshopExtensions,
   readWorkshopPacks,
-  readWorkshopTestPacks,
   saveWorkshopDraft,
-  saveWorkshopTestPack,
-  talentScore,
+  saveWorkshopPack,
   type WorkshopClass,
   type WorkshopDraft,
   type WorkshopExtensionManifest,
   type WorkshopMainClass,
 } from '@/workshop';
-import {
-  activateAssessedWorkshopTestPack,
-  assessWorkshopProfession,
-  type WorkshopAssessmentReport,
-} from '@/workshop-assessment';
 
 type EditableEffect = CardEffect & Record<string, any>;
 interface EditableCard {
@@ -66,6 +57,7 @@ interface EditableCard {
   name: string;
   type: string;
   cost: number;
+  rarity: string;
   description: string;
   tags: string[];
   effects: EditableEffect[];
@@ -91,7 +83,6 @@ const emit = defineEmits<{ close: []; saved: [] }>();
 
 const tab = ref<'library' | 'editor' | 'drafts' | 'extensions' | 'test'>('library');
 const published = ref(readWorkshopPacks());
-const testPacks = ref(readWorkshopTestPacks());
 const drafts = ref(readWorkshopDrafts());
 const extensions = ref(readWorkshopExtensions());
 const mechanisms = ref(readWorkshopMechanisms());
@@ -102,16 +93,6 @@ const error = ref('');
 const importInput = ref<HTMLInputElement>();
 const testProfessionId = ref('');
 const testMechanismIds = ref<string[]>([]);
-const assessment = ref<WorkshopAssessmentReport>();
-const assessmentProgress = ref({ completed: 0, total: 0 });
-const assessing = ref(false);
-const assessmentStatusNames = {
-  underpowered: '偏弱，可启用',
-  balanced: '合理，可启用',
-  strong: '接近上沿，可启用',
-  overpowered: '超出上沿，禁止启用',
-  unsafe: '机制异常，禁止启用',
-} as const;
 const testConfig = ref({
   opponentMode: 'dummy' as 'dummy' | 'random-single' | 'random-multi',
   randomTier: 'mixed' as 'low' | 'high' | 'mixed',
@@ -153,7 +134,7 @@ const activeCard = computed(() =>
 );
 const testableProfessions = computed(() => {
   const byId = new Map<string, WorkshopClass>();
-  for (const pack of [...published.value, ...testPacks.value]) {
+  for (const pack of published.value) {
     for (const profession of pack.classes) byId.set(profession.id, profession);
   }
   return [...byId.values()];
@@ -169,15 +150,6 @@ const poolCounts = computed(() =>
     result[id] = (result[id] ?? 0) + 1;
     return result;
   }, {}),
-);
-const talentPower = computed(() =>
-  talentScore(editor.value.talent.effects),
-);
-const activeCardPower = computed(() =>
-  activeCard.value ? Math.round(cardScore(activeCard.value)) : 0,
-);
-const activeCardLimit = computed(() =>
-  activeCard.value ? cardLimit(activeCard.value.cost) : 0,
 );
 const effectOptions = computed(() => [
   ...extensions.value.flatMap((extension) =>
@@ -298,6 +270,11 @@ function editableFromValue(value: Partial<WorkshopClass>): EditableClass {
         name: String(card?.name || `自定义卡牌${index + 1}`),
         type: String(card?.type || 'skill'),
         cost: Number.isFinite(Number(card?.cost)) ? Number(card?.cost) : 1,
+        rarity: ['common', 'uncommon', 'rare', 'epic', 'legendary'].includes(
+          String(card?.rarity),
+        )
+          ? String(card?.rarity)
+          : 'common',
         description: String(card?.description || ''),
         tags: Array.isArray(card?.tags) ? card.tags.map(String) : [],
         effects: Array.isArray(card?.effects) ? card.effects : [],
@@ -470,6 +447,7 @@ function addCard(): void {
     name: `自定义卡牌${editor.value.cards.length + 1}`,
     type: 'skill',
     cost: 1,
+    rarity: 'common',
     description: '',
     tags: [],
     effects: [],
@@ -597,7 +575,7 @@ async function validateCard(): Promise<void> {
       editor.value.cards.indexOf(card),
     );
     Object.assign(card, normalized);
-    notice.value = `卡牌已通过静态预算检查：${normalized.powerScore}/${cardLimit(normalized.cost)}，稀有度自动判定为 ${normalized.rarity}；职业最终强度以三轮真实战斗评定为准。`;
+    notice.value = `卡牌「${normalized.name}」的结构与引用校验通过。`;
     await props.context.api.execute({
       id: makeId('achievement-workshop-card'),
       type: 'achievement.record',
@@ -614,7 +592,6 @@ async function validateCard(): Promise<void> {
 
 function addDeckCopy(cardId: string): void {
   if (editor.value.starterDeck.length >= 15) return;
-  if ((deckCounts.value[cardId] ?? 0) >= 3) return;
   if ((deckCounts.value[cardId] ?? 0) >= (poolCounts.value[cardId] ?? 0)) return;
   editor.value.starterDeck.push(cardId);
 }
@@ -635,109 +612,63 @@ function removePoolCopy(cardId: string): void {
   if (index >= 0) editor.value.cardPool.splice(index, 1);
 }
 
-function saveEditorTestCandidate() {
-  editor.value.mechanismIds = [
-    ...new Set([
-      ...editor.value.mechanismIds,
-      ...collectReferencedMechanisms(editor.value.cards),
-      ...collectReferencedMechanisms(editor.value.talent.effects),
-    ]),
-  ];
-  if (editor.value.cards.length < 8 || editor.value.cards.length > 16) {
-    throw new Error('职业包需要 8–16 种不同名称的可配置卡牌。');
-  }
-  if (editor.value.cardPool.length < 16 || editor.value.cardPool.length > 32) {
-    throw new Error('职业卡池总数需要保持在 16–32 张。');
-  }
-  if (editor.value.starterDeck.length !== 15) {
-    throw new Error('基础卡组构筑必须正好为 15 张。');
-  }
-  if (Object.values(deckCounts.value).some((count) => count > 3)) {
-    throw new Error('自制职业的基础构筑中，同名卡牌最多放入 3 张。');
-  }
-  if (
-    Object.entries(deckCounts.value).some(
-      ([cardId, count]) => count > (poolCounts.value[cardId] ?? 0),
-    )
-  ) {
-    throw new Error('基础构筑使用的卡牌数量不能超过职业卡池中的持有数量。');
-  }
-  const pack = saveWorkshopTestPack({
-    format: 'caelian_workshop_class_pack',
-    version: 1,
-    packName: `${editor.value.name || '未命名'}职业包`,
-    author: '玩家自定义',
-    classes: [editor.value],
-  });
-  testPacks.value = readWorkshopTestPacks();
-  testProfessionId.value = pack.classes[0]?.id ?? '';
-  return pack;
-}
-
 function editSelectedTestProfession(): void {
   const profession = testableProfessions.value.find(
     (entry) => entry.id === testProfessionId.value,
   );
-  if (!profession) return;
-  editProfession(profession);
-}
-
-function saveTestProfession(): void {
-  error.value = '';
-  notice.value = '';
-  try {
-    const pack = saveEditorTestCandidate();
-    assessment.value = undefined;
-    notice.value = `测试版「${pack.classes[0]?.name}」已保存，尚未加入可用职业；可以在测试场中实战检查。`;
-    tab.value = 'test';
-  } catch (caught) {
-    error.value = caught instanceof Error ? caught.message : String(caught);
-  }
+  if (profession) editProfession(profession);
 }
 
 async function publishProfession(): Promise<void> {
   error.value = '';
   notice.value = '';
-  assessing.value = true;
-  assessmentProgress.value = { completed: 0, total: 0 };
   try {
-    const candidate = saveEditorTestCandidate();
-    const profession = candidate.classes[0];
-    if (!profession) throw new Error('职业包中没有可评定的职业。');
-    assessment.value = await assessWorkshopProfession(
-      props.context.api,
-      profession,
-      (completed, total) => {
-        assessmentProgress.value = { completed, total };
-        notice.value = `正在执行三轮真实战斗评定：${completed} / ${total}`;
-      },
-    );
-    if (!assessment.value.passed) {
-      const [minimum] = assessment.value.strengthRange;
-      throw new Error(
-        assessment.value.status === 'overpowered'
-          ? `自动评定已通过敌方 ×${minimum} 的承压上限场景，职业未启用。`
-          : assessment.value.unsafeReason || '自动评定发现机制执行异常，职业未启用。',
-      );
+    editor.value.mechanismIds = [
+      ...new Set([
+        ...editor.value.mechanismIds,
+        ...collectReferencedMechanisms(editor.value.cards),
+        ...collectReferencedMechanisms(editor.value.talent.effects),
+      ]),
+    ];
+    if (editor.value.cards.length < 8 || editor.value.cards.length > 16) {
+      throw new Error('职业包需要 8–16 种不同名称的可配置卡牌。');
     }
-    const pack = activateAssessedWorkshopTestPack(candidate);
+    if (editor.value.cardPool.length < 16 || editor.value.cardPool.length > 32) {
+      throw new Error('职业卡池总数需要保持在 16–32 张。');
+    }
+    if (editor.value.starterDeck.length !== 15) {
+      throw new Error('基础卡组构筑必须正好为 15 张。');
+    }
+    if (
+      Object.entries(deckCounts.value).some(
+        ([cardId, count]) => count > (poolCounts.value[cardId] ?? 0),
+      )
+    ) {
+      throw new Error('基础构筑使用的卡牌数量不能超过职业卡池中的持有数量。');
+    }
+    const pack = saveWorkshopPack({
+      format: 'caelian_workshop_class_pack',
+      version: 1,
+      packName: `${editor.value.name || '未命名'}职业包`,
+      author: '玩家自定义',
+      classes: [editor.value],
+    });
     refreshWorkshopProfessionCatalogs();
     await loadCardCatalog();
     refreshWorkshopCardCatalog();
     refreshWorkshopPassiveCatalog();
     published.value = readWorkshopPacks();
+    testProfessionId.value = pack.classes[0]?.id ?? '';
     await props.context.api.execute({
       id: makeId('achievement-workshop-class'),
       type: 'achievement.record',
       payload: { event: 'workshop.class' },
     });
-    notice.value = `职业「${pack.classes[0]?.name}」已完成三轮、多构筑与多属性档位的真实战斗评定并启用，可在新档与转职中选择。`;
+    notice.value = `职业「${pack.classes[0]?.name}」已保存并立即启用，可在新档、转职和可选测试场中选择。`;
     tab.value = 'library';
     emit('saved');
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught);
-  } finally {
-    assessing.value = false;
   }
 }
 
@@ -893,15 +824,20 @@ async function importFile(event: Event): Promise<void> {
       notice.value = `扩展「${result.extension.name}」已导入，新增 ${result.extension.presets.length} 个效果预设。`;
       tab.value = 'extensions';
     } else {
-      testPacks.value = readWorkshopTestPacks();
+      refreshWorkshopProfessionCatalogs();
+      await loadCardCatalog();
+      refreshWorkshopCardCatalog();
+      refreshWorkshopPassiveCatalog();
+      published.value = readWorkshopPacks();
       testProfessionId.value = result.pack.classes[0]?.id ?? '';
-      notice.value = `职业包「${result.pack.packName}」已通过结构与沙箱校验并导入为测试版${
+      notice.value = `职业包「${result.pack.packName}」已通过结构与沙箱校验并立即启用${
         result.pack.mechanisms?.length
-          ? `，并携带 ${result.pack.mechanisms.length} 个候选专用底层机制`
+          ? `，同时安装 ${result.pack.mechanisms.length} 个底层机制`
           : ''
-      }。完成三轮实战评定后才会加入可用职业。`;
+      }。`;
       mechanisms.value = readWorkshopMechanisms();
-      tab.value = 'test';
+      tab.value = 'library';
+      emit('saved');
     }
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught);
@@ -972,7 +908,7 @@ async function startWorkshopTest(): Promise<void> {
       >
         <header class="workshop-header">
           <div>
-            <small>CREATIVE WORKSHOP v3.1</small>
+            <small>CREATIVE WORKSHOP v3.2</small>
             <h2 id="workshop-title">创意工坊</h2>
             <p>支持声明式扩展，也可导入经过隔离和限时校验的代码机制。</p>
           </div>
@@ -1081,7 +1017,7 @@ async function startWorkshopTest(): Promise<void> {
           </div>
           <WorkshopStateResourceBuilder @save="saveVisualMechanism" />
           <div v-if="extensions.length + mechanisms.length === 0" class="workshop-empty">
-            尚未安装扩展。下载指导手册即可查看完整格式、示例和强度限制。
+            尚未安装扩展。下载指导手册即可查看完整格式、示例和沙箱安全规则。
           </div>
           <article
             v-for="mechanism in mechanisms"
@@ -1153,7 +1089,7 @@ async function startWorkshopTest(): Promise<void> {
             <label class="wide">
               <span>测试职业</span>
               <select v-model="testProfessionId">
-                <option value="">请选择正式职业或已保存测试版</option>
+                <option value="">请选择已经保存的自制职业</option>
                 <option
                   v-for="profession in testableProfessions"
                   :key="profession.id"
@@ -1183,7 +1119,7 @@ async function startWorkshopTest(): Promise<void> {
               <span>{{ testConfig.opponentMode === 'dummy' ? '木桩数量' : '怪物数量' }}</span>
               <input v-model.number="testConfig.dummyCount" type="number" :min="testConfig.opponentMode === 'dummy' ? 1 : 2" :max="testConfig.opponentMode === 'dummy' ? 8 : 5" />
             </label>
-            <label v-if="testConfig.opponentMode !== 'dummy'"><span>敌方强度倍率</span><input v-model.number="testConfig.enemyScale" type="number" min="0.5" max="2.5" step="0.05" /></label>
+            <label v-if="testConfig.opponentMode !== 'dummy'"><span>敌方属性倍率</span><input v-model.number="testConfig.enemyScale" type="number" min="0.5" max="2.5" step="0.05" /></label>
             <template v-if="testConfig.opponentMode === 'dummy'">
               <label><span>每个木桩生命</span><input v-model.number="testConfig.dummyHp" type="number" min="1" max="1000000" /></label>
               <label><span>木桩攻击</span><input v-model.number="testConfig.dummyAttack" type="number" min="0" max="100000" /></label>
@@ -1224,7 +1160,7 @@ async function startWorkshopTest(): Promise<void> {
           </section>
 
           <footer class="test-actions">
-            <span>测试版不会出现在新建角色与转职列表。要正式启用，请载入编辑器并完成三轮、多构筑与多属性档位的自动评定。</span>
+            <span>测试场完全可选；保存职业后即可直接使用，无需先完成模拟测试。</span>
             <button
               type="button"
               class="ca-button"
@@ -1292,12 +1228,6 @@ async function startWorkshopTest(): Promise<void> {
               <label>
                 <span>天赋名称</span>
                 <input v-model="editor.talent.name" maxlength="18" />
-              </label>
-              <label>
-                <span>天赋静态预算</span>
-                <output :class="{ over: talentPower > 24 }">
-                  {{ Math.round(talentPower * 10) / 10 }} / 24
-                </output>
               </label>
               <label class="wide">
                 <span>天赋说明</span>
@@ -1382,7 +1312,6 @@ async function startWorkshopTest(): Promise<void> {
                       v-model.number="effect.value"
                       type="number"
                       min="1"
-                      max="10"
                       step="1"
                     />
                   </label>
@@ -1502,7 +1431,7 @@ async function startWorkshopTest(): Promise<void> {
               <span>02</span>
               <div>
                 <h3>自定义卡牌</h3>
-                <p>静态公式只做结构与基础预算检查；职业能否启用由三轮真实战斗的敌方承压倍率区间决定。</p>
+                <p>自由设置卡牌数值与稀有度；保存时只检查数据结构、机制引用和运行安全。</p>
               </div>
               <button
                 type="button"
@@ -1547,14 +1476,17 @@ async function startWorkshopTest(): Promise<void> {
                       v-model.number="activeCard.cost"
                       type="number"
                       min="0"
-                      max="10"
                     />
                   </label>
                   <label>
-                    <span>已用 / 静态预算</span>
-                    <output :class="{ over: activeCardPower > activeCardLimit }">
-                      {{ activeCardPower }} / {{ activeCardLimit }}
-                    </output>
+                    <span>稀有度（自选）</span>
+                    <select v-model="activeCard.rarity">
+                      <option value="common">普通</option>
+                      <option value="uncommon">优秀</option>
+                      <option value="rare">稀有</option>
+                      <option value="epic">史诗</option>
+                      <option value="legendary">传说</option>
+                    </select>
                   </label>
                   <label class="wide">
                     <span>卡牌说明</span>
@@ -1644,7 +1576,7 @@ async function startWorkshopTest(): Promise<void> {
               <span>03</span>
               <div>
                 <h3>职业卡池与基础构筑</h3>
-                <p>8–16 种不同名卡牌组成 16–32 张职业卡池，再从中配置正好 15 张基础构筑；同名卡最多 3 张。</p>
+                <p>8–16 种不同名卡牌组成 16–32 张职业卡池，再从中配置正好 15 张基础构筑；同名卡数量仅受职业卡池持有量约束。</p>
               </div>
               <div class="pool-summary">
                 <output :class="{ over: editor.cards.length < 8 || editor.cards.length > 16 }">
@@ -1695,8 +1627,7 @@ async function startWorkshopTest(): Promise<void> {
                   <button
                     type="button"
                     :disabled="
-                      (deckCounts[card.id] ?? 0) >= 3 ||
-                        (deckCounts[card.id] ?? 0) >= (poolCounts[card.id] ?? 0) ||
+                      (deckCounts[card.id] ?? 0) >= (poolCounts[card.id] ?? 0) ||
                         editor.starterDeck.length >= 15
                     "
                     @click="addDeckCopy(card.id)"
@@ -1715,40 +1646,14 @@ async function startWorkshopTest(): Promise<void> {
             </button>
             <button
               type="button"
-              class="ca-button"
-              :disabled="assessing"
-              @click="saveTestProfession"
-            >
-              保存测试版
-            </button>
-            <button
-              type="button"
               class="ca-button primary"
-              :disabled="assessing"
               @click="publishProfession"
             >
-              {{ assessing
-                ? assessmentProgress.total > 0
-                  ? `自动评定 ${assessmentProgress.completed}/${assessmentProgress.total}`
-                  : '正在准备评定…'
-                : '三轮评定并启用' }}
+              保存并立即启用
             </button>
           </footer>
         </main>
 
-        <section v-if="assessment" class="assessment-report">
-          <div>
-            <strong>真实战斗评定：{{ assessmentStatusNames[assessment.status] }}</strong>
-            <span v-if="assessment.status === 'overpowered'">敌方承压倍率 ≥{{ assessment.strengthRange[0] }}</span>
-            <span v-else>敌方承压倍率区间 {{ assessment.strengthRange[0] }}–{{ assessment.strengthRange[1] }}</span>
-          </div>
-          <ol>
-            <li v-for="round in assessment.rounds" :key="round.round">
-              第 {{ round.round }} 轮 · 敌方 ×{{ round.enemyScale }} ·
-              {{ round.victories }}/4 胜 · {{ round.passed ? '通过' : '未通过' }}
-            </li>
-          </ol>
-        </section>
         <p v-if="notice" class="workshop-notice">{{ notice }}</p>
         <p v-if="error" class="workshop-error">{{ error }}</p>
       </section>
@@ -2368,35 +2273,6 @@ output.over {
   background: rgba(21, 18, 14, 0.96);
   font-size: 10px;
   text-align: center;
-}
-
-.assessment-report {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 18px 12px;
-  padding: 10px 12px;
-  border: 1px solid rgba(212, 168, 67, 0.38);
-  border-radius: 10px;
-  color: var(--ca-text);
-  background: rgba(212, 168, 67, 0.08);
-}
-
-.assessment-report > div {
-  display: grid;
-  gap: 3px;
-}
-
-.assessment-report strong {
-  color: var(--ca-gold-light);
-}
-
-.assessment-report span,
-.assessment-report ol {
-  margin: 0;
-  color: var(--ca-muted);
-  font-size: 9px;
 }
 
 .workshop-notice {

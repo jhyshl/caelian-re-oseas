@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { previewBattleCard } from '@/battle/card-preview';
 import { cardNameHistoryKey } from '@/battle/card-history';
+import { MAX_CARD_EFFECT_HITS } from '@/battle/execution-limits';
 import type { CardDefinition } from '@/content/types';
 import type {
   BattleCompanionState,
@@ -107,6 +108,25 @@ function state(
 }
 
 describe('战斗卡牌预览', () => {
+  it('把异常多段数限制在同步执行安全边界内', () => {
+    const current = state(player());
+    current.enemies = [enemy({ hp: 1_000, hpMax: 1_000 })];
+    const card: CardDefinition = {
+      name: '多段执行边界',
+      type: 'skill',
+      cost: 0,
+      rarity: 'common',
+      description: '',
+      effects: [
+        { type: 'damage', value: 1, hits: 999_999, target: 'enemy' },
+      ],
+    };
+
+    expect(previewBattleCard(current, card, 0).enemyDamage[0]).toBe(
+      MAX_CARD_EFFECT_HITS,
+    );
+  });
+
   it('把攻击力乘区计入点击或拖动时显示的预计伤害', () => {
     const card: CardDefinition = {
       name: '预览斩击',

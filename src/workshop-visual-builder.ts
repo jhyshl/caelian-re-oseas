@@ -147,7 +147,7 @@ export function compileVisualWorkshopStatus(
               : clamp(
                   effect.value,
                   0,
-                  effect.type === 'damage_reduction' ? 90 : 999_999,
+                  effect.type === 'damage_reduction' ? 100 : 999_999,
                 ),
         })),
       },

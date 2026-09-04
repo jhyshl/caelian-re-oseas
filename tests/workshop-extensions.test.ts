@@ -126,7 +126,7 @@ describe('创意工坊声明式扩展', () => {
             title: receipt.title,
             kind: receipt.kind,
             status: 'rejected',
-            review_note: '强度需要调整。',
+            review_note: '脚本说明需要补充。',
             reviewed_at: '2026-08-07T06:48:56.653+00:00',
             published_at: null,
           },
@@ -137,7 +137,7 @@ describe('创意工坊声明式扩展', () => {
     try {
       const updated = await refreshCardSquareReceipt(receipt, window);
       expect(updated.status).toBe('rejected');
-      expect(updated.reviewNote).toBe('强度需要调整。');
+      expect(updated.reviewNote).toBe('脚本说明需要补充。');
       expect(updated.reviewedAt).toBe('2026-08-07T06:48:56.653Z');
     } finally {
       window.fetch = originalFetch;

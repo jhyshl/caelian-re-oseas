@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { loadPassiveCatalog } from '@/content/catalogs/battle';
 import { loadCardCatalog } from '@/content/catalogs/cards';
 import {
   MAGICIAN_BLANK_CARD_ID,
   MAGICIAN_CARD_IDS,
   MAGICIAN_CARD_POOL,
-  MAGICIAN_CARDS,
-  MAGICIAN_PASSIVE_ID,
   MAGICIAN_STARTER_DECK,
   MAGICIAN_SUBCLASS_ID,
 } from '@/content/catalogs/magician';
@@ -17,7 +14,6 @@ import {
   getStarterDeck,
   subclassNames,
 } from '@/content/catalogs/professions';
-import { cardLimit, cardScore, talentScore } from '@/workshop';
 
 describe('正式职业魔术师', () => {
   it('按官方数量规则注册职业、完整卡池和初始牌组', async () => {
@@ -49,27 +45,5 @@ describe('正式职业魔术师', () => {
       protectedFromDiscard: true,
       rewardable: false,
     });
-  });
-
-  it('所有职业牌和天赋都通过当前官方强度控制器', async () => {
-    const expectedScores = [
-      12, 14, 30, 18, 12, 12, 12, 22.5, 13.5, 11, 22, 20, 60,
-    ];
-    expect(
-      MAGICIAN_CARD_IDS.map((cardId) => cardScore(MAGICIAN_CARDS[cardId]!)),
-    ).toEqual(expectedScores);
-    for (const cardId of MAGICIAN_CARD_IDS) {
-      const card = MAGICIAN_CARDS[cardId]!;
-      expect(cardScore(card), card.name).toBeLessThanOrEqual(
-        cardLimit(card.cost),
-      );
-    }
-
-    const passive = (await loadPassiveCatalog())[MAGICIAN_PASSIVE_ID]!;
-    const effects = passive.effect?.effects as Array<{
-      type: string;
-      value: number;
-    }>;
-    expect(talentScore(effects)).toBe(24);
   });
 });

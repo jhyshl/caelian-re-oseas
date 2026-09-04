@@ -469,13 +469,6 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...commandBase,
-    type: z.literal('battle.cancel-workshop-test'),
-    payload: z.object({
-      battleId: z.string().trim().min(1).max(2048),
-    }),
-  }),
-  z.object({
-    ...commandBase,
     type: z.literal('battle.finish'),
     payload: z.object({
       battleId: z.string().trim().min(1).max(2048),

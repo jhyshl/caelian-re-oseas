@@ -15,11 +15,7 @@ import type {
   EquipmentDefinition,
   RelicDefinition,
 } from '@/content/types';
-import {
-  isWorkshopProfessionCertificationInvalid,
-  readWorkshopPacks,
-  workshopPassiveId,
-} from '@/workshop';
+import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
 import type {
   OwnedCardRecord,
   PlayerRecord,
@@ -111,9 +107,6 @@ export class PlayerRepository {
       subclass: string;
     },
   ): Promise<void> {
-    if (isWorkshopProfessionCertificationInvalid(input.subclass)) {
-      throw new Error('该自制职业的自动评定认证已失效，请先重新评定');
-    }
     if (!classSubclasses[input.classMain]?.includes(input.subclass)) {
       throw new Error('职业大类与子职业不匹配');
     }
@@ -136,9 +129,6 @@ export class PlayerRepository {
     profileId: string,
     input: { classMain: string; subclass: string },
   ): Promise<void> {
-    if (isWorkshopProfessionCertificationInvalid(input.subclass)) {
-      throw new Error('该自制职业的自动评定认证已失效，请先重新评定');
-    }
     if (!classSubclasses[input.classMain]?.includes(input.subclass)) {
       throw new Error('职业大类与子职业不匹配');
     }

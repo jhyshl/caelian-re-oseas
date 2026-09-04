@@ -182,8 +182,8 @@ const conditions = [
   ['no_summon', '没有召唤物'],
   ['same_card_played_this_turn', '本轮使用过同名卡牌'],
   ['previous_card_same_name', '上一张使用的是同名卡牌'],
-  ['spend_mp', '支付 MP（换取可支配强度）'],
-  ['spend_hp', '支付 HP（换取可支配强度）'],
+  ['spend_mp', '支付 MP'],
+  ['spend_hp', '支付 HP'],
   ['discard', '弃置手牌'],
   ['destroy_summon', '牺牲召唤物'],
   ['spend_workshop_resource', '支付自定义资源'],
@@ -310,7 +310,7 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
       </label>
       <label>
         <span>层数</span>
-        <input v-model.number="effect.value" type="number" min="1" max="10" />
+        <input v-model.number="effect.value" type="number" min="1" />
       </label>
       <label>
         <span>持续回合</span>
@@ -399,7 +399,6 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
             v-model.number="effect.scaling.percent"
             type="number"
             min="0"
-            max="200"
             step="1"
           />
         </label>
@@ -418,7 +417,6 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
           v-model.number="effect.ratio"
           type="number"
           min="0"
-          max="1"
           step="0.05"
         />
       </label>
@@ -428,7 +426,6 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
           v-model.number="effect.lifesteal_ratio"
           type="number"
           min="0"
-          max="0.6"
           step="0.05"
         />
       </label>
@@ -550,7 +547,6 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
           v-model.number="condition.amount"
           type="number"
           min="1"
-          :max="condition.type === 'spend_hp' ? 20 : undefined"
         />
         <button
           type="button"
@@ -662,7 +658,6 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
             v-model.number="effect.hp_ratio"
             type="number"
             min="1"
-            max="200"
           />
         </label>
         <label v-else>

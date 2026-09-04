@@ -112,6 +112,9 @@ function updateFields(
   if (new TextEncoder().encode(payloadText).length > 262_144) {
     throw new Error('作品文件超过 256 KB');
   }
+  const publishesImmediately = ['deck_build', 'custom_class'].includes(
+    String(currentKind),
+  );
   return {
     title: requiredText(body.title, '作品名称', 2, 50),
     author_name: authorName,
@@ -122,10 +125,10 @@ function updateFields(
     payload: body.payload,
     app_version: requiredText(body.app_version, '客户端版本', 1, 40),
     build_id: requiredText(body.build_id, '构建标识', 1, 100),
-    status: 'pending',
+    status: publishesImmediately ? 'published' : 'pending',
     review_note: null,
     reviewed_at: null,
-    published_at: null,
+    published_at: publishesImmediately ? new Date().toISOString() : null,
   };
 }
 

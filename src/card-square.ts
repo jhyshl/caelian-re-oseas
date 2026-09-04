@@ -2,7 +2,6 @@ import { z } from 'zod';
 import type { RuntimeInfo } from '@/domain/types';
 import classSubclassesJson from '@/content/generated/professions/class-subclasses.json';
 import { normalizeWorkshopPack } from '@/workshop';
-import { readWorkshopAssessment } from '@/workshop-assessment';
 import { normalizeWorkshopMechanism } from '@/workshop-mechanisms';
 import { MAGICIAN_SUBCLASS_ID } from '@/content/catalogs/magician';
 
@@ -238,12 +237,6 @@ function normalizeSubmissionDraft(
     payload = pack;
     professionId = pack.classes[0]?.id ?? '';
     professionName = pack.classes[0]?.name ?? '';
-    const profession = pack.classes[0];
-    if (!profession || !readWorkshopAssessment(profession)?.passed) {
-      throw new Error(
-        '该职业没有与当前内容匹配的三轮实战评定，暂不能投稿。',
-      );
-    }
   } else {
     const mechanism = normalizeWorkshopMechanism(payload);
     payload = mechanism;
@@ -355,7 +348,7 @@ export async function submitCardSquareEntry(
   const normalized = normalizeSubmissionDraft(draft);
 
   const status: CardSquareStatus =
-    draft.kind === 'deck_build' ? 'published' : 'pending';
+    draft.kind === 'mechanism' ? 'pending' : 'published';
   const id = sourceWindow.crypto.randomUUID();
   const receiptToken = sourceWindow.crypto.randomUUID();
   const createdAt = new Date().toISOString();

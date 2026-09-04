@@ -8,6 +8,7 @@ import type {
 } from '@/domain/types';
 import { MAGICIAN_BLANK_CARD_ID } from '@/content/catalogs/magician';
 import { cardNameHistoryKey } from '@/battle/card-history';
+import { safeCardEffectHits } from '@/battle/execution-limits';
 
 const battleRules = battleRulesJson as {
   playerAttackScale?: number;
@@ -774,9 +775,10 @@ export function previewBattleCard(
               : 0) +
             damageBonus;
           const damage = Math.max(0, Math.round(base * damageMultiplier));
-          const hits = Math.max(1, number(effect.hits, 1));
+          const hits = safeCardEffectHits(effect.hits);
           const hpBefore = predictedEnemyHp[index] ?? 0;
           for (let hit = 0; hit < hits; hit += 1) {
+            if ((predictedEnemyHp[index] ?? 0) <= 0) break;
             totalHpDamage += addEnemyDamage(index, damage);
           }
           if (hpBefore > 0 && (predictedEnemyHp[index] ?? 0) <= 0) {
