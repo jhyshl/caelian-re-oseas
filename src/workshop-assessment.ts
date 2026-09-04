@@ -198,10 +198,10 @@ const MAX_TURNS = 10;
 const BURST_PROBE_TURNS = 3;
 const MAX_ACTIONS_PER_TURN = 32;
 const MAX_PENDING_CHOICES = 21;
-// The real-engine matrix currently completes in under 90 seconds on the CI
-// baseline. Keep a wider production cutoff so slower player devices do not
-// misclassify an otherwise valid class as unsafe because of wall-clock speed.
-const MAX_ASSESSMENT_MS = 120_000;
+// This is a fail-safe for a genuinely stalled assessment, not part of the
+// strength result. Keep it generous so the same profession is not accepted on
+// a fast desktop but marked unsafe on a slower phone or CI runner.
+const MAX_ASSESSMENT_MS = 300_000;
 // Exhaustively checked for every deduplicated deck count D=1..6. Together
 // with scenario=(3*row+attribute)%4, this keeps every pair among deck,
 // attribute, round and encounter covered, gives every logical cell at least
