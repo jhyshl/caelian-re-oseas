@@ -50,7 +50,7 @@ export function create(state,options={}){
   const g=wire(makeGame(p,enemies,{seed:options.seed??1,trace:true,patch}));
   g.round=1;g.allowEscape=!options.locked;g.encounterGoldReward=state.enemies.reduce((n,e)=>n+((e.gold?.[0]??0)+(e.gold?.[1]??0))/2,0)*5;
   const all=[...state.player.hand,...state.player.drawPile,...state.player.discardPile];
-  const deck=all.map(c=>({...structuredClone(cards.get(c.cardId)??{id:c.cardId,name:c.cardId,ap:1,effects:[],legacy:true}),uid:c.instanceId,star:options.stars?.[c.cardId]??1}));
+  const deck=all.map(c=>({...structuredClone(cards.get(c.cardId)??{id:c.cardId,name:c.cardId,ap:1,effects:[],legacy:true}),uid:c.instanceId,star:c.stars??options.stars?.[c.cardId]??1}));
   g.controller.init(g,catalog.professions.find(c=>c.id===p.profession)??{id:p.profession},deck);
   if(state.companion){const c=actor('caelian','player',p.level,copyStats(state.companion));Object.assign(c,{hp:state.companion.hp,name:state.companion.name,isCompanion:true});g.allies.push(c);}
   initBosses(g);start(g);importInitialLegacyState(g,state);

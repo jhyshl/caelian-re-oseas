@@ -60,6 +60,8 @@ export interface PlayerRecord {
   combatRulesVersion?: number;
   /** Mastery survives profession changes and reacquiring a card. */
   cardStars?: Record<string, number>;
+  cardFusionVersion?: 1;
+  professionCardArchives?: Record<string, { cards: OwnedCardRecord[]; deck?: DeckRecord }>;
   /** Persistent equipment and relic choices created once for every gained level. */
   pendingLevelRewards?: LevelRewardRecord[];
   /** Consumable effects queued for the next locally simulated battle. */
@@ -193,6 +195,7 @@ export interface QuestProgressSnapshot extends QuestDeferredProgressSnapshot {
 }
 
 export interface QuestTrackerRecord {
+  manualRevision?: number;
   id: string;
   profileId: string;
   questId: string;
@@ -305,6 +308,7 @@ export interface OwnedCardRecord {
 }
 
 export interface DeckRecord {
+  cardStars?: number[];
   id: string;
   profileId: string;
   name: string;
@@ -907,6 +911,9 @@ export interface GatheringState {
 }
 
 export interface GatheringView {
+  pendingHunt?: {token:string;animalId:string;animalName:string;createdAt:number};
+  gold?: number;
+  traps?: Array<{id:string;name:string;quantity:number;price:number;stock:number;failMax:number}>;
   regionId: string;
   location: string;
   refreshKey: string;

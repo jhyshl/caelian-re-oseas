@@ -214,12 +214,12 @@ describe('战斗重构存档迁移和实际仓库命令', () => {
     expect((await db.ownedCards.get(`${profileId}:hk_strike`))!).toMatchObject({ quantity: 2, stars: 1 });
     expect((await db.battleSessions.get('legacy-active'))!.active).toBe(false);
     expect(await db.battleRewards.count()).toBe(0);
-    const backups = await db.rollbackSnapshots.toArray();
+    const backups = (await db.rollbackSnapshots.toArray()).filter(b=>b.reason!=='card-fusion-migration');
     expect(backups).toHaveLength(1);
     expect(backups[0]!.snapshot).toMatchObject({ player: old, statAllocations: allocations });
     await repository.snapshot(profileId);
     expect((await db.playerStates.get(profileId))!.statPoints).toBe(285);
-    expect(await db.rollbackSnapshots.count()).toBe(1);
+    expect(await db.rollbackSnapshots.count()).toBe(2);
   });
 
   it('迁移中途写卡失败必须同时回滚玩家、退款、标记与备份', async () => {
@@ -272,7 +272,7 @@ describe('战斗重构存档迁移和实际仓库命令', () => {
     });
     let player = (await db.playerStates.get(profileId))!;
     expect(player.hp).toBe(player.hpMax + 150);
-    expect(player.cardStars?.[first.cardId]).toBe(3);
+    expect(player.professionCardArchives?.holy_knight?.cards.find(c=>c.cardId===first.cardId)?.stars).toBe(3);
     await repository.execute(profileId, {
       id: 'switch-holy', type: 'player.reclass', payload: { classMain: 'knight', subclass: 'holy_knight' },
     });

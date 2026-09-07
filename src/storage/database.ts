@@ -1,3 +1,4 @@
+import type { FreightState } from '@/market-freight';
 import Dexie, { type Table } from 'dexie';
 import type {
   AchievementCounterRecord,
@@ -42,7 +43,7 @@ import type {
   SurveyTokenRecord,
 } from '@/surveys/types';
 
-export const DATABASE_SCHEMA_VERSION = 10;
+export const DATABASE_SCHEMA_VERSION = 11;
 
 export class CaelianDatabase extends Dexie {
   profiles!: Table<ProfileRecord, string>;
@@ -77,6 +78,7 @@ export class CaelianDatabase extends Dexie {
   achievementCounters!: Table<AchievementCounterRecord, string>;
   mailRecords!: Table<MailRecord, string>;
   marketStates!: Table<MarketStateRecord, string>;
+  freightStates!: Table<FreightState, string>;
   gatheringStates!: Table<GatheringState, string>;
   craftingDrafts!: Table<CraftingDraftRecord, string>;
   socialProgress!: Table<SocialProgressRecord, string>;
@@ -202,6 +204,8 @@ export class CaelianDatabase extends Dexie {
     this.version(9).stores({
       gatheringStates: 'id, profileId, regionId, refreshKey, updatedAt',
     });
+
+    this.version(11).stores({freightStates: 'profileId, updatedAt'});
 
     this.version(10)
       .stores({})

@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { loadCardCatalog } from '@/content/catalogs/cards';
+import { reworkCard, describeReworkEffects } from '@/battle/rework/catalog';
+import type { CardDefinition } from '@/content/types';
 import {
   loadCraftingRecipes,
   type CraftingRecipeDefinition,
@@ -12,7 +15,16 @@ import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
 const recipes = ref<readonly CraftingRecipeDefinition[]>([]);
-const tab = ref<'items' | 'cooking' | 'equipment'>('items');
+const tab = ref<'items' | 'cooking' | 'equipment' | 'cards'>('items');
+const cards = ref<Record<string, CardDefinition>>({});
+const cardSearch = ref('');
+const cardStarFilter = ref('all');
+const cardGroups = computed(() => (snapshot.value?.cards ?? []).filter(c => c.quantity > 0 && reworkCard(c.cardId) && c.cardId !== 'mg_blank_card').map(c => ({...c, stars:c.stars ?? 1, definition:cards.value[c.cardId]!})).filter(c => c.definition && c.definition.name.includes(cardSearch.value.trim()) && (cardStarFilter.value === 'all' || c.stars === Number(cardStarFilter.value))).sort((a,b) => a.definition.name.localeCompare(b.definition.name,'zh-CN') || a.stars-b.stars));
+function cardDescription(id: string, stars: number) { const c = reworkCard(id); return c ? describeReworkEffects(c.effects, stars) : ''; }
+async function mergeCard(cardId: string, stars: number) {
+  if (busy.value) return;
+  await execute({id:commandId('cards.upgrade'),type:'cards.upgrade',payload:{cardId,stars}}, '合成成功：获得一张' + (stars + 1) + '星卡牌，花费2000金币。已同步牌组；合成后请检查牌组张数。');
+}
 const selectedRecipeId = ref('');
 const craftCount = ref(1);
 const notice = ref('');
@@ -53,7 +65,7 @@ watch([selectedRecipeId, selectedMax], () => {
 });
 
 watch(tab, () => {
-  if (tab.value === 'equipment') return;
+  if (tab.value === 'equipment' || tab.value === 'cards') return;
   if (!visibleRecipes.value.some((recipe) => recipe.id === selectedRecipeId.value)) {
     selectedRecipeId.value = visibleRecipes.value[0]?.id ?? '';
   }
@@ -147,9 +159,10 @@ async function mergeEquipment(baseId: string, stars: 1 | 2, name: string) {
 }
 
 onMounted(async () => {
-  [snapshot.value, recipes.value] = await Promise.all([
+  [snapshot.value, recipes.value, cards.value] = await Promise.all([
     props.context.api.query('state'),
     loadCraftingRecipes(),
+    loadCardCatalog(),
   ]);
   selectedRecipeId.value = recipes.value[0]?.id ?? '';
 });
@@ -188,6 +201,7 @@ onMounted(async () => {
         >
           装备升星
         </button>
+        <button :class="{ active: tab === 'cards' }" @click="tab = 'cards'">卡牌升星</button>
       </nav>
 
       <p v-if="notice" class="crafting-notice" role="status">{{ notice }}</p>
@@ -265,6 +279,30 @@ onMounted(async () => {
         </section>
       </div>
 
+      <section v-else-if="tab === 'cards'" class="ca-section equipment-crafting">
+        <div class="equipment-rule">
+          <h2>三张同名同星卡牌 → 一张更高星卡牌</h2>
+          <p>每次合成消耗2000金币，最高三星。当前金币：{{ snapshot.player.gold }}。牌组中的材料会同步扣除。</p>
+        </div>
+        <div class="card-filters">
+          <input v-model="cardSearch" placeholder="搜索卡牌名字" aria-label="搜索合成卡牌" />
+          <select v-model="cardStarFilter" aria-label="筛选材料星级"><option value="all">全部星级</option><option value="1">一星</option><option value="2">二星</option><option value="3">三星</option></select>
+        </div>
+        <div v-if="!cardGroups.length" class="ca-empty">没有符合筛选条件的卡牌</div>
+        <div class="merge-list">
+          <article v-for="card in cardGroups" :key="card.id">
+            <div>
+              <span>{{ '★'.repeat(card.stars) }}</span><strong>{{ card.definition.name }}</strong>
+              <small>持有 {{ card.quantity }} 张{{ card.stars < 3 ? ' · 合成消耗3张' : ' · 已达最高星级' }}</small>
+              <small>{{ cardDescription(card.cardId, card.stars) }}</small>
+              <small v-if="card.stars < 3">升星后：{{ cardDescription(card.cardId, card.stars + 1) }}</small>
+            </div>
+            <button v-if="card.stars < 3" class="ca-button primary" :disabled="busy || card.quantity < 3 || snapshot.player.gold < 2000" @click="mergeCard(card.cardId, card.stars)">
+              {{ card.quantity < 3 ? '还缺' + (3 - card.quantity) + '张' : snapshot.player.gold < 2000 ? '金币不足' : '升至' + (card.stars + 1) + '星 · 2000金币' }}
+            </button>
+          </article>
+        </div>
+      </section>
       <section v-else class="ca-section equipment-crafting">
         <div class="equipment-rule">
           <h2>三件同名同星装备 → 一件更高星装备</h2>
@@ -299,6 +337,9 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.card-filters { display:flex; gap:8px; margin-bottom:12px; }
+.card-filters input, .card-filters select { padding:8px; min-width:0; border:1px solid var(--ca-border); border-radius:8px; color:var(--ca-text); background:var(--ca-surface); }
+.card-filters input { flex:1; }
 .crafting-head {
   display: flex;
   align-items: center;
@@ -313,7 +354,7 @@ onMounted(async () => {
 .recipe-count { min-width: 92px; text-align: center; }
 .recipe-count strong { display: block; color: var(--ca-gold-light); font: 700 30px/1 var(--ca-serif); }
 .recipe-count span { letter-spacing: .08em; }
-.crafting-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.crafting-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .crafting-tabs button { flex: 1; padding: 11px; border: 1px solid var(--ca-border); border-radius: 10px; color: var(--ca-muted); background: var(--ca-surface); cursor: pointer; }
 .crafting-tabs button.active { border-color: var(--ca-gold-dark); color: var(--ca-gold-light); background: rgba(212,168,67,.1); }
 .crafting-notice { margin: 0 0 14px; padding: 10px 13px; border: 1px solid rgba(56,169,107,.35); border-radius: 9px; color: #9de2ba; background: rgba(56,169,107,.08); }

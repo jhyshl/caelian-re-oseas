@@ -1,3 +1,4 @@
+import { grantCard, resolveDeckStars } from '@/battle/card-inventory';
 import { buildWorkshopTestAttributes, WORKSHOP_TEST_LEVEL, type WorkshopTestAttributeInput } from '@/battle/rework/workshop-attributes';
 import { installWorkshopStatusHooks, workshopNativeStatusValue } from '@/battle/rework/runtime/workshop-status-hooks.mjs';
 import { installWorkshopDamageHooks, damageOnLiveCore } from '@/battle/rework/runtime/workshop-runtime-hooks.mjs';
@@ -435,6 +436,7 @@ export class BattleRepository {
       throw new Error('请先准备至少一张卡牌的出战牌组');
     }
     this.assertOwnedDeck(deck.cardIds, ownedCards);
+    const deckStars = resolveDeckStars(deck.cardIds, ownedCards, deck.cardStars);
     const region = world?.region || '伊拉亚城';
     const resolvedMonsterId = input.monsterId
       ? this.resolveMonsterId(input.monsterId)
@@ -461,6 +463,7 @@ export class BattleRepository {
             ),
           )
         : [],
+      deckStars,
     );
     const difficulty = settings?.battleDifficulty ?? 'normal';
     const requestedCount = input.monsterId
@@ -546,7 +549,6 @@ export class BattleRepository {
       level: player.level, explicit: Boolean(input.monsterId), region,
       seed: Math.floor(this.random() * 0xffffffff),
       locked: Boolean(input.relatedQuestId || pendingHunt),
-      stars: Object.fromEntries(ownedCards.map(card => [card.cardId, Math.max(card.stars ?? 1, player.cardStars?.[card.cardId] ?? 1)])),
     });
     core.encounterGoldReward=Math.round(state.enemies.reduce((total,e)=>total+(e.gold[0]+e.gold[1])/2,0)*(1+this.passiveEffectValue(state,'gold_bonus')))*5;
     rework.project(core, state);
@@ -1410,17 +1412,7 @@ export class BattleRepository {
       if (choices.cardClaimed) throw new Error('卡牌奖励已经处理');
       if (input.choiceId) {
         if (!choices.cardIds.includes(input.choiceId)) throw new Error('卡牌不在候选列表中');
-        const id = `${profileId}:${input.choiceId}`;
-        const current = await this.db.ownedCards.get(id);
-        await this.db.ownedCards.put({
-          id,
-          profileId,
-          cardId: input.choiceId,
-          quantity: (current?.quantity ?? 0) + 1,
-          stars: current?.stars ?? (await this.db.playerStates.get(profileId))?.cardStars?.[input.choiceId] ?? 1,
-          source: current?.source ?? 'battle-reward',
-          updatedAt: now,
-        });
+        await grantCard(this.db, profileId, input.choiceId, 1, 1, 'battle-reward');
       }
       choices.cardClaimed = true;
     } else if (input.kind === 'equipment') {
@@ -1770,6 +1762,7 @@ export class BattleRepository {
     player: PlayerRecord,
     cardIds: string[],
     equipment: Array<{ stats: Record<string, number> }>,
+    cardStars?: number[],
   ): BattlePlayerState {
     const bonus = aggregateEquipmentStats(equipment);
     const hpMax = Math.max(1, player.hpMax + bonus.hpMax);
@@ -1778,6 +1771,7 @@ export class BattleRepository {
       cardIds.map((cardId, index) => ({
         instanceId: `${cardId}:${index}:${Math.floor(this.random() * 1_000_000)}`,
         cardId,
+        stars: cardStars?.[index] ?? 1,
       })),
     );
     return {

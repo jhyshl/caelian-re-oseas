@@ -43,7 +43,7 @@ describe('数据库迁移', () => {
 
     const current = new CaelianDatabase('alpha', name);
     await current.open();
-    expect(DATABASE_SCHEMA_VERSION).toBe(10);
+    expect(DATABASE_SCHEMA_VERSION).toBe(11);
     expect(await current.inventoryStacks.toArray()).toEqual([
       expect.objectContaining({
         itemId: 'legacy_apple',

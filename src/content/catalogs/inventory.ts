@@ -1,3 +1,4 @@
+import { HUNTING_TRAPS, TRAP_ITEMS } from '@/content/hunting-traps';
 import type {
   BattleItemDefinition,
   EquipmentDefinition,
@@ -70,7 +71,7 @@ export async function loadItemPrices() {
     const module = await import(
       '@/content/generated/inventory/item-prices.json'
     );
-    priceCache = module.default as Record<string, number>;
+    priceCache = {...module.default as Record<string, number>, ...Object.fromEntries(HUNTING_TRAPS.map(t => [t.id,t.basePrice]))};
   }
   return priceCache;
 }
@@ -102,6 +103,7 @@ export async function loadItemCatalog() {
       ...battleItems,
       ...gatherResources,
       ...COOKING_ITEMS,
+      ...TRAP_ITEMS,
     };
     for (const rows of Object.values(markets)) {
       for (const row of rows) {

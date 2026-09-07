@@ -132,7 +132,8 @@ export class QuestTrackerService {
         ['idle', 'manualPaused', 'suspended', 'ended'].includes(
           latest.current.trackerState,
         ) ||
-        latest.current.currentNodeId !== current.currentNodeId)
+        latest.current.currentNodeId !== current.currentNodeId ||
+        (latest.manualRevision ?? 0) !== (existing.manualRevision ?? 0))
     ) {
       return { status: 'skipped', reason: 'tracking-changed' };
     }
@@ -187,6 +188,8 @@ export class QuestTrackerService {
       floor: input.floor,
       summary,
       baseline,
+      expectedNodeId: current.currentNodeId,
+      expectedManualRevision: existing?.manualRevision ?? 0,
       next,
       giftItems,
       judgeResult: {
@@ -200,6 +203,7 @@ export class QuestTrackerService {
         invalidItemSubmission: Boolean(requested && !requestedName),
       },
     });
+    if ((tracker.manualRevision ?? 0) !== (existing?.manualRevision ?? 0)) return {status:'skipped',reason:'tracking-changed'};
     return {
       status: 'evaluated',
       decision,

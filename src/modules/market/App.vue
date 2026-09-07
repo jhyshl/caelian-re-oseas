@@ -8,10 +8,11 @@ import type {
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
+import FreightPanel from './FreightPanel.vue';
 
 const props = defineProps<{ context: PanelContext }>();
 const market = ref<MarketView>();
-const mode = ref<'buy' | 'sell'>('buy');
+const mode = ref<'buy' | 'sell' | 'freight'>('buy');
 const category = ref<'all' | MarketListingTab>('all');
 const quantities = ref<Record<string, number>>({});
 const sellQuantities = ref<Record<string, number>>({});
@@ -232,9 +233,11 @@ onUnmounted(() => {
         <button :class="{ active: mode === 'sell' }" @click="mode = 'sell'">
           出售
         </button>
+        <button :class="{active:mode === 'freight'}" @click="mode = 'freight'">货运</button>
       </nav>
+      <FreightPanel v-if="mode === 'freight'" :context="context" @updated="refresh" />
 
-      <nav class="market-categories">
+      <nav v-if="mode !== 'freight'" class="market-categories">
         <button
           v-for="entry in categories"
           :key="entry.id"
@@ -294,7 +297,7 @@ onUnmounted(() => {
         </section>
       </template>
 
-      <template v-else>
+      <template v-else-if="mode === 'sell'">
         <div v-if="!hasVisibleSellEntries" class="ca-empty">
           当前分类没有可出售内容
         </div>

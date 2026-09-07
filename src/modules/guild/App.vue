@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   loadGuildCatalogs,
   type GuildRankRequirement,
@@ -29,6 +29,19 @@ const activeTab = ref<'quests' | 'board' | 'history'>('quests');
 const notice = ref('');
 const busyTask = ref('');
 const busyManagedTask = ref('');
+const manualTransition=ref('');
+watch(()=>trackedQuest.value?.tracker.current.currentNodeId,()=>{manualTransition.value=trackedQuest.value?.manualChoices?.[0]?.transitionId??'';});
+async function completeNode(quest:QuestRecord) {
+  if(busyManagedTask.value||!trackedQuest.value) return;
+  const tracker=trackedQuest.value.tracker;
+  busyManagedTask.value=quest.id;notice.value='';
+  try {
+    const result=await props.context.api.completeTrackedQuestNode({questId:quest.id,expectedNodeId:tracker.current.currentNodeId,expectedRevision:tracker.manualRevision??0,transitionId:manualTransition.value||undefined});
+    notice.value=result.completion?'任务已完成，获得'+result.completion.gold+'金币、'+result.completion.experience+'经验和'+result.completion.guildExperience+'协会经验。':'当前节点已完成，已推进到下一节点。';
+    await refresh();
+  } catch(e) {notice.value=errorMessage(e);await refresh();}
+  finally {busyManagedTask.value='';}
+}
 let disposeStateListener: (() => void) | undefined;
 
 const activeQuests = computed(() =>
@@ -422,6 +435,12 @@ onUnmounted(() => {
                 </span>
               </div>
               <div class="quest-actions">
+                <template v-if="quest.definitionId && quest.status === 'active' && isTracked(quest)">
+                  <select v-if="(trackedQuest?.manualChoices?.length ?? 0) > 1" v-model="manualTransition" :disabled="!!busyManagedTask" aria-label="选择手动推进的下一节点">
+                    <option v-for="choice in trackedQuest?.manualChoices" :key="choice.transitionId" :value="choice.transitionId">{{ choice.label }}{{ choice.terminal ? '（完成任务）' : '' }}</option>
+                  </select>
+                  <button class="ca-button primary" :disabled="!!busyManagedTask" @click="completeNode(quest)">完成节点</button>
+                </template>
                 <button
                   v-if="
                     quest.kind !== 'commission' &&
@@ -620,6 +639,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.quest-actions select { max-width:100%; padding:8px; border:1px solid var(--ca-border); border-radius:8px; color:var(--ca-text); background:var(--ca-surface); }
 .guild-card {
   display: grid;
   grid-template-columns: auto 1fr auto;

@@ -1,3 +1,4 @@
+import { manualQuestProgress } from '@/quests/manual-progress';
 import type {
   EquipmentInstanceRecord,
   QuestFloorCheckpointRecord,
@@ -24,6 +25,8 @@ export interface BindQuestFloorInput {
   summary: string;
   next: Omit<QuestProgressSnapshot, 'summary'>;
   baseline?: QuestProgressSnapshot;
+  expectedNodeId?: string;
+  expectedManualRevision?: number;
   giftItems?: Array<{ itemId: string; itemName: string; count: number }>;
 }
 
@@ -86,6 +89,8 @@ export class QuestProgressRepository {
             Date.now(),
             input.baseline,
           );
+        if ((input.expectedNodeId && tracker.current.currentNodeId !== input.expectedNodeId) ||
+          (input.expectedManualRevision !== undefined && (tracker.manualRevision ?? 0) !== input.expectedManualRevision)) return tracker;
         const checkpoints = await this.questCheckpoints(
           profileId,
           input.questId,
@@ -670,6 +675,20 @@ export class QuestProgressRepository {
         return { collectiblesGranted, relicsRepaired };
       },
     );
+  }
+
+  async completeNode(profileId:string,definition:QuestDefinition,input:{questId:string;expectedNodeId:string;expectedRevision:number;transitionId?:string}):Promise<{completion?:QuestCompletionResult}> {
+    return this.db.transaction('rw',[this.db.profiles,this.db.playerStates,this.db.guildStates,this.db.regionAccess,this.db.questRecords,this.db.questHistory,this.db.questTrackerStates,this.db.questFloorCheckpoints,this.db.specialCollectibles,this.db.ownedRelics],async()=>{
+      const quest=await this.requireQuest(profileId,input.questId);
+      if(quest.definitionId!==definition.id) throw new Error('任务定义不匹配');
+      const tracker=await this.db.questTrackerStates.get(this.trackerId(profileId,input.questId));
+      if(!tracker?.selected||tracker.current.currentNodeId!==input.expectedNodeId||(tracker.manualRevision??0)!==input.expectedRevision) throw new Error('任务进度已变化，请刷新后再操作');
+      if(quest.status!=='active') throw new Error('当前任务已结束或等待结算');
+      const next=manualQuestProgress(definition,tracker.current,input.transitionId),now=Date.now();
+      tracker.current=next;tracker.manualRevision=(tracker.manualRevision??0)+1;tracker.updatedAt=now;
+      await this.db.questTrackerStates.put(tracker);await this.applySnapshotToQuest(quest,next,now);
+      return next.status==='ready'?{completion:await this.completeDefinition(profileId,definition)}:{};
+    });
   }
 
   async completeDefinition(

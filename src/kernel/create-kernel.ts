@@ -1,3 +1,4 @@
+import { manualQuestChoices } from '@/quests/manual-progress';
 import type { CommandResult } from '@/domain/commands';
 import { MEMORY_TOGETHER_ACHIEVEMENT_ID } from '@/achievements/patch-registry';
 import {
@@ -481,6 +482,7 @@ export class CaelianKernel {
         this.profileId,
       )) as QueryResultMap[K];
     }
+    if (name === 'freight') return (await this.repository.freightState(this.profileId)) as QueryResultMap[K];
     if (name === 'market') {
       return (await this.repository.marketState(
         this.profileId,
@@ -936,6 +938,17 @@ export class CaelianKernel {
       updated,
       definition,
     );
+  }
+
+  async completeTrackedQuestNode(input:{questId:string;expectedNodeId:string;expectedRevision:number;transitionId?:string}) {
+    this.cancelQuestJudge();this.notifications.clearQuestGuidance();
+    const profileId=this.requireProfile(),quest=await this.requireManagedQuest(profileId,input.questId);
+    const result=await this.repository.completeQuestNode(profileId,await this.questDefinition(quest),input);
+    await this.syncQuestContext();await this.syncProjection();
+    await this.events.emit('quest.tracking-changed',{questId:result.completion?undefined:quest.id,trackerState:result.completion?'none':'tracking'});
+    await this.events.emit('quest.submission-changed',{pending:false});
+    await this.panels.close('quest-submission');
+    return result;
   }
 
   async completeTrackedQuest(): Promise<QuestCompletionResult> {
@@ -1756,7 +1769,8 @@ export class CaelianKernel {
       sceneTitle: node.sceneTitle,
       beatTitle: node.title,
     };
-    if (!node.requiredAction) return { quest, tracker, position };
+    const manualChoices = manualQuestChoices(definition, tracker.current);
+    if (!node.requiredAction) return { quest, tracker, position, manualChoices };
     const snapshot = await this.repository.snapshot(profileId);
     const action = node.requiredAction;
     const ownedCount = action.itemId
@@ -1767,6 +1781,7 @@ export class CaelianKernel {
       quest,
       tracker,
       position,
+      manualChoices,
       action: {
         type: action.type,
         label: action.label,
@@ -1891,6 +1906,7 @@ export class CaelianKernel {
       submitTrackedQuestAction: () => this.submitTrackedQuestAction(),
       performTrackedQuestAction: () => this.performTrackedQuestAction(),
       completeTrackedQuest: () => this.completeTrackedQuest(),
+      completeTrackedQuestNode: input => this.completeTrackedQuestNode(input),
       on: (event, handler) => this.events.on(event, handler),
       shutdown: () => this.shutdown(),
     };
@@ -1946,6 +1962,7 @@ export class CaelianKernel {
       submitTrackedQuestAction: () => this.submitTrackedQuestAction(),
       performTrackedQuestAction: () => this.performTrackedQuestAction(),
       completeTrackedQuest: () => this.completeTrackedQuest(),
+      completeTrackedQuestNode: input => this.completeTrackedQuestNode(input),
       on: (event, handler) => this.events.on(event, handler),
     };
   }

@@ -1,3 +1,4 @@
+import { cardRecordId, cardStar } from '@/battle/card-inventory';
 import { mutateAllocation, recomputePlayer, type CombatAllocatableStat } from '@/battle/rework/attributes';
 import {
   classSubclasses,
@@ -132,6 +133,13 @@ export class PlayerRepository {
     if (player.gold < cost) {
       throw new Error(`本次转职需要 ${cost} 金币，当前金币不足`);
     }
+    if (player.subclass === input.subclass) throw new Error('当前已经是这个职业');
+    const [cards, deck] = await Promise.all([
+      this.db.ownedCards.where('profileId').equals(profileId).toArray(),
+      this.db.decks.where('profileId').equals(profileId).filter(d => d.active).first(),
+    ]);
+    player.professionCardArchives ??= {};
+    player.professionCardArchives[player.subclass] = {cards, deck};
     const now = Date.now();
     await this.db.playerStates.put({
       ...player,
@@ -328,9 +336,6 @@ export class PlayerRepository {
     const player = await this.get(profileId);
     const allocations = await this.db.statAllocations.get(profileId);
     if (allocations) {
-      const oldCards = await this.db.ownedCards.where('profileId').equals(profileId).toArray();
-      player.cardStars ??= {};
-      for (const card of oldCards) player.cardStars[card.cardId] = Math.max(player.cardStars[card.cardId] ?? 1, card.stars ?? 1);
       const loadout = await this.db.equipmentLoadouts.get(profileId);
       const equippedIds = new Set(loadout ? [loadout.weaponId, loadout.armorId, loadout.accessoryId] : []);
       const equipment = await this.db.equipmentInstances.where('profileId').equals(profileId).toArray();
@@ -353,12 +358,12 @@ export class PlayerRepository {
     }, {});
     const ownedCards: OwnedCardRecord[] = Object.entries(counts).map(
       ([cardId, quantity]) => ({
-        id: `${profileId}:${cardId}`,
+        id: cardRecordId(profileId, cardId, cardStar(player.cardStars?.[cardId])),
         profileId,
         cardId,
         quantity,
         source: 'starter',
-        stars: player.cardStars?.[cardId] ?? 1,
+        stars: cardStar(player.cardStars?.[cardId]),
         updatedAt: now,
       }),
     );
@@ -373,12 +378,14 @@ export class PlayerRepository {
           entry.passiveId.startsWith('pas_'),
       )
       .delete();
-    await this.db.ownedCards.bulkAdd(ownedCards);
+    const archived = player.professionCardArchives?.[subclass];
+    await this.db.ownedCards.bulkAdd(archived?.cards ?? ownedCards);
     await this.db.decks.add({
       id: `${profileId}:active`,
       profileId,
       name: '预设牌组',
-      cardIds: starterDeck,
+      cardIds: archived?.deck?.cardIds ?? starterDeck,
+      cardStars: archived?.deck?.cardStars ?? starterDeck.map(id => cardStar(player.cardStars?.[id])),
       active: true,
       updatedAt: now,
     });

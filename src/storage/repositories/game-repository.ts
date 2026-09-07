@@ -1,3 +1,5 @@
+import { HUNTING_TRAPS } from '@/content/hunting-traps';
+import { migrateCardInventory } from '@/battle/card-inventory';
 import { migrateCombatEquipment } from '@/battle/rework/equipment';
 import { migrateCombatAttributes } from '@/battle/rework/attributes';
 import type { CommandResult, DomainCommand } from '@/domain/commands';
@@ -117,6 +119,8 @@ export class GameRepository {
   async snapshot(profileId: string): Promise<GameSnapshot> {
     await migrateCombatAttributes(this.db, profileId);
     await migrateCombatEquipment(this.db, profileId);
+    await migrateCardInventory(this.db, profileId);
+    await this.market.settleFreight(profileId);
     const [
       profile,
       player,
@@ -228,6 +232,8 @@ export class GameRepository {
     const command = parsed.data;
     await migrateCombatAttributes(this.db, profileId);
     await migrateCombatEquipment(this.db, profileId);
+    await migrateCardInventory(this.db, profileId);
+    await this.market.settleFreight(profileId);
     const achievementCapture = await this.achievements.capture(
       profileId,
       command,
@@ -373,8 +379,10 @@ export class GameRepository {
     return this.market.view(profileId);
   }
 
-  gatheringState(profileId: string): Promise<GatheringView> {
-    return this.gathering.view(profileId);
+  freightState(profileId:string) {return this.market.freightView(profileId);}
+  async gatheringState(profileId: string): Promise<GatheringView> {
+    const [view,market,owned,pending]=await Promise.all([this.gathering.view(profileId),this.market.view(profileId,undefined,true),this.db.inventoryStacks.where('profileId').equals(profileId).toArray(),this.db.gatheringStates.get(profileId+':hunting-pending')]);
+    return {...view, pendingHunt:pending?.pendingHunt, gold:market.gold, traps:HUNTING_TRAPS.map(t=>({...t, quantity:owned.filter(i=>i.itemId===t.id).reduce((n,i)=>n+i.quantity,0),price:market.listings.find(l=>l.itemId===t.id)?.price??0,stock:market.listings.find(l=>l.itemId===t.id)?.stock??0}))};
   }
 
   socialInteractionOptions(profileId: string) {
@@ -460,6 +468,13 @@ export class GameRepository {
       questId,
       definition,
     );
+  }
+
+  async completeQuestNode(profileId:string,definition:QuestDefinition,input:{questId:string;expectedNodeId:string;expectedRevision:number;transitionId?:string}) {
+    const result=await this.questProgress.completeNode(profileId,definition,input);
+    if(result.completion) await this.achievements.recordExternal(profileId,{event:'quest.complete',questId:definition.id,ending:result.completion.ending});
+    await this.events.emit('state.changed',{command:{id:'manual-quest-node:'+input.questId+':'+input.expectedRevision,status:'applied'}});
+    return result;
   }
 
   async completeQuestDefinition(
@@ -604,7 +619,7 @@ export class GameRepository {
         );
         return;
       case 'deck.update':
-        return this.cards.updateActiveDeck(profileId, command.payload.cardIds);
+        return this.cards.updateActiveDeck(profileId, command.payload.cardIds, command.payload.cardStars);
       case 'equipment.equip':
         return this.inventory.equip(profileId, command.payload.instanceId);
       case 'equipment.unequip':
@@ -628,6 +643,9 @@ export class GameRepository {
           profileId,
           command.payload.mailId,
         );
+      case 'market.carriage-buy': return this.market.buyCarriage(profileId, command.payload.tier);
+      case 'market.freight-fleet': return this.market.configureFleet(profileId, command.payload.carriageIds);
+      case 'market.freight-dispatch': return this.market.dispatchFreight(profileId, command.payload);
       case 'market.buy':
         return this.market.buy(profileId, command.payload);
       case 'market.sell-item':
@@ -640,7 +658,7 @@ export class GameRepository {
       case 'gather.collect':
         return this.gathering.collect(profileId, command.payload);
       case 'hunt.attempt':
-        return this.gathering.hunt(profileId, command.payload.animalId);
+        return this.gathering.hunt(profileId, command.payload.animalId, command.payload.trapId);
       case 'battle.start':
         return this.battles.start(profileId, command.payload);
       case 'battle.explore':
@@ -659,7 +677,7 @@ export class GameRepository {
           command.payload.battleId,
         );
       case 'cards.upgrade':
-        return this.cards.upgrade(profileId, command.payload.cardId);
+        return this.cards.upgrade(profileId, command.payload.cardId, command.payload.stars);
       case 'battle.context-action':
         return this.battles.contextAction(profileId, command.payload);
       case 'battle.discard-hand':
@@ -709,6 +727,7 @@ export class GameRepository {
       this.db.achievementCounters,
       this.db.mailRecords,
       this.db.marketStates,
+      this.db.freightStates,
       this.db.gatheringStates,
       this.db.settings,
       this.db.commandInbox,

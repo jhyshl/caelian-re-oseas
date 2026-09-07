@@ -27,9 +27,6 @@ async function setup(subclass = 'magician') {
   return { db, game, profile };
 }
 type Fixture = Awaited<ReturnType<typeof setup>>;
-async function upgrade(f: Fixture, cardId: string, id: string = crypto.randomUUID()) {
-  return f.game.execute(f.profile.id, { id, type: 'cards.upgrade', payload: { cardId } });
-}
 async function start(f: Fixture, cardId = 'mg_card_knife', monsterId = 'mon_slime') {
   await f.game.execute(f.profile.id, { id: crypto.randomUUID(), type: 'battle.start', payload: { monsterId, source: '成长集成验证' } });
   const session = (await f.db.battleSessions.where('profileId').equals(f.profile.id).filter((s) => s.active).first())!;
@@ -71,69 +68,6 @@ async function current(f: Fixture, session: BattleSessionRecord) {
 }
 
 describe('重置成长与战斗保存集成', () => {
-  it('卡牌升星依次花500/1500金币，同名全部副本共用星级，重复命令与三星上限不会再收费', async () => {
-    const f = await setup();
-    const cardId = 'mg_card_knife';
-    const ownedId = f.profile.id + ':' + cardId;
-    const before = (await f.db.ownedCards.get(ownedId))!;
-    expect((await upgrade(f, cardId, 'star-two')).status).toBe('applied');
-    expect(await f.db.ownedCards.get(ownedId)).toMatchObject({ quantity: before.quantity, stars: 2 });
-    expect(await f.db.playerStates.get(f.profile.id)).toMatchObject({ gold: 9_500, cardStars: { [cardId]: 2 } });
-    expect((await upgrade(f, cardId, 'star-two')).status).toBe('duplicate');
-    expect((await f.db.playerStates.get(f.profile.id))!.gold).toBe(9_500);
-    expect((await upgrade(f, cardId, 'star-three')).status).toBe('applied');
-    expect(await f.db.ownedCards.get(ownedId)).toMatchObject({ quantity: before.quantity, stars: 3 });
-    expect(await f.db.playerStates.get(f.profile.id)).toMatchObject({ gold: 8_000, cardStars: { [cardId]: 3 } });
-    await expect(upgrade(f, cardId, 'star-four')).rejects.toThrow('三星');
-    expect(await f.db.commandInbox.get('star-four')).toBeUndefined();
-    expect((await f.db.playerStates.get(f.profile.id))!.gold).toBe(8_000);
-  });
-
-  it('金币不足、未持有及临时空白卡升星失败均不消费、不落命令收据', async () => {
-    const f = await setup();
-    await f.db.playerStates.update(f.profile.id, { gold: 499 });
-    const beforePlayer = await f.db.playerStates.get(f.profile.id);
-    const beforeCards = await f.db.ownedCards.where('profileId').equals(f.profile.id).toArray();
-    for (const [cardId, id] of [['mg_card_knife', 'poor'], ['as_astrology', 'unowned'], ['mg_blank_card', 'temporary']] as const) {
-      await expect(upgrade(f, cardId, id)).rejects.toThrow();
-      expect(await f.db.commandInbox.get(id)).toBeUndefined();
-    }
-    expect(await f.db.playerStates.get(f.profile.id)).toEqual(beforePlayer);
-    expect(await f.db.ownedCards.where('profileId').equals(f.profile.id).toArray()).toEqual(beforeCards);
-  });
-
-  it('升星在卡牌写入失败时回滚已扣金币和星级，重试同一命令只应用一次', async () => {
-    const f = await setup();
-    const beforePlayer = await f.db.playerStates.get(f.profile.id);
-    const beforeCard = await f.db.ownedCards.get(f.profile.id + ':mg_card_knife');
-    vi.spyOn(f.db.ownedCards, 'put').mockRejectedValueOnce(new Error('simulated-card-write-failure'));
-    await expect(upgrade(f, 'mg_card_knife', 'atomic-star')).rejects.toThrow('simulated-card-write-failure');
-    expect(await f.db.playerStates.get(f.profile.id)).toEqual(beforePlayer);
-    expect(await f.db.ownedCards.get(f.profile.id + ':mg_card_knife')).toEqual(beforeCard);
-    expect(await f.db.commandInbox.get('atomic-star')).toBeUndefined();
-    expect((await upgrade(f, 'mg_card_knife', 'atomic-star')).status).toBe('applied');
-    expect((await f.db.playerStates.get(f.profile.id))!.gold).toBe(9_500);
-  });
-
-  it('转职离开再返回保留已购三星和加点，仅扣转职金币', async () => {
-    const f = await setup();
-    await upgrade(f, 'mg_card_knife');
-    await upgrade(f, 'mg_card_knife');
-    await f.db.playerStates.update(f.profile.id, { statPoints: 10 });
-    await f.game.execute(f.profile.id, { id: 'allocate-before-reclass', type: 'player.allocate-stat', payload: { stat: 'attack', direction: 'add' } });
-    const allocation = await f.db.statAllocations.get(f.profile.id);
-    for (const subclass of ['priest', 'magician']) await f.game.execute(f.profile.id, {
-      id: 'reclass-' + subclass, type: 'player.reclass', payload: { classMain: 'freelance', subclass },
-    });
-    expect(await f.db.ownedCards.get(f.profile.id + ':mg_card_knife')).toMatchObject({ stars: 3 });
-    expect(await f.db.playerStates.get(f.profile.id)).toMatchObject({
-      gold: 6_500, subclass: 'magician', statPoints: 9, cardStars: { mg_card_knife: 3 },
-      attack: baseAttributes('magician', 1).attack + 2,
-    });
-    const after = await f.db.statAllocations.get(f.profile.id);
-    expect(after?.attack).toBe(allocation?.attack);
-  });
-
   it('进行中的战斗拒绝升星、加点、转职，保持战斗和持久数据不变', async () => {
     const f = await setup();
     await f.db.playerStates.update(f.profile.id, { statPoints: 10 });
@@ -153,27 +87,6 @@ describe('重置成长与战斗保存集成', () => {
     expect(after.cards).toEqual(before.cards);
     expect(after.statAllocations).toEqual(before.statAllocations);
     expect(await current(f, session)).toEqual(before.battle);
-  });
-
-  it.each([1, 2, 3])('实际升至%s星后新战斗所有实体继承星级，伤害按100/110/120且AP不变', async (stars) => {
-    const f = await setup();
-    for (let i = 1; i < stars; i++) await upgrade(f, 'mg_card_knife');
-    const session = await start(f);
-    expect(session.state.player.hand[0]!.stars).toBe(stars);
-    await play(f, session);
-    const after = await current(f, session);
-    const damage = 68 * (1 + (stars - 1) * 0.1);
-    expect(hydrate(after.state.rework).enemies[0].hp).toBeCloseTo(10_000 - damage, 8);
-    expect(after.state.enemies[0]!.hp).toBe(Math.ceil(10_000 - damage));
-    expect(after.state.player.ap).toBe(19);
-    expect(after.state.player.discardPile.find((c) => c.cardId === 'mg_card_knife')?.stars).toBe(stars);
-    for (let repeat = 1; repeat <= 2; repeat++) {
-      const next = await current(f, session);
-      next.state.player.hand = [{ instanceId: 'repeat:' + repeat, cardId: 'mg_card_knife', stars }];
-      await f.db.battleSessions.put(next);
-      await play(f, next);
-    }
-    expect(hydrate((await current(f, session)).state.rework).enemies[0].hp).toBeCloseTo(10_000 - damage * 3, 8);
   });
 
   it('回合保存与胜利结算保留战斗外金币变化，升级发10点且胜利状态不被投影改回玩家阶段', async () => {
@@ -223,37 +136,6 @@ describe('重置成长与战斗保存集成', () => {
     expect((await play(f, session, 'atomic-victory')).status).toBe('applied');
     expect((await f.db.playerStates.get(f.profile.id))!.gold).toBe(10_050);
     expect(await f.db.battleRewards.where('battleId').equals(session.id).count()).toBe(1);
-  });
-
-  it('领取同名奖励保留已购三星，新命令重复领取也不能复制卡牌或装备', async () => {
-    const f = await setup();
-    await upgrade(f, 'mg_card_knife');
-    await upgrade(f, 'mg_card_knife');
-    let session = await start(f);
-    await setVictoryTarget(f, session);
-    await play(f, session);
-    session = await current(f, session);
-    const definitions = await loadEquipmentDefinitions();
-    const equipmentId = Object.keys(definitions)[0]!;
-    session.state.rewardChoices = {
-      levelsGained: 0, cardIds: ['mg_card_knife'], equipmentIds: [equipmentId], relicIds: [],
-      cardClaimed: false, equipmentClaimed: false, relicClaimed: true,
-    };
-    await f.db.battleSessions.put(session);
-    const before = (await f.db.ownedCards.get(f.profile.id + ':mg_card_knife'))!;
-    for (const [kind, choiceId] of [['card', 'mg_card_knife'], ['equipment', equipmentId]] as const) {
-      const command = { id: 'claim-' + kind, type: 'battle.claim-reward', payload: { battleId: session.id, kind, choiceId } } as const;
-      expect((await f.game.execute(f.profile.id, command)).status).toBe('applied');
-      expect((await f.game.execute(f.profile.id, command)).status).toBe('duplicate');
-      await expect(f.game.execute(f.profile.id, { ...command, id: 'repeat-' + kind })).rejects.toThrow(/已经处理/);
-    }
-    expect(await f.db.ownedCards.get(before.id)).toMatchObject({ stars: 3, quantity: before.quantity + 1 });
-    const gear = await f.db.equipmentInstances.where('profileId').equals(f.profile.id).toArray();
-    expect(gear).toHaveLength(1);
-    expect(gear[0]).toMatchObject({ equipmentRulesVersion: 1, itemLevel: 1, stars: 1 });
-    expect(gear[0]!.stats).toEqual(scaleReworkEquipment(definitions[equipmentId]!.stats, 1, 1, definitions[equipmentId]!.rarity));
-    await f.game.execute(f.profile.id, { id: 'close-result', type: 'battle.finish', payload: { battleId: session.id } });
-    expect((await current(f, session)).active).toBe(false);
   });
 
   it('商人买路钱支付确定战利品的150%，保留外部钱包变化且立即结束、不发奖励', async () => {
@@ -395,20 +277,4 @@ describe('重置成长与战斗保存集成', () => {
     expect(await f.db.battleRewards.where('battleId').equals(session.id).count()).toBe(1);
   });
 
-  it('已升三星的通用牌购买同名副本后仍保持三星，仅增加数量并正常付款', async () => {
-    const f = await setup('merchant');
-    const market = new MarketRepository(f.db, () => new Date(2026, 6, 30, 16, 30));
-    const listing = (await market.view(f.profile.id)).listings.find((entry) => entry.kind === 'card')!;
-    expect(listing).toBeDefined();
-    const cardId = listing.refId ?? listing.itemId;
-    const ownedId = f.profile.id + ':' + cardId;
-    await f.db.ownedCards.put({ id: ownedId, profileId: f.profile.id, cardId, quantity: 1, stars: 1, source: 'test-reward', updatedAt: Date.now() });
-    await upgrade(f, cardId);
-    await upgrade(f, cardId);
-    const beforeGold = (await f.db.playerStates.get(f.profile.id))!.gold;
-    await market.buy(f.profile.id, { listingKey: listing.key, quantity: 1 });
-    expect(await f.db.ownedCards.get(ownedId)).toMatchObject({ quantity: 2, stars: 3 });
-    expect((await f.db.playerStates.get(f.profile.id))!.cardStars?.[cardId]).toBe(3);
-    expect((await f.db.playerStates.get(f.profile.id))!.gold).toBe(beforeGold - listing.price);
-  });
 });

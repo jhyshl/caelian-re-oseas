@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/* global Window */
+/* global Window, HTMLElement */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type {
   GatheringItem,
@@ -19,6 +19,32 @@ const notice = ref('');
 const noticeTone = ref<'success' | 'error'>('success');
 const error = ref('');
 const tab = ref<'gather' | 'hunt'>('gather');
+const selectedTrap = ref('');
+const buyTrapAnimal = ref('');
+const trapAnchor = ref<HTMLElement>();
+const trapTheme = ref<Record<string,string>>({});
+function openTrapPurchase(animalId:string) {
+  const host=props.context.document.defaultView;
+  if(host && trapAnchor.value) {
+    const style=host.getComputedStyle(trapAnchor.value);
+    trapTheme.value=Object.fromEntries(['--ca-bg','--ca-surface','--ca-text','--ca-border','--ca-gold'].map(key=>[key,style.getPropertyValue(key)]));
+  }
+  buyTrapAnimal.value=animalId;
+}
+const ownedTraps = computed(() => (gathering.value?.traps ?? []).filter(t => t.quantity > 0));
+async function purchaseTrapAndHunt(trapId:string) {
+  if(busy.value) return;
+  busy.value='buy-trap';
+  try {
+    const result=await props.context.api.execute({id:commandId('market.buy.trap'),type:'market.buy',payload:{listingKey:'trap:'+trapId,quantity:1}});
+    if(result.status==='rejected') throw new Error(result.message);
+    selectedTrap.value=trapId;
+    const animal=buyTrapAnimal.value;buyTrapAnimal.value='';
+    await refresh();busy.value='';
+    await hunt(animal);
+  } catch(caught) {noticeTone.value='error';notice.value=caught instanceof Error?caught.message:String(caught);}
+  finally {busy.value='';}
+}
 const clock = ref(Date.now());
 const disposers: Array<() => void> = [];
 let refreshTimer: number | undefined;
@@ -82,6 +108,7 @@ function refresh(): Promise<void> {
       const next = await props.context.api.query('gathering');
       if (sequence !== refreshSequence) return;
       gathering.value = next;
+      if(!next.traps?.some(t=>t.id===selectedTrap.value&&t.quantity>0)) selectedTrap.value=next.traps?.find(t=>t.quantity>0)?.id??'';
       error.value = '';
       clock.value = Date.now();
       scheduleRefresh(next.nextRefreshAt);
@@ -165,15 +192,27 @@ async function collect(item: GatheringItem): Promise<void> {
   }
 }
 
+async function resumeHunt() {
+  const pending=gathering.value?.pendingHunt;if(!pending||busy.value) return;
+  busy.value='resume-hunt';
+  try {
+    const result=await props.context.api.execute({id:commandId('battle.resume-hunt'),type:'battle.start',payload:{huntingAnimalId:pending.animalId,huntingToken:pending.token,source:'打猎 · '+pending.animalName}});
+    if(result.status==='rejected') throw new Error(result.message);
+    await props.context.api.navigatePanel('battle');
+  } catch(e) {noticeTone.value='error';notice.value=e instanceof Error?e.message:String(e);}
+  finally {busy.value='';await refresh();}
+}
 async function hunt(animalId: string): Promise<void> {
   if (busy.value) return;
+  if(gathering.value?.pendingHunt) {await resumeHunt();return;}
+  if(!selectedTrap.value || !ownedTraps.value.length) {openTrapPurchase(animalId);return;}
   busy.value = `hunt:${animalId}`;
   notice.value = '';
   try {
     const result = await props.context.api.execute({
       id: commandId('hunt.attempt'),
       type: 'hunt.attempt',
-      payload: { animalId },
+      payload: { animalId, trapId:selectedTrap.value },
     });
     if (result.status === 'rejected') {
       throw new Error(result.message ?? '打猎失败');
@@ -377,7 +416,13 @@ onUnmounted(() => {
 
       <section v-else class="ca-section gathering-resources">
         <h2 class="ca-section-title">选择猎物 <small>ROLL 0–100</small></h2>
-        <p class="hunt-rule">0–40 失败；41–80 直接获得 2–3 种料理材料；81–100 进入遭遇战，胜利后在基础奖励外获得料理材料。每种材料数量为 1–10。</p>
+        <button v-if="gathering.pendingHunt" class="ca-button primary" :disabled="!!busy" @click="resumeHunt">继续上次遭遇战（不再消耗捕兽夹）</button>
+        <label ref="trapAnchor" class="trap-picker">本次捕兽夹
+          <select v-model="selectedTrap" :disabled="!!busy || !ownedTraps.length"><option value="">没有捕兽夹，打猎时可快捷购买</option>
+            <option v-for="trap in ownedTraps" :key="trap.id" :value="trap.id">{{ trap.name }} ×{{ trap.quantity }} · 0～{{ trap.failMax }}失败</option>
+          </select>
+        </label>
+        <p class="hunt-rule">每次打猎消耗1个捕兽夹。低级0–60／中级0–40／高级0–20失败；高于失败区间且不超过80时直接获得料理材料；81–100进入遭遇战。</p>
         <div class="gathering-grid">
           <article v-for="animal in gathering.animals" :key="animal.id" class="gathering-card hunt-card">
             <div class="resource-icon" aria-hidden="true">⌖</div>
@@ -398,10 +443,28 @@ onUnmounted(() => {
         </div>
       </section>
     </template>
+    <Teleport v-if="buyTrapAnimal" :to="context.document.body">
+      <div class="trap-overlay" :style="trapTheme">
+        <section class="trap-dialog" role="dialog" aria-modal="true" aria-label="快捷购买捕兽夹">
+          <h2>没有捕兽夹</h2><p>是否按{{ gathering?.regionId }}当前价格购买1个捕兽夹并开始打猎？</p>
+          <button v-for="trap in gathering?.traps" :key="trap.id" class="ca-button" :disabled="!!busy || trap.stock < 1 || (gathering?.gold ?? 0) < trap.price" @click="purchaseTrapAndHunt(trap.id)">
+            {{ trap.name }} · {{ trap.price }}金币 · 0～{{ trap.failMax }}失败
+          </button><p v-if="noticeTone === 'error'" role="alert">{{ notice }}</p>
+          <button class="ca-button" :disabled="!!busy" @click="buyTrapAnimal = ''">暂不购买</button>
+        </section>
+      </div>
+    </Teleport>
   </AdventurerFrame>
 </template>
 
 <style scoped>
+.trap-picker { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
+.trap-picker select { max-width:100%; padding:8px; background:var(--ca-surface); color:var(--ca-text); border:1px solid var(--ca-border); border-radius:8px; }
+.trap-overlay { position:fixed; inset:0; z-index:2147483647; background:color-mix(in srgb,var(--ca-bg) 80%,transparent); display:grid; place-items:center; padding:20px; }
+.trap-dialog { width:min(460px,100%); padding:22px; border:1px solid var(--ca-border); border-radius:15px; background:var(--ca-surface); color:var(--ca-text); box-sizing:border-box; }
+.trap-dialog button { display:block; width:100%; margin:10px 0; padding:12px; color:var(--ca-text); border:1px solid var(--ca-border); border-radius:8px; background:var(--ca-bg); cursor:pointer; }
+.trap-dialog button:disabled { opacity:.45; cursor:default; }
+
 .gathering-heading {
   display: flex;
   align-items: center;

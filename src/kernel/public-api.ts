@@ -1,3 +1,4 @@
+import type { FreightView } from '@/market-freight';
 import type { CommandResult } from '@/domain/commands';
 import type { AchievementDefinition } from '@/content/types';
 import type {
@@ -51,6 +52,7 @@ export interface QuestJudgeStatus {
 }
 
 export interface TrackedQuestView {
+  manualChoices?: Array<{transitionId:string;label:string;terminal:boolean}>;
   quest: QuestRecord;
   tracker: QuestTrackerRecord;
   position?: {
@@ -116,6 +118,7 @@ export type QueryName =
   | 'state'
   | 'inventory'
   | 'market'
+  | 'freight'
   | 'gathering'
   | 'social-interactions'
   | 'events'
@@ -128,6 +131,7 @@ export interface QueryResultMap {
   state: GameSnapshot;
   inventory: InventoryStackRecord[];
   market: MarketView;
+  freight: FreightView;
   gathering: GatheringView;
   'social-interactions': SocialInteractionOptions;
   events: EventLogRecord[];
@@ -208,6 +212,7 @@ export interface CaelianPublicApi {
   submitTrackedQuestAction(): Promise<TrackedQuestView>;
   performTrackedQuestAction(): Promise<TrackedQuestView>;
   completeTrackedQuest(): Promise<QuestCompletionResult>;
+  completeTrackedQuestNode(input:{questId:string;expectedNodeId:string;expectedRevision:number;transitionId?:string}):Promise<{completion?:QuestCompletionResult}>;
   on<K extends keyof KernelEventMap>(
     event: K,
     handler: (payload: KernelEventMap[K]) => void | Promise<void>,
@@ -250,6 +255,7 @@ export type PanelApi = Pick<
   | 'submitTrackedQuestAction'
   | 'performTrackedQuestAction'
   | 'completeTrackedQuest'
+  | 'completeTrackedQuestNode'
   | 'getRuntimeInfo'
   | 'getThemeState'
   | 'setUserInput'

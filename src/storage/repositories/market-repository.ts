@@ -1,3 +1,6 @@
+import { HUNTING_TRAPS, TRAP_ITEMS } from '@/content/hunting-traps';
+import { CARRIAGES, freightDayKey, freightFee, nextFreightReset, type CarriageTier, type FreightState, type FreightView, type FreightRegion, type FreightOrder, type FreightCargo } from '@/market-freight';
+import { grantCard } from '@/battle/card-inventory';
 import { scaleReworkEquipment } from '@/battle/rework/equipment';
 import {
   loadMarketCatalogs,
@@ -77,7 +80,7 @@ export class MarketRepository {
       this.buildMerchantTalentEligibleItems();
   }
 
-  async view(profileId: string): Promise<MarketView> {
+  async view(profileId: string, targetRegion?: string, includeSoldOut = false): Promise<MarketView> {
     await this.prepare();
     const [player, world, inventory, equipment, loadout] = await Promise.all([
       this.db.playerStates.get(profileId),
@@ -91,7 +94,7 @@ export class MarketRepository {
     }
     const date = this.now();
     const refreshKey = currentMarketSlotKey(date);
-    const regionId = this.resolveRegion(world.region, world.location);
+    const regionId = targetRegion ?? this.resolveRegion(world.region, world.location);
     const [regionState, cardState] = await Promise.all([
       this.ensureRegionState(profileId, regionId, refreshKey, player.level),
       this.ensureCardState(profileId, refreshKey),
@@ -99,7 +102,7 @@ export class MarketRepository {
     const listings = [
       ...regionState.inventory.listings,
       ...cardState.inventory.listings,
-    ].filter((listing) => listing.stock > 0).map((listing) => {
+    ].filter((listing) => includeSoldOut || listing.stock > 0).map((listing) => {
       const id = listing.refId ?? listing.itemId;
       const definition = this.catalog().equipment[id];
       if (listing.kind === 'equipment' && definition) {
@@ -369,6 +372,145 @@ export class MarketRepository {
     ]);
   }
 
+
+  private freightTables() { return [this.db.freightStates, this.db.playerStates, this.db.inventoryStacks, this.db.equipmentInstances, this.db.ownedRelics, this.db.ownedCards]; }
+  private async ensureFreight(profileId:string):Promise<FreightState> {
+    const date=this.now(), dayKey=freightDayKey(date);
+    let state=await this.db.freightStates.get(profileId);
+    if(!state) {
+      const id=profileId+':carriage:starter';
+      state={profileId,carriages:[{id,tier:'ordinary'}],equippedIds:[id],dayKey,dispatchCount:0,jobs:[],updatedAt:date.getTime()};
+    }
+    if(state.dayKey!==dayKey) {state.dayKey=dayKey;state.dispatchCount=0;}
+    await this.db.freightStates.put(state);
+    return state;
+  }
+  async settleFreight(profileId:string):Promise<void> {
+    await this.db.transaction('rw',this.freightTables(),async()=>{
+      const state=await this.ensureFreight(profileId), now=this.now().getTime();
+      const due=state.jobs.filter(j=>!j.deliveredAt&&j.arrivesAt<=now);
+      if(!due.length) return;
+      const player=await this.db.playerStates.get(profileId);
+      if(!player) throw new Error('玩家档案不存在');
+      for(const job of due) {
+        let refund=0;
+        if(job.direction==='sell') player.gold+=job.saleGold;
+        else for(const row of job.cargo) {
+          const listing=row.listing;
+          if(listing.kind==='item') await this.addItem(profileId,listing.itemId,listing.name,row.quantity);
+          else if(row.equipment) await this.db.equipmentInstances.put(row.equipment);
+          else if(listing.kind==='card') await grantCard(this.db,profileId,listing.refId??listing.itemId,row.quantity,1,'freight');
+          else {
+            const relicId=listing.refId??listing.itemId,id=profileId+':'+relicId;
+            if(await this.db.ownedRelics.get(id)) refund+=listing.price*row.quantity;
+            else await this.db.ownedRelics.add({id,profileId,relicId,carried:false,acquiredAt:now,updatedAt:now});
+          }
+        }
+        player.gold+=refund;job.refund=refund;job.deliveredAt=now;
+      }
+      player.updatedAt=now;state.updatedAt=now;
+      state.jobs=state.jobs.filter(j=>!j.deliveredAt).concat(state.jobs.filter(j=>j.deliveredAt).slice(-30));
+      await this.db.playerStates.put(player);await this.db.freightStates.put(state);
+    });
+  }
+  async freightView(profileId:string):Promise<FreightView> {
+    await this.prepare();await this.settleFreight(profileId);
+    return this.db.transaction('rw',[...this.freightTables(),this.db.marketStates,this.db.worldStates,this.db.equipmentLoadouts],async()=>{
+      const state=await this.ensureFreight(profileId),current=await this.view(profileId),regions:FreightRegion[]=[];
+      for(const regionId of Object.keys(this.catalog().marketItems)) {
+        const view=await this.view(profileId,regionId,true);
+        const localItems=new Set(view.listings.filter(l=>l.kind==='item').flatMap(l=>[l.itemId,l.name]));
+        const prices:FreightRegion['prices']=view.listings.map(l=>({
+          key:l.key,itemId:l.itemId,name:l.name,buy:l.price,stock:l.stock,
+          sell:l.kind==='item'?this.sellItemPrice(l.itemId,l.name,regionId,view.refreshKey,this.hasMerchantTalentSellBonus(view.isMerchant,l.itemId,l.name,localItems)):null,
+        }));
+        for(const item of view.sellItems) if(!prices.some(p=>p.itemId===item.itemId)) prices.push({key:'item:'+item.itemId,itemId:item.itemId,name:item.name,buy:null,sell:item.price,stock:0});
+        for(const item of view.sellEquipment) prices.push({key:'equipment:'+item.instanceId,itemId:item.instanceId,name:item.name,buy:null,sell:item.price,stock:0});
+        regions.push({...view,prices});
+      }
+      return {state,regionId:current.regionId,gold:current.gold,regions,nextFee:freightFee(state.dispatchCount),nextResetAt:nextFreightReset(this.now())};
+    });
+  }
+  async buyCarriage(profileId:string,tier:CarriageTier):Promise<void> {
+    const spec=CARRIAGES[tier];if(!spec) throw new Error('马车型号不存在');
+    const state=await this.ensureFreight(profileId),player=await this.db.playerStates.get(profileId);
+    if(!player||player.gold<spec.price) throw new Error('金币不足');
+    const id=profileId+':carriage:'+uniqueSuffix();
+    state.carriages.push({id,tier});
+    if(state.equippedIds.length<6) state.equippedIds.push(id);
+    player.gold-=spec.price;player.updatedAt=Date.now();state.updatedAt=Date.now();
+    await this.db.playerStates.put(player);await this.db.freightStates.put(state);
+  }
+  async configureFleet(profileId:string,ids:string[]):Promise<void> {
+    const state=await this.ensureFreight(profileId);
+    if(ids.length>6||new Set(ids).size!==ids.length||ids.some(id=>!state.carriages.some(c=>c.id===id))) throw new Error('最多装配6辆自己拥有的马车');
+    const busy=new Set(state.jobs.filter(j=>!j.deliveredAt).flatMap(j=>j.carriageIds));
+    if([...busy].some(id=>!ids.includes(id))) throw new Error('运输中的马车不能卸下');
+    state.equippedIds=ids;state.updatedAt=Date.now();await this.db.freightStates.put(state);
+  }
+  async dispatchFreight(profileId:string,input:FreightOrder):Promise<void> {
+    const state=await this.ensureFreight(profileId),player=await this.db.playerStates.get(profileId),world=await this.db.worldStates.get(profileId);
+    if(!player||!world) throw new Error('冒险档案不存在');
+    const origin=this.resolveRegion(world.region,world.location),regionId=input.regionId;
+    if(!Object.hasOwn(this.catalog().marketItems,regionId)||regionId===origin) throw new Error('请选择其他地区进行货运');
+    const refreshKey=currentMarketSlotKey(this.now());
+    if(input.refreshKey!==refreshKey) throw new Error('集市价格已经刷新，请刷新报价后重新下单');
+    const busy=new Set(state.jobs.filter(j=>!j.deliveredAt).flatMap(j=>j.carriageIds));
+    const ids=input.carriageIds;
+    if(!ids.length||ids.length>6||new Set(ids).size!==ids.length||ids.some(id=>!state.equippedIds.includes(id)||busy.has(id))) throw new Error('请选择已装配且空闲的马车');
+    const capacity=ids.reduce((n,id)=>n+CARRIAGES[state.carriages.find(c=>c.id===id)!.tier].capacity,0);
+    if(!input.rows.length||new Set(input.rows.map(r=>r.key)).size!==input.rows.length||input.rows.some(r=>!Number.isInteger(r.quantity)||r.quantity<1)) throw new Error('货物数量或列表无效');
+    const count=input.rows.reduce((n,r)=>n+r.quantity,0);
+    if(count>capacity) throw new Error('货物总数量超过所选马车容量：'+capacity);
+    const quote=await this.view(profileId,regionId),cargo:FreightCargo[]=[];
+    const jobId=profileId+':freight:'+uniqueSuffix(),now=this.now().getTime();
+    let cost=0,saleGold=0;
+    if(input.direction==='buy') {
+      const regionState=await this.ensureRegionState(profileId,regionId,refreshKey,player.level),cardState=await this.ensureCardState(profileId,refreshKey);
+      for(const row of input.rows) {
+        const listing=[...regionState.inventory.listings,...cardState.inventory.listings].find(l=>l.key===row.key);
+        if(!listing||listing.stock<row.quantity||(listing.kind!=='item'&&row.quantity!==1)) throw new Error('商品已售罄或库存不足');
+        const copy=structuredClone(listing),entry:FreightCargo={listing:copy,quantity:row.quantity};
+        if(listing.kind==='equipment') {
+          const def=this.catalog().equipment[listing.refId??listing.itemId];if(!def) throw new Error('装备不存在');
+          if(await this.db.equipmentInstances.where('profileId').equals(profileId).filter(e=>e.baseId===def.id&&e.stars>=3).count()) throw new Error('已经拥有该装备的三星版本');
+          const stars=listing.stars??1;
+          entry.equipment={id:jobId+':'+cargo.length,profileId,baseId:def.id,name:listing.name,slot:def.slot,rarity:def.rarity,stars,
+            stats:scaleReworkEquipment(def.stats,stars,player.level,def.rarity),description:listing.detail,equipmentRulesVersion:1,itemLevel:player.level,equipmentSourceStats:{...def.stats},updatedAt:now};
+        }
+        if(listing.kind==='relic') {
+          const relicId=listing.refId??listing.itemId;
+          if(await this.db.ownedRelics.get(profileId+':'+relicId)||state.jobs.some(j=>!j.deliveredAt&&j.direction==='buy'&&j.cargo.some(c=>c.listing.kind==='relic'&&(c.listing.refId??c.listing.itemId)===relicId))) throw new Error('该藏品已拥有或正在运输中');
+        }
+        listing.stock-=row.quantity;cost+=listing.price*row.quantity;cargo.push(entry);
+      }
+      await this.db.marketStates.put(regionState);await this.db.marketStates.put(cardState);
+    } else {
+      for(const row of input.rows) {
+        const item=quote.sellItems.find(i=>'item:'+i.itemId===row.key),equipment=quote.sellEquipment.find(e=>'equipment:'+e.instanceId===row.key);
+        if(item) {
+          if(row.quantity>item.quantity) throw new Error('背包物品数量不足');
+          const stack=await this.db.inventoryStacks.get(profileId+':'+item.itemId);if(!stack||stack.quantity<row.quantity) throw new Error('背包物品数量不足');
+          stack.quantity-=row.quantity;
+          if(stack.quantity) await this.db.inventoryStacks.put(stack);else await this.db.inventoryStacks.delete(stack.id);
+          saleGold+=item.price*row.quantity;
+          cargo.push({listing:{key:row.key,kind:'item',tab:item.tab,itemId:item.itemId,name:item.name,detail:item.detail,price:item.price,basePrice:item.price,factor:1,stock:0,rarity:'common',source:'货运'},quantity:row.quantity});
+        } else if(equipment&&row.quantity===1) {
+          await this.db.equipmentInstances.delete(equipment.instanceId);saleGold+=equipment.price;
+          cargo.push({listing:{key:row.key,kind:'equipment',tab:'gear',itemId:equipment.instanceId,name:equipment.name,detail:equipment.description,price:equipment.price,basePrice:equipment.price,factor:1,stock:0,rarity:'common',source:'货运',stars:equipment.stars},quantity:1});
+        } else throw new Error('货物不能出售，或已装备、已售出');
+      }
+    }
+    const fee=freightFee(state.dispatchCount);
+    if(player.gold<cost+fee) throw new Error('金币不足，需支付货款'+cost+'及运费'+fee);
+    player.gold-=cost+fee;player.updatedAt=now;
+    state.dispatchCount++;state.updatedAt=now;
+    state.jobs.push({id:jobId,direction:input.direction,regionId,origin,cargo,saleGold,fee,carriageIds:ids,departedAt:now,arrivesAt:now+600000});
+    await this.db.playerStates.put(player);await this.db.freightStates.put(state);
+  }
+
+  private trapCandidates():Candidate[] {return HUNTING_TRAPS.map(t=>({key:'trap:'+t.id,kind:'item',tab:'loot',itemId:t.id,name:t.name,rarity:'common',source:'打猎用品',detail:TRAP_ITEMS[t.id]!.desc,stockMin:100,stockMax:100,basePrice:t.basePrice}));}
+
   private async ensureRegionState(
     profileId: string,
     regionId: string,
@@ -381,9 +523,12 @@ export class MarketRepository {
       current?.refreshKey === refreshKey &&
       current.inventory?.version === REGION_STOCK_VERSION
     ) {
+      const missing=this.trapCandidates().filter(c=>!current.inventory.listings.some(l=>l.key===c.key));
+      if(missing.length) {current.inventory.listings.push(...missing.map(c=>this.toListing(c,regionId,refreshKey)));await this.db.marketStates.put(current);}
       return current;
     }
     const candidates = [
+      ...this.trapCandidates(),
       ...this.buildSpecialties(regionId),
       ...this.buildCooking(regionId),
       ...(await this.buildGearAndRelics(
@@ -859,19 +1004,7 @@ export class MarketRepository {
     if (!this.catalog().commonCards[cardId]) {
       throw new Error('卡牌库中不存在该商品');
     }
-    const id = `${profileId}:${cardId}`;
-    const current = await this.db.ownedCards.get(id);
-    const player = await this.db.playerStates.get(profileId);
-    await this.db.ownedCards.put({
-      ...current,
-      id,
-      profileId,
-      cardId,
-      quantity: (current?.quantity ?? 0) + 1,
-      source: current?.source ?? 'market',
-      stars: current?.stars ?? player?.cardStars?.[cardId] ?? 1,
-      updatedAt: Date.now(),
-    });
+    await grantCard(this.db, profileId, cardId, 1, 1, 'market');
   }
 
   private sellItemPrice(

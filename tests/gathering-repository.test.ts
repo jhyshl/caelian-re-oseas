@@ -50,6 +50,7 @@ async function setup(options: {
     now: () => new Date(clock.value.getTime()),
     random: options.random,
   });
+  if(options.random) await database.inventoryStacks.put({id:profile.id+':hunt_trap_mid',profileId:profile.id,itemId:'hunt_trap_mid',name:'中级捕兽夹',quantity:1,updatedAt:Date.now()});
   return { clock, database, game, profile, repository };
 }
 

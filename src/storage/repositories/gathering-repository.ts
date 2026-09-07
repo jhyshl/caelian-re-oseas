@@ -1,3 +1,4 @@
+import { HUNTING_TRAPS } from '@/content/hunting-traps';
 import {
   loadGatheringCatalog,
   type GatheringCatalog,
@@ -220,6 +221,7 @@ export class GatheringRepository {
   async hunt(
     profileId: string,
     animalId: string,
+    trapId?: string,
   ): Promise<{ message: string; data: HuntingAttemptData }> {
     const animal = huntingAnimal(animalId);
     if (!animal) throw new Error('请选择真实存在的猎物');
@@ -232,8 +234,16 @@ export class GatheringRepository {
       .first();
     if (activeBattle) throw new Error('请先结束当前战斗再进行打猎');
 
+    const inventory=await this.db.inventoryStacks.where('profileId').equals(profileId).toArray();
+    const trap=HUNTING_TRAPS.find(t=>trapId?t.id===trapId:inventory.some(i=>i.itemId===t.id&&i.quantity>0));
+    const stack=trap?inventory.find(i=>i.itemId===trap.id&&i.quantity>0):undefined;
+    if(!trap||!stack) throw new Error('打猎需要捕兽夹，请先在当前地区集市购买');
+    const pending=await this.db.gatheringStates.get(profileId+':hunting-pending');
+    if(pending?.pendingHunt) throw new Error('请先完成待处理的打猎遭遇战');
+    stack.quantity--;
+    if(stack.quantity) await this.db.inventoryStacks.put({...stack,updatedAt:Date.now()});else await this.db.inventoryStacks.delete(stack.id);
     const roll = Math.max(0, Math.min(100, Math.floor(this.random() * 101)));
-    if (roll <= 40) {
+    if (roll <= trap.failMax) {
       return {
         message: `打猎点数 ${roll}：追踪失败，本轮没有获得物品。`,
         data: { roll, outcome: 'failure', animalId: animal.id, animalName: animal.name, rewards: [] },

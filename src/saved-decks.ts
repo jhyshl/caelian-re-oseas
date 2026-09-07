@@ -12,6 +12,7 @@ export interface SavedDeckBuild {
   professionName: string;
   mainClass: string;
   cardIds: string[];
+  cardStars?: number[];
   createdAt: string;
   updatedAt: string;
 }
@@ -26,9 +27,10 @@ const savedDeckSchema = z.object({
   professionName: z.string().trim().min(1).max(40),
   mainClass: identifier,
   cardIds: z.array(z.string().trim().min(1).max(160)).min(10).max(20),
+  cardStars: z.array(z.number().int().min(1).max(3)).min(10).max(20).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
-});
+}).refine(v => !v.cardStars || v.cardStars.length === v.cardIds.length, '卡牌与星级数量不匹配');
 
 type StorageWindow = Pick<Window, 'localStorage'>;
 

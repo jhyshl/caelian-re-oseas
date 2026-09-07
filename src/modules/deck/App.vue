@@ -31,6 +31,7 @@ const editing = ref(false);
 const draft = ref<string[]>([]);
 const filter = ref('all');
 const search = ref('');
+const starFilter = ref('all');
 const notice = ref('');
 const workshopOpen = ref(false);
 const presetName = ref('');
@@ -56,81 +57,42 @@ const rarityNames: Record<string, string> = {
   legendary: '传说',
 };
 
-const deckIds = computed(
-  () =>
-    (editing.value
-      ? draft.value
-      : snapshot.value?.decks.find((deck) => deck.active)?.cardIds) ?? [],
-);
-const groupedDeck = computed(() =>
-  groupCards(deckIds.value).filter((entry) => matchFilter(entry.definition)),
-);
-const ownedCards = computed(() =>
-  (snapshot.value?.cards ?? [])
-    .flatMap((owned) => {
-      const definition = catalog.value[owned.cardId];
-      return definition
-        ? [
-            {
-              id: owned.cardId,
-              quantity: owned.quantity,
-              definition,
-              inDeck: draft.value.filter((id) => id === owned.cardId).length,
-            },
-          ]
-        : [];
-    })
-    .filter((entry) => matchFilter(entry.definition)),
-);
-
-function cardStars(id: string) {
-  return Math.max(snapshot.value?.cards.find(c => c.cardId === id)?.stars ?? 1, snapshot.value?.player.cardStars?.[id] ?? 1);
+function stackKey(id: string, stars = 1) { return JSON.stringify([id, stars]); }
+function stackParts(key: string): [string, number] { return JSON.parse(key); }
+function activeTokens() {
+  const deck = snapshot.value?.decks.find(d => d.active);
+  return deck?.cardIds.map((id, i) => stackKey(id, deck.cardStars?.[i] ?? 1)) ?? [];
 }
-function currentDescription(id: string, fallback: string) {
+const deckIds = computed(() => editing.value ? draft.value : activeTokens());
+const groupedDeck = computed(() => groupCards(deckIds.value).filter(entry => matchFilter(entry.definition, entry.stars)));
+const ownedCards = computed(() => (snapshot.value?.cards ?? []).flatMap(owned => {
+  const definition = catalog.value[owned.cardId], stars = owned.stars ?? 1;
+  const id = stackKey(owned.cardId, stars);
+  return definition ? [{ id, cardId: owned.cardId, stars, quantity: owned.quantity, definition,
+    inDeck: deckIds.value.filter(key => key === id).length }] : [];
+}).filter(entry => matchFilter(entry.definition, entry.stars)).sort((a,b) => a.definition.name.localeCompare(b.definition.name, 'zh-CN') || a.stars - b.stars));
+function currentDescription(id: string, stars: number, fallback: string) {
   const c = reworkCard(id);
-  return c ? describeReworkEffects(c.effects, cardStars(id)) : fallback;
+  return c ? describeReworkEffects(c.effects, stars) : fallback;
 }
-async function upgradeCard(cardId: string) {
-  try {
-    const result = await props.context.api.execute({id: commandId('cards.upgrade'), type: 'cards.upgrade', payload: {cardId}});
-    if (result.status === 'rejected') throw new Error(result.message);
-    snapshot.value = await props.context.api.query('state');
-    notice.value = '卡牌已升至' + cardStars(cardId) + '星，伤害、治疗和护盾成长已更新。';
-  } catch (error) { notice.value = error instanceof Error ? error.message : String(error); }
-}
-
-function groupCards(cardIds: string[]) {
-  const counts = cardIds.reduce<Record<string, number>>((result, id) => {
-    result[id] = (result[id] ?? 0) + 1;
-    return result;
-  }, {});
+function groupCards(keys: string[]) {
+  const counts = keys.reduce<Record<string, number>>((out, key) => { out[key] = (out[key] ?? 0) + 1; return out; }, {});
   return Object.entries(counts).flatMap(([id, quantity]) => {
-    const definition = catalog.value[id];
-    return definition ? [{ id, quantity, definition }] : [];
+    const [cardId, stars] = stackParts(id), definition = catalog.value[cardId];
+    return definition ? [{id, cardId, stars, quantity, definition}] : [];
   });
 }
-
-function matchFilter(card: CardDefinition) {
-  const typeMatch = filter.value === 'all' || card.type === filter.value;
+function matchFilter(card: CardDefinition, stars: number) {
   const term = search.value.trim().toLowerCase();
-  return (
-    typeMatch &&
-    (!term ||
-      card.name.toLowerCase().includes(term) ||
-      card.description.toLowerCase().includes(term))
-  );
+  return (filter.value === 'all' || card.type === filter.value) &&
+    (starFilter.value === 'all' || stars === Number(starFilter.value)) &&
+    (!term || card.name.toLowerCase().includes(term) || card.description.toLowerCase().includes(term));
 }
-
-function beginEdit() {
-  draft.value = [
-    ...(snapshot.value?.decks.find((deck) => deck.active)?.cardIds ?? []),
-  ];
-  editing.value = true;
-  notice.value = '';
-}
+function beginEdit() { draft.value = activeTokens(); editing.value = true; notice.value = ''; }
 
 function addCard(id: string) {
-  const owned = snapshot.value?.cards.find((entry) => entry.cardId === id);
+  const [cardId, stars] = stackParts(id);
+  const owned = snapshot.value?.cards.find(entry => entry.cardId === cardId && (entry.stars ?? 1) === stars);
   const inDeck = draft.value.filter((cardId) => cardId === id).length;
   if (
     !owned ||
@@ -157,7 +119,7 @@ async function saveDeck() {
   const result = await props.context.api.execute({
     id: commandId('deck.update'),
     type: 'deck.update',
-    payload: { cardIds: [...draft.value] },
+    payload: { cardIds: draft.value.map(key => stackParts(key)[0]), cardStars: draft.value.map(key => stackParts(key)[1]) },
   });
   if (result.status === 'rejected') {
     notice.value = result.message ?? '牌组保存失败';
@@ -193,6 +155,7 @@ function savePreset(): void {
         professionName: subclassNames[player.subclass] ?? player.subclass,
         mainClass: mainClassForSubclass(player.subclass),
         cardIds: [...deck.cardIds],
+        cardStars: deck.cardStars ? [...deck.cardStars] : undefined,
         createdAt: existing?.createdAt,
       },
       sourceWindow(),
@@ -246,7 +209,7 @@ async function applyPreset(build: SavedDeckBuild): Promise<void> {
   const result = await props.context.api.execute({
     id: commandId('deck.update'),
     type: 'deck.update',
-    payload: { cardIds: [...build.cardIds] },
+    payload: { cardIds: [...build.cardIds], cardStars: build.cardStars },
   });
   if (result.status === 'rejected') {
     notice.value = `${result.message ?? '构筑切换失败'}。预设不会自动赠送尚未拥有的卡牌。`;
@@ -254,7 +217,7 @@ async function applyPreset(build: SavedDeckBuild): Promise<void> {
     return;
   }
   snapshot.value = await props.context.api.query('state');
-  draft.value = [...build.cardIds];
+  draft.value = activeTokens();
   notice.value = `已一键切换到构筑「${build.name}」。`;
 }
 
@@ -275,9 +238,7 @@ onMounted(async () => {
     props.context.api.query('state'),
     loadCardCatalog(),
   ]);
-  draft.value = [
-    ...(snapshot.value.decks.find((deck) => deck.active)?.cardIds ?? []),
-  ];
+  draft.value = activeTokens();
 });
 </script>
 
@@ -405,7 +366,11 @@ onMounted(async () => {
         >
           {{ name }}
         </button>
-        <input v-model="search" placeholder="搜索卡牌或效果" />
+        <input v-model="search" aria-label="按卡牌名字搜索" placeholder="搜索名字或效果" />
+        <select v-model="starFilter" aria-label="按卡牌星级筛选">
+          <option value="all">全部星级</option><option value="1">一星 ★</option>
+          <option value="2">二星 ★★</option><option value="3">三星 ★★★</option>
+        </select>
       </div>
 
       <section class="ca-section">
@@ -425,7 +390,7 @@ onMounted(async () => {
           >
             <header>
               <div>
-                <strong>{{ entry.definition.name }} · {{ cardStars(entry.id) }}★</strong>
+                <strong>{{ entry.definition.name }} · {{ entry.stars }}★</strong>
                 <span>
                   {{ rarityNames[entry.definition.rarity] ?? entry.definition.rarity }}
                   · {{ typeNames[entry.definition.type] ?? entry.definition.type }}
@@ -433,12 +398,9 @@ onMounted(async () => {
               </div>
               <b>×{{ entry.quantity }}</b>
             </header>
-            <p>{{ currentDescription(entry.id, entry.definition.description) }}</p>
+            <p>{{ currentDescription(entry.cardId, entry.stars, entry.definition.description) }}</p>
             <footer>
               <span>AP {{ entry.definition.cost }}</span>
-              <button v-if="entry.definition.rework && cardStars(entry.id) < 3 && entry.id !== 'mg_blank_card'" type="button" class="ca-button" @click="upgradeCard(entry.id)">
-                升至 {{ cardStars(entry.id) + 1 }}★ · {{ cardStars(entry.id) === 1 ? 500 : 1500 }} 金币
-              </button>
               <span v-if="entry.definition.mpCost">
                 MP {{ entry.definition.mpCost }}
               </span>
@@ -460,12 +422,11 @@ onMounted(async () => {
         <div class="collection-list">
           <article v-for="entry in ownedCards" :key="entry.id">
             <div>
-              <strong>{{ entry.definition.name }} · {{ cardStars(entry.id) }}★</strong>
-              <span>{{ currentDescription(entry.id, entry.definition.description) }}</span>
+              <strong>{{ entry.definition.name }} · {{ entry.stars }}★</strong>
+              <span>{{ currentDescription(entry.cardId, entry.stars, entry.definition.description) }}</span>
             </div>
             <div>
               <small>持有 {{ entry.quantity }} · 已入组 {{ entry.inDeck }}</small>
-              <button v-if="entry.definition.rework && cardStars(entry.id) < 3 && entry.id !== 'mg_blank_card'" class="ca-button" type="button" @click="upgradeCard(entry.id)">升星 · {{ cardStars(entry.id) === 1 ? 500 : 1500 }} 金币</button>
               <button
                 type="button"
                 class="ca-button primary"
@@ -542,7 +503,7 @@ onMounted(async () => {
   background: rgba(212, 168, 67, 0.1);
 }
 
-.filters input {
+.filters input, .filters select {
   min-width: 160px;
   flex: 1;
   padding: 6px 11px;

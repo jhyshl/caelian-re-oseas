@@ -44,6 +44,14 @@ const achievementEventSchema = z.object({
 });
 
 export const domainCommandSchema = z.discriminatedUnion('type', [
+  z.object({...commandBase,type:z.literal('market.carriage-buy'),payload:z.object({tier:z.enum(['ordinary','medium','advanced'])})}),
+  z.object({...commandBase,type:z.literal('market.freight-fleet'),payload:z.object({carriageIds:z.array(z.string().min(1).max(2048)).max(6)})}),
+  z.object({...commandBase,type:z.literal('market.freight-dispatch'),payload:z.object({
+    regionId:z.string().min(1).max(160),direction:z.enum(['buy','sell']),refreshKey:z.string().min(1).max(80),
+    carriageIds:z.array(z.string().min(1).max(2048)).min(1).max(6),
+    rows:z.array(z.object({key:z.string().min(1).max(2048),quantity:z.number().int().min(1).max(720)})).min(1).max(720),
+  })}),
+
   z.object({
     ...commandBase,
     type: z.literal('player.create'),
@@ -263,6 +271,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('deck.update'),
     payload: z.object({
       cardIds: z.array(z.string().trim().min(1).max(160)).min(10).max(20),
+      cardStars: z.array(z.number().int().min(1).max(3)).min(10).max(20).optional(),
     }),
   }),
   z.object({
@@ -335,6 +344,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('hunt.attempt'),
     payload: z.object({
       animalId: z.string().trim().min(1).max(80),
+      trapId: z.enum(['hunt_trap_low','hunt_trap_mid','hunt_trap_high']).optional(),
     }),
   }),
   z.object({
@@ -442,7 +452,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
   z.object({
     ...commandBase,
     type: z.literal('cards.upgrade'),
-    payload: z.object({ cardId: z.string().trim().min(1).max(180) }),
+    payload: z.object({ cardId: z.string().trim().min(1).max(180), stars: z.number().int().min(1).max(2).optional() }),
   }),
   z.object({
     ...commandBase,
