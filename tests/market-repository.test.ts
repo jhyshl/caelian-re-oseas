@@ -7,7 +7,7 @@ import {
   loadItemCatalog,
   loadMarketItemsByRegion,
 } from '@/content/catalogs/inventory';
-import { scaleEquipmentStatsByStars } from '@/equipment-stats';
+import { scaleReworkEquipment } from '@/battle/rework/equipment';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { GameRepository } from '@/storage/repository';
@@ -265,10 +265,13 @@ describe('MarketRepository integration', () => {
     expect(instance?.slot).toBe(definitions[listing!.refId!]?.slot);
     expect(instance?.rarity).toBe(definitions[listing!.refId!]?.rarity);
     expect(instance?.stars).toBe(listing?.stars);
+    expect(instance).toMatchObject({ equipmentRulesVersion: 1, itemLevel: 30 });
     expect(instance?.stats).toEqual(
-      scaleEquipmentStatsByStars(
+      scaleReworkEquipment(
         definitions[listing!.refId!]!.stats,
         listing!.stars!,
+        30,
+        definitions[listing!.refId!]!.rarity,
       ),
     );
     expect(JSON.stringify(await loadEquipmentDefinitions())).toBe(

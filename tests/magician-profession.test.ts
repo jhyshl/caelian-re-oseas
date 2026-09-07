@@ -20,7 +20,7 @@ describe('正式职业魔术师', () => {
     expect(classSubclasses.freelance).toContain(MAGICIAN_SUBCLASS_ID);
     expect(subclassNames[MAGICIAN_SUBCLASS_ID]).toBe('魔术师');
     expect(getProfessionTalent(MAGICIAN_SUBCLASS_ID).talent).toContain(
-      '手牌上限提高 5',
+      '手牌上限15',
     );
     expect(MAGICIAN_CARD_IDS).toHaveLength(13);
     expect(MAGICIAN_CARD_POOL).toHaveLength(26);

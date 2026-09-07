@@ -1,3 +1,4 @@
+import { baseAttributes } from '@/battle/rework/attributes';
 import type { PlayerRecord } from '@/domain/types';
 
 export const STAT_POINTS_PER_LEVEL = 10;
@@ -33,6 +34,16 @@ export function grantPlayerExperience(
       equipmentClaimed: false,
       relicClaimed: false,
     });
+  }
+  const full = player as PlayerRecord;
+  if (full.combatRulesVersion && player.level !== startingLevel) {
+    const before = baseAttributes(full.subclass, startingLevel);
+    const after = baseAttributes(full.subclass, player.level);
+    const hpGain = after.hpMax - before.hpMax;
+    full.hpMax += hpGain;
+    if (full.hp > 0) full.hp += hpGain;
+    full.attack += after.attack - before.attack;
+    full.defense += after.defense - before.defense;
   }
   return player.level - startingLevel;
 }

@@ -1,3 +1,4 @@
+import { upgradeReworkEquipment } from '@/battle/rework/equipment';
 import {
   loadCraftingRecipes,
   type CraftingRecipeDefinition,
@@ -127,7 +128,7 @@ export class CraftingRepository {
         const nextStars = (stars + 1) as 2 | 3;
         const now = Date.now();
         const instanceId = `${profileId}:${baseId}:${nextStars}:${this.randomId()}`;
-        const stats = upgradeEquipmentStats(source.stats);
+        const stats = source.equipmentRulesVersion === 1 ? upgradeReworkEquipment(source).stats : upgradeEquipmentStats(source.stats);
         const created: EquipmentInstanceRecord = {
           ...source,
           id: instanceId,

@@ -1,3 +1,5 @@
+import { migrateCombatEquipment } from '@/battle/rework/equipment';
+import { migrateCombatAttributes } from '@/battle/rework/attributes';
 import type { CommandResult, DomainCommand } from '@/domain/commands';
 import { domainCommandSchema } from '@/domain/commands';
 import type {
@@ -113,6 +115,8 @@ export class GameRepository {
   }
 
   async snapshot(profileId: string): Promise<GameSnapshot> {
+    await migrateCombatAttributes(this.db, profileId);
+    await migrateCombatEquipment(this.db, profileId);
     const [
       profile,
       player,
@@ -222,6 +226,8 @@ export class GameRepository {
       };
     }
     const command = parsed.data;
+    await migrateCombatAttributes(this.db, profileId);
+    await migrateCombatEquipment(this.db, profileId);
     const achievementCapture = await this.achievements.capture(
       profileId,
       command,
@@ -264,6 +270,10 @@ export class GameRepository {
         if (await this.db.commandInbox.get(command.id)) {
           return { id: command.id, status: 'duplicate' };
         }
+        if (['player.create', 'player.reclass', 'player.allocate-stat', 'equipment.equip', 'equipment.unequip', 'relic.set-carried', 'deck.update', 'craft.equipment'].includes(command.type)) {
+          const active = await this.db.battleSessions.where('profileId').equals(profileId).filter(b => b.active).first();
+          if (active) throw new Error('请先结束当前战斗，再调整职业、属性或出战配置');
+        }
         const application = await this.applyCommand(profileId, command);
         const now = Date.now();
         await this.db.commandInbox.add({
@@ -293,6 +303,7 @@ export class GameRepository {
         command,
         achievementCapture,
       );
+      await migrateCombatEquipment(this.db, profileId);
       await this.events.emit('state.changed', { command: result });
     }
     return result;
@@ -492,6 +503,7 @@ export class GameRepository {
       result.collectiblesGranted.length > 0 ||
       result.relicsRepaired.length > 0
     ) {
+      await migrateCombatEquipment(this.db, profileId);
       await this.events.emit('state.changed', {
         command: {
           id: `managed-quest-entitlements:${definition.id}`,
@@ -646,6 +658,10 @@ export class GameRepository {
           profileId,
           command.payload.battleId,
         );
+      case 'cards.upgrade':
+        return this.cards.upgrade(profileId, command.payload.cardId);
+      case 'battle.context-action':
+        return this.battles.contextAction(profileId, command.payload);
       case 'battle.discard-hand':
         return this.battles.discardHand(
           profileId,

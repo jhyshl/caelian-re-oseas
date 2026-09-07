@@ -1,3 +1,4 @@
+import { mutateAllocation, recomputePlayer, type CombatAllocatableStat } from '@/battle/rework/attributes';
 import {
   classSubclasses,
   getProfessionCardPool,
@@ -19,32 +20,21 @@ import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
 import type {
   OwnedCardRecord,
   PlayerRecord,
-  StatAllocationRecord,
 } from '@/domain/types';
 import type { CaelianDatabase } from '@/storage/database';
 import {
   MAGICIAN_PASSIVE_ID,
   MAGICIAN_SUBCLASS_ID,
 } from '@/content/catalogs/magician';
-import {
-  LIFESTEAL_CAP,
-  LIFESTEAL_STAT_POINT_COST,
-} from '@/player/progression';
+import { LIFESTEAL_CAP } from '@/player/progression';
 import {
   aggregateEquipmentStats,
   scaleEquipmentStatsByStars,
 } from '@/equipment-stats';
 
-type AllocatableStat =
-  | 'hpMax'
-  | 'mpMax'
-  | 'attack'
-  | 'defense'
-  | 'speed'
-  | 'actionPointsPerTurn'
-  | 'lifesteal';
+type AllocatableStat = CombatAllocatableStat;
 
-const STANDARD_PASSIVE_BY_SUBCLASS: Record<string, string> = {
+export const STANDARD_PASSIVE_BY_SUBCLASS: Record<string, string> = {
   holy_knight: 'pas_shield_master',
   shadow_knight: 'pas_first_strike',
   dragon_knight: 'pas_sharp_blade',
@@ -196,11 +186,7 @@ export class PlayerRepository {
       equipment.filter((item) => equippedIds.has(item.id)),
     );
 
-    if (direction === 'add') {
-      this.addStat(player, allocations, stat, equipmentBonus);
-    } else {
-      this.removeStat(player, allocations, stat, equipmentBonus);
-    }
+    mutateAllocation(player, allocations, stat, direction, equipmentBonus);
     const now = Date.now();
     player.updatedAt = now;
     allocations.updatedAt = now;
@@ -334,83 +320,24 @@ export class PlayerRepository {
     return shuffled.slice(0, limit);
   }
 
-  private addStat(
-    player: PlayerRecord,
-    allocations: StatAllocationRecord,
-    stat: AllocatableStat,
-    equipmentBonus: ReturnType<typeof aggregateEquipmentStats>,
-  ): void {
-    const cost =
-      stat === 'lifesteal'
-        ? LIFESTEAL_STAT_POINT_COST
-        : stat === 'actionPointsPerTurn'
-        ? player.actionPointsPerTurn <= 10
-          ? 2
-          : 3
-        : 1;
-    if (stat === 'lifesteal' && player.lifesteal >= LIFESTEAL_CAP) {
-      throw new Error(`吸血最高为 ${LIFESTEAL_CAP}%`);
-    }
-    if (player.statPoints < cost) throw new Error('可分配属性点不足');
-    player.statPoints -= cost;
-    allocations[stat] += 1;
-
-    if (stat === 'hpMax') {
-      player.hpMax += 5;
-      player.hp = Math.min(
-        Math.max(1, player.hpMax + equipmentBonus.hpMax),
-        player.hp + 5,
-      );
-    } else if (stat === 'mpMax') {
-      player.mpMax += 5;
-      player.mp = Math.min(
-        Math.max(0, player.mpMax + equipmentBonus.mpMax),
-        player.mp + 5,
-      );
-    } else {
-      player[stat] += 1;
-    }
-    if (stat === 'actionPointsPerTurn') {
-      allocations.actionPointCosts.push(cost);
-    }
-  }
-
-  private removeStat(
-    player: PlayerRecord,
-    allocations: StatAllocationRecord,
-    stat: AllocatableStat,
-    equipmentBonus: ReturnType<typeof aggregateEquipmentStats>,
-  ): void {
-    if (allocations[stat] <= 0) throw new Error('该属性没有可返还的投入点');
-    allocations[stat] -= 1;
-    let refund = stat === 'lifesteal' ? LIFESTEAL_STAT_POINT_COST : 1;
-
-    if (stat === 'hpMax') {
-      player.hpMax = Math.max(1, player.hpMax - 5);
-      player.hp = Math.min(
-        player.hp,
-        Math.max(1, player.hpMax + equipmentBonus.hpMax),
-      );
-    } else if (stat === 'mpMax') {
-      player.mpMax = Math.max(0, player.mpMax - 5);
-      player.mp = Math.min(
-        player.mp,
-        Math.max(0, player.mpMax + equipmentBonus.mpMax),
-      );
-    } else {
-      player[stat] = Math.max(0, player[stat] - 1);
-    }
-    if (stat === 'actionPointsPerTurn') {
-      refund = allocations.actionPointCosts.pop() ?? 2;
-    }
-    player.statPoints += refund;
-  }
-
   private async replaceProfessionCards(
     profileId: string,
     subclass: string,
     now: number,
   ): Promise<void> {
+    const player = await this.get(profileId);
+    const allocations = await this.db.statAllocations.get(profileId);
+    if (allocations) {
+      const oldCards = await this.db.ownedCards.where('profileId').equals(profileId).toArray();
+      player.cardStars ??= {};
+      for (const card of oldCards) player.cardStars[card.cardId] = Math.max(player.cardStars[card.cardId] ?? 1, card.stars ?? 1);
+      const loadout = await this.db.equipmentLoadouts.get(profileId);
+      const equippedIds = new Set(loadout ? [loadout.weaponId, loadout.armorId, loadout.accessoryId] : []);
+      const equipment = await this.db.equipmentInstances.where('profileId').equals(profileId).toArray();
+      const bonus = aggregateEquipmentStats(equipment.filter(item => equippedIds.has(item.id)));
+      recomputePlayer(player, allocations, {equipmentHpMax: bonus.hpMax});
+      await this.db.playerStates.put(player);
+    }
     const starterDeck = getStarterDeck(subclass);
     if (starterDeck.length === 0) {
       throw new Error('该职业没有可用的预设牌组');
@@ -431,6 +358,7 @@ export class PlayerRepository {
         cardId,
         quantity,
         source: 'starter',
+        stars: player.cardStars?.[cardId] ?? 1,
         updatedAt: now,
       }),
     );

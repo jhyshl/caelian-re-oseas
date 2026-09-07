@@ -61,6 +61,7 @@ describe('InventoryRepository', () => {
     databases.push(database);
     const game = new GameRepository(database, new EventBus());
     const profile = await game.ensureProfile('chat:inventory-loadout-cap');
+    const baseHpMax = (await database.playerStates.get(profile.id))!.hpMax;
     const inventory = new InventoryRepository(database);
     const strongId = `${profile.id}:strong-maxima`;
     const weakId = `${profile.id}:weak-maxima`;
@@ -93,17 +94,17 @@ describe('InventoryRepository', () => {
     await database.equipmentLoadouts.update(profile.id, {
       accessoryId: strongId,
     });
-    await database.playerStates.update(profile.id, { hp: 100, mp: 40 });
+    await database.playerStates.update(profile.id, { hp: baseHpMax + 20, mp: 40 });
 
     await inventory.equip(profile.id, weakId);
     expect(await database.playerStates.get(profile.id)).toMatchObject({
-      hp: 85,
+      hp: baseHpMax + 5,
       mp: 35,
     });
 
     await inventory.unequip(profile.id, 'accessory');
     expect(await database.playerStates.get(profile.id)).toMatchObject({
-      hp: 80,
+      hp: baseHpMax,
       mp: 30,
     });
 
@@ -124,6 +125,7 @@ describe('InventoryRepository', () => {
     databases.push(database);
     const game = new GameRepository(database, new EventBus());
     const profile = await game.ensureProfile('chat:inventory-equipment-cap');
+    const baseHpMax = (await database.playerStates.get(profile.id))!.hpMax;
     const inventory = new InventoryRepository(database);
     await inventory.prepare();
 
@@ -169,10 +171,10 @@ describe('InventoryRepository', () => {
     await inventory.useConsumable(profile.id, '小血瓶');
     expect(await database.playerStates.get(profile.id)).toMatchObject({
       hp: 55,
-      hpMax: 80,
+      hpMax: baseHpMax,
     });
 
-    await database.playerStates.update(profile.id, { hp: 80, mp: 30 });
+    await database.playerStates.update(profile.id, { hp: baseHpMax, mp: 30 });
     await expect(
       inventory.useConsumable(profile.id, '小血瓶'),
     ).resolves.toBeUndefined();
@@ -180,8 +182,8 @@ describe('InventoryRepository', () => {
       inventory.useConsumable(profile.id, '小魔药瓶'),
     ).resolves.toBeUndefined();
     expect(await database.playerStates.get(profile.id)).toMatchObject({
-      hp: 100,
-      hpMax: 80,
+      hp: baseHpMax + 20,
+      hpMax: baseHpMax,
       mp: 40,
       mpMax: 30,
     });

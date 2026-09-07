@@ -1,6 +1,10 @@
 import type { EquipmentInstanceRecord } from '@/domain/types';
 
 export interface NormalizedEquipmentStats {
+  critRate: number;
+  critDamage: number;
+  effectHit: number;
+  effectResist: number;
   hpMax: number;
   mpMax: number;
   attack: number;
@@ -14,6 +18,7 @@ export interface NormalizedEquipmentStats {
 type NormalizedEquipmentStat = keyof NormalizedEquipmentStats;
 
 const EQUIPMENT_STAT_DISPLAY_NAMES: Record<string, string> = {
+  critRate: '暴击率', crit: '暴击率', critDamage: '暴击伤害', effectHit: '效果命中', ehr: '效果命中', effectResist: '效果抵抗', res: '效果抵抗',
   hp: '生命上限',
   hpMax: '生命上限',
   hp_max: '生命上限',
@@ -56,6 +61,7 @@ const LEGACY_STAT_DESCRIPTION_CLAUSE =
   /^(?:生命(?:上限)?|魔力(?:上限)?|攻击(?:力)?|防御(?:力)?|速度|吸血|行动点|每回合(?:AP|行动点|抽牌)|AP|抽牌|HP|MP)\s*[+＋−-]?\s*\d+(?:\.\d+)?(?:%|％)?(?:点)?[.。]?$/i;
 
 const EQUIPMENT_STAT_ALIASES: Record<string, NormalizedEquipmentStat> = {
+  critRate: 'critRate', crit: 'critRate', '暴击率': 'critRate', critDamage: 'critDamage', '暴击伤害': 'critDamage', effectHit: 'effectHit', ehr: 'effectHit', '效果命中': 'effectHit', effectResist: 'effectResist', res: 'effectResist', '效果抵抗': 'effectResist',
   hp: 'hpMax',
   hpMax: 'hpMax',
   hp_max: 'hpMax',
@@ -94,6 +100,7 @@ const EQUIPMENT_STAT_ALIASES: Record<string, NormalizedEquipmentStat> = {
 
 function emptyEquipmentStats(): NormalizedEquipmentStats {
   return {
+    critRate: 0, critDamage: 0, effectHit: 0, effectResist: 0,
     hpMax: 0,
     mpMax: 0,
     attack: 0,
@@ -140,7 +147,7 @@ export function formatEquipmentStats(
       const value = Number(rawValue);
       if (!Number.isFinite(value)) return [];
       const name = EQUIPMENT_STAT_DISPLAY_NAMES[key] ?? key;
-      const suffix = EQUIPMENT_STAT_ALIASES[key] === 'lifesteal' ? '%' : '';
+      const suffix = ['lifesteal','critRate','critDamage','effectHit','effectResist'].includes(EQUIPMENT_STAT_ALIASES[key] ?? '') ? '%' : '';
       return [`${name} ${value >= 0 ? '+' : ''}${value}${suffix}`];
     })
     .join('，');

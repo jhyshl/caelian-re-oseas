@@ -1,3 +1,4 @@
+import { preview as previewRework } from '@/battle/rework/runtime/api.mjs';
 import battleRulesJson from '@/content/generated/battle/rules.json';
 import type { CardDefinition, CardEffect } from '@/content/types';
 import type {
@@ -627,6 +628,7 @@ export function previewBattleCard(
   selectedTarget: number,
   allyTargetId: BattleFriendlyTargetId = 'player',
 ): BattleCardPreview {
+  if (state.rework && card.rework) return previewRework(state, String(card.id), selectedTarget, allyTargetId);
   const cardMpCost = effectiveCardMpCost(state, card);
   const preview: BattleCardPreview = {
     enemyDamage: state.enemies.map(() => 0),

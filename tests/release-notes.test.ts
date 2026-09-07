@@ -9,16 +9,19 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.69');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.70');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.69');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.70');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('移除卡牌与天赋强度评分');
-    expect(latestText).toContain('不再要求模拟测试');
-    expect(latestText).toContain('新职业与新构筑');
-    expect(latestText).toContain('立即公开');
+    expect(latestText).toContain('25个内置职业');
+    expect(latestText).toContain('546张卡牌');
+    expect(latestText).toContain('废除内置怪物随机选招');
+    expect(latestText).toContain('每个目标的每一段独立判定暴击');
+    const previousText = releases.find(r=>r.version==='0.2.0-alpha.69')!.changes.join('\n');
+    expect(previousText).toContain('移除卡牌与天赋强度评分');
+    expect(previousText).toContain('立即公开');
     const alpha67Text =
       releases
         .find((release) => release.version === '0.2.0-alpha.67')
@@ -242,14 +245,14 @@ describe('release notes', () => {
   });
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
-    expect(releaseHistoryFor('alpha', '0.2.0-alpha.70')[0]?.version).toBe(
-      '0.2.0-alpha.69',
+    expect(releaseHistoryFor('alpha', '0.2.0-alpha.999')[0]?.version).toBe(
+      '0.2.0-alpha.70',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.69',
+      '0.2.0-alpha.70',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });

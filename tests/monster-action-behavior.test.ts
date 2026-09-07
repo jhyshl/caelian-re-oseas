@@ -1,366 +1,122 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  loadMonsterCatalog,
-  type MonsterDefinition,
-  type MonsterSkillDefinition,
-} from '@/content/catalogs/battle';
-import type { BattleEnemyState, BattleIntent } from '@/domain/types';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { BattleRepository } from '@/storage/repositories/battle-repository';
 import { GameRepository } from '@/storage/repository';
+import * as runtime from '../src/battle/rework/runtime/api.mjs';
+import { planEnemy } from '../src/battle/rework/runtime/enemies.mjs';
+import { planBoss } from '../src/battle/rework/runtime/bosses.mjs';
 
 const databases: CaelianDatabase[] = [];
-
 afterEach(async () => {
   localStorage.clear();
-  await Promise.all(
-    databases.splice(0).map(async (database) => {
-      database.close();
-      await database.delete();
-    }),
-  );
+  await Promise.all(databases.splice(0).map(async database => { database.close(); await database.delete(); }));
 });
-
-interface IntentChooser {
-  chooseIntent(
-    monster: MonsterDefinition,
-    enemy: BattleEnemyState,
-    allies?: BattleEnemyState[],
-  ): BattleIntent | null;
-}
-
-interface MonsterRuntimeHarness extends IntentChooser {
-  monsters?: Record<string, MonsterDefinition>;
-}
-
-function makeEnemy(
-  overrides: Partial<BattleEnemyState> = {},
-): BattleEnemyState {
-  return {
-    id: 'enemy:test',
-    definitionId: 'monster:test',
-    name: '测试怪物',
-    hp: 100,
-    hpMax: 100,
-    shield: 0,
-    attack: 20,
-    defense: 10,
-    speed: 0,
-    difficulty: 'normal',
-    tags: [],
-    xp: 0,
-    gold: [0, 0],
-    loot: [],
-    buffs: {},
-    debuffs: {},
-    intent: null,
-    ...overrides,
-  };
-}
-
-function makeChooser(random: () => number): IntentChooser {
-  const database = new CaelianDatabase(
-    'alpha',
-    `caelian-monster-intent-${crypto.randomUUID()}`,
-  );
-  databases.push(database);
-  return new BattleRepository(database, random) as unknown as IntentChooser;
-}
-
-async function createStartedBattle(monsterId: string) {
-  const database = new CaelianDatabase(
-    'alpha',
-    `caelian-monster-action-${crypto.randomUUID()}`,
-  );
+async function started(monsterId: string) {
+  const database = new CaelianDatabase('alpha', `caelian-monster-contract-${crypto.randomUUID()}`);
   databases.push(database);
   const game = new GameRepository(database, new EventBus());
-  const profile = await game.ensureProfile(`chat:monster-action:${monsterId}`);
-  await game.execute(profile.id, {
-    id: `monster-action-player:${monsterId}`,
-    type: 'player.create',
-    payload: {
-      name: '怪物行动测试员',
-      classMain: 'knight',
-      subclass: 'holy_knight',
-    },
-  });
+  const profile = await game.ensureProfile(`chat:monster-contract:${crypto.randomUUID()}`);
+  await game.execute(profile.id, { id: crypto.randomUUID(), type: 'player.create', payload: { name: '重置战斗测试', classMain: 'knight', subclass: 'holy_knight' } });
   const battles = new BattleRepository(database, () => 0.5);
-  await battles.prepare();
-  await battles.start(profile.id, { monsterId, count: 1 });
-  const session = (await database.battleSessions
-    .where('profileId')
-    .equals(profile.id)
-    .first())!;
-  session.state.player.hp = session.state.player.hpMax = 1_000;
-  session.state.player.shield = 0;
-  session.state.player.defense = 0;
-  session.state.player.speed = 0;
-  session.state.player.passiveEffects = [];
-  await database.battleSessions.put(session);
-  return { database, profile, battles, session };
+  await battles.prepare(); await battles.start(profile.id, { monsterId, count: 1 });
+  const session = (await database.battleSessions.where('profileId').equals(profile.id).first())!;
+  expect(session.state.rework).toBeDefined();
+  const core = runtime.hydrate(session.state.rework);
+  core.player.hp = core.player.maxHp = 1000;
+  core.player.stats.hp = 1000; core.player.shield = 0; core.player.stats.defense = 0; core.player.stats.speed = 1;
+  return { database, profile, battles, session, core };
+}
+async function save(x: Awaited<ReturnType<typeof started>>) {
+  runtime.project(x.core, x.session.state); await x.database.battleSessions.put(x.session);
+}
+async function ended(x: Awaited<ReturnType<typeof started>>) {
+  await x.battles.endTurn(x.profile.id, x.session.id);
+  const session = (await x.database.battleSessions.get(x.session.id))!;
+  return { state: session.state, core: runtime.hydrate(session.state.rework) };
 }
 
-describe('怪物行动选择', () => {
-  it('普通怪依次读取 patterns，低血技能只在阈值下触发一次', async () => {
-    const catalog = await loadMonsterCatalog();
-    const monster = catalog.mon_withered_treant!;
-    const enemy = makeEnemy();
-    const chooser = makeChooser(() => 0.5);
-
-    expect(chooser.chooseIntent(monster, enemy)?.skillId).toBe('attack');
-    expect(chooser.chooseIntent(monster, enemy)?.skillId).toBe('attack_heavy');
-    enemy.hp = 30;
-    expect(chooser.chooseIntent(monster, enemy)?.skillId).toBe('low_hp');
-    expect(chooser.chooseIntent(monster, enemy)?.skillId).toBe('defend');
-    expect(enemy.lastSpecial).toBe('low_hp');
+// New contract: persisted public-state plans and actual reset effects. There is
+// intentionally no call to legacy private chooseIntent, weights or patterns.
+describe('正式怪物AI的公开状态与持久化契约', () => {
+  it('开始战斗即保存重置技能意图，重新读取不会重新随机选招', async () => {
+    const x = await started('mon_goblin');
+    const a = x.core.enemies[0];
+    expect(a.intent.skillId).toMatch(/^mon_goblin__skill_/);
+    const before = JSON.parse(JSON.stringify(a.intent));
+    await save(x);
+    const restored = runtime.hydrate((await x.database.battleSessions.get(x.session.id))!.state.rework);
+    expect(restored.enemies[0].intent).toEqual(before);
+    expect(x.session.state.enemies[0]!.intent?.description).not.toContain('[object Object]');
   });
 
-  it('连续辅助后的强制伤害分支也只允许低血技能触发一次', () => {
-    const monster: MonsterDefinition = {
-      name: '低血强制分支怪',
-      skills: {
-        low_hp: {
-          name: '濒死反击',
-          weight: 100,
-          effects: [{ type: 'damage', value: 20 }],
-        },
-        attack: {
-          name: '普通攻击',
-          weight: 1,
-          effects: [{ type: 'damage', value: 5 }],
-        },
-      },
-    };
-    const enemy = makeEnemy({ hp: 20, nonDamageActionStreak: 2 });
-    const chooser = makeChooser(() => 0);
-
-    expect(chooser.chooseIntent(monster, enemy)?.skillId).toBe('low_hp');
-    expect(enemy.lastSpecial).toBe('low_hp');
-    expect(chooser.chooseIntent(monster, enemy)?.skillId).toBe('attack');
+  it('上个玩家阶段的攻击行为驱动威吓，锁定后新增行为不暗换其他高优先级技能', async () => {
+    const x = await started('mon_goblin'), a = x.core.enemies[0];
+    x.core.player.lastTurn.damageCards = 4;
+    expect(planEnemy(x.core, a).skillId).toBe('mon_goblin__skill_5');
+    const locked = a.intent.skillId;
+    x.core.player.thisTurn.damageCards = 20; a.hp = a.maxHp * 0.2;
+    await save(x); const result = await ended(x);
+    expect(result.state.log.some(entry => entry.text.includes('威吓'))).toBe(true);
+    expect(result.core.enemies[0].flags.enemySkillUses[locked]).toBe(1);
+    expect(result.core.player.hp).toBe(1000); // Pure debuff consumed the major action.
   });
 
-  it('保留小数权重，并在连续两次非伤害行动后强制攻击', () => {
-    const weightedMonster: MonsterDefinition = {
-      name: '小数权重怪',
-      skills: {
-        support: {
-          name: '防守',
-          weight: 0.25,
-          effects: [{ type: 'shield', value: 5 }],
-        },
-        attack: {
-          name: '攻击',
-          weight: 1,
-          effects: [{ type: 'damage', value: 5 }],
-        },
-      },
-    };
-    const chooser = makeChooser(() => 0.3);
-    expect(chooser.chooseIntent(weightedMonster, makeEnemy())?.skillId).toBe(
-      'attack',
-    );
-
-    const supportHeavy: MonsterDefinition = {
-      name: '支援怪',
-      skills: {
-        support: {
-          name: '反复防守',
-          weight: 100,
-          effects: [{ type: 'shield', value: 5 }],
-        },
-        attack: {
-          name: '保底攻击',
-          weight: 1,
-          effects: [{ type: 'damage', value: 5 }],
-        },
-      },
-    };
-    expect(
-      makeChooser(() => 0).chooseIntent(
-        supportHeavy,
-        makeEnemy({ nonDamageActionStreak: 2 }),
-      )?.skillId,
-    ).toBe('attack');
-  });
-
-  it('满血时不使用治疗，无减益时不使用净化', () => {
-    const monster: MonsterDefinition = {
-      name: '状态判断怪',
-      skills: {
-        heal: {
-          name: '治疗',
-          effects: [{ type: 'heal', value: 10 }],
-        },
-        cleanse: {
-          name: '净化',
-          effects: [{ type: 'cleanse', amount: 'all' }],
-        },
-        attack: {
-          name: '攻击',
-          effects: [{ type: 'damage', value: 5 }],
-        },
-      },
-    };
-    const chooser = makeChooser(() => 0);
-
-    expect(chooser.chooseIntent(monster, makeEnemy())?.skillId).toBe('attack');
-    expect(chooser.chooseIntent(monster, makeEnemy({ hp: 80 }))?.skillId).toBe(
-      'heal',
-    );
-    expect(
-      chooser.chooseIntent(
-        monster,
-        makeEnemy({ debuffs: { weak: { value: 1, turns: 1 } } }),
-      )?.skillId,
-    ).toBe('cleanse');
+  it('满血与无减益时治疗者不浪费治疗/净化，存在伤员时计划真实治疗', async () => {
+    const x = await started('mon_water_sprite'), a = x.core.enemies[0];
+    const healthy = planEnemy(x.core, a);
+    expect(healthy.skill.effects.every((e: any) => !['heal', 'cleanse'].includes(e.type))).toBe(true);
+    a.hp = a.maxHp * 0.6;
+    const hurt = planEnemy(x.core, a);
+    expect(hurt.skillId).toBe('mon_water_sprite__skill_9');
+    const hp = a.hp; await save(x); const result = await ended(x);
+    expect(result.core.enemies[0].hp).toBeGreaterThan(hp);
+    expect(result.core.player.hp).toBe(1000);
   });
 });
 
-describe('怪物技能结算', () => {
-  it('吸血技能会伤害玩家并按实际扣血回复怪物', async () => {
-    const { database, profile, battles, session } =
-      await createStartedBattle('mon_skeleton');
-    const enemy = session.state.enemies[0]!;
-    enemy.hpMax = 100;
-    enemy.hp = 40;
-    enemy.attack = 20;
-    enemy.intent = {
-      skillId: 'drain',
-      name: '生命汲取',
-      kind: '吸血',
-      description: '',
-      amount: 0,
-      hits: 1,
-    };
-    const playerHp = session.state.player.hp;
-    await database.battleSessions.put(session);
-
-    await battles.endTurn(profile.id, session.id);
-
-    const current = (await database.battleSessions.get(session.id))!;
-    expect(current.state.player.hp).toBeLessThan(playerHp);
-    expect(current.state.enemies[0]!.hp).toBeGreaterThan(40);
-    expect(current.state.log.some((entry) => entry.text.includes('吸血'))).toBe(
-      true,
-    );
+describe('正式重置技能经过BattleRepository.endTurn结算', () => {
+  it('生命汲取按实际扣除生命的25%回复，吸血与攻击共用一次行动', async () => {
+    const x = await started('mon_skeleton'), a = x.core.enemies[0];
+    a.hp = 500; a.maxHp = a.stats.hp = 1000; a.stats.attack = 20;
+    expect(planEnemy(x.core, a).skillId).toBe('mon_skeleton__skill_4');
+    await save(x); const result = await ended(x), loss = 1000 - result.core.player.hp;
+    expect(loss).toBeGreaterThan(0);
+    expect(result.core.enemies[0].hp - 500).toBeCloseTo(loss * 0.25, 6);
+    expect(result.state.log.some(entry => entry.text.includes('生命汲取'))).toBe(true);
   });
 
-  it('驱散技能会移除可驱散的玩家强化', async () => {
-    const { database, profile, battles, session } =
-      await createStartedBattle('boss_solavia_hollow_saint');
-    const enemy = session.state.enemies[0]!;
-    session.state.player.buffs = {
-      strength: { value: 4, turns: 2 },
-    };
-    session.state.player.summons = [
-      {
-        id: 'dispel-decoy',
-        name: '驱散诱饵',
-        duration: 3,
-        hp: 1_000,
-        hpMax: 1_000,
-        shield: 0,
-        attack: 1,
-        defense: 0,
-        speed: 0,
-        attackable: true,
-        mechanical: false,
-        buffs: { agility: { value: 9, turns: 2 } },
-        debuffs: {},
-        skills: [],
-      },
-    ];
-    enemy.intent = {
-      skillId: 'action_4',
-      name: '伪神谕令',
-      kind: '驱散',
-      description: '',
-      amount: 0,
-      hits: 1,
-    };
-    await database.battleSessions.put(session);
-
-    await battles.endTurn(profile.id, session.id);
-
-    const current = (await database.battleSessions.get(session.id))!;
-    expect(current.state.player.buffs.strength).toBeUndefined();
-    expect(current.state.player.summons[0]?.buffs?.agility).toBeDefined();
-    expect(current.state.log.some((entry) => entry.text.includes('驱散'))).toBe(
-      true,
-    );
-    expect(current.state.animations).toContainEqual(
-      expect.objectContaining({
-        kind: 'status',
-        targetSide: 'player',
-        targetId: 'player',
-        label: '驱散',
-      }),
-    );
+  it('生命汲取只打到护盾时不能虚构吸血回复', async () => {
+    const x = await started('mon_skeleton'), a = x.core.enemies[0];
+    a.hp = 500; a.maxHp = a.stats.hp = 1000; a.stats.attack = 20; x.core.player.shield = 500;
+    expect(planEnemy(x.core, a).skillId).toBe('mon_skeleton__skill_4');
+    await save(x); const result = await ended(x);
+    expect(result.core.player.hp).toBe(1000);
+    expect(result.core.enemies[0].hp).toBe(500);
   });
 
-  it('连续辅助两次后会选中利维坦百分比伤害并按生命上限与封顶值扣血', async () => {
-    const { database, profile, battles, session } =
-      await createStartedBattle('boss_abyssal_leviathan_fragment');
-    const catalog = await loadMonsterCatalog();
-    const parts = catalog.boss_abyssal_leviathan_fragment?.parts as
-      | Array<Record<string, unknown>>
-      | undefined;
-    const leftTentacle = parts?.find(
-      (part) => part.id === 'boss_leviathan_left_tentacle',
-    );
-    const actions = (leftTentacle?.skills as { actions?: unknown[] } | undefined)
-      ?.actions;
-    const drag = actions?.find(
-      (action) =>
-        Boolean(action) &&
-        typeof action === 'object' &&
-        (action as { name?: unknown }).name === '拖入海沟',
-    );
-    expect(drag).toBeDefined();
-    const percentDamage = (drag as MonsterSkillDefinition).effects?.find(
-      (effect) => effect.type === 'hp_percent_damage',
-    );
-    expect(percentDamage).toMatchObject({
-      type: 'hp_percent_damage',
-      percent: 6,
-      cap: 38,
-    });
+  it('空心圣像按上轮新增增益预告神谕，驱散真实可驱散强化且留下战斗记录', async () => {
+    const x = await started('boss_solavia_hollow_saint'), a = x.core.enemies[0];
+    x.core.addStatus(x.core.player, x.core.player, { kind: 'buff', status: 'attack_up', value: 0.2, valueUnit: 'ratio', turns: 5, dispellable: true });
+    x.core.addStatus(x.core.player, x.core.player, { kind: 'buff', status: 'speed_up', value: 0.1, valueUnit: 'ratio', turns: 5, dispellable: true });
+    a.flags.boss.last.addedBuffs = 2;
+    expect(planBoss(x.core, a).skillId).toBe('decree');
+    await save(x); const result = await ended(x);
+    expect(result.core.hasStatus(result.core.player, 'attack_up')).toBe(false);
+    expect(result.core.hasStatus(result.core.player, 'speed_up')).toBe(true);
+    expect(result.state.log.some(entry => entry.text.includes('伪神谕令'))).toBe(true);
+  });
 
-    const definitionId = 'test_leviathan_left_tentacle';
-    const monster: MonsterDefinition = {
-      name: '利维坦左触须',
-      skills: {
-        support: {
-          name: '蓄势',
-          weight: 100,
-          effects: [{ type: 'shield', value: 5 }],
-        },
-        action_2: drag as MonsterSkillDefinition,
-      },
-    };
-    const runtime = battles as unknown as MonsterRuntimeHarness;
-    runtime.monsters = {
-      ...(runtime.monsters ?? {}),
-      [definitionId]: monster,
-    };
-    const enemy = session.state.enemies[0]!;
-    enemy.definitionId = definitionId;
-    enemy.nonDamageActionStreak = 2;
-    enemy.intent = runtime.chooseIntent(monster, enemy);
-    expect(enemy.intent?.skillId).toBe('action_2');
-    session.state.player.hp = session.state.player.hpMax = 1_000;
-    await database.battleSessions.put(session);
-
-    await battles.endTurn(profile.id, session.id);
-
-    const current = (await database.battleSessions.get(session.id))!;
-    expect(current.state.player.hp).toBe(962);
-    expect(current.state.enemies[0]?.nonDamageActionStreak).toBe(0);
-    expect(
-      current.state.log.some(
-        (entry) => entry.text.includes('拖入海沟') && entry.text.includes('38'),
-      ),
-    ).toBe(true);
+  it('利维坦开战生成可选真实部位，尾鳍先预告蓄势，下次行动才横扫', async () => {
+    const x = await started('boss_abyssal_leviathan_fragment');
+    const tentacle = x.core.enemies.find((a: any) => a.definition.id === 'leviathan_tentacle');
+    const tail = x.core.enemies.find((a: any) => a.definition.id === 'leviathan_tail');
+    expect(tentacle.hp).toBeGreaterThan(0); expect(tail.hp).toBeGreaterThan(0);
+    expect(tail.intent.skillId).toBe('tail_prepare');
+    await save(x); const result = await ended(x);
+    const restoredTail = result.core.enemies.find((a: any) => a.id === tail.id);
+    expect(restoredTail.intent.skillId).toBe('tail_sweep');
+    expect(restoredTail.flags.charged).toBe('tail_sweep');
+    expect(result.state.enemies.find(a => a.id === tail.id)?.intent?.name).toBe('深海横扫');
   });
 });

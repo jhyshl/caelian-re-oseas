@@ -1,3 +1,4 @@
+import { reworkCard } from '@/battle/rework/catalog';
 import type { CaelianDatabase } from '@/storage/database';
 import {
   hasPartySupportCard,
@@ -6,6 +7,24 @@ import {
 
 export class CardRepository {
   constructor(private readonly db: CaelianDatabase) {}
+
+  async upgrade(profileId: string, cardId: string): Promise<void> {
+    if (!reworkCard(cardId) || cardId === 'mg_blank_card') throw new Error('这张卡牌不能升星');
+    const owned = await this.db.ownedCards.get(profileId + ':' + cardId);
+    const player = await this.db.playerStates.get(profileId);
+    if (!owned || owned.quantity < 1 || !player) throw new Error('尚未拥有这张卡牌');
+    if (await this.db.battleSessions.where('profileId').equals(profileId).filter(s => s.active && s.state.status === 'ongoing').count()) throw new Error('请在战斗结束后升星');
+    const stars = Math.max(owned.stars ?? 1, player.cardStars?.[cardId] ?? 1);
+    if (stars >= 3) throw new Error('卡牌已达到三星');
+    const cost = stars === 1 ? 500 : 1500;
+    if (player.gold < cost) throw new Error('升星需要 ' + cost + ' 金币');
+    player.gold -= cost;
+    player.cardStars = {...player.cardStars, [cardId]: stars + 1};
+    player.updatedAt = owned.updatedAt = Date.now();
+    owned.stars = stars + 1;
+    await this.db.playerStates.put(player);
+    await this.db.ownedCards.put(owned);
+  }
 
   async ensurePartySupportCard(
     profileId: string,

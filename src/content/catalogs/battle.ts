@@ -1,3 +1,4 @@
+import { applyReworkMonsters } from '@/battle/rework/monster-public-catalog';
 import type { CardEffect } from '@/content/types';
 import { readWorkshopPacks, workshopPassiveId } from '@/workshop';
 import {
@@ -270,6 +271,7 @@ export async function loadMonsterCatalog() {
       }),
     );
   }
+  if (!monsterCache.mon_slime?.rework) monsterCache = applyReworkMonsters(monsterCache);
   return monsterCache;
 }
 

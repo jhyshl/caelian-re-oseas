@@ -10,7 +10,7 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   ...vue.configs['flat/recommended'],
   {
-    files: ['src/**/*.ts', 'src/**/*.vue', 'tests/**/*.ts', 'vite.config.ts'],
+    files: ['src/**/*.ts', 'src/**/*.mts', 'src/**/*.vue', 'tests/**/*.ts', 'vite.config.ts'],
     languageOptions: {
       parserOptions: {
         parser: tseslint.parser,

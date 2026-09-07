@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadEquipmentDefinitions } from '@/content/catalogs/inventory';
-import { scaleEquipmentStatsByStars } from '@/equipment-stats';
+import { scaleReworkEquipment } from '@/battle/rework/equipment';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { GLOBAL_SETTINGS_ID } from '@/storage/defaults';
@@ -54,114 +54,76 @@ describe('GameRepository', () => {
     });
   });
 
-  it('穿戴上限装备时加减生命魔力仍按有效上限恢复和截断', async () => {
-    const database = new CaelianDatabase(
-      'alpha',
-      `caelian-equipped-stat-allocation-${crypto.randomUUID()}`,
-    );
+  it('生命每点加10且只改变上限，装备生命参与截断并禁止洗点回血', async () => {
+    const database = new CaelianDatabase('alpha', `caelian-new-stat-hp-${crypto.randomUUID()}`);
     databases.push(database);
     const repository = new GameRepository(database, new EventBus());
-    const profile = await repository.ensureProfile(
-      'chat:equipped-stat-allocation',
-    );
+    const profile = await repository.ensureProfile('chat:new-stat-hp');
+    const base = (await database.playerStates.get(profile.id))!.hpMax;
     const equipmentId = `${profile.id}:allocation-maxima`;
     await database.equipmentInstances.add({
-      id: equipmentId,
-      profileId: profile.id,
-      baseId: 'allocation-maxima',
-      name: '加点上限测试装备',
-      slot: 'accessory',
-      rarity: 'common',
-      stars: 1,
-      stats: { hp_max: 20, mp_max: 10 },
-      description: '',
-      updatedAt: Date.now(),
+      id: equipmentId, profileId: profile.id, baseId: 'allocation-maxima',
+      name: '加点上限测试装备', slot: 'accessory', rarity: 'common', stars: 1,
+      stats: { hp_max: 20 }, description: '', updatedAt: Date.now(),
+      ...{ equipmentRulesVersion: 1, itemLevel: 1 },
     });
-    await database.equipmentLoadouts.update(profile.id, {
-      accessoryId: equipmentId,
-    });
-    await database.playerStates.update(profile.id, {
-      hp: 100,
-      mp: 40,
-      statPoints: 4,
-    });
-
+    await database.equipmentLoadouts.update(profile.id, { accessoryId: equipmentId });
+    await database.playerStates.update(profile.id, { hp: base + 20, statPoints: 4 });
     await repository.execute(profile.id, {
-      id: 'equipped-hp-add',
-      type: 'player.allocate-stat',
+      id: 'equipped-hp-add', type: 'player.allocate-stat',
       payload: { stat: 'hpMax', direction: 'add' },
     });
-    let player = (await database.playerStates.get(profile.id))!;
-    expect(player).toMatchObject({ hp: 105, hpMax: 85, statPoints: 3 });
-
+    expect(await database.playerStates.get(profile.id)).toMatchObject({
+      hp: base + 20, hpMax: base + 10, statPoints: 3,
+    });
     await repository.execute(profile.id, {
-      id: 'equipped-hp-remove',
-      type: 'player.allocate-stat',
+      id: 'equipped-hp-remove', type: 'player.allocate-stat',
       payload: { stat: 'hpMax', direction: 'remove' },
     });
-    player = (await database.playerStates.get(profile.id))!;
-    expect(player).toMatchObject({ hp: 100, hpMax: 80, statPoints: 4 });
-
-    await repository.execute(profile.id, {
-      id: 'equipped-mp-add',
-      type: 'player.allocate-stat',
-      payload: { stat: 'mpMax', direction: 'add' },
+    expect(await database.playerStates.get(profile.id)).toMatchObject({
+      hp: base + 20, hpMax: base, statPoints: 4,
     });
-    player = (await database.playerStates.get(profile.id))!;
-    expect(player).toMatchObject({ mp: 45, mpMax: 35, statPoints: 3 });
-
-    await repository.execute(profile.id, {
-      id: 'equipped-mp-remove',
-      type: 'player.allocate-stat',
-      payload: { stat: 'mpMax', direction: 'remove' },
-    });
-    player = (await database.playerStates.get(profile.id))!;
-    expect(player).toMatchObject({ mp: 40, mpMax: 30, statPoints: 4 });
+    await database.playerStates.update(profile.id, { hp: 1 });
+    for (const direction of ['add', 'remove'] as const) {
+      await repository.execute(profile.id, {
+        id: `no-free-heal-${direction}`, type: 'player.allocate-stat',
+        payload: { stat: 'hpMax', direction },
+      });
+    }
+    expect(await database.playerStates.get(profile.id)).toMatchObject({ hp: 1, statPoints: 4 });
+    for (const stat of ['mpMax', 'lifesteal']) {
+      expect(await repository.execute(profile.id, {
+        id: `obsolete-stat-${stat}`, type: 'player.allocate-stat',
+        payload: { stat, direction: 'add' },
+      })).toMatchObject({ status: 'rejected' });
+    }
   });
 
-  it('吸血每点消耗 2 属性点、可原价返还且最高 30%', async () => {
-    const database = new CaelianDatabase(
-      'alpha',
-      `caelian-lifesteal-${crypto.randomUUID()}`,
-    );
+  it.each([
+    ['critRate', 1, 100], ['critDamage', 2, 250],
+    ['effectHit', 2, 80], ['effectResist', 2, 80],
+  ] as const)('%s按新兑换率加点、原价退点、封顶拒绝不扣资源', async (stat, gain, cap) => {
+    const database = new CaelianDatabase('alpha', `caelian-new-stat-${stat}-${crypto.randomUUID()}`);
     databases.push(database);
     const repository = new GameRepository(database, new EventBus());
-    const profile = await repository.ensureProfile('chat:lifesteal');
+    const profile = await repository.ensureProfile(`chat:new-stat-${stat}`);
+    const base = (await database.playerStates.get(profile.id))![stat] ?? 0;
     await database.playerStates.update(profile.id, { statPoints: 4 });
-
-    await expect(
-      repository.execute(profile.id, {
-        id: 'lifesteal-add',
-        type: 'player.allocate-stat',
-        payload: { stat: 'lifesteal', direction: 'add' },
-      }),
-    ).resolves.toMatchObject({ status: 'applied' });
-    let snapshot = await repository.snapshot(profile.id);
-    expect(snapshot.player).toMatchObject({ lifesteal: 1, statPoints: 2 });
-    expect(snapshot.statAllocations.lifesteal).toBe(1);
-
+    expect(await repository.execute(profile.id, {
+      id: `${stat}-add`, type: 'player.allocate-stat', payload: { stat, direction: 'add' },
+    })).toMatchObject({ status: 'applied' });
+    expect(await database.playerStates.get(profile.id)).toMatchObject({ [stat]: base + gain, statPoints: 3 });
     await repository.execute(profile.id, {
-      id: 'lifesteal-remove',
-      type: 'player.allocate-stat',
-      payload: { stat: 'lifesteal', direction: 'remove' },
+      id: `${stat}-remove`, type: 'player.allocate-stat', payload: { stat, direction: 'remove' },
     });
-    snapshot = await repository.snapshot(profile.id);
-    expect(snapshot.player).toMatchObject({ lifesteal: 0, statPoints: 4 });
-
-    await database.playerStates.update(profile.id, {
-      lifesteal: 30,
-      statPoints: 2,
-    });
-    await database.statAllocations.update(profile.id, { lifesteal: 30 });
-    await expect(
-      repository.execute(profile.id, {
-        id: 'lifesteal-over-cap',
-        type: 'player.allocate-stat',
-        payload: { stat: 'lifesteal', direction: 'add' },
-      }),
-    ).rejects.toThrow('吸血最高为 30%');
+    expect(await database.playerStates.get(profile.id)).toMatchObject({ [stat]: base, statPoints: 4 });
+    await database.playerStates.update(profile.id, (player) => { player[stat] = cap; player.statPoints = 2; });
+    await database.statAllocations.update(profile.id, { [stat]: (cap - base) / gain });
+    await expect(repository.execute(profile.id, {
+      id: `${stat}-cap`, type: 'player.allocate-stat', payload: { stat, direction: 'add' },
+    })).rejects.toThrow('上限');
+    expect(await database.playerStates.get(profile.id)).toMatchObject({ [stat]: cap, statPoints: 2 });
   });
-
   it('地图移动命令会统一地区别名并同步地区、地点与展示位置', async () => {
     const database = new CaelianDatabase(
       'alpha',
@@ -553,7 +515,8 @@ describe('GameRepository', () => {
     expect(snapshot.equipment).toEqual([
       expect.objectContaining({
         stars: 2,
-        stats: scaleEquipmentStatsByStars(chosenEquipment!.stats, 2),
+        stats: scaleReworkEquipment(chosenEquipment!.stats, 2, snapshot.player.level, chosenEquipment!.rarity),
+        itemLevel: snapshot.player.level, equipmentRulesVersion: 1,
       }),
     ]);
     expect(snapshot.relics).toHaveLength(1);

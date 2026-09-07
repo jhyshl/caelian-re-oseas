@@ -24,10 +24,7 @@ import {
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import AdjustableAvatar from '@/ui/AdjustableAvatar.vue';
 import MeterBar from '@/ui/adventurer/MeterBar.vue';
-import {
-  LIFESTEAL_CAP,
-  LIFESTEAL_STAT_POINT_COST,
-} from '@/player/progression';
+import { allocatedCombatPoints, allocationCost, COMBAT_PANEL_CAPS } from '@/battle/rework/attributes';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -107,35 +104,20 @@ const affinityPercent = computed(() =>
 const allocationTotal = computed(() => {
   const allocation = snapshot.value?.statAllocations;
   if (!allocation) return 0;
-  return (
-    allocation.hpMax +
-    allocation.mpMax +
-    allocation.attack +
-    allocation.defense +
-    allocation.speed +
-    allocation.lifesteal * LIFESTEAL_STAT_POINT_COST +
-    allocation.actionPointCosts.reduce((sum, value) => sum + value, 0)
-  );
+  return allocatedCombatPoints(allocation);
 });
 
 const statRows = [
-  { id: 'hpMax', icon: '❤', label: '生命', note: '每点 +5' },
-  { id: 'mpMax', icon: '◆', label: '魔力', note: '每点 +5' },
-  { id: 'attack', icon: '⚔', label: '攻击', note: '每点 +1' },
-  { id: 'defense', icon: '◈', label: '防御', note: '每点 +1' },
-  { id: 'speed', icon: 'ϟ', label: '速度', note: '每点 +1' },
-  {
-    id: 'lifesteal',
-    icon: '♢',
-    label: '吸血',
-    note: '消耗2点 +1%，最高30%',
-  },
-  {
-    id: 'actionPointsPerTurn',
-    icon: '◎',
-    label: 'AP',
-    note: '≤10消耗2点，之后消耗3点',
-  },
+  { id: 'hpMax', icon: '❤', label: '生命', note: '每点 +10' },
+  { id: 'attack', icon: '⚔', label: '攻击力', note: '每点 +2' },
+  { id: 'defense', icon: '◈', label: '防御', note: '每点 +5' },
+  { id: 'speed', icon: 'ϟ', label: '速度', note: '每点 +1，影响闪避' },
+  { id: 'critRate', icon: '✦', label: '暴击率', note: '每点 +1%，最高100%' },
+  { id: 'critDamage', icon: '✧', label: '暴击伤害', note: '每点 +2%，额外暴伤最高250%' },
+  { id: 'effectHit', icon: '◎', label: '效果命中', note: '每点 +2%，最高80%' },
+  { id: 'effectResist', icon: '◇', label: '效果抵抗', note: '每点 +2%，最高80%' },
+  { id: 'actionPointsPerTurn', icon: '◉', label: 'AP', note: '升到10前每次2点，之后每次3点' },
+  { id: 'drawPerTurn', icon: '▤', label: '每回合抽牌', note: '每5点 +1张，最多5张' },
 ] as const;
 
 async function refreshState() {
@@ -238,7 +220,7 @@ async function claimLevelReward(
 
 function statValue(id: (typeof statRows)[number]['id']): number {
   const base = snapshot.value?.player[id] ?? 0;
-  return base + equippedStats.value[id];
+  return Math.min(COMBAT_PANEL_CAPS[id] ?? Infinity, base + equippedStats.value[id]);
 }
 
 function invested(id: (typeof statRows)[number]['id']): number {
@@ -250,15 +232,13 @@ function equipmentBonus(id: (typeof statRows)[number]['id']): number {
 }
 
 function statAddCost(id: (typeof statRows)[number]['id']): number {
-  if (id === 'lifesteal') return LIFESTEAL_STAT_POINT_COST;
-  if (id !== 'actionPointsPerTurn') return 1;
-  return (snapshot.value?.player.actionPointsPerTurn ?? 0) <= 10 ? 2 : 3;
+  return snapshot.value ? allocationCost(snapshot.value.player, id) : 1;
 }
 
 function canAddStat(id: (typeof statRows)[number]['id']): boolean {
   const value = snapshot.value;
   if (!value || value.player.statPoints < statAddCost(id)) return false;
-  return id !== 'lifesteal' || value.player.lifesteal < LIFESTEAL_CAP;
+  return statValue(id) < (COMBAT_PANEL_CAPS[id] ?? Infinity);
 }
 
 function equipped(slot: 'weaponId' | 'armorId' | 'accessoryId') {
@@ -382,7 +362,7 @@ onUnmounted(() => {
             >
               <b>{{ equipmentRewards[equipmentId]?.name ?? equipmentId }}</b>
               <small>{{ equipmentRewardMeta(equipmentRewards[equipmentId], 2) }}</small>
-              <span>{{ equipmentRewardEffect(equipmentRewards[equipmentId], 2) }}</span>
+              <span>{{ equipmentRewardEffect(equipmentRewards[equipmentId], 2, snapshot.player.level) }}</span>
             </button>
             <button
               type="button"
@@ -490,11 +470,11 @@ onUnmounted(() => {
           <article v-for="row in statRows" :key="row.id">
             <span>{{ row.icon }} {{ row.label }}</span>
             <strong>
-              {{ statValue(row.id) }}{{ row.id === 'lifesteal' ? '%' : '' }}
+              {{ statValue(row.id) }}{{ ['critRate','critDamage','effectHit','effectResist'].includes(row.id) ? '%' : '' }}
             </strong>
             <small v-if="equipmentBonus(row.id)">
               装备 {{ equipmentBonus(row.id) > 0 ? '+' : ''
-              }}{{ equipmentBonus(row.id) }}{{ row.id === 'lifesteal' ? '%' : '' }}
+              }}{{ equipmentBonus(row.id) }}{{ ['critRate','critDamage','effectHit','effectResist'].includes(row.id) ? '%' : '' }}
             </small>
           </article>
           <article>

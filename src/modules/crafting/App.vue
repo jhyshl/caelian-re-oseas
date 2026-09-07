@@ -268,7 +268,7 @@ onMounted(async () => {
       <section v-else class="ca-section equipment-crafting">
         <div class="equipment-rule">
           <h2>三件同名同星装备 → 一件更高星装备</h2>
-          <p>最高三星；每次升星属性翻倍（1★ ×1、2★ ×2、3★ ×4）。</p>
+          <p>最高三星；属性按装备等级与品质预算分配，1／2／3星为100%／110%／120%，AP和抽牌不随星级增长。</p>
         </div>
         <div v-if="mergeGroups.length === 0" class="ca-empty">
           暂无可用于升星的装备

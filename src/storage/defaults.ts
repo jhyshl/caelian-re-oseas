@@ -1,3 +1,4 @@
+import { baseAttributes, freshCombatAllocations, COMBAT_RULES_VERSION } from '@/battle/rework/attributes';
 import type {
   EquipmentLoadoutRecord,
   GuildRecord,
@@ -24,20 +25,16 @@ export function defaultPlayer(
     level: 1,
     experience: 0,
     experienceToNext: 100,
-    hp: 80,
-    hpMax: 80,
+    hp: 300,
     mp: 30,
     mpMax: 30,
-    attack: 8,
-    defense: 5,
-    speed: 5,
-    actionPointsPerTurn: 5,
-    drawPerTurn: 5,
     lifesteal: 0,
     statPoints: 0,
     gold: 500,
     reclassCount: 0,
     pendingLevelRewards: [],
+    ...baseAttributes('none', 1),
+    combatRulesVersion: COMBAT_RULES_VERSION,
     updatedAt: now,
   };
 }
@@ -47,6 +44,7 @@ export function defaultStatAllocations(
   now: number,
 ): StatAllocationRecord {
   return {
+    ...freshCombatAllocations(profileId, now),
     profileId,
     hpMax: 0,
     mpMax: 0,

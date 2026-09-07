@@ -193,57 +193,47 @@ describe('CraftingRepository integration', () => {
     ).toBeUndefined();
   });
 
-  it('装备每次升星按实例当前属性翻倍，并兼容旧二星数值', async () => {
+  it('装备按等级预算重标后以 100/110/120% 升星，兼容旧二星实例并保留迁移来源', async () => {
     const { database, repository } = setup();
     const profile = await repository.ensureProfile('craft-equipment');
-    await Promise.all(
-      ['one-a', 'one-b', 'one-c'].map((id) =>
-        addIronSword(database, profile.id, id, 1),
-      ),
-    );
-
+    await Promise.all(['one-a', 'one-b', 'one-c'].map((id) => addIronSword(database, profile.id, id, 1)));
     await repository.execute(profile.id, {
-      id: 'merge-to-two',
-      type: 'craft.equipment',
+      id: 'merge-to-two', type: 'craft.equipment',
       payload: { baseId: 'eq_iron_sword', stars: 1 },
     });
     let equipment = (await repository.snapshot(profile.id)).equipment;
-    expect(equipment).toEqual([
-      expect.objectContaining({
-        stars: 2,
-        stats: { attack: 6 },
-        description: '攻击+6',
-      }),
-    ]);
+    expect(equipment).toEqual([expect.objectContaining({
+      stars: 2, stats: { attack: 9.5 }, description: '攻击+9.5',
+      equipmentRulesVersion: 1, itemLevel: 1,
+      legacyStats: { attack: 3 }, equipmentSourceStats: { attack: 3 },
+    })]);
 
-    await database.equipmentInstances.update(equipment[0]!.id, {
-      stats: { attack: 4 },
-      description: '攻击+4',
-    });
-
-    await Promise.all(
-      ['two-b', 'two-c'].map((id) =>
-        addIronSword(database, profile.id, id, 2),
-      ),
-    );
+    await Promise.all(['two-b', 'two-c'].map((id) => addIronSword(database, profile.id, id, 2)));
+    const migrated = (await repository.snapshot(profile.id)).equipment;
+    for (const id of ['two-b', 'two-c']) {
+      expect(migrated.find((entry) => entry.id === id)).toMatchObject({
+        stars: 2, stats: { attack: 9.5 }, equipmentRulesVersion: 1,
+        itemLevel: 1, legacyStats: { attack: 4 },
+      });
+    }
     await repository.execute(profile.id, {
-      id: 'merge-to-three',
-      type: 'craft.equipment',
+      id: 'merge-to-three', type: 'craft.equipment',
       payload: { baseId: 'eq_iron_sword', stars: 2 },
     });
     equipment = (await repository.snapshot(profile.id)).equipment;
-    expect(equipment).toEqual([
-      expect.objectContaining({
-        stars: 3,
-        stats: { attack: 8 },
-        description: '攻击+8',
-      }),
-    ]);
-    expect(
-      (await repository.snapshot(profile.id)).achievements.find(
-        (entry) => entry.achievementId === 'ach_craft_3star_equipment',
-      ),
-    ).toMatchObject({ unlocked: true });
+    expect(equipment).toEqual([expect.objectContaining({
+      stars: 3, stats: { attack: 10.37 }, description: '攻击+10.37',
+      equipmentRulesVersion: 1, itemLevel: 1,
+    })]);
+    expect((await repository.snapshot(profile.id)).equipment).toEqual(equipment);
+    expect((await repository.snapshot(profile.id)).achievements.find(
+      (entry) => entry.achievementId === 'ach_craft_3star_equipment',
+    )).toMatchObject({ unlocked: true });
+    await expect(repository.execute(profile.id, {
+      id: 'over-max-star', type: 'craft.equipment',
+      payload: { baseId: 'eq_iron_sword', stars: 3 },
+    })).resolves.toMatchObject({ status: 'rejected' });
+    expect((await repository.snapshot(profile.id)).equipment).toEqual(equipment);
   });
 
   it('优先保留已装备实例；必须消耗时由升星产物继承装备槽', async () => {

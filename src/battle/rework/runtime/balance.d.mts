@@ -1,0 +1,1 @@
+export const BALANCE_PATCH: Readonly<{shieldCounter: boolean; skipWeakSelfBuff: boolean; attackTierRamp: Readonly<Record<string,number>>; attackLevelRamp: Readonly<Record<string,number>>; hpLevelRamp: Readonly<Record<string,number>>}>;

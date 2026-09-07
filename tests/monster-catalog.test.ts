@@ -31,26 +31,19 @@ describe('monster catalog', () => {
     }
   });
 
-  it('gives action-list bosses deterministic skill ids without losing their data', async () => {
+  it('exposes the reset boss skills with stable semantic IDs and executable effects', async () => {
     const catalog = await loadMonsterCatalog();
-
     for (const bossId of BOSS_IDS) {
-      const skills = catalog[bossId]?.skills ?? {};
-      expect(Object.keys(skills)[0], bossId).toBe('action_1');
-      expect(skills.action_1?.name.trim().length, bossId).toBeGreaterThan(0);
-      expect(skills.action_1?.effects?.length, bossId).toBeGreaterThan(0);
+      const boss = catalog[bossId]!;
+      expect(boss.rework, bossId).toBe(true);
+      const skills = Object.values(boss.skills ?? {});
+      expect(skills.length, bossId).toBeGreaterThanOrEqual(4);
+      for (const skill of skills) {
+        expect(skill.name.trim().length, bossId).toBeGreaterThan(0);
+        expect((skill.effects ?? []).length, bossId).toBeGreaterThan(0);
+      }
     }
-    expect(catalog.boss_academy_arcane_golem?.skills?.action_1).toMatchObject({
-      name: '符文冲拳',
-      weight: 35,
-      effects: [{ type: 'damage', attack_ratio: 0.525 }],
-    });
-    expect(
-      catalog.boss_abyssal_leviathan_fragment?.skills?.action_1,
-    ).toMatchObject({
-      name: '深渊咬合',
-      weight: 1,
-      effects: [{ type: 'damage', attack_ratio: 1.18 }],
-    });
+    expect(catalog.boss_academy_arcane_golem?.skills?.punch?.name).toBe('符文冲拳');
+    expect(catalog.boss_abyssal_leviathan_fragment?.skills).not.toHaveProperty('action_1');
   });
 });

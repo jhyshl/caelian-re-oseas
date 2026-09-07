@@ -81,12 +81,11 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     payload: z.object({
       stat: z.enum([
         'hpMax',
-        'mpMax',
         'attack',
         'defense',
         'speed',
         'actionPointsPerTurn',
-        'lifesteal',
+        'critRate', 'critDamage', 'effectHit', 'effectResist', 'drawPerTurn',
       ]),
       direction: z.enum(['add', 'remove']),
     }),
@@ -394,12 +393,17 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
           playerInvincible: z.boolean(),
           attributes: z.object({
             hpMax: z.number().int().min(0).max(990),
-            mpMax: z.number().int().min(0).max(990),
+            mpMax: z.number().int().min(0).max(990).optional(),
             attack: z.number().int().min(0).max(990),
             defense: z.number().int().min(0).max(990),
             speed: z.number().int().min(0).max(990),
-            actionPointsPerTurn: z.number().int().min(0).max(100),
-            lifesteal: z.number().int().min(0).max(30).default(0),
+            critRate: z.number().int().min(0).max(95).optional(),
+            critDamage: z.number().int().min(0).max(100).optional(),
+            effectHit: z.number().int().min(0).max(40).optional(),
+            effectResist: z.number().int().min(0).max(40).optional(),
+            actionPointsPerTurn: z.number().int().min(0).max(331),
+            drawPerTurn: z.number().int().min(0).max(2).optional(),
+            lifesteal: z.number().int().min(0).max(30).optional(),
           }),
         })
         .optional(),
@@ -427,8 +431,18 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('battle.choose-astrology-card'),
     payload: z.object({
       battleId: z.string().trim().min(1).max(2048),
-      choiceIndex: z.number().int().min(0).max(20),
+      choiceIndex: z.number().int().min(-1).max(100),
     }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('battle.context-action'),
+    payload: z.object({ battleId: z.string().trim().min(1).max(2048), actionId: z.string().trim().min(1).max(256) }),
+  }),
+  z.object({
+    ...commandBase,
+    type: z.literal('cards.upgrade'),
+    payload: z.object({ cardId: z.string().trim().min(1).max(180) }),
   }),
   z.object({
     ...commandBase,

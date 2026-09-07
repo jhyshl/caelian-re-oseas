@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /* global Window, window */
 import { computed, onMounted, ref } from 'vue';
+import { reworkCard, describeReworkEffects } from '@/battle/rework/catalog';
 import { loadCardCatalog } from '@/content/catalogs/cards';
 import {
   mainClassForSubclass,
@@ -81,6 +82,22 @@ const ownedCards = computed(() =>
     })
     .filter((entry) => matchFilter(entry.definition)),
 );
+
+function cardStars(id: string) {
+  return Math.max(snapshot.value?.cards.find(c => c.cardId === id)?.stars ?? 1, snapshot.value?.player.cardStars?.[id] ?? 1);
+}
+function currentDescription(id: string, fallback: string) {
+  const c = reworkCard(id);
+  return c ? describeReworkEffects(c.effects, cardStars(id)) : fallback;
+}
+async function upgradeCard(cardId: string) {
+  try {
+    const result = await props.context.api.execute({id: commandId('cards.upgrade'), type: 'cards.upgrade', payload: {cardId}});
+    if (result.status === 'rejected') throw new Error(result.message);
+    snapshot.value = await props.context.api.query('state');
+    notice.value = '卡牌已升至' + cardStars(cardId) + '星，伤害、治疗和护盾成长已更新。';
+  } catch (error) { notice.value = error instanceof Error ? error.message : String(error); }
+}
 
 function groupCards(cardIds: string[]) {
   const counts = cardIds.reduce<Record<string, number>>((result, id) => {
@@ -408,7 +425,7 @@ onMounted(async () => {
           >
             <header>
               <div>
-                <strong>{{ entry.definition.name }}</strong>
+                <strong>{{ entry.definition.name }} · {{ cardStars(entry.id) }}★</strong>
                 <span>
                   {{ rarityNames[entry.definition.rarity] ?? entry.definition.rarity }}
                   · {{ typeNames[entry.definition.type] ?? entry.definition.type }}
@@ -416,9 +433,12 @@ onMounted(async () => {
               </div>
               <b>×{{ entry.quantity }}</b>
             </header>
-            <p>{{ entry.definition.description }}</p>
+            <p>{{ currentDescription(entry.id, entry.definition.description) }}</p>
             <footer>
               <span>AP {{ entry.definition.cost }}</span>
+              <button v-if="entry.definition.rework && cardStars(entry.id) < 3 && entry.id !== 'mg_blank_card'" type="button" class="ca-button" @click="upgradeCard(entry.id)">
+                升至 {{ cardStars(entry.id) + 1 }}★ · {{ cardStars(entry.id) === 1 ? 500 : 1500 }} 金币
+              </button>
               <span v-if="entry.definition.mpCost">
                 MP {{ entry.definition.mpCost }}
               </span>
@@ -440,11 +460,12 @@ onMounted(async () => {
         <div class="collection-list">
           <article v-for="entry in ownedCards" :key="entry.id">
             <div>
-              <strong>{{ entry.definition.name }}</strong>
-              <span>{{ entry.definition.description }}</span>
+              <strong>{{ entry.definition.name }} · {{ cardStars(entry.id) }}★</strong>
+              <span>{{ currentDescription(entry.id, entry.definition.description) }}</span>
             </div>
             <div>
               <small>持有 {{ entry.quantity }} · 已入组 {{ entry.inDeck }}</small>
+              <button v-if="entry.definition.rework && cardStars(entry.id) < 3 && entry.id !== 'mg_blank_card'" class="ca-button" type="button" @click="upgradeCard(entry.id)">升星 · {{ cardStars(entry.id) === 1 ? 500 : 1500 }} 金币</button>
               <button
                 type="button"
                 class="ca-button primary"

@@ -53,6 +53,13 @@ export interface PlayerRecord {
   statPoints: number;
   gold: number;
   reclassCount: number;
+  critRate?: number;
+  critDamage?: number;
+  effectHit?: number;
+  effectResist?: number;
+  combatRulesVersion?: number;
+  /** Mastery survives profession changes and reacquiring a card. */
+  cardStars?: Record<string, number>;
   /** Persistent equipment and relic choices created once for every gained level. */
   pendingLevelRewards?: LevelRewardRecord[];
   /** Consumable effects queued for the next locally simulated battle. */
@@ -79,6 +86,11 @@ export interface StatAllocationRecord {
   actionPointsPerTurn: number;
   lifesteal: number;
   actionPointCosts: number[];
+  critRate?: number;
+  critDamage?: number;
+  effectHit?: number;
+  effectResist?: number;
+  drawPerTurn?: number;
   updatedAt: number;
 }
 
@@ -258,6 +270,10 @@ export interface InventoryStackRecord {
 }
 
 export interface EquipmentInstanceRecord {
+  equipmentRulesVersion?: number;
+  itemLevel?: number;
+  legacyStats?: Record<string, number>;
+  equipmentSourceStats?: Record<string, number>;
   id: string;
   profileId: string;
   baseId: string;
@@ -279,6 +295,7 @@ export interface EquipmentLoadoutRecord {
 }
 
 export interface OwnedCardRecord {
+  stars?: number;
   id: string;
   profileId: string;
   cardId: string;
@@ -332,6 +349,7 @@ export type BattleStatus =
   | 'surrendered';
 
 export interface BattleTimedEffectInstance {
+  sourceId?: string;
   value: number;
   turns: number;
   charges?: number;
@@ -354,6 +372,7 @@ export interface BattleTimedEffect extends BattleTimedEffectInstance {
 export interface BattleCardInstance {
   instanceId: string;
   cardId: string;
+  stars?: number;
 }
 
 export interface BattleIntent {
@@ -363,6 +382,9 @@ export interface BattleIntent {
   description: string;
   amount: number;
   hits: number;
+  targetIds?: string[];
+  cooldown?: number;
+  guardThreshold?: number;
 }
 
 export interface BattleSummonState {
@@ -397,15 +419,21 @@ export interface BattleBlankGeneratorState {
 }
 
 export interface BattlePendingCardChoiceState {
-  type: 'astrology';
+  type: 'astrology' | 'rework';
   title: string;
   choices: string[];
   pick: number;
   picked: number[];
+  labels?: string[];
+  min?: number;
 }
 
 export interface BattlePlayerState {
   name: string;
+  critRate?: number;
+  critDamage?: number;
+  effectHit?: number;
+  effectResist?: number;
   subclass?: string;
   hp: number;
   hpMax: number;
@@ -456,9 +484,14 @@ export interface BattlePlayerState {
 }
 
 export interface BattleEnemyState {
+  mechanicDescription?: string;
   id: string;
   definitionId: string;
   name: string;
+  critRate?: number;
+  critDamage?: number;
+  effectHit?: number;
+  effectResist?: number;
   /** Scaled encounter level. Older in-progress battle saves may omit it. */
   level?: number;
   hp: number;
@@ -587,6 +620,15 @@ export interface BattleAnimationEvent {
 
 export interface LocalBattleState {
   schemaVersion: 1;
+  /** Serializable graph with recoverable RNG streams; never projected to AI MVU. */
+  rework?: unknown;
+  reworkOutcome?: string;
+  reworkGoldBase?: number;
+  reworkTransaction?: unknown;
+  reworkCardCostOverride?: {instanceId:string;cost:number};
+  reworkChoice?: { allyTargetId?: string; index: number; targetIndex: number; answers: number[][]; choice: unknown };
+  reworkCards?: Record<string, {cost: number | null; available: boolean; stars: number; goldCost?:number}>;
+  contextActions?: Array<{id: string; name: string; ap: number; description?: string; available?: boolean; reason?: string; remaining?: number}>;
   difficulty?: 'easy' | 'normal' | 'hard' | 'hell';
   status: BattleStatus;
   phase: 'player' | 'companion' | 'enemy' | 'ended';

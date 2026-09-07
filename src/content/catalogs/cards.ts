@@ -1,3 +1,4 @@
+import { applyReworkCards } from '@/battle/rework/catalog';
 import type { CardDefinition, CardEffect } from '@/content/types';
 import { readWorkshopPacks } from '@/workshop';
 import { PARTY_SUPPORT_CARDS } from '@/battle/party-support-cards';
@@ -213,7 +214,9 @@ export async function loadCommonMarketCards(): Promise<
     const module = await import(
       '@/content/generated/cards/common-market.json'
     );
-    commonMarketCache = module.default as Record<string, CardDefinition>;
+    const old = module.default as Record<string, CardDefinition>;
+    const reset = applyReworkCards(old);
+    commonMarketCache = Object.fromEntries(Object.keys(old).map(id => [id, reset[id]!]));
   }
   return commonMarketCache;
 }
@@ -226,14 +229,14 @@ export async function loadCardCatalog(): Promise<
       import('@/content/generated/cards/cards.json'),
       loadCommonMarketCards(),
     ]);
-    cardCache = {
+    cardCache = applyReworkCards({
       ...applyLegacyCardCompatibility(
         module.default as Record<string, CardDefinition>,
       ),
       ...commonMarket,
       ...PARTY_SUPPORT_CARDS,
       ...MAGICIAN_CARDS,
-    };
+    });
   }
   refreshWorkshopCardCatalog();
   return cardCache;

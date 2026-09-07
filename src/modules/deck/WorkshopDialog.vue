@@ -11,10 +11,10 @@ import type { CardEffect } from '@/content/types';
 import type { PanelContext } from '@/kernel/public-api';
 import { commandId } from '@/kernel/ids';
 import {
-  LIFESTEAL_CAP,
-  LIFESTEAL_STAT_POINT_COST,
-  STAT_POINTS_PER_LEVEL,
-} from '@/player/progression';
+  buildWorkshopTestAttributes,
+  workshopAttributePointCost,
+  WORKSHOP_TEST_ATTRIBUTE_BUDGET,
+} from '@/battle/rework/workshop-attributes';
 import WorkshopEffectEditor from '@/modules/deck/WorkshopEffectEditor.vue';
 import WorkshopEffectPalette from '@/modules/deck/WorkshopEffectPalette.vue';
 import WorkshopStateResourceBuilder from '@/modules/deck/WorkshopStateResourceBuilder.vue';
@@ -106,13 +106,16 @@ const testConfig = ref({
   autoRespawn: true,
   playerInvincible: true,
   attributes: {
-    hpMax: 40,
-    mpMax: 30,
+    hpMax: 320,
     attack: 220,
-    defense: 180,
-    speed: 100,
-    actionPointsPerTurn: 6,
-    lifesteal: 0,
+    defense: 120,
+    speed: 60,
+    critRate: 70,
+    critDamage: 100,
+    effectHit: 40,
+    effectResist: 40,
+    actionPointsPerTurn: 5,
+    drawPerTurn: 2,
   },
 });
 let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -181,20 +184,15 @@ const workshopStatusOptions = computed(() =>
     })),
   ),
 );
-const maxLevelAttributeBudget = 99 * STAT_POINTS_PER_LEVEL;
-const testAttributeSpent = computed(() => {
-  const attributes = testConfig.value.attributes;
-  const apCount = Math.max(0, Math.floor(attributes.actionPointsPerTurn));
-  const apCost = Math.min(apCount, 6) * 2 + Math.max(0, apCount - 6) * 3;
-  return (
-    Math.max(0, attributes.hpMax) +
-    Math.max(0, attributes.mpMax) +
-    Math.max(0, attributes.attack) +
-    Math.max(0, attributes.defense) +
-    Math.max(0, attributes.speed) +
-    Math.max(0, attributes.lifesteal) * LIFESTEAL_STAT_POINT_COST +
-    apCost
-  );
+const maxLevelAttributeBudget = WORKSHOP_TEST_ATTRIBUTE_BUDGET;
+const testAttributeSpent = computed(() => workshopAttributePointCost(testConfig.value.attributes));
+const testAttributeError = computed(() => {
+  try {
+    buildWorkshopTestAttributes(testConfig.value.attributes, testProfessionId.value);
+    return '';
+  } catch (caught) {
+    return caught instanceof Error ? caught.message : String(caught);
+  }
 });
 
 function supportsCardType(
@@ -856,8 +854,8 @@ async function startWorkshopTest(): Promise<void> {
     error.value = '请先选择一个已经校验并保存的自制职业。';
     return;
   }
-  if (testAttributeSpent.value > maxLevelAttributeBudget) {
-    error.value = `满级角色只能分配 ${maxLevelAttributeBudget} 点属性。`;
+  if (testAttributeError.value) {
+    error.value = testAttributeError.value;
     return;
   }
   try {
@@ -1148,15 +1146,19 @@ async function startWorkshopTest(): Promise<void> {
           <section class="test-attributes">
             <header>
               <strong>Lv.100 属性点配置</strong>
-              <small>生命/魔力每点 +5；攻击、防御、速度每点 +1；吸血每 2 点属性换 1%，最高 30%；行动点前 6 次各耗 2 点，之后各耗 3 点。</small>
+              <small>生命每点 +10，攻击 +2，防御 +5，速度 +1；暴击率 +1%，暴伤 +2%，效果命中/抵抗 +2%。AP 从 5 开始，前 5 次各耗 2 点，之后各耗 3 点；抽牌从 3 张开始，每加 1 张耗 5 点，最多 5 张。</small>
+              <small v-if="testAttributeError" class="error">{{ testAttributeError }}</small>
             </header>
             <label><span>生命投入</span><input v-model.number="testConfig.attributes.hpMax" type="number" min="0" :max="maxLevelAttributeBudget" /></label>
-            <label><span>魔力投入</span><input v-model.number="testConfig.attributes.mpMax" type="number" min="0" :max="maxLevelAttributeBudget" /></label>
             <label><span>攻击投入</span><input v-model.number="testConfig.attributes.attack" type="number" min="0" :max="maxLevelAttributeBudget" /></label>
             <label><span>防御投入</span><input v-model.number="testConfig.attributes.defense" type="number" min="0" :max="maxLevelAttributeBudget" /></label>
             <label><span>速度投入</span><input v-model.number="testConfig.attributes.speed" type="number" min="0" :max="maxLevelAttributeBudget" /></label>
-            <label><span>吸血（%）</span><input v-model.number="testConfig.attributes.lifesteal" type="number" min="0" :max="LIFESTEAL_CAP" /></label>
-            <label><span>行动点提升次数</span><input v-model.number="testConfig.attributes.actionPointsPerTurn" type="number" min="0" max="100" /></label>
+            <label><span>暴击率投入（上限 100%）</span><input v-model.number="testConfig.attributes.critRate" type="number" min="0" max="95" /></label>
+            <label><span>暴击伤害投入（上限 250%）</span><input v-model.number="testConfig.attributes.critDamage" type="number" min="0" max="100" /></label>
+            <label><span>效果命中投入（上限 80%）</span><input v-model.number="testConfig.attributes.effectHit" type="number" min="0" max="40" /></label>
+            <label><span>效果抵抗投入（上限 80%）</span><input v-model.number="testConfig.attributes.effectResist" type="number" min="0" max="40" /></label>
+            <label><span>行动点提升次数</span><input v-model.number="testConfig.attributes.actionPointsPerTurn" type="number" min="0" max="331" /></label>
+            <label><span>每回合抽牌提升次数</span><input v-model.number="testConfig.attributes.drawPerTurn" type="number" min="0" max="2" /></label>
           </section>
 
           <footer class="test-actions">
@@ -1172,7 +1174,7 @@ async function startWorkshopTest(): Promise<void> {
             <button
               type="button"
               class="ca-button primary"
-              :disabled="!testProfessionId || testAttributeSpent > maxLevelAttributeBudget"
+              :disabled="!testProfessionId || !!testAttributeError"
               @click="startWorkshopTest"
             >
               进入测试战斗

@@ -3,7 +3,8 @@ import type {
   EquipmentDefinition,
   RelicDefinition,
 } from '@/content/types';
-import { scaleEquipmentStatsByStars } from '@/equipment-stats';
+import { formatEquipmentStats } from '@/equipment-stats';
+import { scaleReworkEquipment } from '@/battle/rework/equipment';
 
 const rarityNames: Record<string, string> = {
   common: '普通',
@@ -23,21 +24,7 @@ const cardTypeNames: Record<string, string> = {
   summon: '召唤',
 };
 
-const statNames: Record<string, string> = {
-  attack: '攻击',
-  defense: '防御',
-  speed: '速度',
-  hp: '生命',
-  hp_max: '生命上限',
-  hpMax: '生命上限',
-  mp: '魔力',
-  mp_max: '魔力上限',
-  mpMax: '魔力上限',
-  action_points: '行动点',
-  actionPointsPerTurn: '每回合行动点',
-  draw: '抽牌',
-  drawPerTurn: '每回合抽牌',
-};
+
 
 export function rewardRarityName(rarity: string | undefined): string {
   if (!rarity) return '未知稀有度';
@@ -75,14 +62,10 @@ export function equipmentRewardMeta(
 export function equipmentRewardEffect(
   equipment: EquipmentDefinition | undefined,
   stars: number,
+  level=1,
 ): string {
   if (!equipment) return '暂无效果说明';
-  const stats = Object.entries(
-    scaleEquipmentStatsByStars(equipment.stats, stars),
-  ).map(([key, actual]) => {
-    return `${statNames[key] ?? key} ${actual >= 0 ? '+' : ''}${actual}`;
-  });
-  return stats.length > 0 ? stats.join('，') : equipment.description;
+  return formatEquipmentStats(scaleReworkEquipment(equipment.stats,stars,level,equipment.rarity)) || equipment.description;
 }
 
 export function relicRewardEffect(relic: RelicDefinition | undefined): string {

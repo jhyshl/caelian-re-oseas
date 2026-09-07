@@ -1,3 +1,4 @@
+import reworkCatalog from '@/battle/rework/catalog.json';
 import classNamesJson from '@/content/generated/professions/class-names.json';
 import classSubclassesJson from '@/content/generated/professions/class-subclasses.json';
 import starterDecksJson from '@/content/generated/cards/starter-decks.json';
@@ -35,6 +36,9 @@ if (!freelanceSubclasses.includes(MAGICIAN_SUBCLASS_ID)) {
 subclassNames[MAGICIAN_SUBCLASS_ID] = MAGICIAN_TALENT.title;
 professionTalents[MAGICIAN_SUBCLASS_ID] = MAGICIAN_TALENT;
 starterDecks[MAGICIAN_SUBCLASS_ID] = [...MAGICIAN_STARTER_DECK];
+for (const profession of reworkCatalog.professions) {
+  professionTalents[profession.id] = {title: profession.name, playstyle: profession.role, talent: profession.talent + ' ' + profession.resource};
+}
 
 const presentation: Record<
   string,

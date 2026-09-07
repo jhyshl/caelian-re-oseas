@@ -22,6 +22,8 @@ import {
   canApplyBattleConsumable,
   isBattleUsableItem,
 } from '@/battle/consumables';
+import { describeReworkEffects, reworkCard } from '@/battle/rework/catalog';
+import { hydrate as hydrateRework } from '@/battle/rework/runtime/api.mjs';
 import { previewBattleCard } from '@/battle/card-preview';
 import { bloodBurnCardUnavailableReason } from '@/battle/blood-burn';
 import type {
@@ -348,6 +350,7 @@ function weaponMasterNextComboBonus(
 const professionStatusEntries = computed<ProfessionStatusEntry[]>(() => {
   const player = battlePlayerUi.value;
   if (!player) return [];
+  if (state.value?.rework) return Object.entries(player.classResources??{}).filter(([id]) => (id !== 'hunter_prepare' || player.subclass === 'vampire_hunter') && (!Object.values(classResourceDefinitions).some(r=>r.id===id) || classResourceDefinitions[player.subclass as keyof typeof classResourceDefinitions]?.id===id)).map(([id,value])=>({id,label:classResourceDefinitionsById[id]?.label??formatClassResourceLabel(id),value:String(value),description:classResourceDefinitionsById[id]?.description??'职业资源：按本职业卡牌说明获得和消耗。'}));
   const subclass = player.subclass ?? snapshot.value?.player.subclass ?? '';
   const entries: ProfessionStatusEntry[] = [];
   const displayedResourceIds = new Set<string>();
@@ -607,7 +610,7 @@ function cardFriendlyTargetMode(definition?: CardDefinition) {
       if (
         friendlyEffectTypes.has(effect.type) &&
         effect.target !== 'enemy' &&
-        effect.target !== 'all_enemies'
+        effect.target !== 'all_enemies' && (!definition?.rework || effect.target === 'ally' || effect.target === 'all_allies')
       ) {
         mode = effect.target === 'all_allies' ? 'all' : mode === 'all' ? 'all' : 'single';
       }
@@ -926,7 +929,20 @@ function effectiveCardMpCost(definition: CardDefinition): number {
   return Math.max(0, Math.round(cost));
 }
 
-function displayedCardApCost(cardId: string): number {
+const currentReworkCards = computed<Record<string, {cost:number; available:boolean}>>(() => {
+  const current = state.value;if (!current?.rework) return {};
+  const core = hydrateRework(current.rework);const target=core.enemies[selectedTarget.value];
+  core.selectedAllyId=selectedAllyTarget.value;
+  return Object.fromEntries(core.player.hand.filter((card: {legacy?:boolean}) => !card.legacy).map((card: {uid:string}) => [String(card.uid), {cost:core.controller.price(core,card,false,target),available:core.canAct&&core.controller.canPlay(core,card,target)}]));
+});
+function battleCardDescription(cardId:string, stars=1):string {
+  const definition=reworkCard(cardId);
+  return definition ? describeReworkEffects(definition.effects,stars) : cardDefinition(cardId)?.description ?? '卡牌数据缺失';
+}
+function displayedCardApCost(cardId: string, handIndex?:number): number {
+  const instance = handIndex===undefined?state.value?.player.hand.find(c => c.cardId === cardId):state.value?.player.hand[handIndex];
+  const resolved = instance && currentReworkCards.value[instance.instanceId]?.cost;
+  if (resolved !== undefined && resolved !== null) return resolved;
   const definition = cardDefinition(cardId);
   return definition ? effectiveCardApCost(definition) : 0;
 }
@@ -940,6 +956,11 @@ function cardUnavailableReason(cardId: string, handIndex?: number) {
   const definition = cardDefinition(cardId);
   const player = state.value?.player;
   if (!definition || !player) return '卡牌数据不存在。';
+  if (state.value?.rework && definition.rework) {
+    const instance = handIndex !== undefined ? player.hand[handIndex] : player.hand.find(c => c.cardId === cardId);
+    const info = instance && currentReworkCards.value[instance.instanceId];
+    return info?.available ? '' : '当前 AP、职业资源或出牌条件不足。';
+  }
   if (state.value?.phase !== 'player') return '当前不是玩家行动阶段。';
   if (definition.unplayable === true) {
     return '空白牌无法打出，只有「真相揭晓」可以将其揭晓。';
@@ -1742,6 +1763,17 @@ async function discardHand() {
   });
 }
 
+async function useContextAction(actionId: string) {
+  if (!battle.value || busy.value) return;
+  busy.value = true;
+  try {
+    const result = await props.context.api.execute({id: commandId('battle.context-action'), type: 'battle.context-action', payload: {battleId: battle.value.id, actionId}});
+    if (result.status === 'rejected') throw new Error(result.message);
+    await refresh();
+  } catch (error) { notice.value = error instanceof Error ? error.message : String(error); }
+  finally { busy.value = false; }
+}
+
 async function chooseAstrologyCard(choiceIndex: number) {
   if (!battle.value) return;
   await execute({
@@ -1924,6 +1956,7 @@ onUnmounted(() => {
                     equipmentRewardEffect(
                       equipmentRewards[equipmentId],
                       state.rewardChoices.levelsGained > 0 ? 2 : 1,
+                      snapshot?.player.level ?? 1,
                     )
                   }}
                 </p>
@@ -2020,7 +2053,7 @@ onUnmounted(() => {
                 <span v-if="index === selectedTarget">锁定</span>
               </div>
               <small>
-                攻 {{ enemy.attack }} · 防 {{ enemy.defense }} · 盾 {{ enemy.shield }}
+                Lv.{{ enemy.level }} · 攻 {{ Math.round(enemy.attack) }} · 防 {{ Math.round(enemy.defense) }} · 速 {{ Math.round(enemy.speed) }}<br>暴击 {{ enemy.critRate ?? 0 }}% · 暴伤 +{{ enemy.critDamage ?? 50 }}% · 命中 {{ enemy.effectHit ?? 0 }}% · 抵抗 {{ enemy.effectResist ?? 0 }}% · 盾 {{ enemy.shield }}
               </small>
               <MeterBar
                 label="怪物生命"
@@ -2032,10 +2065,11 @@ onUnmounted(() => {
               <div v-if="enemy.intent" class="intent">
                 <b>{{ enemy.intent.kind }} · {{ enemy.intent.name }}</b>
                 <span v-if="enemy.intent.amount">
-                  预计 {{ enemy.intent.amount
-                  }}{{ enemy.intent.hits > 1 ? ` × ${enemy.intent.hits}` : '' }}
+                  直接伤害原始总预算 {{ enemy.intent.amount }}（{{ enemy.intent.hits }}段；未扣防御与护盾）
                 </span>
+                <span>{{ enemy.intent.description }}</span>
               </div>
+              <small v-if="enemy.mechanicDescription">{{ enemy.mechanicDescription }}</small>
               <div class="status-row">
                 <span v-if="enemy.shield">护盾 {{ enemy.shield }}</span>
                 <span
@@ -2289,7 +2323,7 @@ onUnmounted(() => {
               </span>
             </div>
             <small>
-              攻 {{ state.player.attack }} · 防 {{ state.player.defense }} · 速 {{ state.player.speed }}
+              攻 {{ Math.round(state.player.attack) }} · 防 {{ Math.round(state.player.defense) }} · 速 {{ Math.round(state.player.speed) }} · 暴击 {{ state.player.critRate ?? 5 }}% · 暴伤 +{{ state.player.critDamage ?? 50 }}% · 命中 {{ state.player.effectHit ?? 0 }}% · 抵抗 {{ state.player.effectResist ?? 0 }}%
             </small>
           </div>
 
@@ -2302,6 +2336,7 @@ onUnmounted(() => {
               color="var(--ca-red)"
             />
             <MeterBar
+              v-if="!state.rework || state.workshopTest"
               label="玩家魔力"
               :value="state.player.mp"
               :max="state.player.mpMax"
@@ -2364,6 +2399,11 @@ onUnmounted(() => {
             <span>/{{ state.player.apMax }} AP</span>
           </div>
 
+          <div v-if="state.contextActions?.length" class="hand-actions">
+            <button v-for="action in state.contextActions" :key="action.id" type="button" :disabled="busy || !action.available" :title="[action.description, action.reason].filter(Boolean).join('；')" @click="useContextAction(action.id)">
+              {{ action.name }} · {{ action.ap }} AP
+            </button>
+          </div>
           <div class="hand-actions">
             <button
               type="button"
@@ -2401,6 +2441,7 @@ onUnmounted(() => {
             牌堆 {{ state.player.drawPile.length }} · 弃牌 {{ state.player.discardPile.length }}
           </button>
 
+          <small v-if="state.rework">伤害预览按命中且不暴击计算；条件效果与选牌结果以实际结算为准。</small>
           <div class="fan-hand">
             <button
               v-for="(card, index) in state.player.hand"
@@ -2421,22 +2462,23 @@ onUnmounted(() => {
               <div class="fan-cost">
                 <span class="ap">
                   <small>AP</small>
-                  <b>{{ displayedCardApCost(card.cardId) }}</b>
+                  <b>{{ displayedCardApCost(card.cardId, index) }}</b>
                 </span>
-                <span class="mp">
+                <span v-if="!cardDefinition(card.cardId)?.rework" class="mp">
                   <small>MP</small>
                   <b>{{ displayedCardMpCost(card.cardId) }}</b>
                 </span>
               </div>
               <strong class="fan-card-name">
-                {{ cardDefinition(card.cardId)?.name ?? card.cardId }}
+                {{ cardDefinition(card.cardId)?.name ?? card.cardId }} {{ '★'.repeat(card.stars ?? 1) }}
               </strong>
               <small class="fan-card-meta">
                 {{ typeNames[cardDefinition(card.cardId)?.type ?? ''] ?? '卡牌' }}
                 · {{ cardDefinition(card.cardId)?.rarity ?? 'common' }}
               </small>
               <p class="fan-card-effect">
-                {{ cardDefinition(card.cardId)?.description ?? '卡牌数据缺失' }}
+                {{ battleCardDescription(card.cardId, card.stars ?? 1) }}
+                <span v-if="state.reworkCards?.[card.instanceId]?.goldCost">本场买路钱：{{ state.reworkCards[card.instanceId]?.goldCost }}金币</span>
               </p>
             </button>
           </div>
@@ -2587,12 +2629,13 @@ onUnmounted(() => {
               <span>ASTRAL DISCOVERY</span>
               <h2>✦ {{ state.player.pendingCardChoice.title }}</h2>
               <p>
-                从 {{ state.player.pendingCardChoice.choices.length }} 张牌中选择
-                {{ state.player.pendingCardChoice.pick }} 张临时加入本场手牌 · 已选择
+                从 {{ state.player.pendingCardChoice.choices.length }} 个选项中选择
+                {{ state.player.pendingCardChoice.min ?? state.player.pendingCardChoice.pick }}–{{ state.player.pendingCardChoice.pick }} 项 · 已选择
                 {{ state.player.pendingCardChoice.picked.length }} /
                 {{ state.player.pendingCardChoice.pick }}
               </p>
             </header>
+            <button v-if="state.player.pendingCardChoice.type === 'rework' && (state.player.pendingCardChoice.min ?? state.player.pendingCardChoice.pick) < state.player.pendingCardChoice.pick" type="button" :disabled="busy || state.player.pendingCardChoice.picked.length < (state.player.pendingCardChoice.min ?? 1)" @click="chooseAstrologyCard(-1)">完成选择</button>
             <div class="battle-choice-list">
               <button
                 v-for="(cardId, index) in state.player.pendingCardChoice.choices"
@@ -2607,7 +2650,7 @@ onUnmounted(() => {
                 @click="chooseAstrologyCard(index)"
               >
                 <strong>
-                  {{ cardDefinition(cardId)?.name ?? cardId }}
+                  {{ state.player.pendingCardChoice.labels?.[index] ?? cardDefinition(cardId)?.name ?? cardId }}
                   <em
                     v-if="state.player.pendingCardChoice.picked.includes(index)"
                   >
@@ -2619,7 +2662,7 @@ onUnmounted(() => {
                   {{ typeNames[cardDefinition(cardId)?.type ?? ''] ?? '卡牌' }} ·
                   {{ cardDefinition(cardId)?.rarity ?? 'common' }}
                 </span>
-                <p>{{ cardDefinition(cardId)?.description ?? '卡牌数据缺失' }}</p>
+                <p>{{ cardDefinition(cardId)?.description ?? state.player.pendingCardChoice.labels?.[index] }}</p>
               </button>
             </div>
           </section>

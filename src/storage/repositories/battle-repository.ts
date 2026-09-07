@@ -1,3 +1,11 @@
+import { buildWorkshopTestAttributes, WORKSHOP_TEST_LEVEL, type WorkshopTestAttributeInput } from '@/battle/rework/workshop-attributes';
+import { installWorkshopStatusHooks, workshopNativeStatusValue } from '@/battle/rework/runtime/workshop-status-hooks.mjs';
+import { installWorkshopDamageHooks, damageOnLiveCore } from '@/battle/rework/runtime/workshop-runtime-hooks.mjs';
+import { playCardTransaction, chooseCardTransaction } from '@/battle/rework/runtime/rework-card-transaction.mjs';
+import { STANDARD_PASSIVE_BY_SUBCLASS } from './player-repository';
+import balanceCatalog from '@/battle/rework/catalog.json';
+import * as rework from '@/battle/rework/runtime/api.mjs';
+import { reworkCard } from '@/battle/rework/catalog';
 import {
   loadBattleRules,
   loadMonsterCatalog,
@@ -65,8 +73,6 @@ import type { CaelianDatabase } from '@/storage/database';
 import {
   grantPlayerExperience,
   LIFESTEAL_CAP,
-  LIFESTEAL_STAT_POINT_COST,
-  STAT_POINTS_PER_LEVEL,
 } from '@/player/progression';
 import { updateGuildRank } from '@/guild-progression';
 import {
@@ -299,15 +305,7 @@ interface WorkshopTestInput {
   dummyAttackEnabled: boolean;
   autoRespawn: boolean;
   playerInvincible: boolean;
-  attributes: {
-    hpMax: number;
-    mpMax: number;
-    attack: number;
-    defense: number;
-    speed: number;
-    actionPointsPerTurn: number;
-    lifesteal?: number;
-  };
+  attributes: WorkshopTestAttributeInput;
 }
 
 export class BattleRepository {
@@ -319,6 +317,8 @@ export class BattleRepository {
   private relics?: Record<string, RelicDefinition>;
   private equipment?: Record<string, EquipmentDefinition>;
   private animationSequence = 0;
+  private activeReworkCore?: any;
+  private activeReworkState?: LocalBattleState;
   private mechanismDepth = 0;
   private mechanismSteps = 0;
   private reactionDepth = 0;
@@ -466,9 +466,10 @@ export class BattleRepository {
     const requestedCount = input.monsterId
       ? input.count ?? 1
       : this.explorationCount(monster, difficulty);
+    const entryRegion = ['圣德里安学院', '伊拉亚城'].includes(region);
     const enemyCount = this.isBossMonster(monster)
       ? 1
-      : Math.max(1, Math.min(12, Math.floor(requestedCount)));
+      : Math.max(1, Math.min(!input.monsterId && entryRegion && player.level <= 5 ? 1 : !input.monsterId && entryRegion && player.level <= 10 ? 2 : 3, Math.floor(requestedCount)));
     const packScale = this.packStrengthMultiplier(enemyCount);
     const encounterPack = resolvedMonsterId
       ? Array.from(
@@ -531,7 +532,7 @@ export class BattleRepository {
     this.drawCards(state, battlePlayer.initialDraw);
     this.applyBattleStartPassives(
       state,
-      ownedPassives.map((entry) => entry.passiveId),
+      ownedPassives.map((entry) => entry.passiveId).filter(id => id !== STANDARD_PASSIVE_BY_SUBCLASS[player.subclass]),
     );
     this.applyCarriedRelicEffects(
       state,
@@ -541,12 +542,14 @@ export class BattleRepository {
     );
     this.syncInheritedLifesteal(state);
     this.runWorkshopMechanisms(state, 'battle_start');
-    for (const enemy of enemies) {
-      const definition = this.monsters?.[enemy.definitionId];
-      enemy.intent = definition
-        ? this.chooseIntent(definition, enemy, enemies)
-        : null;
-    }
+    const core = rework.create(state, {
+      level: player.level, explicit: Boolean(input.monsterId), region,
+      seed: Math.floor(this.random() * 0xffffffff),
+      locked: Boolean(input.relatedQuestId || pendingHunt),
+      stars: Object.fromEntries(ownedCards.map(card => [card.cardId, Math.max(card.stars ?? 1, player.cardStars?.[card.cardId] ?? 1)])),
+    });
+    core.encounterGoldReward=Math.round(state.enemies.reduce((total,e)=>total+(e.gold[0]+e.gold[1])/2,0)*(1+this.passiveEffectValue(state,'gold_bonus')))*5;
+    rework.project(core, state);
     const encounterNames = [
       ...new Set(encounterPack.map(([, definition]) => definition.name)),
     ].join('、');
@@ -645,6 +648,15 @@ export class BattleRepository {
     const state = session.state;
     this.assertPlayerPhase(state);
     this.assertNoPendingCardChoice(state);
+    if (state.rework && reworkCard(state.player.hand[input.handIndex]?.cardId ?? '')) {
+      playCardTransaction(state, {index:input.handIndex,targetIndex:input.targetIndex??state.selectedTarget,allyTargetId:input.allyTargetId}, this.reworkCardPorts());
+      this.stabilizeWorkshopTest(state);
+      if (!state.player.pendingCardChoice && await this.finishReworkEscape(session)) return;
+      if (!state.player.pendingCardChoice && state.player.hp <= 0) await this.finishBattle(session, 'defeat');
+      else if (!state.player.pendingCardChoice && this.aliveEnemies(state).length === 0) await this.finishBattle(session, 'victory');
+      else await this.save(session);
+      return;
+    }
     const cardInstance = state.player.hand[input.handIndex];
     if (!cardInstance) throw new Error('这张手牌已经不存在');
     const card = this.cardDefinition(state, cardInstance.cardId);
@@ -822,6 +834,14 @@ export class BattleRepository {
     const session = await this.getOngoing(profileId, input.battleId);
     const state = session.state;
     this.assertPlayerPhase(state);
+    if (state.rework && state.player.pendingCardChoice?.type === 'rework') {
+      if (state.reworkTransaction) chooseCardTransaction(state, input.choiceIndex, input.choiceIndex === -1, this.reworkCardPorts());
+      else rework.choose(state, input.choiceIndex, input.choiceIndex === -1);
+      if (!state.player.pendingCardChoice && state.player.hp <= 0) await this.finishBattle(session, 'defeat');
+      else if (!state.player.pendingCardChoice && this.aliveEnemies(state).length === 0) await this.finishBattle(session, 'victory');
+      else await this.save(session);
+      return;
+    }
     const pending = state.player.pendingCardChoice;
     if (!pending || pending.type !== 'astrology') {
       throw new Error('当前没有等待选择的占星牌');
@@ -872,6 +892,7 @@ export class BattleRepository {
     const state = session.state;
     this.assertPlayerPhase(state);
     this.assertNoPendingCardChoice(state);
+    if (state.rework) { rework.discard(state); await this.save(session); return; }
     if (state.player.manualDiscardTurn === state.turn) {
       throw new Error('本回合已使用过一次主动弃牌');
     }
@@ -1027,6 +1048,7 @@ export class BattleRepository {
     const state = session.state;
     this.assertPlayerPhase(state);
     this.assertNoPendingCardChoice(state);
+    if (state.rework) { await this.endReworkTurn(session); return; }
     this.runWorkshopMechanisms(state, 'turn_end');
     this.log(state, 'system', '结束玩家回合');
     this.applyPlayerEndTurnEffects(state);
@@ -1177,6 +1199,140 @@ export class BattleRepository {
     await this.save(session);
   }
 
+  async contextAction(profileId: string, input: {battleId: string; actionId: string}): Promise<void> {
+    const session = await this.getOngoing(profileId, input.battleId);
+    this.assertPlayerPhase(session.state);
+    this.assertNoPendingCardChoice(session.state);
+    if (!session.state.rework) throw new Error('本场战斗没有场景动作');
+    rework.action(session.state, input.actionId);
+    await this.save(session);
+  }
+
+  private async finishReworkEscape(session:BattleSessionRecord):Promise<boolean> {
+    if(!['bribed','escaped'].includes(session.state.reworkOutcome??''))return false;
+    session.state.status='surrendered';session.state.phase='ended';session.state.rewards=null;
+    if(!session.state.workshopTest)await this.persistBattlePlayer(session.profileId,session.state);
+    this.log(session.state,'system',session.state.reworkOutcome==='bribed'?'支付买路钱，离开战斗；没有战利品。':'已承受敌方行动并成功撤离；没有战利品。');
+    await this.save(session);return true;
+  }
+
+  private attachReworkHooks(core:any,state:LocalBattleState):()=>void {
+    const previousCore=this.activeReworkCore,previousState=this.activeReworkState;
+    this.activeReworkCore=core;this.activeReworkState=state;
+    const emit=(trigger:WorkshopMechanismTrigger,event:Record<string,unknown>)=>{
+      rework.project(core,state,{checkpoint:false});
+      try{return this.runWorkshopMechanisms(state,trigger,event);}finally{rework.syncExternal(core,state);}
+    };
+    const stabilize=()=>{rework.project(core,state,{checkpoint:false});this.stabilizeWorkshopTest(state);this.stabilizeCompanion(state);rework.syncExternal(core,state);};
+    installWorkshopDamageHooks(core,{currentCard:()=>this.activeMechanismCard,emit,afterDamage:stabilize});
+    installWorkshopStatusHooks(core,{
+      value:(actor:any,type:string)=>workshopNativeStatusValue(actor,type,this.workshopMechanismCatalog(state),state.workshopMechanisms?.ids),
+      emit,
+      turnDamage:(actor:any,amount:number)=>{
+        rework.project(core,state,{checkpoint:false});
+        const target=actor.id==='player'?state.player:actor.id==='caelian'?state.companion:[...state.enemies,...state.player.summons,...(state.companion?.summons??[])].find(a=>a.id===actor.id);
+        if(target){const combatant=state.player.summons.includes(target as BattleSummonState)?this.normalizePlayerSummon(target as BattleSummonState):target as Combatant;this.directHpLoss(state,combatant,amount,'自定义状态持续伤害');}
+        rework.syncExternal(core,state);
+      },
+      afterTick:stabilize,
+    });
+    return()=>{this.activeReworkCore=previousCore;this.activeReworkState=previousState;};
+  }
+
+  private reworkCardPorts() {
+    return {
+      before:(draft:LocalBattleState,request:any)=>{
+        const instance=draft.player.hand[request.index];if(!instance)throw new Error('手牌不存在');
+        const card=this.cardDefinition(draft,instance.cardId);if(!card)throw new Error('卡牌数据不存在');
+        const core=rework.hydrate(draft.rework);rework.syncExternal(core,draft);
+        const printed=core.player.hand[request.index],cost=core.controller.price(core,printed,false,core.enemies[request.targetIndex]);
+        const metadata={id:instance.cardId,name:card.name,type:card.type,tags:Array.isArray(card.tags)?card.tags.map(String):[]};
+        this.activeMechanismCard=metadata;const detach=this.attachReworkHooks(core,draft);
+        try{
+          const event=this.runWorkshopMechanisms(draft,'before_card',{cardId:metadata.id,cardName:metadata.name,cardType:metadata.type,cardTags:metadata.tags,cardCost:cost,mpCost:0});
+          rework.syncExternal(core,draft);rework.project(core,draft);
+          draft.reworkCardCostOverride={instanceId:instance.instanceId,cost:this.clamp(this.number(event.cardCost,cost),0,99)};
+          return{...metadata,cost:draft.reworkCardCostOverride.cost};
+        }finally{detach();this.activeMechanismCard=undefined;}
+      },
+      play:(draft:LocalBattleState,request:any,metadata:any)=>{
+        this.activeMechanismCard=metadata;
+        try{return rework.play(draft,request.index,request.targetIndex,request.answers,request.allyTargetId,(core)=>this.attachReworkHooks(core,draft));}
+        finally{this.activeMechanismCard=undefined;}
+      },
+      after:(draft:LocalBattleState,metadata:any)=>{
+        this.activeMechanismCard=metadata;
+        try{this.runWorkshopMechanisms(draft,'after_card',{cardId:metadata.id,cardName:metadata.name,cardType:metadata.type,cardTags:metadata.tags,cardCost:metadata.cost,mpCost:0});rework.sync(draft);}
+        finally{this.activeMechanismCard=undefined;}
+      },
+    };
+  }
+
+  private resolveReworkLegacySummons(state:LocalBattleState):void {
+    const core=rework.hydrate(state.rework);rework.syncExternal(core,state);const detach=this.attachReworkHooks(core,state);
+    try{
+      for(const actor of core.allies.filter((a:any)=>a.legacySummon&&a.hp>0)){
+        if(actor.flags.legacyActionRound===core.round)continue;actor.flags.legacyActionRound=core.round;
+        if(actor.expiresRound<=core.round){actor.hp=0;actor.expired=true;continue;}
+        const allowed=core.beginPhase(actor);rework.project(core,state,{checkpoint:false});
+        const summon=state.player.summons.find(s=>s.id===actor.id);
+        if(allowed&&summon&&actor.hp>0){this.resolvePlayerSummonAction(state,this.normalizePlayerSummon(summon));rework.syncExternal(core,state);}
+        core.endPhase(actor);
+      }
+      rework.project(core,state);
+    }finally{detach();}
+  }
+
+  private resolveReworkCompanion(state:LocalBattleState):void {
+    const core=rework.hydrate(state.rework);rework.syncExternal(core,state);const detach=this.attachReworkHooks(core,state);
+    try{
+      for(const actor of core.allies.filter((a:any)=>(a.isCompanion||a.isCompanionSummon)&&a.hp>0)){
+        const allowed=core.beginPhase(actor);rework.project(core,state,{checkpoint:false});
+        if(allowed){if(actor.isCompanion)this.resolveCaelianActions(state);else this.resolveTrelioSummon(state);rework.syncExternal(core,state);}
+        core.endPhase(actor);
+      }
+      rework.project(core,state);
+    }finally{detach();}
+  }
+
+  private runReworkPhase(core:any,state:LocalBattleState,run:()=>void):void {
+    const detach=this.attachReworkHooks(core,state);
+    try{run();rework.project(core,state);}finally{detach();}
+  }
+
+  private async endReworkTurn(session: BattleSessionRecord): Promise<void> {
+    const state = session.state;
+    this.runWorkshopMechanisms(state, 'turn_end');
+    let core = rework.hydrate(state.rework);
+    rework.syncExternal(core, state);
+    this.runReworkPhase(core,state,()=>rework.endPlayer(core));
+    this.resolveReworkLegacySummons(state);
+    if (state.companion && state.player.hp > 0 && this.aliveEnemies(state).length) {
+      state.phase = 'companion';
+      this.resolveReworkCompanion(state);
+    }
+    this.runWorkshopMechanisms(state, 'before_enemy_turn');
+    core = rework.hydrate(state.rework);
+    rework.syncExternal(core, state);
+    this.runReworkPhase(core,state,()=>{if (!(state.workshopTest?.opponentMode === 'dummy' && !state.workshopTest.dummyAttackEnabled)) rework.enemiesTurn(core);});
+    this.runWorkshopMechanisms(state, 'after_enemy_turn');
+    this.stabilizeWorkshopTest(state);
+    if(state.player.hp>0&&await this.finishReworkEscape(session))return;
+    if (state.player.hp <= 0) { await this.finishBattle(session, 'defeat'); return; }
+    if (!this.aliveEnemies(state).length) { await this.finishBattle(session, 'victory'); return; }
+    core = rework.hydrate(state.rework);
+    rework.syncExternal(core, state);
+    this.runReworkPhase(core,state,()=>rework.nextTurn(core));
+    state.player.cardsPlayedThisTurn={};state.player.cardNamesPlayedThisTurn={};
+    this.applyTurnStartPassives(state,session.profileId);
+    this.runWorkshopMechanisms(state, 'turn_start');
+    if(state.player.hp<=0){await this.finishBattle(session,'defeat');return;}
+    if(!this.aliveEnemies(state).length){await this.finishBattle(session,'victory');return;}
+    this.animation(state,{kind:'turn',sourceSide:'system',label:'玩家回合',phaseAfter:'player',turnAfter:state.turn});
+    this.log(state, 'system', '第 ' + state.turn + ' 回合：恢复 AP，抽取手牌；敌方意图已锁定。');
+    await this.save(session);
+  }
+
   async surrender(profileId: string, battleId: string): Promise<void> {
     const session = await this.getOngoing(profileId, battleId);
     if (session.state.workshopTest) {
@@ -1261,6 +1417,7 @@ export class BattleRepository {
           profileId,
           cardId: input.choiceId,
           quantity: (current?.quantity ?? 0) + 1,
+          stars: current?.stars ?? (await this.db.playerStates.get(profileId))?.cardStars?.[input.choiceId] ?? 1,
           source: current?.source ?? 'battle-reward',
           updatedAt: now,
         });
@@ -1360,21 +1517,7 @@ export class BattleRepository {
       throw new Error('创意工坊测试牌组数量不能超过候选职业卡池持有数');
     }
 
-    const attributeBudget = 99 * STAT_POINTS_PER_LEVEL;
-    const apCount = Math.max(0, Math.floor(input.attributes.actionPointsPerTurn));
-    const apCost = Math.min(apCount, 6) * 2 + Math.max(0, apCount - 6) * 3;
-    const attributeSpent =
-      Math.max(0, Math.floor(input.attributes.hpMax)) +
-      Math.max(0, Math.floor(input.attributes.mpMax)) +
-      Math.max(0, Math.floor(input.attributes.attack)) +
-      Math.max(0, Math.floor(input.attributes.defense)) +
-      Math.max(0, Math.floor(input.attributes.speed)) +
-      Math.max(0, Math.floor(input.attributes.lifesteal ?? 0)) *
-        LIFESTEAL_STAT_POINT_COST +
-      apCost;
-    if (attributeSpent > attributeBudget) {
-      throw new Error(`满级测试角色最多可分配 ${attributeBudget} 点属性`);
-    }
+    const testAttributes = buildWorkshopTestAttributes(input.attributes, profession.id);
 
     const requestedMechanisms = [
       ...new Set([...(profession.mechanismIds ?? []), ...input.mechanismIds]),
@@ -1400,24 +1543,16 @@ export class BattleRepository {
       name: `${player.name} · 测试`,
       classMain: profession.main,
       subclass: profession.id,
-      level: 100,
+      level: WORKSHOP_TEST_LEVEL,
       experience: 0,
       experienceToNext: 5050,
-      hp: 80 + input.attributes.hpMax * 5,
-      hpMax: 80 + input.attributes.hpMax * 5,
-      mp: 30 + input.attributes.mpMax * 5,
-      mpMax: 30 + input.attributes.mpMax * 5,
-      attack: 8 + input.attributes.attack,
-      defense: 5 + input.attributes.defense,
-      speed: 5 + input.attributes.speed,
-      actionPointsPerTurn: 5 + apCount,
-      drawPerTurn: 5,
-      lifesteal: this.clamp(
-        input.attributes.lifesteal ?? 0,
-        0,
-        LIFESTEAL_CAP,
-      ),
-      statPoints: attributeBudget - attributeSpent,
+      ...testAttributes.attributes,
+      hp: testAttributes.attributes.hpMax,
+      // Preserve the resource needed by saved custom effects; it no longer consumes allocation points.
+      mp: 30,
+      mpMax: 30,
+      lifesteal: 0,
+      statPoints: testAttributes.remaining,
       gold: 0,
       pendingBattleEffects: [],
     };
@@ -1489,8 +1624,8 @@ export class BattleRepository {
         autoRespawn: input.autoRespawn,
         playerInvincible: input.playerInvincible,
         respawns: 0,
-        attributeBudget,
-        attributeSpent,
+        attributeBudget: testAttributes.spent + testAttributes.remaining,
+        attributeSpent: testAttributes.spent,
       },
       log: [],
       animations: [],
@@ -1507,14 +1642,22 @@ export class BattleRepository {
       profession.talent.effects,
     );
     this.runWorkshopMechanisms(state, 'battle_start');
-    if (opponentMode !== 'dummy') {
-      for (const enemy of enemies) {
-        const definition = this.monsters?.[enemy.definitionId];
-        enemy.intent = definition
-          ? this.chooseIntent(definition, enemy, enemies)
-          : null;
+    const testCore = rework.create(state, {level: 100, explicit: true, seed: Math.floor(this.random()*0xffffffff), locked: true});
+    if (opponentMode === 'dummy') {
+      for (const [index, actor] of testCore.enemies.entries()) {
+        const dummy = state.enemies[index]!;
+        actor.hp = actor.maxHp = dummy.hpMax;
+        actor.stats.attack = dummy.attack;
+        actor.stats.defense = dummy.defense;
+        actor.stats.speed = dummy.speed;
+        actor.stats.crit=0;actor.stats.critDamage=50;
+        const skill=actor.definition.skills[0];
+        skill.effects=[{type:'damage',flat:0,atk:1,crit:false,target:'enemy'}];
+        skill.summary='按木桩配置攻击力造成伤害，不暴击。';
+        actor.intent=null;rework.planActor(testCore,actor);
       }
     }
+    rework.project(testCore, state);
     this.log(
       state,
       'system',
@@ -1639,6 +1782,10 @@ export class BattleRepository {
     );
     return {
       name: player.name,
+      critRate: this.clamp((player.critRate ?? 5) + bonus.critRate, 0, 100),
+      critDamage: this.clamp((player.critDamage ?? 50) + bonus.critDamage, 0, 250),
+      effectHit: this.clamp((player.effectHit ?? 0) + bonus.effectHit, 0, 80),
+      effectResist: this.clamp((player.effectResist ?? 0) + bonus.effectResist, 0, 80),
       subclass: player.subclass,
       hp: Math.min(hpMax, player.hp),
       hpMax,
@@ -1658,7 +1805,7 @@ export class BattleRepository {
       ),
       initialDraw: this.rules?.initialDraw ?? 5,
       drawPerTurn:
-        (this.rules?.baseDrawPerTurn ?? 3) + bonus.drawPerTurn,
+        Math.min(5, player.drawPerTurn + bonus.drawPerTurn),
       handLimit: this.rules?.handLimit ?? 10,
       drawPile: instances,
       discardPile: [],
@@ -1693,7 +1840,10 @@ export class BattleRepository {
     const regional = all.filter(([, monster]) =>
       monster.regions?.includes(region),
     );
-    const pool = regional.length > 0 ? regional : all;
+    const normalExploration = (regional.length > 0 ? regional : all).filter(([, monster]) => !this.isBossMonster(monster));
+    const starterSafe = ['圣德里安学院', '伊拉亚城'].includes(region) && playerLevel <= 5;
+    const ordinary = normalExploration.filter(([id]) => balanceCatalog.monsters.find(m => m.id === id)?.tier === 'normal');
+    const pool = starterSafe && ordinary.length ? ordinary : normalExploration;
     const difficultyWeight: Record<string, number> = {
       easy: 1.4,
       normal: 1,
@@ -1764,8 +1914,17 @@ export class BattleRepository {
     const used = new Set([lead[0]]);
 
     while (pack.length < count) {
-      const unused = candidates.filter(([id]) => !used.has(id));
-      const pool = unused.length > 0 ? unused : candidates;
+      const eligible = candidates.filter(([id]) => {
+        const definition = balanceCatalog.monsters.find(m => m.id === id);
+        if (!definition) return true;
+        const members = pack.map(([memberId]) => balanceCatalog.monsters.find(m => m.id === memberId));
+        if (['healer', 'guardian'].includes(definition.roleKey) && members.some(m => m?.roleKey === definition.roleKey)) return false;
+        if (['圣德里安学院', '伊拉亚城'].includes(region) && playerLevel <= 10 && definition.tier === 'elite' && members.some(m => m?.tier === 'elite')) return false;
+        return true;
+      });
+      if (!eligible.length) break;
+      const unused = eligible.filter(([id]) => !used.has(id));
+      const pool = unused.length > 0 ? unused : eligible;
       const chosen = this.weightedChoice(pool, ([, monster]) => {
         const minimum = this.number(monster.level_range?.[0], 1);
         const levelGap = Math.abs(minimum - playerLevel);
@@ -1863,7 +2022,7 @@ export class BattleRepository {
     packScale: number,
     instanceIndex: number,
   ): BattleEnemyState {
-    const affix = this.pickEnemyAffix(monster, packScale);
+    const affix = monster.rework ? undefined : this.pickEnemyAffix(monster, packScale);
     const intrinsic =
       MONSTER_SCALE[String(monster.difficulty ?? 'normal')] ??
       MONSTER_SCALE.normal!;
@@ -2192,10 +2351,11 @@ export class BattleRepository {
     const enabled = skills.filter(
       ([, skill]) => this.enemySkillWeight(skill) > 0,
     );
-    return this.weightedChoice(enabled, ([skillId, skill]) => {
-      const repeatScale = enemy.lastSkillId === skillId ? 0.35 : 1;
-      return this.enemySkillWeight(skill) * repeatScale;
-    });
+    return enabled.sort(([aid, a], [bid, b]) => {
+      const av = this.enemySkillWeight(a) * (enemy.lastSkillId === aid ? 0.35 : 1);
+      const bv = this.enemySkillWeight(b) * (enemy.lastSkillId === bid ? 0.35 : 1);
+      return bv - av || aid.localeCompare(bid);
+    })[0];
   }
 
   private enemySkillWeight(skill: MonsterSkillDefinition): number {
@@ -3043,7 +3203,7 @@ export class BattleRepository {
         let applied = 0;
         for (const recipient of recipients) {
           const chance = this.clamp(this.number(effect.chance, 100), 0, 100);
-          if (chance < 100 && this.random() * 100 >= chance) continue;
+          if (!state.rework && chance < 100 && this.random() * 100 >= chance) continue;
           const effectName = String(effect.debuff ?? 'weak');
           if (!this.tryApplyDebuff(
             state,
@@ -3054,6 +3214,8 @@ export class BattleRepository {
             {
               charges: this.optionalPositiveNumber(effect.charges),
               uncleanseable: effect.uncleanseable === true,
+              baseChance: this.number(effect.baseChance, chance),
+              sourceId: this.activePlayerSummon?.id ?? 'player',
             },
           )) continue;
           const identity = this.combatantIdentity(state, recipient);
@@ -3894,6 +4056,17 @@ export class BattleRepository {
       typeof damageOptions === 'boolean'
         ? { ignoreDefense: damageOptions }
         : damageOptions;
+    if (state.rework) {
+      const sourceId = this.combatantIdentity(state, source).id;
+      const targetId = this.combatantIdentity(state, target).id;
+      const wasAlreadyLive=this.activeReworkState===state&&Boolean(this.activeReworkCore);
+      const core=wasAlreadyLive?this.activeReworkCore:rework.hydrate(state.rework);
+      rework.syncExternal(core,state);const detach=this.attachReworkHooks(core,state);
+      try{
+        const result=damageOnLiveCore(core,sourceId,targetId,rawAmount,label,{...options,origin:options.origin??(kind==='enemy'?'attack':'effect'),secondary:this.reactionDepth>0});
+        rework.project(core,state,{checkpoint:!wasAlreadyLive});return result.hpDamage;
+      }finally{detach();}
+    }
     if (source.hp <= 0 || target.hp <= 0) return 0;
     let ignoreDefense = options.ignoreDefense === true;
     const sourceIdentity = this.combatantIdentity(state, source);
@@ -4148,6 +4321,7 @@ export class BattleRepository {
       source.onHitDebuff
     ) {
       this.tryApplyDebuff(state, target, source.onHitDebuff, 1, 2, {
+        sourceId: sourceIdentity.id,
         uncleanseable: true,
       });
       this.log(state, 'enemy', `${source.name ?? '敌人'} 的词缀追加了诅咒印记`);
@@ -6698,7 +6872,7 @@ export class BattleRepository {
     player.mp = this.clamp(state.player.mp, 0, state.player.mpMax);
     const levelBefore = player.level;
     const levelsGained = grantPlayerExperience(player, rewards.experience);
-    player.gold = Math.max(0, state.player.gold ?? player.gold) + rewards.gold;
+    player.gold = Math.max(0, state.rework ? player.gold + (state.player.gold ?? 0) - (state.reworkGoldBase ?? player.gold) : state.player.gold ?? player.gold) + rewards.gold;
     player.updatedAt = Date.now();
     await this.db.playerStates.put(player);
     if (guild) {
@@ -6822,7 +6996,7 @@ export class BattleRepository {
     if (!player) throw new Error('玩家档案不存在');
     player.hp = this.clamp(state.player.hp, 1, state.player.hpMax);
     player.mp = this.clamp(state.player.mp, 0, state.player.mpMax);
-    player.gold = Math.max(0, state.player.gold ?? player.gold);
+    player.gold = Math.max(0, state.rework ? player.gold + (state.player.gold ?? 0) - (state.reworkGoldBase ?? player.gold) : state.player.gold ?? player.gold);
     player.updatedAt = Date.now();
     await this.db.playerStates.put(player);
   }
@@ -7339,7 +7513,7 @@ export class BattleRepository {
     const key = workshopStatusKey(manifest.id, status.id);
     const duration = turns < 0 ? '本场战斗' : `${turns} 回合`;
     if (status.polarity === 'debuff') {
-      const applied = this.tryApplyDebuff(state, target, key, stacks, turns);
+      const applied = this.tryApplyDebuff(state, target, key, stacks, turns, { sourceId: 'player' });
       if (applied) {
         this.log(
           state,
@@ -7465,6 +7639,7 @@ export class BattleRepository {
             status,
             Math.max(1, amount),
             turns,
+            { sourceId: 'player' },
           );
         }
       }
@@ -7521,6 +7696,13 @@ export class BattleRepository {
     ) {
       throw new Error('当前战斗不存在或已经结束');
     }
+    if(session.state.rework){
+      if(!session.state.reworkTransaction){
+        const player=await this.db.playerStates.get(profileId);
+        if(player){session.state.player.gold=Math.max(0,(session.state.player.gold??0)+player.gold-(session.state.reworkGoldBase??player.gold));session.state.reworkGoldBase=player.gold;}
+      }
+      return session;
+    }
     for (const summon of session.state.player.summons) {
       this.normalizePlayerSummon(summon);
     }
@@ -7571,6 +7753,7 @@ export class BattleRepository {
   }
 
   private async save(session: BattleSessionRecord): Promise<void> {
+    if (session.state.rework) rework.sync(session.state);
     session.turn = session.state.turn;
     session.phase = session.state.phase;
     session.updatedAt = Date.now();
@@ -7666,7 +7849,7 @@ export class BattleRepository {
     turns: number,
     options: Pick<
       BattleTimedEffect,
-      'charges' | 'undispellable' | 'uncleanseable' | 'debuff'
+      'charges' | 'undispellable' | 'uncleanseable' | 'debuff' | 'sourceId'
     > = {},
   ): void {
     const existing = target[key];
@@ -7702,6 +7885,7 @@ export class BattleRepository {
       ...(options.undispellable ? { undispellable: true } : {}),
       ...(options.uncleanseable ? { uncleanseable: true } : {}),
       ...(options.debuff !== undefined ? { debuff: options.debuff } : {}),
+      ...(options.sourceId ? { sourceId: options.sourceId } : {}),
       fresh: true,
     });
     this.rebuildTimedEffect(target, key, instances);
@@ -7715,12 +7899,14 @@ export class BattleRepository {
     turns: number,
     options: Pick<
       BattleTimedEffect,
-      'charges' | 'undispellable' | 'uncleanseable' | 'debuff'
-    > = {},
+      'charges' | 'undispellable' | 'uncleanseable' | 'debuff' | 'sourceId'
+    > & { baseChance?: number } = {},
   ): boolean {
+    const sourceId = options.sourceId ?? this.activePlayerSummon?.id ?? 'player';
     const identity = this.combatantIdentity(state, target);
     const event = this.runWorkshopMechanisms(state, 'before_debuff', {
       status: key,
+      sourceId,
       target_side: identity.side,
       target_id: identity.id,
       target_is_player: identity.side === 'player' ? 1 : 0,
@@ -7738,7 +7924,24 @@ export class BattleRepository {
       );
       return false;
     }
-    this.addTimedEffect(target.debuffs, key, value, turns, options);
+    if (state.rework) {
+      const live = this.activeReworkState === state && Boolean(this.activeReworkCore);
+      const core = live ? this.activeReworkCore : rework.hydrate(state.rework);
+      rework.syncExternal(core, state);
+      const actors = [...core.allies, ...core.enemies];
+      const recipient = actors.find((actor: any) => actor.id === identity.id);
+      const source = actors.find((actor: any) => actor.id === sourceId) ?? core.player;
+      if (recipient && source.side !== recipient.side) {
+        const chance = core.effectChance(source, recipient, { baseChance: options.baseChance ?? 100 });
+        const success = core.effectRng() < chance;
+        if (!live) state.rework = rework.snapshot(core);
+        if (!success) {
+          this.log(state, 'system', (target.name ?? '目标') + ' 抵抗了 ' + key);
+          return false;
+        }
+      }
+    }
+    this.addTimedEffect(target.debuffs, key, value, turns, { ...options, sourceId });
     return true;
   }
 
@@ -7774,6 +7977,7 @@ export class BattleRepository {
       ...(index === 0 && effect.charges !== undefined
         ? { charges: this.number(effect.charges) }
         : {}),
+      ...(effect.sourceId ? { sourceId: effect.sourceId } : {}),
       ...(effect.debuff !== undefined ? { debuff: effect.debuff } : {}),
       ...(effect.fresh ? { fresh: true } : {}),
       ...(effect.undispellable ? { undispellable: true } : {}),
@@ -7901,6 +8105,7 @@ export class BattleRepository {
       key,
       value,
       Math.max(1, thornsDebuff.turns),
+      { sourceId: this.combatantIdentity(state, target).id },
     );
     this.log(state, 'player', `荆棘反制：${enemy.name} 获得 ${key} ${value}`);
   }

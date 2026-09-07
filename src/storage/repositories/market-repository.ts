@@ -1,3 +1,4 @@
+import { scaleReworkEquipment } from '@/battle/rework/equipment';
 import {
   loadMarketCatalogs,
   type MarketCatalogs,
@@ -12,7 +13,7 @@ import type {
   MarketStateRecord,
   MarketView,
 } from '@/domain/types';
-import { scaleEquipmentStatsByStars } from '@/equipment-stats';
+import { equipmentInstanceDescription, scaleEquipmentStatsByStars } from '@/equipment-stats';
 import type { CaelianDatabase } from '@/storage/database';
 import { GLOBAL_ACHIEVEMENT_PROFILE_ID } from '@/achievements/catalog';
 import {
@@ -98,7 +99,16 @@ export class MarketRepository {
     const listings = [
       ...regionState.inventory.listings,
       ...cardState.inventory.listings,
-    ].filter((listing) => listing.stock > 0);
+    ].filter((listing) => listing.stock > 0).map((listing) => {
+      const id = listing.refId ?? listing.itemId;
+      const definition = this.catalog().equipment[id];
+      if (listing.kind === 'equipment' && definition) {
+        const stars = listing.stars ?? 1;
+        return { ...listing, detail: this.equipmentDetail(definition, stars, scaleReworkEquipment(definition.stats, stars, player.level, definition.rarity)) };
+      }
+      const card = this.catalog().commonCards[id];
+      return listing.kind === 'card' && card ? { ...listing, detail: this.cardDetail(card) } : listing;
+    });
     const isMerchant =
       player.classMain === 'merchant' || player.subclass === 'merchant';
     const localMarketItems = this.localMarketItemKeys(regionState);
@@ -530,7 +540,7 @@ export class MarketRepository {
         level,
         `${refreshKey}:${regionId}:eqstar:${equipment.id}`,
       );
-      const stats = scaleEquipmentStatsByStars(equipment.stats, stars);
+      const stats = scaleReworkEquipment(equipment.stats, stars, level, equipment.rarity);
       candidates.push({
         key: `equipment:${equipment.id}:s${stars}`,
         kind: 'equipment',
@@ -851,12 +861,15 @@ export class MarketRepository {
     }
     const id = `${profileId}:${cardId}`;
     const current = await this.db.ownedCards.get(id);
+    const player = await this.db.playerStates.get(profileId);
     await this.db.ownedCards.put({
+      ...current,
       id,
       profileId,
       cardId,
       quantity: (current?.quantity ?? 0) + 1,
       source: current?.source ?? 'market',
+      stars: current?.stars ?? player?.cardStars?.[cardId] ?? 1,
       updatedAt: Date.now(),
     });
   }
@@ -944,18 +957,9 @@ export class MarketRepository {
     regionId: string,
     refreshKey: string,
   ): number {
-    const stats = Object.values(equipment.stats).reduce(
-      (total, value) => total + Math.max(0, Number(value || 0)),
-      0,
-    );
-    const base = Math.max(
-      80,
-      Math.round(
-        (120 + stats * 42) *
-          rarityMultiplier(equipment.rarity) *
-          (1 + (equipment.stars - 1) * 0.85),
-      ),
-    );
+    const definition=this.catalog().equipment[equipment.baseId];
+    const legacyStats=equipment.legacyStats??equipment.equipmentSourceStats??equipment.stats;
+    const base=definition?equipmentPrice(definition,equipment.stars):Math.max(80,Math.round((120+Object.values(legacyStats).reduce((sum,value)=>sum+Math.max(0,Number(value)||0),0)*42)*rarityMultiplier(equipment.rarity)*(1+(equipment.stars-1)*.85)));
     return Math.max(
       1,
       Math.round(
@@ -1018,17 +1022,7 @@ export class MarketRepository {
     stars: number,
     stats: Record<string, number>,
   ): string {
-    const statText = Object.entries(stats)
-      .map(([key, value]) => `${key}+${value}`)
-      .join('、');
-    return [
-      `${equipment.description}（${starText(stars)}${
-        stars > 1 ? '，属性已提升' : ''
-      }）`,
-      statText ? `词条：${statText}` : '',
-    ]
-      .filter(Boolean)
-      .join('｜');
+    return equipmentInstanceDescription({ stats, description: equipment.description }) + '（' + starText(stars) + '）';
   }
 
   private cardDetail(card: {

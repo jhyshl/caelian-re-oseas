@@ -1,3 +1,4 @@
+import * as runtime from '@/battle/rework/runtime/api.mjs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
@@ -585,51 +586,57 @@ describe('创意工坊自定义状态与资源', () => {
     session.state.player.shield = 0;
     session.state.player.attack = 0;
     session.state.player.defense = 0;
-    session.state.enemies[0]!.definitionId = 'mon_goblin';
-    session.state.enemies[0]!.intent = {
-      skillId: 'debuff_weak',
-      name: '虚弱打击',
-      kind: '减益',
-      description: '测试标准减益免疫。',
-      amount: 1,
-      hits: 1,
+    session.state.player.critRate = 0;
+    session.state.player.speed = 10000;
+    session.state.enemies[0]!.speed = 0;
+    const lockNativeTestSkill = (name: string, effects: Array<Record<string, unknown>>): void => {
+      const core = runtime.hydrate(session.state.rework);
+      runtime.syncExternal(core, session.state);
+      const enemy = core.enemies[0];
+      const basic = enemy.definition.skills[0];
+      enemy.definition = { ...enemy.definition, skills: [{
+        ...basic, id: 'workshop-native-fixture', name, priority: 100,
+        condition: '总是', cooldown: 0, cooldownGroup: 'fixture', target: 'enemy', effects,
+      }] };
+      runtime.planActor(core, enemy);
+      runtime.project(core, session.state);
     };
+    lockNativeTestSkill('标准减益免疫测试', [{
+      type: 'debuff', status: 'weak', value: 20, valueUnit: 'percent',
+      turns: 2, baseChance: 100, target: 'enemy',
+    }]);
     await database.battleSessions.put(session);
     await battles.endTurn(profile.id, battleId);
     session = (await database.battleSessions.get(battleId))!;
     expect(session.state.player.debuffs.weak).toBeUndefined();
     expect(session.state.player.hp).toBe(54);
     expect(session.state.player.shield).toBe(8);
-    expect(session.state.player.buffs[guardKey]?.turns).toBe(3);
-    expect(session.state.player.debuffs[rotKey]?.turns).toBe(3);
+    expect(session.state.player.buffs[guardKey]?.turns).toBe(2);
+    expect(session.state.player.debuffs[rotKey]?.turns).toBe(2);
 
     session.state.enemies[0]!.hp = 100;
     session.state.enemies[0]!.hpMax = 500;
     session.state.enemies[0]!.defense = 0;
     await database.battleSessions.put(session);
     await play('status_damage');
-    expect(session.state.enemies[0]!.hp).toBe(80);
+    expect(session.state.enemies[0]!.hp).toBe(84);
 
     session.state.player.hp = 50;
     session.state.player.shield = 0;
     session.state.player.defense = 0;
-    session.state.enemies[0]!.definitionId = 'workshop_dummy';
+    session.state.player.speed = 0;
+    session.state.enemies[0]!.speed = 10000;
     session.state.enemies[0]!.attack = 20;
-    session.state.enemies[0]!.intent = {
-      skillId: 'workshop-test-hit',
-      name: '测试攻击',
-      kind: 'attack',
-      description: '测试减伤。',
-      amount: 20,
-      hits: 1,
-    };
+    lockNativeTestSkill('固定20基础攻击', [{
+      type: 'damage', flat: 0, atk: 1, hits: 1, crit: false, target: 'enemy',
+    }]);
     await database.battleSessions.put(session);
     await battles.endTurn(profile.id, battleId);
     session = (await database.battleSessions.get(battleId))!;
-    expect(session.state.player.hp).toBe(49);
+    expect(session.state.player.hp).toBe(44);
     expect(session.state.player.shield).toBe(8);
-    expect(session.state.player.buffs[guardKey]?.turns).toBe(2);
-    expect(session.state.player.debuffs[rotKey]?.turns).toBe(2);
+    expect(session.state.player.buffs[guardKey]?.turns).toBe(1);
+    expect(session.state.player.debuffs[rotKey]?.turns).toBe(1);
 
     await play('status_cleanse');
     expect(session.state.player.debuffs[rotKey]).toBeUndefined();
@@ -799,6 +806,8 @@ describe('创意工坊自定义状态与资源', () => {
       .equals(profile.id)
       .first())!;
     const battleId = session.id;
+    session.state.player.critRate = 0;
+    await database.battleSessions.put(session);
     const resourceKey = `${resource.id}:energy`;
     let sequence = 0;
     const play = async (cardId: string): Promise<void> => {
