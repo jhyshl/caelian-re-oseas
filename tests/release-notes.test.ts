@@ -157,10 +157,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.16.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.17.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.17',
       'Beta 1.16',
       'Beta 1.15',
       'Beta 1.14',
@@ -180,9 +181,18 @@ describe('release notes', () => {
       'Beta 1.0',
     ]);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('强制模拟评定');
-    expect(latestText).toContain('职业与构筑');
-    expect(latestText).toContain('直接公开');
+    expect(latestText).toContain('战斗系统重置');
+    expect(latestText).toContain('卡牌升星统一放在合成台');
+    expect(latestText).toContain('2000金币');
+    expect(latestText).toContain('跨城货运');
+    expect(latestText).toContain('捕兽夹');
+    expect(latestText).toContain('完成节点');
+    const beta116Text = releases
+      .find((release) => release.version === '1.16.0-beta.1')
+      ?.changes.join('\n');
+    expect(beta116Text).toContain('强制模拟评定');
+    expect(beta116Text).toContain('职业与构筑');
+    expect(beta116Text).toContain('直接公开');
     const beta115Text = releases
       .find((release) => release.version === '1.15.0-beta.1')
       ?.changes.join('\n');

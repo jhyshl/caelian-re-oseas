@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,7 +33,7 @@ function gitBuildId() {
   return dirty ? `${sha}-dirty` : sha;
 }
 
-function preserveAlphaVersionForCommit() {
+function preserveAlphaForCommit() {
   try {
     return execFileSync('git', ['log', '-1', '--pretty=%B'], {
       cwd: root,
@@ -65,15 +65,52 @@ function nextAlphaVersion(buildId) {
     if (previous.buildId === buildId && alphaNumber(previous.version)) {
       return previous.version;
     }
-    if (preserveAlphaVersionForCommit() && alphaNumber(previous.version)) {
-      return previous.version;
-    }
     const current = alphaNumber(previous.version) ?? alphaNumber(fallback);
     if (!current) return fallback;
     return `${current.major}.${current.minor}.${current.patch}-alpha.${current.sequence + 1}`;
   } catch {
     return fallback;
   }
+}
+
+// A Beta-only publication must retain the deployed Alpha manifest and assets,
+// not produce different bytes under the same Alpha version.
+if (channel === 'alpha' && preserveAlphaForCommit()) {
+  const previous = JSON.parse(
+    readFileSync(path.join(root, 'dist', 'channels', 'alpha.json'), 'utf8'),
+  );
+  if (
+    previous.channel !== 'alpha' ||
+    !alphaNumber(previous.version) ||
+    !/^[a-zA-Z0-9._-]+$/.test(previous.buildId ?? '') ||
+    !previous.modules?.runtime?.css?.length
+  ) {
+    throw new Error('Cannot preserve Alpha: the restored manifest is invalid.');
+  }
+  const buildRoot = path.join(root, 'dist', 'builds', previous.buildId);
+  const files = [path.join(buildRoot, 'index.html')];
+  const runtime = previous.modules.runtime;
+  for (const asset of [runtime, ...runtime.css]) {
+    const assetPath = new URL(asset.url).pathname;
+    const prefix = '/builds/' + previous.buildId + '/';
+    const start = assetPath.indexOf(prefix);
+    if (start < 0) {
+      throw new Error('Cannot preserve Alpha: an asset references another build.');
+    }
+    const localPath = path.resolve(buildRoot, assetPath.slice(start + prefix.length));
+    if (!localPath.startsWith(buildRoot + path.sep)) {
+      throw new Error('Cannot preserve Alpha: an asset path is outside its build.');
+    }
+    files.push(localPath);
+  }
+  for (const file of files) {
+    const info = statSync(file);
+    if (!info.isFile() || !info.size) {
+      throw new Error('Cannot preserve Alpha: a restored artifact is missing or empty.');
+    }
+  }
+  console.log('Preserved Alpha ' + previous.version + ' (' + previous.buildId + ')');
+  process.exit(0);
 }
 
 const baseBuildId = process.env.CAELIAN_BUILD_ID || gitBuildId();
