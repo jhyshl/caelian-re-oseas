@@ -9,6 +9,15 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.75',
+    label: 'Alpha 75',
+    releasedAt: '2026-09-08',
+    changes: [
+      '创意工坊移除职业、怪物与Boss专属技能、资源标记和阶段标记，只保留41个可独立生效的通用效果积木；停止从技能目录自动汇总，不转换为模板。',
+      '通用效果保留嘲讽、迅捷、控制、属性增减、伤害增减、治疗、再生、反伤和持续伤害。自定义名称仍可复用通用效果，基础积木与组合规则使用同一效果清单。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.74',
     label: 'Alpha 74',
     releasedAt: '2026-09-08',
@@ -792,6 +801,15 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 ] as const;
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.19.0-beta.1',
+    label: 'Beta 1.19',
+    releasedAt: '2026-09-08',
+    changes: [
+      '创意工坊移除职业、怪物与Boss专属技能、资源标记和阶段标记，只保留41个可独立生效的通用效果积木；停止从技能目录自动汇总，不转换为模板。',
+      '通用效果保留嘲讽、迅捷、控制、属性增减、伤害增减、治疗、再生、反伤和持续伤害。自定义名称仍可复用通用效果，基础积木与组合规则使用同一效果清单。',
+    ],
+  },
   {
     version: '1.18.0-beta.1',
     label: 'Beta 1.18',

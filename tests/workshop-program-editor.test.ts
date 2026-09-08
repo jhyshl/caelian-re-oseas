@@ -12,7 +12,7 @@ describe('通用积木编辑器交互',()=>{
   const picker=host.querySelector<HTMLSelectElement>('.template-actions select')!;picker.value=WORKSHOP_RULE_EXAMPLES[5]!.id;picker.dispatchEvent(new Event('change'));await nextTick();
   expect(draft.value.id).toBe(originalId);expect(draft.value.statuses[0]!.modifiers[0]!.status).toBe('freeze');
   const name=host.querySelector<HTMLInputElement>('.rule-status header input')!;name.value='晶化';name.dispatchEvent(new Event('input'));await nextTick();expect(draft.value.statuses[0]!.name).toBe('晶化');
-  const effects=[...host.querySelectorAll<HTMLOptionElement>('.rule-modifier select option')].map(e=>e.value);expect(effects).toContain('taunt');expect(effects).toContain('荆棘反击');
+  const effects=[...host.querySelectorAll<HTMLOptionElement>('.rule-modifier select option')].map(e=>e.value);expect(effects).toContain('taunt');expect(effects).toContain('thorns');expect(effects).not.toContain('荆棘反击');expect(effects).not.toContain('dragon_soul');expect(effects).not.toContain('exam_overload');
   [...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='复制')!.click();await nextTick();expect(draft.value.rules[0]!.steps).toHaveLength(2);expect(draft.value.rules[0]!.steps[0]).not.toBe(draft.value.rules[0]!.steps[1]);
   [...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='保存组合模板')!.click();await nextTick();
   const saved=readRuleTemplates()[0]!;expect(saved.statuses[0]!.name).toBe('晶化');expect(normalizeRuleProgram(JSON.parse(JSON.stringify(saved)))).toEqual(normalizeRuleProgram(draft.value));

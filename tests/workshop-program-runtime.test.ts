@@ -6,6 +6,7 @@ import { installWorkshopPrograms } from '@/battle/workshop-program-runtime';
 import { WORKSHOP_RULE_EXAMPLES } from '@/workshop-program-templates';
 import { normalizeRuleProgram, emptyRuleProgram, type RuleProgram } from '@/workshop-program';
 import { WORKSHOP_STATUS_LIBRARY } from '@/workshop-status-library';
+import { normalizeCardEffect } from '@/workshop';
 function fixture(){
   const stats={hp:1000,attack:100,defense:0,speed:100,crit:0,critDamage:50,ehr:0,res:0};
   const p=actor('player','player',20,stats),e=actor('enemy','enemy',20,stats),g=makeGame(p,[e],{trace:true});
@@ -15,7 +16,7 @@ function fixture(){
 }
 const example=(index:number)=>normalizeRuleProgram(structuredClone(WORKSHOP_RULE_EXAMPLES[index]));
 describe('通用工坊组合规则',()=>{
-  it('示例都是相同格式的普通规则，状态库开放嘲讽、冻结和怪物效果',()=>{
+  it('示例使用普通规则，状态库保留独立实现的通用效果',()=>{
     for(const p of WORKSHOP_RULE_EXAMPLES)expect(normalizeRuleProgram(p).version).toBe(2);
     expect(WORKSHOP_STATUS_LIBRARY.map(s=>s.id)).toEqual(expect.arrayContaining(['taunt','freeze','petrify','vulnerable','direct_damage_reduction']));
   });
@@ -67,14 +68,66 @@ describe('通用工坊组合规则',()=>{
     const p=emptyRuleProgram();p.rules[0]!.steps=[{type:'set',key:'__proto__',value:1}];expect(()=>normalizeRuleProgram(p)).toThrow();
     (p as RuleProgram).rules[0]!.steps=[{type:'damage',value:Infinity}];expect(()=>normalizeRuleProgram(p)).toThrow();
   });
-  it('复用中文弱化、控制和百分数防御效果时保留原技能规范编号',()=>{
+  it('通用防御、易伤和控制效果直接参与战斗结算',()=>{
     const {g,p,e,r}=fixture();p.stats.defense=100;
-    r.nativeStatus(p,p,'防御提高%',15,2);expect(g.stat(p,'defense')).toBeCloseTo(115);
-    r.nativeStatus(p,e,'易伤：直接受伤增加%',15,2);expect(g.statusRatio(e,'vulnerable')).toBeCloseTo(.15);
-    r.nativeStatus(p,e,'封邪：强控',1,1);expect(g.beginPhase(e)).toBe(false);
+    r.nativeStatus(p,p,'defense_up',.15,2);expect(g.stat(p,'defense')).toBeCloseTo(115);
+    r.nativeStatus(p,e,'vulnerable',.15,2);expect(g.statusRatio(e,'vulnerable')).toBeCloseTo(.15);
+    r.nativeStatus(p,e,'hard_control',1,1);expect(g.beginPhase(e)).toBe(false);
   });
-  it('复用荆棘反击保留原技能复合效果且同回合只触发一次',()=>{
-    const {g,p,e,r}=fixture();r.nativeStatus(p,p,'荆棘反击',1,2);g.rawHit(e,p,50);expect(e.hp).toBe(958);g.rawHit(e,p,50);expect(e.hp).toBe(958);
+  it('通用反伤使用填写的数值，不携带职业技能复合效果',()=>{
+    const {g,p,e,r}=fixture();r.nativeStatus(p,p,'thorns',12,2);g.rawHit(e,p,50);expect(e.hp).toBe(988);g.rawHit(e,p,50);expect(e.hp).toBe(976);
+  });
+  it.each(['dragon_soul','holy_sigil','monster_frenzy','exam_overload','furnace_heat','mirror_record','wet','damage_immune','荆棘反击','封邪：强控'])(
+    '专属技能和无独立效果标记 %s 不再作为工坊积木提供', id=>{
+      expect(WORKSHOP_STATUS_LIBRARY.some(s=>s.id===id)).toBe(false);
+      const program=emptyRuleProgram();program.rules[0]!.steps=[{type:'native_status',status:id,value:1}];
+      expect(()=>normalizeRuleProgram(program)).toThrow('已有状态效果');
+      expect(()=>normalizeCardEffect({type:'apply_buff',nativeStatus:true,buff:id,value:1})).toThrow('状态效果不存在');
+      const {p,e,r}=fixture();expect(()=>r.nativeStatus(p,e,id,1)).toThrow('未知状态效果');
+    },
+  );
+  it.each([
+    ['strength','attack',100,20,120],['fortitude','defense',100,20,120],
+    ['attack_up','attack',100,.2,120],['defense_up','defense',100,.2,120],
+    ['speed_up','speed',100,.2,120],['swift','speed',100,2,140],
+    ['armor_break','defense',100,.2,80],['speed_down','speed',100,.2,80],
+    ['效果抵抗增加','res',10,.2,30],
+  ] as const)('通用属性效果 %s 修改实际属性',(id,stat,base,value,expected)=>{
+    const {g,p,r}=fixture();p.stats[stat]=base;r.nativeStatus(p,p,id,value,2);expect(g.stat(p,stat)).toBeCloseTo(expected);
+  });
+  it.each([['direct_damage_up',120],['direct_damage_reduction',80],['weak',80],['fear',80],['vulnerable',120]] as const)(
+    '通用伤害效果 %s 修改实际伤害',(id,expected)=>{
+      const {g,p,e,r}=fixture();r.nativeStatus(p,['direct_damage_reduction','vulnerable'].includes(id)?e:p,id,.2,2);g.damage(p,e,{kind:'damage',flat:100,crit:false});expect(e.hp).toBeCloseTo(1000-expected);
+    },
+  );
+  it('通用闪避、治疗、护盾增减和保命效果独立生效',()=>{
+    const {g,p,e,r}=fixture();r.nativeStatus(p,e,'evasion_up',.2,2);r.nativeStatus(p,e,'evasion_down',.1,2);expect(g.evasion(p,e)).toBeCloseTo(.15);
+    p.hp=300;r.nativeStatus(p,p,'治疗量增加',.2,2);r.nativeStatus(p,p,'治疗与护盾提高%',.2,2);r.nativeStatus(e,p,'healing_down',.5,2);expect(g.heal(p,p,100)).toBeCloseTo(70);expect(g.shield(p,p,100)).toBeCloseTo(120);
+    p.shield=0;r.nativeStatus(p,p,'death_save',1,2);g.rawHit(e,p,2000);expect(p.hp).toBe(1);g.rawHit(e,p,2000);expect(p.hp).toBe(0);
+  });
+  it.each(['regen','heal_regen','shield_regen','ap_regen','draw_regen','mp_regen'])(
+    '通用回合效果 %s 在下次行动开始执行',id=>{
+      const {g,p,r}=fixture();p.hp=400;p.ap=3;p.resources.mp=0;p.deck=[{id:'draw-one',uid:'draw-one'},{id:'draw-two',uid:'draw-two'}];
+      r.nativeStatus(p,p,id,2,2);g.beginPhase(p);
+      if(['regen','heal_regen'].includes(id))expect(p.hp).toBe(402);
+      if(id==='shield_regen')expect(p.shield).toBe(2);
+      if(id==='ap_regen')expect(p.ap).toBe(5);
+      if(id==='draw_regen')expect(p.hand).toHaveLength(2);
+      if(id==='mp_regen')expect(p.resources.mp).toBe(2);
+    },
+  );
+  it.each(['burn','poison','bleed','corrosion','curse'])(
+    '通用持续伤害 %s 按攻击快照结算',id=>{
+      const {g,p,e,r}=fixture();r.nativeStatus(p,e,id,.35,2);p.stats.attack=500;g.beginPhase(e);g.endPhase(e);expect(e.hp).toBe(965);
+    },
+  );
+  it.each(['freeze','stun','petrify','sleep','hard_control'])(
+    '通用控制 %s 阻止下一次行动',id=>{
+      const {g,p,e,r}=fixture();r.nativeStatus(p,e,id,1,1);expect(g.beginPhase(e)).toBe(false);g.endPhase(e);expect(g.beginPhase(e)).toBe(true);
+    },
+  );
+  it('受击抽牌、防御反震和反击独立触发',()=>{
+    const {g,p,e,r}=fixture();p.stats.defense=100;p.shield=100;p.deck=[{id:'draw',uid:'draw'}];r.nativeStatus(p,p,'on_hit_draw',1,2);r.nativeStatus(p,p,'defense_reflect',1,2);r.nativeStatus(p,p,'counterattack',1,2);g.rawHit(e,p,20);expect(p.hand).toHaveLength(1);expect(e.hp).toBe(910);
   });
   it('逐目标循环命中各目标，单体攻击遵守嘲讽，自身伤害保持自身目标',()=>{
     const {g,p,e,r}=fixture();const other=actor('second','enemy',20,{...e.stats,hp:1000});g.enemies.push(other);r.nativeStatus(e,e,'taunt',1,1);
@@ -82,7 +135,7 @@ describe('通用工坊组合规则',()=>{
     program.rules[0]!.steps=[{type:'damage',target:'target',value:10,crit:false},{type:'damage',target:'self',value:5,crit:false}];r.cast(program,p.id,other.id);expect(e.hp).toBe(980);expect(other.hp).toBe(990);expect(p.hp).toBe(995);
   });
   it('DOT只继承攻击快照，不受暴击属性变化影响',()=>{
-    const {g,p,e,r}=fixture();p.stats.crit=100;p.stats.critDamage=250;r.nativeStatus(p,e,'中毒',.35,2);p.stats.attack=1000;g.beginPhase(e);g.endPhase(e);expect(e.hp).toBe(965);expect(g.totals.crits).toBe(0);
+    const {g,p,e,r}=fixture();p.stats.crit=100;p.stats.critDamage=250;r.nativeStatus(p,e,'poison',.35,2);p.stats.attack=1000;g.beginPhase(e);g.endPhase(e);expect(e.hp).toBe(965);expect(g.totals.crits).toBe(0);
   });
   it('零伤害拦截真正抵消本次伤害，不强制造成1点',()=>{
     const {g,p,e,r}=fixture();const program=emptyRuleProgram();program.rules=[{id:'nullify',event:'before_damage',once:'never',priority:0,costs:[],steps:[{type:'event_set',field:'amount',value:0}]}];r.roots=[{program}];g.damage(e,p,{kind:'damage',flat:100});expect(p.hp).toBe(1000);

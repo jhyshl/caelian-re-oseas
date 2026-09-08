@@ -9,12 +9,14 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.74');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.75');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.74');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.75');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
-    expect(releases[0]?.changes.join('\n')).toContain('组合规则');
+    expect(releases[0]?.changes.join('\n')).toContain('41个可独立生效');
+    expect(releases[0]?.changes.join('\n')).toContain('不转换为模板');
+    expect(releases.find(r=>r.version==='0.2.0-alpha.74')?.changes.join('\n')).toContain('组合规则');
     expect(releases.find(r=>r.version==='0.2.0-alpha.73')?.changes.join('\n')).toContain('双击怪物');
     const resetText = releases.find(r => r.version === '0.2.0-alpha.72')?.changes.join('\n') ?? '';
     expect(resetText).toContain('迅捷');
@@ -164,10 +166,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.18.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.19.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.19',
       'Beta 1.18',
       'Beta 1.17',
       'Beta 1.16',
@@ -188,7 +191,9 @@ describe('release notes', () => {
       'Beta 1.1',
       'Beta 1.0',
     ]);
-    const latestText = releases[0]?.changes.join('\n') ?? '';
+    expect(releases[0]?.changes.join('\n')).toContain('41个可独立生效');
+    expect(releases[0]?.changes.join('\n')).toContain('不转换为模板');
+    const latestText = releases.find(r=>r.version==='1.18.0-beta.1')?.changes.join('\n') ?? '';
     expect(latestText).toContain('组合规则');
     expect(latestText).toContain('玩家开放嘲讽');
     expect(latestText).toContain('石化');
@@ -279,13 +284,13 @@ describe('release notes', () => {
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.999')[0]?.version).toBe(
-      '0.2.0-alpha.74',
+      '0.2.0-alpha.75',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.74',
+      '0.2.0-alpha.75',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });
