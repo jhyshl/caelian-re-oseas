@@ -3,6 +3,7 @@ import type { GameSnapshot, LocalBattleState } from '@/domain/types';
 import { describeReworkEffects, reworkCard, type ReworkEffect, type CardDisplayStats } from './rework/catalog';
 import { scaleWorkshopCard } from '@/workshop-stars';
 import { roundNumbersInText } from '@/ui/format-number';
+import { describeRuleProgram, type RuleProgram } from '@/workshop-program';
 
 function revealsIntent(raw: unknown): boolean {
   if (!raw || typeof raw !== 'object') return false;
@@ -30,6 +31,7 @@ export function battleCardText(card: CardDefinition, stars: number, state: Local
   if (native) return cleanCombatCopy(describeReworkEffects(native.effects, stars, stats));
   const scaled = scaleWorkshopCard(card, stars);
   const toEffect = (effect: CardEffect): ReworkEffect => {
+    if(effect.type==='rule_program')return {kind:'utility',text:describeRuleProgram(effect.program as RuleProgram,{self:{...stats,hp:state.player.hp,hpMax:state.player.hpMax,shield:state.player.shield,ap:state.player.ap},target:state.enemies[state.selectedTarget] as unknown as Record<string,number>,star:stars})};
     const next = { ...effect, kind: effect.type } as ReworkEffect;
     const scaling = effect.scaling as { stat?: string; percent?: number } | undefined;
     const attr: Record<string, number> = { attack: stats.attack, defense: stats.defense, hp: state.player.hp, shield: state.player.shield, mp: state.player.mp };

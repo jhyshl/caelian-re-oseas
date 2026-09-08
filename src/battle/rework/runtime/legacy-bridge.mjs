@@ -29,7 +29,7 @@ Object.assign(aliases,{agility:'swift','敏捷':'swift','迅捷':'swift'});
 /** Exactly matches api.timed: aggregated presentation only, never a source of timers. */
 export function projectLegacyTimed(actor,list){
  const out={};for(const effect of list){const key=keyOf(effect),rawTurns=effect.remaining??Math.max(1,(effect.expireAtPhase??actor.phaseCount+1)-actor.phaseCount),turns=Number.isFinite(rawTurns)?rawTurns:-1,value=effect.snapshotDamage??(effect.valueUnit==='ratio'?(effect.value??0)*100:effect.value??1);
-  if(!out[key])out[key]={value,turns,stacks:1};else{out[key].value=key.startsWith('workshop_status:')?out[key].value+value:Math.max(out[key].value,value);out[key].turns=Math.max(out[key].turns,turns);out[key].stacks++;}
+  if(!out[key])out[key]={value,turns,stacks:1,...(effect.ruleLabel?{ruleLabel:effect.ruleLabel,ruleData:structuredClone(effect.ruleData)}:{}),...(effect.ruleHidden?{ruleHidden:true}:{})};else{out[key].value=key.startsWith('workshop_status:')?out[key].value+value:Math.max(out[key].value,value);out[key].turns=Math.max(out[key].turns,turns);out[key].stacks++;}
  }return out;
 }
 function comparable(v){if(!v)return '';return JSON.stringify({value:v.value,turns:v.turns,stacks:v.stacks??1,charges:v.charges,instances:v.instances?.map(i=>({value:i.value,turns:i.turns,charges:i.charges,fresh:i.fresh,undispellable:i.undispellable,uncleanseable:i.uncleanseable}))});}

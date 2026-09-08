@@ -2,6 +2,8 @@
 /* global structuredClone */
 /* eslint-disable vue/no-mutating-props */
 import { computed } from 'vue';
+import WorkshopProgramEditor from './WorkshopProgramEditor.vue';
+import { WORKSHOP_STATUS_LIBRARY } from '@/workshop-status-library';
 import {
   WORKSHOP_EFFECT_OPTIONS,
   WORKSHOP_SCALING_STATS,
@@ -22,6 +24,7 @@ interface WorkshopStatusOption {
   polarity: 'buff' | 'debuff';
 }
 
+function selectNativeStatus():void{const effect=props.effect,option=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===(effect.buff??effect.debuff));if(!option)return;effect.nativeStatus=true;effect.value=option.value;}
 const props = defineProps<{
   effect: EditableEffect;
   nested?: boolean;
@@ -292,7 +295,8 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
       </button>
     </header>
 
-    <div v-if="effect.type === 'apply_workshop_status'" class="effect-fields">
+    <WorkshopProgramEditor v-if="effect.type === 'rule_program'" v-model="effect.program" />
+    <div v-else-if="effect.type === 'apply_workshop_status'" class="effect-fields">
       <label>
         <span>自定义状态</span>
         <select
@@ -431,34 +435,14 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
       </label>
       <label v-if="effect.type === 'apply_buff'">
         <span>增益</span>
-        <select v-model="effect.buff">
-          <option value="strength">力量</option>
-          <option value="fortitude">坚韧</option>
-          <option value="swift">迅捷（每层＋20%速度）</option>
-          <option value="regen">再生</option>
-          <option value="thorns">反伤</option>
-          <option value="ap_regen">回能</option>
-          <option value="draw_regen">灵感</option>
-          <option value="shield_regen">护佑</option>
-          <option value="heal_regen">愈合</option>
-          <option value="damage_bonus">增伤</option>
-          <option value="spell_damage_bonus">法术强化</option>
-          <option value="damage_reduce">减伤</option>
-          <option value="mp_regen">每回合魔力</option>
-          <option value="blood_burn">烧血</option>
-          <option value="defense_reflect">防反</option>
-          <option value="counterattack">反击</option>
+        <select v-model="effect.buff" @change="selectNativeStatus">
+          <option v-for="s in WORKSHOP_STATUS_LIBRARY.filter(s=>s.polarity==='buff')" :key="s.id" :value="s.id">{{ s.name }}</option>
         </select>
       </label>
       <label v-if="effect.type === 'apply_debuff'">
         <span>减益</span>
-        <select v-model="effect.debuff">
-          <option value="burn">灼烧</option>
-          <option value="poison">中毒</option>
-          <option value="weak">虚弱</option>
-          <option value="vulnerable">易伤</option>
-          <option value="freeze">冻结</option>
-          <option value="entangle">缠绕</option>
+        <select v-model="effect.debuff" @change="selectNativeStatus">
+          <option v-for="s in WORKSHOP_STATUS_LIBRARY.filter(s=>s.polarity==='debuff')" :key="s.id" :value="s.id">{{ s.name }}</option>
         </select>
       </label>
       <label v-if="hasTarget">

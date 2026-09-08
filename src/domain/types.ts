@@ -361,6 +361,9 @@ export type BattleStatus =
   | 'surrendered';
 
 export interface BattleTimedEffectInstance {
+  ruleLabel?: string;
+  ruleData?: Record<string, unknown>;
+  ruleHidden?: boolean;
   sourceId?: string;
   value: number;
   turns: number;
@@ -382,6 +385,7 @@ export interface BattleTimedEffect extends BattleTimedEffectInstance {
 }
 
 export interface BattleCardInstance {
+  ruleCost?: number;
   instanceId: string;
   cardId: string;
   stars?: number;
@@ -631,6 +635,7 @@ export interface BattleAnimationEvent {
 }
 
 export interface LocalBattleState {
+  workshopRuleTrace?: Array<{turn:number;name:string;event:string;message:string}>;
   schemaVersion: 1;
   /** Serializable graph with recoverable RNG streams; never projected to AI MVU. */
   rework?: unknown;

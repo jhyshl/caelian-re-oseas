@@ -51,6 +51,9 @@ import {
   type WorkshopMainClass,
 } from '@/workshop';
 
+import WorkshopProgramEditor from './WorkshopProgramEditor.vue';
+import { emptyRuleProgram } from '@/workshop-program';
+
 type EditableEffect = CardEffect & Record<string, any>;
 import WorkshopStarEditor from '@/modules/deck/WorkshopStarEditor.vue';
 import { DEFAULT_STAR_SCALING, type WorkshopStarScaling } from '@/workshop-stars';
@@ -344,6 +347,7 @@ function loadDraft(draft: WorkshopDraft): void {
 function addTalent(type: string): void {
   if (editor.value.talent.effects.length >= 4) return;
   const customType = [
+    'rule_program',
     'apply_workshop_status',
     'workshop_resource_change',
   ].includes(type);
@@ -367,6 +371,7 @@ function addTalent(type: string): void {
     hand_limit_bonus: 5,
   };
   const effect: EditableEffect = { type };
+  if(type==='rule_program'){effect.program=emptyRuleProgram();effect.program.rules[0].event='battle_start';editor.value.talent.effects.push(effect);return;}
   if (type === 'apply_workshop_status') {
     const option = workshopStatusOptions.value[0];
     if (!option) {
@@ -527,7 +532,7 @@ function addBuiltEffect(effect: CardEffect): void {
     return;
   }
   error.value = '';
-  card.effects.push(cloneData(effect) as EditableEffect);
+  card.effects.push((effect.type==='rule_program'?{...cloneData(effect),program:{...cloneData(effect.program as Record<string,unknown>),id:emptyRuleProgram().id}}:cloneData(effect)) as EditableEffect);
   if (
     ['workshop_resource_change', 'apply_workshop_status'].includes(
       effect.type,
@@ -1279,7 +1284,8 @@ watch(() => props.initialCardId, (id) => {
                     )?.[1]
                   }}
                 </strong>
-                <template v-if="effect.type === 'apply_workshop_status'">
+                <WorkshopProgramEditor v-if="effect.type === 'rule_program'" v-model="effect.program" />
+                <template v-else-if="effect.type === 'apply_workshop_status'">
                   <label>
                     <span>自定义状态</span>
                     <select

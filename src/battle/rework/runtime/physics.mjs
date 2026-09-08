@@ -114,14 +114,17 @@ export function makeGame(player,enemies,options={}){
  };
  g.heal=(source,target,e,opts={})=>{
   if(!target||target.hp<=0)return 0;let amount=typeof e==='number'?e:g.calcBase(source,target,e,opts);
-  const up=g.statusRatio(source,'治疗量增加')+g.statusRatio(source,'治疗与护盾提高%');amount*=1+up;amount*=1-g.statusRatio(target,'healing_down');
-  amount=Math.max(0,Math.min(amount,g.healBudgetRemaining(source,target,e)));target.hp+=amount;source.healingGiven=(source.healingGiven??0)+amount;target.healingReceived=(target.healingReceived??0)+amount;
+  if(!opts.finalAmount){const up=g.statusRatio(source,'治疗量增加')+g.statusRatio(source,'治疗与护盾提高%');amount*=1+up;amount*=1-g.statusRatio(target,'healing_down');}
+  const originalAmount=Math.max(0,amount),event={sourceId:source.id,targetId:target.id,amount:originalAmount,originalAmount};
+  g.workshopProgramEvent?.('before_heal',event);const remaining=event.cancel?0:Math.max(0,event.amount),absorbed=Math.max(0,originalAmount-remaining),overflow=Math.max(0,remaining-(target.maxHp-target.hp));
+  amount=Math.max(0,Math.min(remaining,g.healBudgetRemaining(source,target,e)));target.hp+=amount;source.healingGiven=(source.healingGiven??0)+amount;target.healingReceived=(target.healingReceived??0)+amount;
   const owner=source.side==='enemy'?source:player;owner.thisTurn.healing+=amount;g.totals[source.side==='enemy'?'enemyHealing':'playerHealing']+=amount;
-  g.log('heal',{source:source.id,target:target.id,amount,hp:target.hp,shield:target.shield});return amount;
+  const result={sourceId:source.id,targetId:target.id,amount,originalAmount,absorbed,overflow};g.lastHealResult=result;
+  g.log('heal',{source:source.id,target:target.id,amount,hp:target.hp,shield:target.shield});g.workshopProgramEvent?.('after_heal',result);g.lastHealResult=result;return amount;
  };
  g.shield=(source,target,e,opts={})=>{
   if(!target||target.hp<=0)return 0;let amount=typeof e==='number'?e:g.calcBase(source,target,e,opts);
-  amount*=1+g.statusRatio(source,'治疗与护盾提高%');
+  if(!opts.finalAmount)amount*=1+g.statusRatio(source,'治疗与护盾提高%');
   const before=target.shield;amount=Math.max(0,Math.min(amount,target.maxHp*Math.min(e.capTargetMaxHp??.6,target.side==='enemy'?.6:(g.options.patch?.playerShieldCap??.6))-before));target.shield+=amount;
   (source.side==='enemy'?source:player).thisTurn.shieldGained+=amount;g.totals[source.side==='enemy'?'enemyShield':'playerShield']+=amount;g.log('shield',{source:source.id,target:target.id,amount,hp:target.hp,shield:target.shield});return amount;
  };
@@ -130,11 +133,11 @@ export function makeGame(player,enemies,options={}){
   if(isDebuff&&!opts.skipEffectRoll&&!g.effectSucceeds(source,target,e,opts))return false;
   if(hard.has(k)&&target.phaseCount+1<=(target.flags.controlImmuneUntil??-1))return false;
   if(k==='taunt'){
-   if((g.teamTauntUntil[source.side]??0)>g.round||g.friendTeam(source).some(a=>a!==target&&g.hasStatus(a,'taunt')))return false;
+   if((g.teamTauntUntil[target.side]??0)>g.round||g.friendTeam(target).some(a=>a!==target&&g.hasStatus(a,'taunt')))return false;
    if(g.hasStatus(target,'taunt'))return false;
-   g.teamTauntUntil[source.side]=g.round+2;
+   g.teamTauntUntil[target.side]=g.round+2;
   }
-  const record={...e,canonicalStatus:k,sourceId:source.id,sourceSkill:g.action?.skill?.id??opts.skillId??'',addedRound:g.round,turns:e.turns??(k==='swift'?2:1),charges:e.charges??(String(e.status).includes('禁言：下次支援')?1:undefined),sourceActor:source};
+  const record={...e,canonicalStatus:k,sourceId:source.id,sourceSkill:opts.skillId??g.action?.skill?.id??'',addedRound:g.round,turns:e.turns??(k==='swift'?2:1),charges:e.charges??(String(e.status).includes('禁言：下次支援')?1:undefined),sourceActor:source};
   if(k==='swift'){
    const count=Math.max(1,Math.floor(Number(e.stacks??1)));if(!Number.isSafeInteger(count))throw Error('Invalid swift stack count');
    const active=target.flags.phaseRound===g.round&&g.phase===target.side;
@@ -150,7 +153,7 @@ export function makeGame(player,enemies,options={}){
   if(idx>=0&&ratio(list[idx])<=ratio(record))list.splice(idx,1);list.push(record);g.log(kind,{source:source.id,target:target.id,status:k,value:e.value});return true;
  };
  g.addDot=(source,target,e,opts={})=>{
-  if(!target||target.hp<=0||!g.effectSucceeds(source,target,e,opts))return false;
+  if(!target||target.hp<=0||!opts.skipEffectRoll&&!g.effectSucceeds(source,target,e,opts))return false;
   const k=key(e),targetKey=target.id+':'+g.round;
   source.flags.dotApplications??={};let room=Math.max(0,2-(source.flags.dotApplications[g.round+':'+target.id]??0));
   if(source.side==='enemy')room=Math.min(room,3-(g.teamDotApplications[targetKey]??0));

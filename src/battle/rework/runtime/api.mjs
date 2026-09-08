@@ -59,7 +59,7 @@ export function create(state,options={}){
   state.reworkGoldBase=state.player.gold??0;return g;
 }
 export function start(g){
-  g.phase='player';g.log('turn',{phase:'player',turn:g.round});g.canAct=g.beginPhase(g.player);g.controller.startTurn(g);
+  g.phase='player';g.log('turn',{phase:'player',turn:g.round});g.workshopStartingPlayer=true;try{g.canAct=g.beginPhase(g.player);g.controller.startTurn(g);}finally{delete g.workshopStartingPlayer;}if(g.canAct)g.workshopProgramEvent?.('turn_start',{sourceId:g.player.id,targetId:g.player.id});
   for(const a of g.livingEnemies()) {
     if(a.definition?.tier==='boss'||a.flags?.bossHelper) planBoss(g,a);
     else planEnemy(g,a);
@@ -139,7 +139,7 @@ export function discard(state){
 
 const timed=projectLegacyTimed;
 function projectActor(a,dst){Object.assign(dst,{hp:Math.max(0,Math.ceil(a.hp)),hpMax:Math.ceil(a.maxHp),shield:Math.max(0,Math.ceil(a.shield)),attack:a.stats.attack,defense:a.stats.defense,speed:a.stats.speed,critRate:a.stats.crit,critDamage:a.stats.critDamage,effectHit:a.stats.ehr,effectResist:a.stats.res,buffs:timed(a,a.buffs),debuffs:timed(a,[...a.debuffs,...a.dots])});}
-function cardInstance(c){return {instanceId:String(c.uid),cardId:c.id,stars:c.star??1};}
+function cardInstance(c){return {instanceId:String(c.uid),cardId:c.id,stars:c.star??1,...(c.ruleCost!==undefined?{ruleCost:c.ruleCost}:{})};}
 function animation(g,state,e,label){
   const source=e.source??e.actor,target=e.target,actors=[...g.allies,...g.enemies];
   const side=id=>id==='player'?'player':id==='caelian'?'companion':actors.find(a=>a.id===id)?.side==='enemy'?'enemy':'summon';
@@ -157,7 +157,7 @@ export function project(g,state,options={}){
   }
   const companion=g.allies.find(a=>a.isCompanion);if(companion&&state.companion){projectActor(companion,state.companion);if(companion.hp<=0){state.companion.injured=true;state.companion.shield=0;}state.companion.summons=g.allies.filter(a=>a.isCompanionSummon&&a.hp>0).map(a=>{const dto=(state.companion.summons??[]).find(x=>x.id===a.id)??{id:a.id,name:a.name};projectActor(a,dto);return dto;});}
   state.turn=g.round;state.phase=state.status!=='ongoing'?'ended':g.phase==='enemy'?'enemy':'player';state.reworkOutcome=g.outcome;state.contextActions=contextActions(g).map(c=>({id:c.id,name:c.name,ap:c.ap,description:c.effect,available:c.enabled,reason:c.reason,remaining:c.remaining}));
-  state.reworkCards=Object.fromEntries(p.hand.map(c=>{const target=g.enemies[state.selectedTarget]??g.livingEnemies()[0];return [String(c.uid),{cost:c.legacy?null:g.controller.price(g,c,false,target),available:c.legacy?true:g.canAct&&g.controller.canPlay(g,c,target),stars:c.star??1,goldCost:c.id==='me_bribe'?Math.ceil(g.encounterGoldReward*1.5):undefined}];}));
+  state.reworkCards=Object.fromEntries(p.hand.map(c=>{const target=g.enemies[state.selectedTarget]??g.livingEnemies()[0];return [String(c.uid),{cost:c.ruleCost??(c.legacy?null:g.controller.price(g,c,false,target)),available:c.legacy?true:g.canAct&&g.controller.canPlay(g,c,target),stars:c.star??1,goldCost:c.id==='me_bribe'?Math.ceil(g.encounterGoldReward*1.5):undefined}];}));
   for(const e of g.trace??[]){let text='';const name=id=>id==='player'?state.player.name:state.enemies.find(a=>a.id===id)?.name??g.allies.find(a=>a.id===id)?.name??id;
     if(e.type==='damage')text=(e.dot?'持续伤害：':'')+name(e.source)+' → '+name(e.target)+' '+Math.round(e.damage)+'伤害'+(e.crits?'（'+e.crits+'段暴击）':'');
     if(e.type==='heal'||e.type==='shield')text=name(e.source)+'为'+name(e.target)+(e.type==='heal'?'恢复':'提供护盾')+Math.round(e.amount);
@@ -168,6 +168,7 @@ export function project(g,state,options={}){
     animation(g,state,e,text);
     if(text)state.log.push({id:'rework:'+g.round+':'+state.log.length,turn:g.round,kind:e.source==='player'||e.type==='play_card'?'player':'enemy',text});
   }
+  if(state.workshopTest)state.workshopRuleTrace=structuredClone(p.flags.workshopPrograms?.trace??[]);
   state.log=state.log.slice(-200);g.trace=[];if(options.checkpoint!==false)state.rework=snapshot(g);
 }
 export function syncExternal(g,state){

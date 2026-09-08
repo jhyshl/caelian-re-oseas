@@ -1098,6 +1098,7 @@ function effectEntries(
   effects: LocalBattleState['player']['buffs'],
 ): StatusDisplayEntry[] {
   return Object.entries(effects).flatMap(([name, aggregate]) => {
+    if (aggregate.ruleHidden) return [];
     const instances = Array.isArray(aggregate.instances)
       ? aggregate.instances
       : [];
@@ -1113,6 +1114,8 @@ function effectEntries(
 }
 
 function statusDisplayName(name: string, kind: 'buff' | 'debuff'): string {
+  const actors=[state.value?.player,...(state.value?.enemies??[]),...(state.value?.player.summons??[])];
+  for(const actor of actors){const effect=actor?.[kind==='buff'?'buffs':'debuffs']?.[name];if(effect?.ruleLabel)return effect.ruleLabel;}
   const custom = customWorkshopStatus(name, kind);
   if (custom) return custom.label;
   const world = kind === 'buff' ? worldBuffNames : worldDebuffNames;
@@ -1188,6 +1191,7 @@ function statusEffectSummary(
   name: string,
   effect: LocalBattleState['player']['buffs'][string],
 ): string {
+  if(effect.ruleLabel)return [...Object.entries(effect.ruleData??{}).map(([key,value])=>`${key} ${typeof value==='number'?formatStatusNumber(value):String(value)}`),effect.turns<0?'持续生效':`剩余 ${formatStatusNumber(effect.turns)} 回合`].join(' · ');
   if (['swift', 'agility', '迅捷', '敏捷'].includes(name)) return `${effect.stacks ?? 1}层 · 速度＋${(effect.stacks ?? 1) * 20}% · 最长剩余${effect.turns}回合，各层独立到期`;
   const custom =
     customWorkshopStatus(name, 'buff') ?? customWorkshopStatus(name, 'debuff');
@@ -2547,6 +2551,7 @@ onUnmounted(() => {
             </div>
             <button type="button" @click="showBattleInfo = false">×</button>
           </header>
+          <details v-if="state.workshopTest && state.workshopRuleTrace?.length"><summary>积木执行记录</summary><ol><li v-for="(entry,index) in state.workshopRuleTrace" :key="index">T{{ entry.turn }} · {{ entry.name }} · {{ entry.event }}：{{ entry.message }}</li></ol></details>
           <ol>
             <li
               v-for="entry in recentLog"

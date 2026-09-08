@@ -1,4 +1,6 @@
 import { grantCard, resolveDeckStars } from '@/battle/card-inventory';
+import { installWorkshopPrograms, type WorkshopProgramRuntime } from '@/battle/workshop-program-runtime';
+import type { RuleProgram } from '@/workshop-program';
 import { buildWorkshopTestAttributes, WORKSHOP_TEST_LEVEL, type WorkshopTestAttributeInput } from '@/battle/rework/workshop-attributes';
 import { installWorkshopStatusHooks, workshopNativeStatusValue } from '@/battle/rework/runtime/workshop-status-hooks.mjs';
 import { installWorkshopDamageHooks, damageOnLiveCore } from '@/battle/rework/runtime/workshop-runtime-hooks.mjs';
@@ -325,6 +327,7 @@ export class BattleRepository {
   private mechanismSteps = 0;
   private reactionDepth = 0;
   private activeMechanismCard?: {
+    cardUid?: string;
     id: string;
     name: string;
     type: string;
@@ -552,6 +555,8 @@ export class BattleRepository {
       locked: Boolean(input.relatedQuestId || pendingHunt),
     });
     core.encounterGoldReward=Math.round(state.enemies.reduce((total,e)=>total+(e.gold[0]+e.gold[1])/2,0)*(1+this.passiveEffectValue(state,'gold_bonus')))*5;
+    const detachPrograms=this.attachReworkHooks(core,state);
+    try { this.programRuntime(core,state).emit('battle_start',{sourceId:'player',targetId:'player'}); } finally { detachPrograms(); }
     rework.project(core, state);
     const encounterNames = [
       ...new Set(encounterPack.map(([, definition]) => definition.name)),
@@ -701,16 +706,18 @@ export class BattleRepository {
     );
     const cardTags = Array.isArray(card.tags) ? card.tags.map(String) : [];
     this.activeMechanismCard = {
+      cardUid: cardInstance.instanceId,
       id: cardInstance.cardId,
       name: card.name,
       type: card.type,
       tags: cardTags,
     };
-    let cost = this.cardCost(card, state, targetIndex);
+    let cost = this.cardCost({...card,cost:cardInstance.ruleCost??card.cost}, state, targetIndex);
     let mpCost = this.cardMpCost(card, state);
     try {
       const beforeCard = this.runWorkshopMechanisms(state, 'before_card', {
         cardId: cardInstance.cardId,
+        cardUid: cardInstance.instanceId,
         cardName: card.name,
         cardType: card.type,
         cardTags,
@@ -803,6 +810,7 @@ export class BattleRepository {
       this.recordBossMechanicCard(state, card.type);
       this.runWorkshopMechanisms(state, 'after_card', {
         cardId: cardInstance.cardId,
+        cardUid: cardInstance.instanceId,
         cardName: card.name,
         cardType: card.type,
         cardTags,
@@ -1243,7 +1251,26 @@ export class BattleRepository {
       },
       afterTick:stabilize,
     });
+    this.programRuntime(core,state);
     return()=>{this.activeReworkCore=previousCore;this.activeReworkState=previousState;};
+  }
+
+  private programRuntime(core:any,state:LocalBattleState):WorkshopProgramRuntime {
+    const roots:Array<{program:RuleProgram;card?:any}>=[];
+    for(const raw of state.player.passiveEffects??[]){const e=raw as CardEffect;if(e.type==='rule_program')roots.push({program:e.program as RuleProgram});}
+    for(const card of [...core.player.hand,...core.player.deck,...core.player.discard,...core.player.exhaust]){
+      const definition=this.cardDefinition(state,card.id);
+      for(const effect of definition?.effects??[])if(effect.type==='rule_program')roots.push({program:effect.program as RuleProgram,card});
+    }
+    return installWorkshopPrograms(core,roots,{card:id=>this.cardDefinition(state,id)});
+  }
+
+  private withProgramCore<T>(state:LocalBattleState,operation:(core:any,runtime:WorkshopProgramRuntime)=>T):T {
+    if(!state.rework)throw new Error('组合规则需要新版战斗');
+    const core=this.activeReworkCore??rework.hydrate(state.rework),active=core===this.activeReworkCore;
+    rework.syncExternal(core,state);
+    const detach=this.attachReworkHooks(core,state);
+    try{const result=operation(core,this.programRuntime(core,state));rework.project(core,state,{checkpoint:!active});return result;}finally{detach();}
   }
 
   private reworkCardPorts() {
@@ -1253,10 +1280,10 @@ export class BattleRepository {
         const card=this.cardDefinition(draft,instance.cardId);if(!card)throw new Error('卡牌数据不存在');
         const core=rework.hydrate(draft.rework);rework.syncExternal(core,draft);
         const printed=core.player.hand[request.index],cost=core.controller.price(core,printed,false,core.enemies[request.targetIndex]);
-        const metadata={id:instance.cardId,name:card.name,type:card.type,tags:Array.isArray(card.tags)?card.tags.map(String):[]};
+        const metadata={id:instance.cardId,cardUid:instance.instanceId,name:card.name,type:card.type,tags:Array.isArray(card.tags)?card.tags.map(String):[]};
         this.activeMechanismCard=metadata;const detach=this.attachReworkHooks(core,draft);
         try{
-          const event=this.runWorkshopMechanisms(draft,'before_card',{cardId:metadata.id,cardName:metadata.name,cardType:metadata.type,cardTags:metadata.tags,cardCost:cost,mpCost:0});
+          const event=this.runWorkshopMechanisms(draft,'before_card',{cardId:metadata.id,cardUid:metadata.cardUid,cardName:metadata.name,cardType:metadata.type,cardTags:metadata.tags,cardCost:cost,mpCost:0});
           rework.syncExternal(core,draft);rework.project(core,draft);
           draft.reworkCardCostOverride={instanceId:instance.instanceId,cost:this.clamp(this.number(event.cardCost,cost),0,99)};
           return{...metadata,cost:draft.reworkCardCostOverride.cost};
@@ -1269,7 +1296,7 @@ export class BattleRepository {
       },
       after:(draft:LocalBattleState,metadata:any)=>{
         this.activeMechanismCard=metadata;
-        try{this.runWorkshopMechanisms(draft,'after_card',{cardId:metadata.id,cardName:metadata.name,cardType:metadata.type,cardTags:metadata.tags,cardCost:metadata.cost,mpCost:0});rework.sync(draft);}
+        try{this.runWorkshopMechanisms(draft,'after_card',{cardId:metadata.id,cardUid:metadata.cardUid,cardName:metadata.name,cardType:metadata.type,cardTags:metadata.tags,cardCost:metadata.cost,mpCost:0});rework.sync(draft);}
         finally{this.activeMechanismCard=undefined;}
       },
     };
@@ -1654,6 +1681,8 @@ export class BattleRepository {
         actor.intent=null;rework.planActor(testCore,actor);
       }
     }
+    const detachPrograms=this.attachReworkHooks(testCore,state);
+    try{this.programRuntime(testCore,state).emit('battle_start',{sourceId:'player',targetId:'player'});}finally{detachPrograms();}
     rework.project(testCore, state);
     this.log(
       state,
@@ -2771,6 +2800,17 @@ export class BattleRepository {
     allyTargetId: BattleFriendlyTargetId = 'player',
   ): void {
     effect = this.resolveWorkshopScaling(state, effect);
+    if(effect.nativeStatus===true&&['apply_buff','apply_debuff'].includes(effect.type)){
+      this.withProgramCore(state,(core,runtime)=>{const source=core.allies.find((a:any)=>a.id===(this.activePlayerSummon?.id??'player'))??core.player;const chosen=core.enemies[targetIndex];const rawTarget=effect.target==='selected_allies'?core.allies.find((a:any)=>a.id===allyTargetId):chosen;const kind=effect.type==='apply_buff'?'buff':'debuff';const selector=effect.target==='selected_allies'?'ally':effect.target??(kind==='buff'?'self':'enemy');const targets=core.targets(source,{kind,target:selector},rawTarget);for(const target of targets)runtime.nativeStatus(source,target,String(effect.buff??effect.debuff),this.number(effect.value,1),this.number(effect.turns,1),this.number(effect.baseChance,100));});return;
+    }
+    if(effect.type==='rule_program'){
+      this.withProgramCore(state,(core,runtime)=>{
+        const source=this.activePlayerSummon?.id??'player';
+        const instance=[...core.player.hand,...core.player.discard].find((c:any)=>this.activeMechanismCard?.cardUid?String(c.uid)===this.activeMechanismCard.cardUid:c.id===card.id);
+        runtime.cast(effect.program as RuleProgram,source,effect.target==='self'?source:effect.target==='selected_allies'?allyTargetId:state.enemies[targetIndex]?.id??'player',instance);
+      });
+      return;
+    }
     const target = state.enemies[targetIndex];
     if (!target) return;
     const cardId = String(
@@ -4471,9 +4511,16 @@ export class BattleRepository {
       Math.floor((Math.round(rawAmount) * (100 - healBlock)) / 100),
     );
     const before = target.hp;
-    target.hp = Math.min(target.hpMax, target.hp + amount);
-    const restored = target.hp - before;
-    const overflow = Math.max(0, before + amount - target.hpMax);
+    let restored:number,overflow:number;
+    if(state.rework){
+      const result=this.withProgramCore(state,(core)=>{
+        const id=this.combatantIdentity(state,target).id,actor=[...core.allies,...core.enemies].find((a:any)=>a.id===id);
+        if(!actor)return {restored:0,overflow:0};
+        const source=this.activePlayerSummon?core.allies.find((a:any)=>a.id===this.activePlayerSummon?.id):actor.side==='enemy'?actor:core.player;
+        const restored=core.heal(source??core.player,actor,amount,{finalAmount:true});
+        return {restored,overflow:core.lastHealResult?.overflow??0};
+      });restored=result.restored;overflow=result.overflow;
+    }else{target.hp = Math.min(target.hpMax, target.hp + amount);restored=target.hp-before;overflow=Math.max(0,before+amount-target.hpMax);}
     if (restored > 0) {
       const identity = this.combatantIdentity(state, target);
       this.animation(state, {
@@ -7089,6 +7136,9 @@ export class BattleRepository {
     event: Record<string, unknown> = {},
     onlyManifestId?: string,
   ): Record<string, unknown> {
+    if(state.rework&&['before_card','after_card','battle_victory','battle_defeat'].includes(trigger)){
+      this.withProgramCore(state,(_core,rules)=>Object.assign(event,rules.emit(trigger,{...event,sourceId:'player',targetId:state.enemies[state.selectedTarget]?.id,...(event.cardUid?{}:{cardUid:state.player.hand.find(c=>c.cardId===event.cardId)?.instanceId})})));
+    }
     const runtime = state.workshopMechanisms;
     if (!runtime?.ids.length || this.mechanismDepth >= 4) return event;
     if (this.mechanismDepth === 0) this.mechanismSteps = 0;

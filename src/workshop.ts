@@ -1,4 +1,6 @@
 import type { CardDefinition, CardEffect } from '@/content/types';
+import { normalizeRuleProgram, emptyRuleProgram, type RuleProgram } from '@/workshop-program';
+import { WORKSHOP_STATUS_LIBRARY } from '@/workshop-status-library';
 import { safeCardEffectHits } from '@/battle/execution-limits';
 import {
   normalizeWorkshopMechanism,
@@ -153,7 +155,12 @@ const ALLOWED_DEBUFFS = [
   'freeze',
   'entangle',
 ];
+for (const status of WORKSHOP_STATUS_LIBRARY) {
+  const list=status.polarity==='buff'?ALLOWED_BUFFS:ALLOWED_DEBUFFS;
+  if(!list.includes(status.id))list.push(status.id);
+}
 const VALID_CARD_EFFECT_TYPES = new Set([
+  'rule_program',
   'damage',
   'gain_mp',
   'spend_mp_damage',
@@ -234,6 +241,7 @@ const WORKSHOP_RARITIES = new Set([
 ]);
 
 export const WORKSHOP_EFFECT_OPTIONS = [
+  { type: 'rule_program', label: '组合规则', program: emptyRuleProgram(), target: 'enemy' },
   { type: 'damage', label: '造成伤害', value: 8, target: 'enemy' },
   { type: 'shield', label: '获得护盾', value: 8, target: 'self' },
   { type: 'heal', label: '恢复生命', value: 6, target: 'self' },
@@ -305,6 +313,7 @@ export const WORKSHOP_EFFECT_OPTIONS = [
 ] as const;
 
 export const WORKSHOP_TALENT_OPTIONS = [
+  ['rule_program', '组合规则天赋'],
   ['battle_start_shield', '战斗开始获得护盾'],
   ['turn_start_heal', '回合开始恢复生命'],
   ['attack_bonus', '攻击牌伤害增加'],
@@ -552,6 +561,8 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
   const source = record(value);
   const type = String(source.type ?? '').trim();
   if (!VALID_CARD_EFFECT_TYPES.has(type)) return undefined;
+  if (type === 'rule_program') return {type,target:normalizeTarget(source,type),program:normalizeRuleProgram(source.program)};
+  if(['apply_buff','apply_debuff'].includes(type)&&source.nativeStatus===true){const id=String(source.buff??source.debuff),option=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===id);if(!option)throw Error('状态效果不存在');return {type,nativeStatus:true,[type==='apply_buff'?'buff':'debuff']:id,value:number(source.value,option.value),turns:clamp(source.turns,-1,999999,1),baseChance:clamp(source.baseChance,0,100,100),target:normalizeTarget(source,type)};}
   if (type === 'workshop_resource_change') {
     const mechanismId = extensionId(source.mechanismId, '');
     const resourceId = extensionId(source.resourceId, '');
@@ -738,6 +749,7 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
 export function normalizeTalentEffect(value: unknown): CardEffect | undefined {
   const source = record(value);
   const type = String(source.type ?? '');
+  if(type==='rule_program')return {type,program:normalizeRuleProgram(source.program)};
   if (type === 'apply_workshop_status') {
     const mechanismId = extensionId(source.mechanismId, '');
     const statusId = extensionId(source.statusId, '');
@@ -797,6 +809,7 @@ function effectUniqueKey(effect: CardEffect): string {
 }
 
 function talentEffectUniqueKey(effect: CardEffect): string {
+  if(effect.type==='rule_program')return 'rule_program:'+(effect.program as RuleProgram).id;
   if (effect.type === 'apply_workshop_status') {
     return [
       effect.type,
@@ -819,6 +832,7 @@ function talentEffectUniqueKey(effect: CardEffect): string {
 function ensureUniqueEffects(effects: CardEffect[], cardName: string): void {
   const seen = new Set<string>();
   for (const effect of effects) {
+    if (['rule_program','conditional_group'].includes(effect.type)) continue;
     const key = effectUniqueKey(effect);
     if (seen.has(key)) {
       throw new Error(
@@ -850,7 +864,7 @@ export function normalizeWorkshopCard(
       return normalized ? [normalized] : [];
     });
   ensureUniqueEffects(effects, `卡牌「${name}」`);
-  if (type === 'summon' && !effects.some((effect) => effect.type === 'summon')) {
+  if (type === 'summon' && !effects.some((effect) => ['summon','rule_program'].includes(effect.type))) {
     throw new Error(`召唤牌「${name}」必须创建一个召唤物。`);
   }
   if (type !== 'summon' && effects.some((effect) => effect.type === 'summon')) {

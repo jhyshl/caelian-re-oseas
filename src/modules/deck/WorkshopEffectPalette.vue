@@ -45,6 +45,7 @@ const groups: Array<{ id: EffectGroup; label: string; hint: string }> = [
 ];
 
 const blocks: EffectBlock[] = [
+  { id:'rule_program',group:'conditional',label:'组合规则与自定义状态',description:'事件、数据、复合状态与召唤物行为。',type:'rule_program' },
   { id: 'damage', group: 'instant', label: '造成伤害', description: '对目标造成伤害。', type: 'damage' },
   { id: 'shield', group: 'instant', label: '获得护盾', description: '为自身或友方提供护盾。', type: 'shield' },
   { id: 'heal', group: 'instant', label: '恢复生命', description: '恢复目标生命。', type: 'heal' },
@@ -138,7 +139,7 @@ function addBlock(block: EffectBlock): void {
         <strong>效果积木台</strong>
         <small>先选择积木组，再添加积木；加入后只编辑这个积木需要的参数。</small>
       </div>
-      <span>已恢复旧版搭建顺序</span>
+      <button type="button" :disabled="disabled" @click="addBlock(blocks[0]!)">＋组合规则</button>
     </header>
 
     <nav aria-label="效果积木分组">
