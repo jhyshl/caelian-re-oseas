@@ -1,3 +1,4 @@
+import { formatNumber } from '@/ui/format-number';
 import rawCatalog from '@/battle/rework/catalog.json';
 import type { CardDefinition, CardEffect } from '@/content/types';
 
@@ -113,8 +114,10 @@ function text(value: unknown): string {
 }
 
 function numeric(value: number): string {
-  return Number.isFinite(value) ? String(Math.round(value * 10000) / 10000) : '无限';
+  return Number.isFinite(value) ? formatNumber(value) : '无限';
 }
+
+export interface CardDisplayStats { attack: number; defense: number; hpMax: number; targetHpMax: number; allyHpMax?: number; ownerHpMax?: number; speed?: number }
 
 function number(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -141,8 +144,14 @@ function target(effect: ReworkEffect): string {
 }
 
 /** Only fixed amounts and attack/defense coefficients receive the star factor. */
-function formula(value: Record<string, unknown>, star: number, dot = false): string {
+function formula(value: Record<string, unknown>, star: number, dot = false, stats?: CardDisplayStats): string {
   const scale = starScale(star);
+  if (stats) {
+    const targetHp = value.target === 'self' || !value.target && ['heal', 'shield'].includes(String(value.kind)) ? stats.hpMax
+      : value.target === 'owner' ? stats.ownerHpMax ?? stats.hpMax
+      : ['ally', 'all_allies', 'lowest_hp_ally'].includes(String(value.target)) ? stats.allyHpMax ?? stats.hpMax : stats.targetHpMax;
+    return numeric(((dot ? 0 : number(value.flat)) + number(value.atk) * stats.attack + (dot ? 0 : number(value.def) * stats.defense)) * scale + (dot ? 0 : number(value.maxHp ?? value.maxHpRatio ?? value.hpRatio) * targetHp));
+  }
   const terms: string[] = [];
   if (!dot && typeof value.flat === 'number' && value.flat !== 0) {
     terms.push(numeric(value.flat * scale));
@@ -169,7 +178,7 @@ function statusValue(effect: ReworkEffect): string {
   return text(effect.value);
 }
 
-function extraMechanics(effect: ReworkEffect, star: number): string[] {
+function extraMechanics(effect: ReworkEffect, star: number, stats?: CardDisplayStats): string[] {
   const result: string[] = [];
   const strings: Record<string, string> = {
     conditionBonus: '追加条件', selector: '目标选择', selection: '选择方式',
@@ -202,16 +211,16 @@ function extraMechanics(effect: ReworkEffect, star: number): string[] {
     damage: '伤害', shield: '护盾', heal: '治疗',
   })) {
     const value = object(effect[key]);
-    if (value) result.push(`${label} ${formula(value, star)}`);
+    if (value) result.push(`${label} ${formula(value, star, false, stats)}`);
   }
   if (typeof effect.atkPerLayer === 'number') {
-    result.push(`每层 ${formula({ flat: effect.flatPerLayer, atk: effect.atkPerLayer }, star)}伤害`);
+    result.push(`每层 ${formula({ flat: effect.flatPerLayer, atk: effect.atkPerLayer }, star, false, stats)}伤害`);
   }
   if (typeof effect.atkPerTick === 'number') {
-    result.push(`每跳攻击力倍率总上限 ${percent(effect.atkPerTick, starScale(star))}`);
+    result.push(`每次伤害上限 ${stats ? numeric(effect.atkPerTick * stats.attack * starScale(star)) : percent(effect.atkPerTick, starScale(star)) + '攻击力'}`);
   }
   if (typeof effect.flatCap === 'number' || typeof effect.atkCap === 'number') {
-    result.push(`数值上限 ${formula({ flat: effect.flatCap, atk: effect.atkCap }, star)}`);
+    result.push(`数值上限 ${formula({ flat: effect.flatCap, atk: effect.atkCap }, star, false, stats)}`);
   }
   if (typeof effect.perResource === 'number') result.push("每消耗" + numeric(effect.perResource) + "点资源结算一份" );
   if (typeof effect.maxValue === 'number') result.push("总值上限 " + statusValue({ ...effect, value: effect.maxValue }));
@@ -221,43 +230,41 @@ function extraMechanics(effect: ReworkEffect, star: number): string[] {
   return result;
 }
 
-function describeEffect(effect: ReworkEffect, star: number): string {
+function describeEffect(effect: ReworkEffect, star: number, stats?: CardDisplayStats): string {
   const who = target(effect);
   const amount = text(effect.amount ?? effect.value);
   let line: string;
   switch (effect.kind) {
     case 'damage': {
       const hits = Math.max(1, Math.floor(number(effect.hits, 1)));
-      line = `对${who || '一名敌人'}造成${formula(effect, star)}总伤害`;
-      line += hits > 1 ? `，均分为${hits}段` : '，1段';
-      line += effect.crit === false ? '，不可暴击' : '，每个目标的每段独立判定暴击';
+      line = `对${who || '一名敌人'}造成${formula(effect, star, false, stats)}总伤害`;
+      if (hits > 1) line += `，均分为${hits}段`;
+      if (effect.crit === false) line += '，不可暴击';
       break;
     }
     case 'dot':
-      line = `基础命中${numeric(number(effect.baseChance, 100))}%对${who || '一名敌人'}施加${numeric(number(effect.stacks, 1))}层${text(effect.status)}，每层每跳${formula(effect, star, true)}伤害，目标接下来两次行动阶段结束结算；不可暴击，仅使用攻击快照、星级、目标防御和护盾`;
+      line = `基础命中${numeric(number(effect.baseChance, 100))}%对${who || '一名敌人'}施加${numeric(number(effect.stacks, 1))}层${text(effect.status)}，每层每跳${formula(effect, star, true, stats)}伤害，目标接下来两次行动阶段结束结算`;
       break;
     case 'heal': {
       const ticks = number(effect.ticks ?? effect.overTime);
       line = ticks > 0
-        ? `${who || '自身'}在未来${numeric(ticks)}次己方回合开始各回复${formula(effect, star)}生命`
-        : `${who || '自身'}回复${formula(effect, star)}生命`;
-      line += '，不可暴击';
+        ? `${who || '自身'}在未来${numeric(ticks)}次己方回合开始各回复${formula(effect, star, false, stats)}生命`
+        : `${who || '自身'}回复${formula(effect, star, false, stats)}生命`;
       break;
     }
     case 'shield':
-      line = `${who || '自身'}获得${formula(effect, star)}护盾`;
+      line = `${who || '自身'}获得${formula(effect, star, false, stats)}护盾`;
       break;
     case 'buff':
     case 'debuff':
       line = `${effect.kind === 'debuff' ? `基础命中${numeric(number(effect.baseChance, 100))}%使` : ''}${who || '自身'}获得${text(effect.status)}${statusValue(effect) ? ` ${statusValue(effect)}` : ''}，持续${numeric(number(effect.turns, 1))}回合`;
       break;
     case 'conditional':
-      line = `满足条件时：【${describeReworkEffects(effects(effect.effects), star)}】`;
+      line = `满足条件时：【${describeReworkEffects(effects(effect.effects), star, stats)}】`;
       break;
     case 'chant':
-      line = `吟诵${numeric(number(effect.turns, 1))}回合后结算：【${describeReworkEffects(effects(effect.effects), star)}】`;
+      line = `吟诵${numeric(number(effect.turns, 1))}回合后结算：【${describeReworkEffects(effects(effect.effects), star, stats)}】`;
       if (effect.targetLock === true) line += '；入队时锁定目标';
-      if (effect.snapshot) line += `；${text(effect.snapshot) || '入队时保存属性快照'}`;
       if (effect.queueCap !== undefined) line += `；吟诵队列上限${text(effect.queueCap)}`;
       break;
     case 'summon': {
@@ -270,14 +277,23 @@ function describeEffect(effect: ReworkEffect, star: number): string {
       } : undefined);
       if (inheritance) {
         const names: Record<string, string> = { hp: '生命上限', atk: '攻击力', def: '防御', speed: '速度', crit: '暴击率', critDamage: '暴击伤害', effectHit: '效果命中', effectRes: '效果抵抗' };
-        line += `；继承召唤者${Object.entries(inheritance).map(([key, value]) => `${percent(value)}${names[key] ?? key}`).join('、')}`;
+        const values: Record<string, number> = stats ? {hp:stats.hpMax,atk:stats.attack,def:stats.defense,speed:stats.speed ?? 0} : {};
+        line += `；${stats ? '属性' : '继承召唤者'}${Object.entries(inheritance).map(([key, value]) => `${stats && key in values ? numeric(number(value) * values[key]!) : percent(value)}${names[key] ?? key}`).join('、')}`;
       }
-      if (effects(effect.entry).length) line += `；入场：【${describeReworkEffects(effects(effect.entry), star)}】`;
+      const summonStats = stats ? {
+        ...stats,
+        attack: stats.attack * number(inheritance?.atk, 1),
+        defense: stats.defense * number(inheritance?.def, .5),
+        hpMax: Math.max(1, stats.hpMax * number(inheritance?.hp, .3)),
+        ownerHpMax: stats.hpMax,
+        speed: (stats.speed ?? 0) * number(inheritance?.speed, 1),
+      } : undefined;
+      if (effects(effect.entry).length) line += `；入场：【${describeReworkEffects(effects(effect.entry), star, summonStats)}】`;
       if (Array.isArray(effect.skills)) {
         line += `；技能：${effect.skills.map((value) => {
           const skill = object(value);
           if (!skill) return '';
-          return `「${text(skill.name)}」${skill.condition ? `（${text(skill.condition)}）` : ''}${skill.cooldown !== undefined ? `，冷却${text(skill.cooldown)}回合` : ''}：【${describeReworkEffects(effects(skill.effects), star)}】`;
+          return `「${text(skill.name)}」${skill.condition ? `（${text(skill.condition)}）` : ''}${skill.cooldown !== undefined ? `，冷却${text(skill.cooldown)}回合` : ''}：【${describeReworkEffects(effects(skill.effects), star, summonStats)}】`;
         }).filter(Boolean).join('；')}`;
       }
       break;
@@ -292,31 +308,36 @@ function describeEffect(effect: ReworkEffect, star: number): string {
     case 'discard': line = `弃置${amount || text(effect.max)}张牌`; break;
     case 'cleanse': line = `净化${who || '自身'}${amount || '1'}个可净化负面状态`; break;
     case 'dispel': line = `驱散${who || '一名敌人'}${amount || '1'}个可驱散增益`; break;
-    case 'hp_cost': line = `支付自身生命上限的${percent(effect.maxHp ?? effect.maxHpRatio ?? effect.hpRatio)}生命，不能致死`; break;
+    case 'hp_cost': line = `支付${stats ? numeric(stats.hpMax * number(effect.maxHp ?? effect.maxHpRatio ?? effect.hpRatio)) : '自身生命上限的' + percent(effect.maxHp ?? effect.maxHpRatio ?? effect.hpRatio)}生命，不能致死`; break;
     case 'exhaust': line = '使用后本场战斗移出牌组循环'; break;
     case 'retrieve': line = `从弃牌堆回收${amount || '1'}张牌${text(effect.filter) ? `（${text(effect.filter)}）` : ''}`; break;
     case 'scry_draw': line = `查看牌堆顶${text(effect.look)}张，选择${text(effect.draw)}张加入手牌`; break;
     case 'utility':
       line = text(effect.text ?? effect.summary ?? effect.action) || '特殊效果';
       if (effect.element !== undefined) line += `：${text(effect.element)}`;
-      if (!effect.text && !effect.summary && (effect.flat !== undefined || effect.atk !== undefined || effect.def !== undefined)) line += `：${formula(effect, star)}`;
+      if (!effect.text && !effect.summary && (effect.flat !== undefined || effect.atk !== undefined || effect.def !== undefined)) line += `：${formula(effect, star, false, stats)}`;
       if (!effect.text && !effect.summary && amount) line += `：${amount}`;
-      if (Array.isArray(effect.options)) line += `，选项：【${describeReworkEffects(effects(effect.options), star)}】`;
+      if (Array.isArray(effect.options)) line += `，选项：【${describeReworkEffects(effects(effect.options), star, stats)}】`;
       break;
     default:
       line = text(effect.text ?? effect.summary ?? effect.kind);
   }
   if (effect.kind !== 'conditional' && effect.kind !== 'chant' && effects(effect.effects).length) {
-    line += `；后续：【${describeReworkEffects(effects(effect.effects), star)}】`;
+    line += `；后续：【${describeReworkEffects(effects(effect.effects), star, stats)}】`;
   }
-  const details = extraMechanics(effect, star);
+  const details = extraMechanics(effect, star, stats);
   if (details.length) line += `；${details.join('；')}`;
   return `${effect.condition ? `若${text(effect.condition)}，` : ''}${line}`;
 }
 
 /** Uses current effect numbers; star changes never multiply AP/probabilities/durations. */
-export function describeReworkEffects(effectList: readonly ReworkEffect[], star = 1): string {
-  return effectList.map((effect) => describeEffect(effect, star)).join('；');
+export function describeReworkEffects(effectList: readonly ReworkEffect[], star = 1, stats?: CardDisplayStats): string {
+  const description = effectList.map((effect) => describeEffect(effect, star, stats)).join('；');
+  if (!stats) return description;
+  return description.replace(/(?:(\d+(?:\.\d+)?)\s*[+＋]\s*)?(\d+(?:\.\d+)?)%\s*(施加时攻击力|攻击力|防御力?|目标生命上限|生命上限)/g, (_match, base, rate, attribute: string) => {
+    const value = attribute.includes('攻击') ? stats.attack : attribute.includes('防御') ? stats.defense : attribute.includes('目标') ? stats.targetHpMax : stats.hpMax;
+    return numeric(Number(base ?? 0) + Number(rate) * value / 100);
+  });
 }
 
 /** UI adapters retain kind alongside type; the rework interpreter remains authoritative. */
@@ -341,7 +362,6 @@ export function applyReworkCards(legacy: Record<string, CardDefinition>): Record
     const old = legacy[card.id];
     const limits = text(card.limits);
     const details = describeReworkEffects(card.effects);
-    const starRule = '卡牌最多3星：1/2/3星的伤害、治疗、护盾固定值与攻击/防御倍率为100%/110%/120%；生命比例、费用、资源、抽牌、概率、持续与机制次数保持不变。';
     result[card.id] = {
       ...old,
       id: card.id,
@@ -352,7 +372,7 @@ export function applyReworkCards(legacy: Record<string, CardDefinition>): Record
       rarity: old?.rarity ?? 'common',
       cat: old?.cat ?? (card.profession === 'common' ? 'common' : `sub_${card.profession}`),
       cls: old?.cls ?? card.profession,
-      description: `AP ${card.ap}｜1星：${card.summary}\n逐项效果：${details}${limits ? `\n限制：${limits}` : ''}\n${starRule}`,
+      description: `AP ${card.ap}｜1星：${card.summary}\n逐项效果：${details}${limits ? `\n限制：${limits}` : ''}`,
       brief: `${card.summary}${limits ? `（${limits}）` : ''}`,
       effects: card.effects.map(compatibleEffect),
       ...(old?.source !== undefined ? { source: old.source } : {}),

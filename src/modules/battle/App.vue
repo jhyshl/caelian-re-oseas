@@ -22,10 +22,12 @@ import {
   canApplyBattleConsumable,
   isBattleUsableItem,
 } from '@/battle/consumables';
-import { describeReworkEffects, reworkCard } from '@/battle/rework/catalog';
+import { battleCardText, canViewMonsterIntent, cleanCombatCopy } from '@/battle/presentation';
+import { formatNumber, roundNumbersInText } from '@/ui/format-number';
+import MonsterSkills from './MonsterSkills.vue';
 import { hydrate as hydrateRework } from '@/battle/rework/runtime/api.mjs';
 import { previewBattleCard } from '@/battle/card-preview';
-import { needsWorkshopStars, requestStarEditor, workshopStarDescription } from '@/workshop-stars';
+import { needsWorkshopStars, requestStarEditor } from '@/workshop-stars';
 import { bloodBurnCardUnavailableReason } from '@/battle/blood-burn';
 import type {
   BattleAnimationEvent,
@@ -131,6 +133,7 @@ interface BattleInventoryRow {
 interface BattlePileRow {
   cardId: string;
   quantity: number;
+  stars: number;
   definition?: CardDefinition;
 }
 
@@ -181,8 +184,18 @@ const effectiveSpeeds = computed<Record<string, number>>(() => {
   const core = hydrateRework(data);
   return Object.fromEntries([...core.allies, ...core.enemies].map(actor => [actor.id, core.stat(actor, 'speed')]));
 });
+const revealIntent = computed(() => canViewMonsterIntent(snapshot.value, relicRewards.value));
+const monsterDetailsId = ref('');
+const monsterDetails = computed(() => {
+  const enemy = state.value?.enemies.find(e => e.id === monsterDetailsId.value);
+  if (!enemy) return null;
+  const core = state.value?.rework ? hydrateRework(state.value.rework) : null;
+  const definition = core?.enemies.find((a: {id:string}) => a.id === enemy.id)?.definition;
+  const skills = definition?.skills ?? Object.entries(monsters.value[enemy.definitionId]?.skills ?? {}).map(([id,skill]) => ({...skill,id}));
+  return { name: enemy.name, skills: skills.map((s: {id:string;name:string;summary?:string;desc?:string;cooldown?:number}) => ({id:s.id,name:s.name,description:s.summary ?? s.desc ?? '',cooldown:s.cooldown ?? 0})) };
+});
 const recentLog = computed(() =>
-  [...(state.value?.log ?? [])].slice(-20).reverse(),
+  [...(state.value?.log ?? [])].map(e => ({...e,text:roundNumbersInText(e.text.replace('（按预告回退）',''))})).filter(e => revealIntent.value || !/预告|意图|原预告/.test(e.text)).slice(-20).reverse(),
 );
 const battleInventory = computed<BattleInventoryRow[]>(() =>
   (snapshot.value?.inventory ?? [])
@@ -209,13 +222,13 @@ function pileRows(
 ): BattlePileRow[] {
   const grouped = new Map<string, number>();
   for (const instance of instances) {
-    grouped.set(instance.cardId, (grouped.get(instance.cardId) ?? 0) + 1);
+    const key = instance.cardId + ':' + (instance.stars ?? 1);
+    grouped.set(key, (grouped.get(key) ?? 0) + 1);
   }
-  return [...grouped.entries()].map(([cardId, quantity]) => ({
-    cardId,
-    quantity,
-    definition: cards.value[cardId],
-  }));
+  return [...grouped.entries()].map(([key, quantity]) => {
+    const split = key.lastIndexOf(':'); const cardId = key.slice(0,split);
+    return {cardId,stars:Number(key.slice(split+1)),quantity,definition:cards.value[cardId]};
+  });
 }
 const drawPileRows = computed(() => pileRows(state.value?.player.drawPile ?? []));
 const discardPileRows = computed(() =>
@@ -528,7 +541,7 @@ const professionStatusEntries = computed<ProfessionStatusEntry[]>(() => {
       id: `class-resource:${id}`,
       label: formatClassResourceLabel(id),
       value: formatClassResourceValue(value),
-      description: `动态识别的职业资源（${id}）。`,
+      description: '',
     });
   }
   return entries;
@@ -943,10 +956,27 @@ const currentReworkCards = computed<Record<string, {cost:number; available:boole
   core.selectedAllyId=selectedAllyTarget.value;
   return Object.fromEntries(core.player.hand.filter((card: {legacy?:boolean}) => !card.legacy).map((card: {uid:string}) => [String(card.uid), {cost:core.controller.price(core,card,false,target),available:core.canAct&&core.controller.canPlay(core,card,target)}]));
 });
+const battleDisplayStats = computed(() => {
+  const current = state.value;
+  if (!current) return null;
+  const core = current.rework ? hydrateRework(current.rework) : null;
+  const allies = core?.allies.filter((a: {hp:number}) => a.hp > 0) ?? [];
+  const ally = allies.find((a: {id:string}) => a.id === selectedAllyTarget.value) ?? [...allies].sort((a: {hp:number;maxHp:number;id:string}, b: {hp:number;maxHp:number;id:string}) => a.hp/a.maxHp-b.hp/b.maxHp || a.id.localeCompare(b.id))[0];
+  return {attack: core ? core.stat(core.player, 'attack') : current.player.attack, defense: core ? core.stat(core.player, 'defense') : current.player.defense, hpMax:current.player.hpMax, targetHpMax:current.enemies[selectedTarget.value]?.hpMax ?? 0, allyHpMax:ally?.maxHp ?? current.player.hpMax, speed:core ? core.stat(core.player,'speed') : current.player.speed};
+});
+const battleDescriptions = computed(() => {
+  const current = state.value, stats = battleDisplayStats.value;
+  if (!current || !stats) return {} as Record<string,string>;
+  return Object.fromEntries([...current.player.hand,...current.player.drawPile,...current.player.discardPile].map(instance => {
+    const card = cards.value[instance.cardId];
+    return [instance.cardId+':'+(instance.stars??1), card ? battleCardText(card,instance.stars??1,current,stats) : '卡牌数据缺失'];
+  }));
+});
 function battleCardDescription(cardId:string, stars=1):string {
-  const definition=reworkCard(cardId);
-  const custom = cardDefinition(cardId);
-  return definition ? describeReworkEffects(definition.effects,stars) : custom?.custom ? workshopStarDescription(custom,stars) : custom?.description ?? '卡牌数据缺失';
+  const cached = battleDescriptions.value[cardId+':'+stars];
+  if (cached !== undefined) return cached;
+  const card = cards.value[cardId], current = state.value, stats = battleDisplayStats.value;
+  return card && current && stats ? battleCardText(card,stars,current,stats) : '';
 }
 function displayedCardApCost(cardId: string, handIndex?:number): number {
   const instance = handIndex===undefined?state.value?.player.hand.find(c => c.cardId === cardId):state.value?.player.hand[handIndex];
@@ -1151,11 +1181,7 @@ function statusDescription(
 }
 
 function formatStatusNumber(value: unknown): string {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return '0';
-  return Number.isInteger(numeric)
-    ? String(numeric)
-    : numeric.toFixed(2).replace(/\.0+$/u, '').replace(/(\.\d*?)0+$/u, '$1');
+  return formatNumber(value);
 }
 
 function statusEffectSummary(
@@ -1907,7 +1933,6 @@ onUnmounted(() => {
         <span>LOCAL BATTLE RESULT</span>
         <h1>{{ resultTitle }}</h1>
         <p v-if="state.workshopTest">隔离测试已完成，没有修改正式角色、背包、任务与奖励。</p>
-        <p v-else>本次战斗已经在浏览器本地完成结算。</p>
         <div v-if="state.rewards" class="reward-grid">
           <article>
             <small>经验</small>
@@ -2062,15 +2087,16 @@ onUnmounted(() => {
                 glow: glowTargetKey === `enemy:${enemy.id}`,
               }"
               :data-enemy-index="index"
-              :disabled="enemy.hp <= 0"
+              :aria-disabled="enemy.hp <= 0"
               @click="selectEnemy(index, enemy)"
+              @dblclick.stop="monsterDetailsId = enemy.id"
             >
               <div class="enemy-card-title">
                 <strong>{{ enemy.name }}</strong>
                 <span v-if="index === selectedTarget">锁定</span>
               </div>
               <small>
-                Lv.{{ enemy.level }} · 攻 {{ Math.round(enemy.attack) }} · 防 {{ Math.round(enemy.defense) }} · 速 {{ Math.round(effectiveSpeeds[enemy.id] ?? enemy.speed) }}<br>暴击 {{ enemy.critRate ?? 0 }}% · 暴伤 +{{ enemy.critDamage ?? 50 }}% · 命中 {{ enemy.effectHit ?? 0 }}% · 抵抗 {{ enemy.effectResist ?? 0 }}% · 盾 {{ enemy.shield }}
+                Lv.{{ enemy.level }} · 攻 {{ formatNumber(enemy.attack) }} · 防 {{ formatNumber(enemy.defense) }} · 速 {{ formatNumber(effectiveSpeeds[enemy.id] ?? enemy.speed) }}<br>暴击 {{ formatNumber(enemy.critRate ?? 0) }}% · 暴伤 +{{ formatNumber(enemy.critDamage ?? 50) }}% · 命中 {{ formatNumber(enemy.effectHit ?? 0) }}% · 抵抗 {{ formatNumber(enemy.effectResist ?? 0) }}% · 盾 {{ formatNumber(enemy.shield) }}
               </small>
               <MeterBar
                 label="怪物生命"
@@ -2079,16 +2105,13 @@ onUnmounted(() => {
                 :preview-delta="-(activeCardPreview.enemyDamage[index] ?? 0)"
                 color="var(--ca-red)"
               />
-              <div v-if="enemy.intent" class="intent">
-                <b>{{ enemy.intent.kind }} · {{ enemy.intent.name }}</b>
-                <span v-if="enemy.intent.amount">
-                  直接伤害原始总预算 {{ enemy.intent.amount }}（{{ enemy.intent.hits }}段；未扣防御与护盾）
-                </span>
-                <span>{{ enemy.intent.description }}</span>
+              <div v-if="revealIntent && enemy.intent" class="intent">
+                <b>{{ enemy.intent.name }}</b>
+                <span>{{ cleanCombatCopy(enemy.intent.description ?? "") }}</span>
               </div>
-              <small v-if="enemy.mechanicDescription">{{ enemy.mechanicDescription }}</small>
+              <small v-if="revealIntent && enemy.mechanicDescription">{{ cleanCombatCopy(enemy.mechanicDescription) }}</small>
               <div class="status-row">
-                <span v-if="enemy.shield">护盾 {{ enemy.shield }}</span>
+                <span v-if="enemy.shield">护盾 {{ formatNumber(enemy.shield) }}</span>
                 <span
                   v-for="entry in effectEntries(enemy.buffs)"
                   :key="`eb:${entry.key}`"
@@ -2148,7 +2171,7 @@ onUnmounted(() => {
               <strong>{{ state.companion.name }}</strong>
               <small v-if="state.companion.injured">重伤 · 无法行动/治疗/获得护盾</small>
               <small v-else>
-                HP {{ state.companion.hp }}/{{ state.companion.hpMax }} · 盾 {{ state.companion.shield }}
+                HP {{ formatNumber(state.companion.hp) }}/{{ formatNumber(state.companion.hpMax) }} · 盾 {{ formatNumber(state.companion.shield) }}
               </small>
               <MeterBar
                 label="凯利安生命"
@@ -2181,7 +2204,7 @@ onUnmounted(() => {
             >
               <span>纯血光明圣龙 · 召唤物</span>
               <strong>{{ summon.name }}</strong>
-              <small>HP {{ summon.hp }}/{{ summon.hpMax }} · 盾 {{ summon.shield }}</small>
+              <small>HP {{ formatNumber(summon.hp) }}/{{ formatNumber(summon.hpMax) }} · 盾 {{ formatNumber(summon.shield) }}</small>
               <MeterBar
                 label="特莱奥生命"
                 :value="summon.hp"
@@ -2340,7 +2363,7 @@ onUnmounted(() => {
               </span>
             </div>
             <small>
-              攻 {{ Math.round(state.player.attack) }} · 防 {{ Math.round(state.player.defense) }} · 速 {{ Math.round(effectiveSpeeds.player ?? state.player.speed) }} · 暴击 {{ state.player.critRate ?? 5 }}% · 暴伤 +{{ state.player.critDamage ?? 50 }}% · 命中 {{ state.player.effectHit ?? 0 }}% · 抵抗 {{ state.player.effectResist ?? 0 }}%
+              攻 {{ formatNumber(state.player.attack) }} · 防 {{ formatNumber(state.player.defense) }} · 速 {{ formatNumber(effectiveSpeeds.player ?? state.player.speed) }} · 暴击 {{ formatNumber(state.player.critRate ?? 5) }}% · 暴伤 +{{ formatNumber(state.player.critDamage ?? 50) }}% · 命中 {{ formatNumber(state.player.effectHit ?? 0) }}% · 抵抗 {{ formatNumber(state.player.effectResist ?? 0) }}%
             </small>
           </div>
 
@@ -2366,7 +2389,7 @@ onUnmounted(() => {
               :aria-label="`玩家护盾 ${state.player.shield}`"
             >
               <span>玩家护盾</span>
-              <strong>🛡 {{ state.player.shield }}</strong>
+              <strong>🛡 {{ formatNumber(state.player.shield) }}</strong>
             </div>
           </div>
           <div class="battle-float-layer player-floats" aria-hidden="true">
@@ -2458,7 +2481,6 @@ onUnmounted(() => {
             牌堆 {{ state.player.drawPile.length }} · 弃牌 {{ state.player.discardPile.length }}
           </button>
 
-          <small v-if="state.rework">伤害预览按命中且不暴击计算；条件效果与选牌结果以实际结算为准。</small>
           <div class="fan-hand">
             <button
               v-for="(card, index) in state.player.hand"
@@ -2557,14 +2579,14 @@ onUnmounted(() => {
             <section>
               <h3>抽牌堆（{{ state.player.drawPile.length }}）</h3>
               <p v-if="!drawPileRows.length" class="pile-empty">空</p>
-              <article v-for="row in drawPileRows" :key="'draw:' + row.cardId">
+              <article v-for="row in drawPileRows" :key="'draw:' + row.cardId + ':' + row.stars">
                 <div>
-                  <strong>{{ row.definition?.name ?? row.cardId }}</strong>
+                  <strong>{{ row.definition?.name ?? row.cardId }} {{ '★'.repeat(row.stars) }}</strong>
                   <span>
                     {{ typeNames[row.definition?.type ?? ''] ?? '卡牌' }} ·
                     {{ row.definition?.cost ?? 0 }}AP
                   </span>
-                  <p>{{ row.definition?.description ?? '卡牌数据缺失' }}</p>
+                  <p>{{ battleCardDescription(row.cardId, row.stars) }}</p>
                 </div>
                 <b>×{{ row.quantity }}</b>
               </article>
@@ -2574,15 +2596,15 @@ onUnmounted(() => {
               <p v-if="!discardPileRows.length" class="pile-empty">空</p>
               <article
                 v-for="row in discardPileRows"
-                :key="'discard:' + row.cardId"
+                :key="'discard:' + row.cardId + ':' + row.stars"
               >
                 <div>
-                  <strong>{{ row.definition?.name ?? row.cardId }}</strong>
+                  <strong>{{ row.definition?.name ?? row.cardId }} {{ '★'.repeat(row.stars) }}</strong>
                   <span>
                     {{ typeNames[row.definition?.type ?? ''] ?? '卡牌' }} ·
                     {{ row.definition?.cost ?? 0 }}AP
                   </span>
-                  <p>{{ row.definition?.description ?? '卡牌数据缺失' }}</p>
+                  <p>{{ battleCardDescription(row.cardId, row.stars) }}</p>
                 </div>
                 <b>×{{ row.quantity }}</b>
               </article>
@@ -2595,8 +2617,8 @@ onUnmounted(() => {
             <div>
               <strong>战斗背包</strong>
               <span>
-                HP {{ state.player.hp }}/{{ state.player.hpMax }} · MP
-                {{ state.player.mp }}/{{ state.player.mpMax }}
+                HP {{ formatNumber(state.player.hp) }}/{{ formatNumber(state.player.hpMax) }} · MP
+                {{ formatNumber(state.player.mp) }}/{{ formatNumber(state.player.mpMax) }}
               </span>
             </div>
             <button
@@ -2679,7 +2701,7 @@ onUnmounted(() => {
                   {{ typeNames[cardDefinition(cardId)?.type ?? ''] ?? '卡牌' }} ·
                   {{ cardDefinition(cardId)?.rarity ?? 'common' }}
                 </span>
-                <p>{{ cardDefinition(cardId)?.description ?? state.player.pendingCardChoice.labels?.[index] }}</p>
+                <p>{{ battleCardDescription(cardId) || state.player.pendingCardChoice.labels?.[index] }}</p>
               </button>
             </div>
           </section>
@@ -2719,13 +2741,6 @@ onUnmounted(() => {
         </article>
       </div>
 
-      <div class="encounter-rule">
-        <strong>本次遭遇由脚本自动决定</strong>
-        <p>
-          低等级怪物权重更高，但不会硬性排除高等级怪物；困难与地狱难度更容易出现群体战。群怪会应用旧版的数量补正，避免简单叠加成数值墙。
-        </p>
-      </div>
-
       <button
         type="button"
         class="explore-button"
@@ -2738,6 +2753,7 @@ onUnmounted(() => {
       </button>
     </section>
 
+    <MonsterSkills v-if="monsterDetails" :name="monsterDetails.name" :skills="monsterDetails.skills" @close="monsterDetailsId = ''" />
     <p v-if="notice" class="battle-notice">{{ notice }}</p>
   </AdventurerFrame>
 </template>

@@ -122,8 +122,6 @@ function publicSkill(source: SourceSkill, monsterId: string): ReworkPublicSkill 
     readable(copy.summary ?? ''),
     shieldCounter ? shieldRule : text(copy.executeIf),
     text(copy.targetSelection) ? '目标选择：' + text(copy.targetSelection) : '',
-    text(copy.telegraph), text(copy.fallback),
-    '所有目标均相对施放者阵营；友方为怪物队伍。',
   ].filter(Boolean).join('；');
   return {
     ...copy,
@@ -203,7 +201,7 @@ export function applyReworkMonsters(legacy: Record<string, MonsterDefinition>): 
       reworkVersion: '2026-09-07-v3',
       reworkReferenceLevel: 20,
       reworkReferenceStats: stats,
-      reworkStatsNote: '面板参考20级单体遭遇；实际等级随地区追赶玩家，组队时共用遭遇总生命与行动预算。',
+      reworkStatsNote: '',
       tier: definition.tier,
       role: definition.role,
       roleKey: definition.roleKey,

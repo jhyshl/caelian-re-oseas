@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { formatNumber } from '@/ui/format-number';
 
 const props = withDefaults(
   defineProps<{
@@ -47,10 +48,10 @@ const previewStyle = computed(() => ({
       <span>{{ label }}</span>
       <b v-if="effectivePreviewDelta !== 0">
         预计 {{ effectivePreviewDelta > 0 ? '+' : '−'
-        }}{{ Math.abs(Math.round(effectivePreviewDelta)) }} ·
-        {{ Math.round(previewValue) }} / {{ Math.round(max) }}
+        }}{{ formatNumber(Math.abs(effectivePreviewDelta)) }} ·
+        {{ formatNumber(previewValue) }} / {{ formatNumber(max) }}
       </b>
-      <b v-else>{{ Math.round(value) }} / {{ Math.round(max) }}</b>
+      <b v-else>{{ formatNumber(value) }} / {{ formatNumber(max) }}</b>
     </div>
     <div class="ca-meter-track">
       <i class="ca-meter-fill" :style="{ width: `${percent}%`, background: color }"></i>
@@ -60,9 +61,9 @@ const previewStyle = computed(() => ({
         :style="previewStyle"
       ></i>
       <span v-if="effectivePreviewDelta !== 0">
-        {{ Math.round(previewValue) }} / {{ Math.round(max) }}
+        {{ formatNumber(previewValue) }} / {{ formatNumber(max) }}
       </span>
-      <span v-else>{{ Math.round(percent) }}%</span>
+      <span v-else>{{ formatNumber(percent) }}%</span>
     </div>
   </div>
 </template>

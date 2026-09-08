@@ -9,6 +9,16 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.73',
+    label: 'Alpha 73',
+    releasedAt: '2026-09-08',
+    changes: [
+      '战斗数值统一四舍五入，最多显示两位小数。卡牌在战斗中按当前属性和实际星级直接显示数值，背包保留完整基础值与属性倍率。',
+      '怪物默认隐藏行动意图，双击怪物可查看完整技能模组；携带能够洞察意图的藏品时显示当前意图。',
+      '清理卡面、战斗界面与怪物技能中的通用预览假设和计算备注，保留技能效果、持续时间及触发条件。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.72',
     label: 'Alpha 72',
     releasedAt: '2026-09-08',

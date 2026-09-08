@@ -11,7 +11,7 @@ const poisonCards = [
 ] as const;
 
 describe('职业卡牌重置目录', () => {
-  it('全部 546 张正式卡覆盖旧目录，沿用稳定 ID，MP 清零并提供三级升星说明', async () => {
+  it('全部 546 张正式卡覆盖旧目录，沿用稳定 ID，保留三星数据与完整效果', async () => {
     const cards = await loadCardCatalog();
     expect(reworkCatalog.cards).toHaveLength(546);
     for (const approved of reworkCatalog.cards) {
@@ -19,7 +19,8 @@ describe('职业卡牌重置目录', () => {
       expect(card, approved.id).toBeDefined();
       expect(card).toMatchObject({ id: approved.id, name: approved.name, cost: approved.ap, mpCost: 0, maxStars: 3, rework: true });
       expect(card!.effects).toHaveLength(approved.effects.length);
-      expect(card!.description).toContain('卡牌最多3星');
+      expect(card!.description).toContain('逐项效果：');
+      expect(card!.description).not.toContain('卡牌最多3星');
       expect(card!.description).not.toContain('undefined');
       expect(card!.effects.map((effect) => effect.type)).toEqual(approved.effects.map((effect) => effect.kind));
     }

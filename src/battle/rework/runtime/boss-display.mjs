@@ -82,7 +82,6 @@ export function describeBossIntent(g,a){
  if(i.delayed||a.flags?.boss?.delayedIntent)segments.push('强控已延后本次大招1次行动；保持本次原意图与条件，伤害额外降低20%，不重新选招');
  else if(i.isMajor)segments.push('可用强控延后1次行动并降低该次伤害20%；每3次本体行动阶段最多触发一次');
  if(i.guardThreshold!==undefined)segments.push('已公告护盾阈值 '+amount(i.guardThreshold)+'；达到时该次直接伤害降低30%，阈值不因嘲讽改目标而重算');
- if(Array.isArray(i.damageEstimate)&&i.damageEstimate.some(n=>n>0))segments.push('原始直接伤害预算 '+amount(i.damageEstimate[0])+'～'+amount(i.damageEstimate[1])+'；尚未扣目标防御与护盾，实际分支按以上条件结算');
  segments.push('冷却'+number(s.cooldown||0)+'；本次占1个主要行动');
  return segments.filter(Boolean).join('；');
 }
