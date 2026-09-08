@@ -9,12 +9,17 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.71');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.72');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.71');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.72');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
-    const latestText = releases[0]?.changes.join('\n') ?? '';
+    const resetText = releases[0]?.changes.join('\n') ?? '';
+    expect(resetText).toContain('迅捷');
+    expect(resetText).toContain('起点以外的已解锁地区');
+    expect(resetText).toContain('自定义次数');
+    expect(resetText).toContain('自定义模板');
+    const latestText = releases.find(r=>r.version==='0.2.0-alpha.71')!.changes.join('\n');
     expect(latestText).toContain('卡牌升星移至合成台');
     expect(latestText).toContain('2000金币');
     expect(latestText).toContain('跨城货运');
@@ -262,13 +267,13 @@ describe('release notes', () => {
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.999')[0]?.version).toBe(
-      '0.2.0-alpha.71',
+      '0.2.0-alpha.72',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.71',
+      '0.2.0-alpha.72',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });

@@ -168,6 +168,7 @@ export class PlayerRepository {
     profileId: string,
     stat: AllocatableStat,
     direction: 'add' | 'remove',
+    count = 1,
   ): Promise<void> {
     const [player, allocations, loadout, equipment] = await Promise.all([
       this.get(profileId),
@@ -194,7 +195,13 @@ export class PlayerRepository {
       equipment.filter((item) => equippedIds.has(item.id)),
     );
 
-    mutateAllocation(player, allocations, stat, direction, equipmentBonus);
+    if (!Number.isSafeInteger(count) || count < 1 || count > 100000) {
+      throw new Error('请输入 1～100000 的整数调整次数');
+    }
+    // Validate the entire batch on detached records before writing anything.
+    for (let index = 0; index < count; index++) {
+      mutateAllocation(player, allocations, stat, direction, equipmentBonus);
+    }
     const now = Date.now();
     player.updatedAt = now;
     allocations.updatedAt = now;

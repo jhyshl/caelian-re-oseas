@@ -138,7 +138,15 @@ export interface QuestRecord {
   id: string;
   profileId: string;
   definitionId?: string;
-  commissionType?: 'combat' | 'gather' | 'escort' | 'investigate';
+  commissionType?: 'combat' | 'gather' | 'combat_gather' | 'escort' | 'investigate';
+  commissionVersion?: 2;
+  commissionItems?: Array<{ itemId: string; count: number }>;
+  commissionItemsSubmitted?: boolean;
+  commissionKills?: number;
+  commissionBattleIds?: string[];
+  commissionAcceptedAt?: number;
+  escortDestination?: string;
+  escortArrived?: boolean;
   commissionTarget?: string;
   kind: QuestKind;
   title: string;
@@ -700,6 +708,7 @@ export interface LocalBattleState {
 }
 
 export interface BattleSessionRecord {
+  startedAt?: number;
   id: string;
   profileId: string;
   active: boolean;

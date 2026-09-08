@@ -57,7 +57,7 @@ function markProof(g,a,proof) {
 }
 function openExposure(g,a) {
  const s=data(a);if(s.mode==='exposed')return;
- s.mode='exposed';s.exposureStart=g.round+1;s.exposureEnd=g.round+(pct(a)<.4?1:2);a.shield=0;
+ s.mode='exposed';s.exposureStart=g.round+1;s.exposureEnd=g.round+(pct(a)<.4?1:2);a.shield=0;a.buffs=a.buffs.filter(e=>statusKey(e)!=='fortitude');
  // Installed at the next player phase; does not consume a fraction of a phase now.
  log(g,'boss_exposure_scheduled',{actor:a.id,start:s.exposureStart,end:s.exposureEnd});
 }
@@ -84,12 +84,13 @@ function tauntReady(g,a) {
  return g.round>=(g.teamTauntUntil?.[a.side]||0)&&!all(g).some(t=>alive(t)&&t.side===a.side&&has(g,t,'taunt'));
 }
 function targetIds(g,a,e,chosen) {
+ if(e.allyHelper){const matches=helpers(g,bossOf(g,a)).filter(h=>e.allyHelper==='any'||h.definition.id===e.allyHelper).sort((x,y)=>pct(x)-pct(y)||stable(x,y));return matches.length?[matches[0].id]:e.allyHelper==='any'?[a.id]:[];}
  if(e.target==='self')return [a.id];if(e.target==='ally')return [bossOf(g,a).id];
  if(e.target==='all_allies')return [bossOf(g,a),...helpers(g,bossOf(g,a))].filter(alive).map(t=>t.id);
  const pool=foes(g,a);if(e.target==='all_enemies')return pool.map(t=>t.id);return [chosen?.id||pool[0]?.id].filter(Boolean);
 }
 function intent(g,a,skill,extra={}) {
- const hostile=foes(g,a),direct=skill.effects.some(e=>kind(e)==='damage'&&e.target==='enemy'),target=(direct?hostile.find(t=>has(g,t,'taunt')):null)||hostile[0];
+ const hostile=foes(g,a),direct=skill.effects.some(e=>['damage','dot','debuff','dispel'].includes(kind(e))&&e.target==='enemy'),target=(direct?hostile.find(t=>has(g,t,'taunt')):null)||hostile[0];
  const entries=skill.effects.map(e=>({effect:structuredClone(e),targetIds:targetIds(g,a,e,target)}));
  const estimate=skill.effects.filter(e=>kind(e)==='damage').reduce((n,e)=>n+raw(g,a,e),0);
  const result={skillId:skill.id,skillName:skill.name,skill:structuredClone(skill),effectTargets:entries,targetId:skill.target==='self'?a.id:skill.target==='ally'?bossOf(g,a).id:target?.id,round:g.round,isMajor:!!skill.isMajor,conditional:skill.preResolve||skill.fallback,damageEstimate:[estimate,estimate*(skill.effects.some(e=>e.crit)?1+stat(g,a,'critDamage')/100:1)],scale:1,...extra};
@@ -101,14 +102,14 @@ function bossCondition(g,a,id) {
  const s=data(a),p=g.player,h=helpers(g,a),prev=s.last;
  const playerHits=last(g,'hitsByTarget')[a.id]||0;
  switch(s.family){
- case'golem':return {punch:true,mistake:last(g,'damageCards')>=4&&!last(g,'healing')&&!last(g,'shieldGained')&&g.round!==s.nextExamRound,rail:pct(a)<.6&&playerHits>=3&&a.shield<=0,exam:g.round>=s.nextExamRound,restart:g.round<s.nextExamRound&&[2,4].some(n=>s.examPasses>=n&&!s.calibrated.includes(n))}[id];
- case'grave':return {scythe:true,whisper:!last(g,'cleanse')&&!has(g,p,'corrosion'),soil:pct(a)<.45&&a.shield<=0&&s.R<2,reckoning:s.R>=2,lantern:s.R<=-2&&!helper(g,a,'grave_lantern')&&(s.spawnCounts.grave_lantern||0)<2&&h.length<2,guard:pct(a)<.55&&!uses(a,'guard')&&h.length<2}[id];
- case'saint':return {gaze:true,prayer:s.mode==='collect'&&pct(a)<.6&&a.shield<=0,verdict:s.mode==='collect'&&g.round>=s.collectRound+2,decree:prev.addedBuffs>=2,crack:s.mode==='complete'}[id];
+ case'golem':return {punch:true,mistake:last(g,'damageCards')>=4&&!last(g,'healing')&&!last(g,'shieldGained')&&g.round!==s.nextExamRound,rail:pct(a)<.6&&playerHits>=3&&a.shield<=0,exam:g.round>=s.nextExamRound,restart:g.round<s.nextExamRound&&a.debuffs.some(e=>['hard_control','freeze','stun','sleep','petrify','armor_break'].includes(statusKey(e)))}[id];
+ case'grave':return {scythe:true,whisper:h.some(x=>x.shield<x.maxHp*.1)&&!has(g,p,'weak'),soil:pct(a)<.45&&a.shield<=0&&s.R<2,reckoning:s.R>=2,lantern:s.R<=-2&&!helper(g,a,'grave_lantern')&&(s.spawnCounts.grave_lantern||0)<2&&h.length<2,guard:pct(a)<.55&&!uses(a,'guard')&&h.length<2}[id];
+ case'saint':return {gaze:s.mode==='collect',prayer:s.mode==='collect'&&a.shield<=0,verdict:s.mode==='collect'&&g.round>=s.collectRound+2,decree:s.mode==='collect'&&!s.evidence.art&&!has(g,a,'attack_up'),crack:s.mode==='complete',struggle:s.mode==='exposed'}[id];
  case'tide':return {aria:true,charm:s.phase===3&&last(g,'healing')>=p.maxHp*.1,crown:s.phase===0&&a.shield<a.maxHp*.1&&!helper(g,a,'tide_pearl'),high:s.phase===1,reflux:s.phase===3&&pct(a)<.5&&uses(a,'reflux')<2&&g.healBudgetRemaining(a,a)>0,ebb:s.phase===2}[id];
- case'stag':return {antler:true,pollen:last(g,'drawn')>=3&&!has(g,p,'speed_down'),regen:pct(a)<.6&&s.M<=1&&uses(a,'regen')<2&&g.healBudgetRemaining(a,a)>0,trample:s.M>=4,bloom:(s.M===2||s.M===3)&&playerHits>=4}[id];
+ case'stag':return {antler:true,pollen:s.M<=1&&!has(g,p,'speed_down'),regen:pct(a)<.6&&s.M<=1&&uses(a,'regen')<2&&g.healBudgetRemaining(a,a)>0,trample:s.M>=4,bloom:s.M===2||s.M===3}[id];
  case'mirror':return {stab:true,step:prev.offenseAP>=6&&s.C<2,refract:prev.maxHit>=a.maxHp*.12&&s.C<2,scrutiny:prev.defenseAP>=4&&s.C<2,copy:s.C===2,servant:pct(a)<.5&&!uses(a,'servant')&&h.length<2}[id];
- case'forge':return {flame:true,shell:s.Q<40&&pct(a)<.7&&a.shield<=0,steam:s.Q<80&&last(g,'endShield')>=p.maxHp*.2,overload:s.Q>=80,vent:s.ventPending}[id];
- case'leviathan':return {bite:true,blackwater:last(g,'shieldGained')>=p.maxHp*.2&&!has(g,p,'corrosion'),roar:last(g,'damageCards')>=5&&!has(g,p,'weak'),regrow:pct(a)<.45&&!uses(a,'regrow')&&s.deadParts.some(x=>!alive(g.enemies.find(t=>t.id===x.actorId)))&&h.length<2,devour:!h.length&&!last(g,'defenseCards')&&!last(g,'healCards')&&!s.charged,devour_hit:s.charged==='devour_hit'}[id];
+ case'forge':return {flame:true,shell:s.Q<40&&pct(a)<.7&&a.shield<=0,steam:s.Q<80&&last(g,'endShield')>=p.maxHp*.2,overload:s.Q>=80,pressure:s.Q>=40&&s.Q<80&&!has(g,a,'attack_up')}[id];
+ case'leviathan':return {bite:true,blackwater:!helper(g,a,'leviathan_tentacle')&&prev.hpDamageByTarget[a.id]>=a.maxHp*.08&&a.shield<=0,regrow:pct(a)<.45&&!uses(a,'regrow')&&s.deadParts.some(x=>!alive(g.enemies.find(t=>t.id===x.actorId)))&&h.length<2,devour:!s.charged&&g.round>=2,devour_hit:s.charged==='devour_hit'}[id];
  default:throw Error('Unsupported Boss '+a.id);
  }
 }
@@ -116,6 +117,7 @@ function helperCondition(g,a,id) {
  const b=bossOf(g,a);if(!alive(b))return false;
  switch(id){
  case'soul_heal':return pct(b)<.9&&uses(a,id)<2&&g.healBudgetRemaining(a,b)>0;
+ case'soul_guard':return b.shield<b.maxHp*.1;
  case'guard_taunt':return !!helper(g,b,'grave_lantern')&&tauntReady(g,a);
  case'guard_hit':case'mirror_chip':case'tentacle_hit':case'tail_idle':return true;
  case'pearl_guard':return a.shield<=0;
@@ -223,28 +225,26 @@ function preResolve(g,a,locked) {
  const s=data(a),t=s.turn;let skill=structuredClone(locked.skill),scale=locked.scale??1,after=()=>{};
  if(s.family==='golem'&&skill.id==='exam'){
   const ex=locked.exam;const pass=ex.exam==='attack'?t.offenseAP>=3:ex.exam==='restraint'?g.player.ap>=2:t.standardGuard||g.player.thisTurn.shieldGained>=ex.guardThreshold||g.player.thisTurn.healing>=ex.healThreshold;
-  scale*=pass?.5:1;after=()=>{if(pass){s.examPasses++;expose(g,a,'exam_pass',20,1);}s.nextExamRound=g.round+s.examInterval;};log(g,'boss_exam_result',{actor:a.id,pass,exam:ex.exam});
+  scale*=pass?.5:1;after=()=>{if(pass){s.examPasses++;a.shield=0;a.buffs=a.buffs.filter(e=>statusKey(e)!=='fortitude');expose(g,a,'exam_pass',20,1);}s.nextExamRound=g.round+s.examInterval;};log(g,'boss_exam_result',{actor:a.id,pass,exam:ex.exam});
  }
- if(s.family==='golem'&&skill.id==='restart')after=()=>{const n=[2,4].find(x=>s.examPasses>=x&&!s.calibrated.includes(x));if(n)s.calibrated.push(n);a.shield=0;expose(g,a,'calibration',20,1);};
  if(s.family==='grave'&&skill.id==='reckoning'){if(s.R<=1){({skill,scale}=lowDamage(g,a,'scythe',.7));}after=()=>{s.R=0;};}
  if(s.family==='grave'&&skill.id==='lantern')after=()=>{s.R=0;};
  if(s.family==='saint'){
   if(s.mode==='complete'){skill=structuredClone(skillBy(g,a,'crack'));after=()=>openExposure(g,a);}
-  else if(skill.id==='verdict')after=()=>{s.collectRound=g.round+1;};
+  else if(skill.id==='verdict')after=()=>{s.collectRound=g.round+1;a.buffs=a.buffs.filter(e=>statusKey(e)!=='attack_up');};
  }
  if(s.family==='tide'){
-  if(skill.id==='crown'){const can=helpers(g,a).length<2&&!helper(g,a,'tide_pearl')&&(s.spawnCounts.tide_pearl||0)<2;skill.effects=structuredClone(skill.effects[0].branches[can?0:1].effects);}
+  if(skill.id==='crown'){const can=helpers(g,a).length<2&&!helper(g,a,'tide_pearl')&&(s.spawnCounts.tide_pearl||0)<2;const oldBranch=skill.effects.find(e=>e.branches);if(oldBranch)skill.effects=oldBranch.branches[can?0:1]?.effects??[];if(!can)skill.effects=skill.effects.filter(e=>kind(e)!=='summon');}
   if(skill.id==='high'){scale*=s.pearlBroken?.55:t.ashore?.60:1;after=()=>{s.pearlBroken=false;};}
-  if(skill.id==='ebb')scale*=.8;
  }
  if(s.family==='stag'&&skill.id==='trample'){if(s.M<=3)({skill,scale}=lowDamage(g,a,'antler',.5));after=()=>{s.M=1;s.phaseEndMeterReset={M:1};};}
  if(s.family==='mirror'&&skill.id==='copy'){const repeated=!t.erased&&(t[(locked.recordFamily||'offense')+'AP']||0)>=4;scale*=repeated?1:.5;after=()=>{s.C=0;s.copyResolvedRound=g.round;};}
  if(s.family==='forge'){
-  if(skill.id==='overload'){if(s.Q<80){({skill,scale}=lowDamage(g,a,'steam',.5));}else after=()=>{s.Q=20;s.phaseEndMeterReset={Q:20};s.ventPending=true;expose(g,a,'overload_exposure',30,2);ownState(g,a,'overload_armor','armor_break',20,2);};}
-  if(skill.id==='vent')after=()=>{s.ventPending=false;};
+  if(skill.id==='overload'){if(s.Q<80){({skill,scale}=lowDamage(g,a,'steam',.5));}else after=()=>{s.Q=20;s.phaseEndMeterReset={Q:20};a.shield=0;a.buffs=a.buffs.filter(e=>!['fortitude','attack_up','defense_up'].includes(statusKey(e)));expose(g,a,'overload_exposure',30,2);ownState(g,a,'overload_armor','armor_break',20,2);};}
+  if(skill.id==='pressure')after=()=>{s.Q=clamp(s.Q+10,0,100);};
  }
  if(s.family==='leviathan'&&skill.id==='devour_hit'){
-  if(t.anchored||(t.hpDamageByTarget[a.id]||0)>=a.maxHp*.08)({skill,scale}=lowDamage(g,a,'bite',.5));after=()=>{s.charged=null;};
+  if(t.anchored||a.shield<=0||a.flags.resetShieldRemaining===0){skill.effects=skill.effects.filter(e=>kind(e)==='damage').map(e=>({...e,flat:15,atk:1.5,crit:false}));}after=()=>{s.charged=null;a.buffs=a.buffs.filter(e=>statusKey(e)!=='attack_up');};
  }
  return {skill,scale,after};
 }
@@ -263,9 +263,7 @@ function helperBudgetScale(g,a,skill) {
  return required>0?amount/required:1;
 }
 function dispelBoss(g,t,n) {
- const rank=e=>statusKey(e)==='direct_damage_reduction'?3:statusKey(e)==='attack_up'?2:statusKey(e)==='speed_up'?1:0;
- const pool=t.buffs.filter(e=>e.dispellable!==false).sort((a,b)=>rank(b)-rank(a)||(a.addedRound||0)-(b.addedRound||0)||statusKey(a).localeCompare(statusKey(b)));
- for(const e of pool.slice(0,n))t.buffs.splice(t.buffs.indexOf(e),1);return Math.min(n,pool.length);
+ return g.dispel(t,n);
 }
 function runEffects(g,a,resolved,locked) {
  const out={},isHelper=!!a.flags.bossHelper,owner=bossOf(g,a),entries=resolved.skill.effects;
@@ -279,8 +277,7 @@ function runEffects(g,a,resolved,locked) {
   if(type==='charge'){if(isHelper)a.flags.charged=e.next;else data(a).charged=e.next;continue;}
   const originalRow=locked.effectTargets.find(x=>JSON.stringify(x.effect)===JSON.stringify(e0));
   let ts=originalRow?originalRow.targetIds.map(id=>all(g).find(t=>t.id===id)).filter(alive):targetIds(g,a,e,alive(target)?target:fallbackTarget).map(id=>all(g).find(t=>t.id===id)).filter(alive);
-  const direct=entries.some(x=>kind(x)==='damage'&&x.target==='enemy');
-  if(direct&&e.target==='enemy'&&['damage','debuff','dot'].includes(type)){const taunt=foes(g,a).find(t=>has(g,t,'taunt'));if(taunt)ts=[taunt];}
+  if(e.target==='enemy'&&['damage','debuff','dot','dispel'].includes(type)){const taunt=foes(g,a).find(t=>has(g,t,'taunt'));if(taunt)ts=[taunt];}
   if(!ts.length&&e.target==='enemy'&&fallbackTarget)ts=[fallbackTarget];
   const share=damageShare(e,ts.length);
   for(const t of ts){if(!alive(a)||!alive(t))continue;
@@ -289,8 +286,10 @@ function runEffects(g,a,resolved,locked) {
    if(!primitive.has(type))throw Error('Unsupported Boss primitive '+type);
    if(type==='heal'&&e.maxUses&&uses(a,locked.skillId)>e.maxUses)continue;
    const factor=share*(type==='damage'?(resolved.scale??1)*groupScale:1);
+   if(e.permanentDefenseRatio!==undefined)e.value=a.stats.defense*e.permanentDefenseRatio;
    if(isHelper&&a.definition.id==='leviathan_tentacle'&&type==='buff'&&statusKey(e)==='direct_damage_reduction'){ownState(g,owner,'leviathan_guard','direct_damage_reduction',15,999999,true);continue;}
-   sumResult(out,g.applyEffects([e],a,t,{forceTarget:true,scale:factor,star:1,skillId:locked.skillId}));
+   const applied=g.applyEffects([e],a,t,{forceTarget:true,scale:factor,star:1,skillId:locked.skillId});sumResult(out,applied);
+   if(type==='shield'&&a===t&&['devour','tail_prepare'].includes(locked.skillId))a.flags.resetShieldRemaining=applied.shield;
   }
  }
  return out;
@@ -325,8 +324,9 @@ export function actBoss(g,a) {
   }
   if(!isHelper&&s.family==='grave')s.balancedAtResolution=Math.abs(s.R)<=1;
   const resolved=isHelper?{skill:structuredClone(locked.skill),scale:1,after:()=>{}}:preResolve(g,a,locked);
+  if(isHelper&&locked.skillId==='tail_sweep'&&(a.shield<=0||a.flags.resetShieldRemaining===0)){resolved.skill=waitSkill();a.flags.charged=null;}
   if(!isHelper&&s.controlDamagePending&&resolved.skill.effects.some(e=>kind(e)==='damage')){resolved.scale*=.8;s.controlDamagePending=false;}
-  a.cooldowns[locked.skillId]=g.round+(locked.skill.cooldown||0);a.flags.bossSkillUses[locked.skillId]=uses(a,locked.skillId)+1;
+  a.cooldowns[locked.skillId]=g.round+(locked.skill.cooldown||0)+(locked.skill.resetVersion===2&&locked.skill.cooldown?1:0);a.flags.bossSkillUses[locked.skillId]=uses(a,locked.skillId)+1;
   g.beforeEnemyAction?.(a,resolved.skill);if(!alive(a))return {skipped:true};
   const out=runEffects(g,a,resolved,locked);resolved.after();
   if(isHelper&&locked.skillId==='tail_sweep')a.flags.charged=null;
@@ -342,4 +342,4 @@ export function initBosses(g) {
  const oldRaw=g.rawHit;g.rawHit=(source,target,amount,opts={})=>{const wasAlive=alive(target),out=oldRaw(source,target,amount,opts);if(source.side!=='enemy')for(const a of g.enemies.filter(x=>alive(x)&&x.definition?.tier==='boss')){const s=ensure(g,a),t=s.turn;t.hpDamageByTarget[target.id]=(t.hpDamageByTarget[target.id]||0)+(out.hpDamage||0);t.damageByTarget[target.id]=(t.damageByTarget[target.id]||0)+(out.damage||0);if(!opts.dot){t.maxHit=Math.max(t.maxHit,out.maxHit??out.damage??0);t.hitsByTarget[target.id]=(t.hitsByTarget[target.id]||0)+1;}if(opts.dot&&data(a).family==='saint'&&(out.damage||0)>0)markProof(g,a,'weapon');}if(wasAlive&&!alive(target)){recordDeath(g,target,source);if(target.definition?.tier==='boss'){for(const h of helpers(g,target)){h.hp=0;h.flags.ownerDefeated=true;}log(g,'boss_defeated',{actor:target.id});}}return out;};
  const oldStatus=g.addStatus;g.addStatus=(source,target,e,opts={})=>{const existed=target.buffs.some(b=>statusKey(b)===statusKey(e)&&b.sourceId===source.id);const out=oldStatus(source,target,e,opts);if(out&&source.side!=='enemy')for(const a of g.enemies.filter(x=>alive(x)&&x.definition?.tier==='boss')){const s=ensure(g,a);if(kind(e)==='buff'&&target.side!=='enemy'&&e.dispellable!==false&&!existed)s.turn.addedBuffs++;if(s.family==='forge'&&target===a&&['wet','freeze'].includes(statusKey(e))&&!s.turn.wetCooling){s.Q=clamp(s.Q-12,0,100);s.turn.wetCooling=true;}}return out;};
 }
-export const bossRuntimeCoverage={bodies:8,bodySkills:44,helperSkills:12,helpers:6,contextActions:9,effectKinds:['damage','heal','shield','buff','debuff','dot','dispel','utility','mechanic_state','summon','charge','shield_strip','branch']};
+export const bossRuntimeCoverage={bodies:8,bodySkills:44,helperSkills:13,helpers:6,contextActions:9,effectKinds:['damage','heal','shield','buff','debuff','dot','dispel','utility','mechanic_state','summon','charge','shield_strip','branch']};

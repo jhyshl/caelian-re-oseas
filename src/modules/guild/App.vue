@@ -14,6 +14,7 @@ import type {
 import type { QuestListEntry } from '@/quests/catalog';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import { normalizeRegion } from '@/worldbook/region-switcher';
+import { commissionBoard, commissionCombatPending } from '@/guild-commissions';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
@@ -84,7 +85,7 @@ const rankProgress = computed(() => {
   return Math.min(100, (snapshot.value.guild.experience / requirement) * 100);
 });
 const availableTasks = computed(() =>
-  tasks.value.filter(
+  commissionBoard(tasks.value, snapshot.value?.regionAccess ?? []).filter(
     (task) =>
       (snapshot.value?.player.level ?? 1) >= task.lvl &&
       normalizeRegion(task.region) ===
@@ -95,7 +96,7 @@ const availableTasks = computed(() =>
 );
 
 function taskId(task: GuildTaskDefinition) {
-  return `${task.name}:${task.region}`;
+  return task.id ?? `${task.name}:${task.region}`;
 }
 
 async function refresh() {
@@ -225,6 +226,7 @@ async function accept(task: GuildTaskDefinition) {
       minimumLevel: task.lvl,
       commissionType: task.type,
       targetName: task.target,
+      destination: task.destination,
     },
   });
   busyTask.value = '';
@@ -241,8 +243,8 @@ async function progressCommission(quest: QuestRecord) {
   busyTask.value = quest.id;
   notice.value = '';
   try {
-    if (quest.commissionType === 'combat') {
-      const remaining = Math.max(1, quest.totalStages - quest.currentStage);
+    if (commissionCombatPending(quest)) {
+      const remaining = Math.max(1, quest.totalStages - (quest.commissionKills ?? quest.currentStage));
       const result = await props.context.api.execute({
         id: commandId('battle.start'),
         type: 'battle.start',
@@ -264,9 +266,9 @@ async function progressCommission(quest: QuestRecord) {
       });
       if (result.status === 'rejected') throw new Error(result.message);
       notice.value =
-        quest.commissionType === 'gather'
+        ['gather', 'combat_gather'].includes(quest.commissionType ?? '')
           ? '材料已提交。'
-          : '现场行动已确认。';
+          : '护送已到达终点。';
     }
     await refresh();
   } catch (error) {
@@ -513,11 +515,11 @@ onUnmounted(() => {
                   @click="progressCommission(quest)"
                 >
                   {{
-                    quest.commissionType === 'combat'
+                    commissionCombatPending(quest)
                       ? '开始讨伐'
-                      : quest.commissionType === 'gather'
+                      : ['gather', 'combat_gather'].includes(quest.commissionType ?? '')
                         ? '提交材料'
-                        : '完成现场行动'
+                        : '交付护送'
                   }}
                 </button>
                 <button

@@ -1,4 +1,5 @@
 // Deterministic execution of the reviewed 97-creature catalog. No hand access.
+import { selectResetTargets, resetEligible, resetPriority, resolveResetEntries } from './reset-enemies.mjs';
 const HEAL_SUFFIX='；且施放者总治疗额度剩余>0、锁定受益者总受治疗额度剩余>0、受益者确有生命缺口';
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
 const alive=a=>a&&a.hp>0;
@@ -220,7 +221,8 @@ const SELECTORS=[
 '只从上一轮受到至少2次直接攻击的存活队友中选；最低生命比例，同值slot',
 '自己与队友中最低生命比例者，同值最低slot',
 '只从healer/controller角色、上一轮被攻击且当前无盾的存活队友中选；最低生命比例，同值slot',
-'火系队友中攻击力最高者，同值最低slot'
+'火系队友中攻击力最高者，同值最低slot',
+'复合技能锁定受益者与敌方目标'
 ];
 const EXECUTORS=new Map([
 ['执行时目标仍无盾，或本体上一轮确实防御/强化；不满足则普通攻击',(g,a,t,s)=>t.shield<=0||prevGuard(ctx(g,a,t,s))],
@@ -232,10 +234,11 @@ const EXECUTORS=new Map([
 ['本方当前无有效嘲讽且阵营嘲讽空窗结束，否则防御',(g,a)=>tauntReady(g,a)],
 ['执行时目标仍有潮湿，否则普通攻击',(g,a,t)=>has(g,t,'wet')]
 ]);
-const UTILITIES=new Set(['lifesteal','shield_damage','shield_steal','hp_cost','prepare_counter','recorded_counter','consume_buff','steal_buff','cleanse','dispel']);
+const UTILITIES=new Set(['lifesteal','shield_damage','shield_steal','hp_cost','prepare_counter','recorded_counter','consume_buff','steal_buff','cleanse','dispel','shield_cost','damage_bonus']);
 const PRIMITIVES=new Set(['damage','heal','shield','dot','buff','debuff']);
 export function validateEnemyCatalog(catalog){const missing=[];const rows=catalog.monsters||catalog;for(const m of rows)for(const s of m.skills){const base=s.condition.endsWith(HEAL_SUFFIX)?s.condition.slice(0,-HEAL_SUFFIX.length):s.condition;if(!P.has(base))missing.push({id:m.id,skill:s.id,kind:'condition',text:s.condition});for(const t of [s.targetSelection,...s.effects.map(e=>e.targetSelection)].filter(Boolean))if(!SELECTORS.includes(t))missing.push({id:m.id,skill:s.id,kind:'targetSelection',text:t});if(s.executeIf&&!EXECUTORS.has(s.executeIf))missing.push({id:m.id,skill:s.id,kind:'executeIf',text:s.executeIf});for(const e of s.effects)if(!PRIMITIVES.has(e.kind||e.type)&&!UTILITIES.has(e.kind||e.type))missing.push({id:m.id,skill:s.id,kind:'effect',text:e.kind||e.type});}if(missing.length)throw Error('Unsupported enemy catalog: '+JSON.stringify(missing));return {monsters:rows.length,skills:rows.reduce((n,m)=>n+m.skills.length,0),conditions:new Set(rows.flatMap(m=>m.skills.map(s=>s.condition))).size,targetSelectors:SELECTORS.length,unsupported:[]};}
 function select(g,a,s,e,previous){const target=e.target||s.target||'enemy',selector=e.targetSelection||s.targetSelection;let pool;
+  if(s.reset)return selectResetTargets(g,a,s,e);
  if(target==='self')return [a];
  if(target==='all_allies')pool=team(g,a,true);else if(target==='all_enemies')pool=foes(g,a);else if(target==='ally')pool=team(g,a,true);else if(target==='enemy')pool=foes(g,a);else throw Error('Unknown enemy target '+target);
  const kind=e.kind||e.type,index=SELECTORS.indexOf(selector);
@@ -243,7 +246,7 @@ function select(g,a,s,e,previous){const target=e.target||s.target||'enemy',selec
  const low=(x,y)=>hp(x)-hp(y)||stable(x,y),high=(x,y)=>stat(g,y,'attack')-stat(g,x,'attack')||stable(x,y);
  const eligibleHeal=x=>budget(g,a,x,e)>0;
  switch(index){
- case 0:{const taunts=pool.filter(x=>has(g,x,'taunt'));if(taunts.length)pool=taunts;pool.sort((x,y)=>(y.lastTurn?.hpDamageByTarget?.[a.id]||0)-(x.lastTurn?.hpDamageByTarget?.[a.id]||0)||stable(x,y));break;}
+  case 0:case 25:{const taunts=pool.filter(x=>has(g,x,'taunt'));if(taunts.length)pool=taunts;pool.sort((x,y)=>(y.lastTurn?.hpDamageByTarget?.[a.id]||0)-(x.lastTurn?.hpDamageByTarget?.[a.id]||0)||stable(x,y));break;}
  case 1:case 2:pool.sort(stable);break;
  case 3:pool.sort((x,y)=>(y.lastTurn?.hpDamageByTarget?.[a.id]||0)-(x.lastTurn?.hpDamageByTarget?.[a.id]||0)||stable(x,y));break;
  case 4:{const id=a.flags?.pendingCounter?.targetId;if(id)pool=pool.filter(x=>x.id===id);pool.sort(stable);break;}
@@ -284,6 +287,7 @@ function positive(g,a,t,e){if(!alive(t))return false;const kind=e.kind||e.type;
  if(kind==='debuff'){if(HARD.includes(canonical(e)))return noHard(g,t);const key=t.id+':'+canonical(e);if(!g.enemyAI.evaluatingExecution&&(g.enemyAI.reservedDebuffs?.[key]??-Infinity)>=magnitude(e))return false;return !(t.debuffs||[]).some(x=>canonical(x)===canonical(e)&&magnitude(x)>=magnitude(e)&&(x.expireAtPhase-t.phaseCount)>=(e.turns||1));}
  if(kind==='dot')return dot(t,e.status==='adaptive_potion'?(!dot(t,'poison')?'poison':'burn'):canonical(e))<3;
  if(kind==='buff'){
+  if(e.status==='swift')return true;
   if(e.status==='taunt')return tauntReady(g,a)&&(g.enemyAI.evaluatingExecution||!g.enemyAI.tauntPlanner?.[a.side]);
   const reservations=g.enemyAI.reservedBuffs||{},rk=t.id+':'+canonical(e);if(!g.enemyAI.evaluatingExecution&&(reservations[rk]??-Infinity)>=magnitude(e))return false;
   const current=(t.buffs||[]).filter(x=>canonical(x)===canonical(e));
@@ -296,7 +300,9 @@ function positive(g,a,t,e){if(!alive(t))return false;const kind=e.kind||e.type;
  if(kind==='shield_damage'||kind==='shield_steal')return t.shield>0;
  if(kind==='prepare_counter')return !t.flags?.counterPreparation&&!t.flags?.pendingCounter;
  if(kind==='recorded_counter')return !!a.flags?.pendingCounter||!!a.flags?.counterPreparation;
- if(kind==='hp_cost')return hp(a)>e.ownMaxHpRate;
+  if(kind==='hp_cost')return a.hp>1;
+  if(kind==='shield_cost')return a.shield>0;
+  if(kind==='damage_bonus')return true;
  if(kind==='consume_buff')return has(g,a,e.status);
  throw Error('Missing positive utility '+kind);
 }
@@ -312,20 +318,22 @@ export function planEnemy(g,a){planState(g);if(!alive(a))return null;if(a.defini
   let previous=[],entries=[];
   for(const original of s.effects){const ts=select(g,a,s,original,previous);const e=normalizeEffect(original,ts[0]||g.player);if(g.options?.patch?.skipWeakSelfBuff&&s.id==='mon_heat_core__skill_2'&&e.type==='buff'&&e.status==='attack_up'&&e.value===.2&&e.turns===1)e.turns=2;entries.push({effect:e,targetIds:ts.map(t=>t.id)});if((e.kind||e.type)==='shield')previous=ts;}
   const first=entries.find(x=>x.effect.target===s.target&&x.targetIds.length)||entries.find(x=>x.targetIds.length),target=s.target==='self'?a:first?actors(g).find(t=>t.id===first.targetIds[0]):null;
-  if(!target)continue;if(!condition(g,a,target,s))continue;
+   if(!target)continue;if(!condition(g,a,target,s))continue;
+   if(s.reset&&!resetEligible(g,a,target,s,entries))continue;
   if(!entries.some(row=>row.targetIds.some(id=>positive(g,a,actors(g).find(t=>t.id===id),row.effect,s))))continue;
   // Hostile+friendly skills require their advertised supportive recipient to exist.
   if(entries.some(row=>row.effect.target==='ally'&&!row.targetIds.length))continue;
-  candidates.push({s,entries,target});
+   candidates.push({s,entries,target,priority:resetPriority(g,a,target,s)});
  }
- candidates.sort((x,y)=>y.s.priority-x.s.priority||x.s.id.localeCompare(y.s.id));
+  candidates.sort((x,y)=>y.priority-x.priority||x.s.id.localeCompare(y.s.id));
  let selected=candidates[0];if(!selected){const s=fallbackSkill(a,false),target=foes(g,a).sort(stable)[0];selected={s,target,entries:[{effect:s.effects[0],targetIds:target?[target.id]:[]}]};}
  const s=selected.s,isCounter=s.effects.some(e=>(e.kind||e.type)==='recorded_counter');
  const conditional=isCounter&&a.flags.counterPreparation?'本玩家阶段若受到主动直击则按已公开准备值反击，否则防御':s.executeIf||null;
- const raw=s.effects.filter(e=>(e.kind||e.type)==='damage').reduce((n,e)=>n+(e.flat||0)*(20+2*a.level)/60+(e.atk||0)*stat(g,a,'attack'),0)*scaleOf(g,a);
+ const forecast=resolveResetEntries(g,a,{skill:s},selected.entries,true).map(row=>row.effect);
+ const raw=forecast.filter(e=>(e.kind||e.type)==='damage').reduce((n,e)=>n+(e.flat||0)*(20+2*a.level)/60+(e.atk||0)*stat(g,a,'attack'),0)*scaleOf(g,a)*(a.offenseGroupFactor??1);
  a.intent={skillId:s.id,skillName:s.name,skill:s,isMajor:['heavy','desperation'].includes(s.cooldownGroup)||s.effects.some(e=>(e.atk||0)>=2.35),charging:/蓄力|升温/.test(s.name)||/升温/.test(s.condition||''),targetId:selected.target?.id,effectTargets:selected.entries,conditional,damageEstimate:[raw,raw*(1+stat(g,a,'critDamage')/100)],round:g.round,scale:scaleOf(g,a)};
  if(g.options?.patch?.shieldCounter&&s.executeIf?.includes('无盾')){const t=selected.target,K=100+5*a.level;const noncrit=raw*K/(K+stat(g,t,'defense'))*(a.offenseGroupFactor??1);a.intent.guardThreshold=Math.max(t.maxHp*.1,noncrit*.35);a.intent.conditional='盾量达到'+a.intent.guardThreshold.toFixed(2)+'时本次重击直伤减30%，其余状态条件仍需满足';}
- for(const row of selected.entries)for(const id of row.targetIds){const t=actors(g).find(x=>x.id===id),e=row.effect;if(e.type==='heal')g.enemyAI.reservedHealing[id]=(g.enemyAI.reservedHealing[id]||0)+Math.min(budget(g,a,t,e),t.maxHp*(e.maxHpRate||0)*a.intent.scale);if(e.type==='debuff'){g.enemyAI.reservedDebuffs[id+':'+canonical(e)]=Math.max(g.enemyAI.reservedDebuffs[id+':'+canonical(e)]||0,magnitude(e));}if(e.type==='buff'){g.enemyAI.reservedBuffs[id+':'+canonical(e)]=Math.max(g.enemyAI.reservedBuffs[id+':'+canonical(e)]||0,magnitude(e));if(e.status==='taunt')g.enemyAI.tauntPlanner[a.side]=a.id;}}
+ for(const row of selected.entries)for(const id of row.targetIds){const t=actors(g).find(x=>x.id===id),e=row.effect;if(e.type==='heal')g.enemyAI.reservedHealing[id]=(g.enemyAI.reservedHealing[id]||0)+Math.min(budget(g,a,t,e),g.calcBase(a,t,e,{scale:a.intent.scale}));if(e.type==='debuff'){g.enemyAI.reservedDebuffs[id+':'+canonical(e)]=Math.max(g.enemyAI.reservedDebuffs[id+':'+canonical(e)]||0,magnitude(e));}if(e.type==='buff'){g.enemyAI.reservedBuffs[id+':'+canonical(e)]=Math.max(g.enemyAI.reservedBuffs[id+':'+canonical(e)]||0,magnitude(e));if(e.status==='taunt')g.enemyAI.tauntPlanner[a.side]=a.id;}}
  log(g,'enemy_intent',{actor:a.id,skillId:s.id,name:s.name,targetIds:selected.entries.flatMap(x=>x.targetIds),conditional:a.intent.conditional,damageEstimate:a.intent.damageEstimate});return a.intent;
 }
 export function planEnemies(g){planState(g);for(const a of [...g.enemies].filter(alive).sort(stable))planEnemy(g,a);return g.enemies.map(a=>a.intent).filter(Boolean);}
@@ -342,8 +350,9 @@ function utility(g,a,t,e,opts,actionResult){const type=e.kind||e.type;let n=0;
   const ownerCap=e.healCapOwnMaxHp?a.maxHp*e.healCapOwnMaxHp:t.maxHp*(e.healCapTargetMaxHp??.06),amount=Math.min(ownerCap,actionResult.hpDamage*(e.actualHpDamageRate??0));
   return {heal:g.heal(a,t,amount)};
  }
- if(type==='hp_cost'){a.hp=Math.max(1,a.hp-a.maxHp*e.ownMaxHpRate);return {};}
- if(type==='consume_buff'){a.buffs=a.buffs.filter(x=>canonical(x)!==e.status&&x.status!==e.status);return {};}
+  if(type==='hp_cost'){a.hp=Math.max(1,a.hp-(e.currentHpRate?a.hp*e.currentHpRate:a.maxHp*e.ownMaxHpRate));return {};}
+  if(type==='consume_buff'){let remaining=e.amount??Infinity;a.buffs=a.buffs.filter(x=>{if(canonical(x)!==e.status&&x.status!==e.status)return true;if(remaining<=0)return true;remaining--;return false;});return {};}
+  if(type==='shield_cost'){const amount=Math.min(a.shield,a.flags.resetShieldRemaining??a.shield,e.maxHpRate?a.maxHp*e.maxHpRate:Infinity);a.shield-=amount;a.flags.resetShieldRemaining=0;return {};}
  if(type==='prepare_counter'){
   if(t.flags.pendingCounter||t.flags.counterPreparation)return {};
   const record={casterId:a.id,sourceAttack:stat(g,a,'attack'),sourceLevel:a.level,flat:e.flat||0,atk:e.atk||0,scale:opts.scale,createdRound:g.round,validPlayerRound:g.round+1,sourceSkill:opts.skillId};
@@ -356,10 +365,11 @@ function utility(g,a,t,e,opts,actionResult){const type=e.kind||e.type;let n=0;
   delete a.flags.pendingCounter;delete a.flags.counterPreparation;a.buffs=a.buffs.filter(x=>canonical(x)!=='counter_preparation');return result;
  }
  if(type==='cleanse'){
-  const sorted=cleanable(t).sort((x,y)=>{const score=e=>HARD.includes(canonical(e))?100:['healing_down','healing_received_down'].includes(canonical(e))?80:20+dot(t,canonical(e));return score(y)-score(x)||canonical(x).localeCompare(canonical(y));});
-  for(const rec of sorted.slice(0,e.count??1)){removeSelectedStatus(t,t.debuffs.includes(rec)?'debuffs':'dots',rec);n++;}a.thisTurn.cleanse+=n;return {cleanse:n};
+  const sorted=cleanable(t).filter(x=>!e.allowed||e.allowed.includes(canonical(x))).sort((x,y)=>{const score=e=>HARD.includes(canonical(e))?100:['healing_down','healing_received_down'].includes(canonical(e))?80:20+dot(t,canonical(e));return score(y)-score(x)||canonical(x).localeCompare(canonical(y));});
+  for(const status of [...new Set(sorted.map(canonical))].slice(0,e.amount??e.count??1)){for(const prop of ['debuffs','dots'])t[prop]=t[prop].filter(x=>canonical(x)!==status||x.cleanseable===false);n++;}a.thisTurn.cleanse+=n;return {cleanse:n};
  }
  if(type==='dispel'||type==='steal_buff'){
+  if(type==='dispel')return {dispel:g.dispel(t,e.amount??e.count??1)};
   if(!effectRoll(g,a,t,e))return {dispel:0};let pool=dispellable(t);if(type==='steal_buff')pool=pool.filter(x=>(e.allowed||[]).includes(canonical(x)));
   pool.sort((x,y)=>{const rank=e=>canonical(e)==='attack_up'?3:canonical(e)==='defense_up'?2:1;return rank(y)-rank(x)||(y.addedRound||0)-(x.addedRound||0)||canonical(x).localeCompare(canonical(y));});
   for(const rec of pool.slice(0,e.count??1)){removeSelectedStatus(t,'buffs',rec);n++;if(type==='steal_buff')g.addStatus(a,a,{type:'buff',status:canonical(rec),canonicalStatus:canonical(rec),value:Math.min(e.valueCap??.15,Number(rec.value)||0),valueUnit:'ratio',turns:e.turns||1,dispellable:true},{skillId:opts.skillId});}
@@ -370,30 +380,34 @@ function utility(g,a,t,e,opts,actionResult){const type=e.kind||e.type;let n=0;
 const zeroResult=()=>({damage:0,hpDamage:0,shieldDamage:0,heal:0,shield:0,crits:0,dot:0,debuff:0,buff:0,cleanse:0,dispel:0});
 function sumInto(out,row={}){for(const k of Object.keys(out))out[k]+=Number(row[k]||0);}
 function currentTauntEntries(g,a,intent){
- const rows=intent.effectTargets,attackRows=rows.filter(row=>(row.effect.kind||row.effect.type)==='damage'&&row.effect.target==='enemy'&&!row.effect.secondary);
+ const rows=intent.effectTargets,attackRows=rows.filter(row=>['damage','debuff','dot','dispel'].includes(row.effect.kind||row.effect.type)&&row.effect.target==='enemy'&&!row.effect.secondary);
  if(!attackRows.length)return rows;
  const taunt=foes(g,a).filter(t=>has(g,t,'taunt')).sort(stable)[0];if(!taunt)return rows;
  const oldIds=new Set(attackRows.flatMap(row=>row.targetIds)),redirected=[...oldIds].filter(id=>id!==taunt.id);if(!redirected.length)return rows;
- const attached=new Set(['damage','debuff','dot','shield_damage','shield_steal']);
+ const attached=new Set(['damage','debuff','dot','dispel','shield_damage','shield_steal']);
  const next=rows.map(row=>row.effect.target==='enemy'&&!row.effect.secondary&&attached.has(row.effect.kind||row.effect.type)&&row.targetIds.some(id=>oldIds.has(id))?{...row,targetIds:[taunt.id]}:row);
  log(g,'taunt_redirect',{actor:a.id,skillId:intent.skillId,from:redirected,to:taunt.id,rule:'公开嘲讽只改主动单体直击及其附带效果的目标，技能不变'});return next;
 }
-function applyLocked(g,a,intent){const result=zeroResult(),hitCache=new Map();const rawEntries=currentTauntEntries(g,a,intent);
- for(const row of rawEntries)if((row.effect.kind||row.effect.type)==='damage'||(row.effect.kind||row.effect.type)==='recorded_counter')for(const id of row.targetIds){const t=findActor(g,id);if(!alive(t)||t.side===a.side||hitCache.has(id))continue;const dodge=clamp(.05+.5*(stat(g,t,'speed')-stat(g,a,'speed'))/Math.max(1,stat(g,t,'speed')+stat(g,a,'speed')),0,.25);hitCache.set(id,g.hitRng()>=dodge);}
+function applyLocked(g,a,intent){const result=zeroResult(),hitCache=new Map();const rawEntries=resolveResetEntries(g,a,intent,currentTauntEntries(g,a,intent));
+ for(const row of rawEntries)if((row.effect.kind||row.effect.type)==='damage'||(row.effect.kind||row.effect.type)==='recorded_counter')for(const id of row.targetIds){const t=findActor(g,id);if(!alive(t)||t.side===a.side||hitCache.has(id))continue;hitCache.set(id,g.hitRng()>=g.evasion(a,t));}
  for(const row of rawEntries){const base=row.effect,type=base.kind||base.type,targets=row.targetIds.map(id=>findActor(g,id)).filter(alive),divisor=Math.max(1,row.targetIds.length),share=base.totalMultiplierCap?Math.min(1,base.totalMultiplierCap/divisor):1;
   for(const t of targets){if(!alive(a)||!alive(t))continue;const e={...base};delete e.condition;
    // AOE accounting is handled here. forceTarget prevents another selection/expansion in physics.
    const opts={scale:intent.scale*share*(['damage','dot','recorded_counter'].includes(type)?(a.offenseGroupFactor??1):1)*(type==='damage'&&intent.guardThreshold!==undefined&&t.shield>=intent.guardThreshold?.7:1),skillId:intent.skillId,enemyIntent:true,forceTarget:true,attackHit:hitCache.get(t.id)};
+   if(e.requiresHit&&![...hitCache.values()].some(Boolean))continue;
    if(t.side!==a.side&&opts.attackHit===false&&type!=='damage'&&type!=='recorded_counter')continue;
    if(UTILITIES.has(type)){sumInto(result,utility(g,a,t,e,opts,result));continue;}
    if(type==='heal'&&!positive(g,a,t,e,intent.skill))continue;
-   if(type==='buff'&&e.status==='taunt'&&!tauntReady(g,a))continue;
-   sumInto(result,g.applyEffects([e],a,t,opts));if(type==='buff'&&t.buffs.some(x=>x.sourceId===a.id&&x.sourceSkill===intent.skillId&&canonical(x)===canonical(e)&&x.addedRound===g.round))result.buff++;
+   if(type==='buff'&&e.status==='taunt'&&(!tauntReady(g,a)||intent.skill.reset&&team(g,a).length===0))continue;
+   if(e.selfCost)opts.skipEffectRoll=true;
+   const applied=g.applyEffects([e],a,t,opts);sumInto(result,applied);
+   if(type==='shield'&&t===a&&intent.skill.reset?.index===2)a.flags.resetShieldRemaining=applied.shield;
+   if(type==='buff'&&t.buffs.some(x=>x.sourceId===a.id&&x.sourceSkill===intent.skillId&&canonical(x)===canonical(e)&&x.addedRound===g.round))result.buff++;
   }
  }
  return result;
 }
-export function notifyEnemyDamaged(g,target,source,result){if(result.dot||result.secondary||result.hit===false||source.side===target.side)return;const prep=target.flags?.counterPreparation;if(!prep||prep.validPlayerRound!==g.round||!has(g,target,'counter_preparation'))return;if(!target.flags.pendingCounter)target.flags.pendingCounter={...prep,targetId:source.id};}
+export function notifyEnemyDamaged(g,target,source,result){if(target.flags?.resetShieldRemaining!==undefined)target.flags.resetShieldRemaining=Math.max(0,target.flags.resetShieldRemaining-(result.shieldDamage??0));if(result.dot||result.secondary||result.hit===false||source.side===target.side)return;const prep=target.flags?.counterPreparation;if(!prep||prep.validPlayerRound!==g.round||!has(g,target,'counter_preparation'))return;if(!target.flags.pendingCounter)target.flags.pendingCounter={...prep,targetId:source.id};}
 function defenseIntent(g,a){const s=fallbackSkill(a,true);return {skillId:s.id,skillName:s.name,skill:s,effectTargets:[{effect:s.effects[0],targetIds:[a.id]}],scale:scaleOf(g,a),targetId:a.id};}
 function attackIntent(g,a,t){const s=fallbackSkill(a,false);return {skillId:s.id,skillName:s.name,skill:s,effectTargets:[{effect:s.effects[0],targetIds:[t.id]}],scale:scaleOf(g,a),targetId:t.id};}
 export function actEnemy(g,a){if(!a.intent||a.intent.round!==g.round)throw Error(`Enemy has no locked intent ${a.id}`);g.enemyAI.evaluatingExecution=true;const original=a.intent,preparedLive=has(g,a,'counter_preparation');a.flags.enemyActionRound=g.round;
@@ -404,9 +418,10 @@ export function actEnemy(g,a){if(!a.intent||a.intent.round!==g.round)throw Error
   else if(s.executeIf&&!EXECUTORS.get(s.executeIf)(g,a,g.options?.patch?.shieldCounter&&s.executeIf.includes('无盾')?{...t,shield:0}:t,s))intent=s.executeIf.includes('防御')&&!s.executeIf.includes('防御/强化')?defenseIntent(g,a):attackIntent(g,a,t.side===a.side?g.player:t);
   else if(!s.effects.some(e=>['damage','dot','shield_damage'].includes(e.kind||e.type))&&!original.effectTargets.some(row=>row.targetIds.some(id=>positive(g,a,findActor(g,id),row.effect,s))))intent=defenseIntent(g,a);
   // The announced attempt consumes the announced cooldown even if its public fallback is used.
-  a.cooldowns[s.cooldownGroup]=g.round+(s.cooldown||0);a.flags.enemySkillLastUsed[s.id]=g.round;a.flags.enemySkillUses[s.id]=(a.flags.enemySkillUses[s.id]||0)+1;
+  a.cooldowns[s.cooldownGroup]=g.round+(s.cooldown||0)+(s.reset&&s.cooldown?1:0);a.flags.enemySkillLastUsed[s.id]=g.round;a.flags.enemySkillUses[s.id]=(a.flags.enemySkillUses[s.id]||0)+1;
   g.beforeEnemyAction?.(a,intent.skill);if(!alive(a))return {skipped:true};
   const out=applyLocked(g,a,intent);a.flags.lastEnemyActionGroup=intent.skill.cooldownGroup;a.flags.lastEnemyActionName=intent.skillName;a.flags.lastEnemyActionWasGuard=intent.skill.effects.some(e=>(e.kind||e.type)==='shield'||((e.kind||e.type)==='buff'&&['attack_up','defense_up','direct_damage_reduction'].includes(e.status)));
+  if(a.definition.id==='mon_chimera'&&s.reset?.index===3)a.flags.resetHead=((a.flags.resetHead??0)+1)%3;
   if(counter){delete a.flags.pendingCounter;delete a.flags.counterPreparation;a.buffs=a.buffs.filter(x=>canonical(x)!=='counter_preparation');}
   log(g,'enemy_action',{actor:a.id,announced:s.id,executed:intent.skillId,fallback:intent.skillId!==s.id,result:out});return out;
  }finally{g.enemyAI.evaluatingExecution=false;g.endEnemyAction(a);if(a.flags.counterPreparation&&a.flags.counterPreparation.validPlayerRound<=g.round&&!a.flags.pendingCounter){delete a.flags.counterPreparation;}}

@@ -434,7 +434,7 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
         <select v-model="effect.buff">
           <option value="strength">力量</option>
           <option value="fortitude">坚韧</option>
-          <option value="agility">敏捷</option>
+          <option value="swift">迅捷（每层＋20%速度）</option>
           <option value="regen">再生</option>
           <option value="thorns">反伤</option>
           <option value="ap_regen">回能</option>

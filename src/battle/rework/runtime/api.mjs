@@ -70,6 +70,22 @@ function counts(g,c,ctx){
   const es=walk(c.effects),m=g.player.thisTurn,kind=k=>es.some(e=>e.kind===k);
   m.cardsPlayed++;m.apSpent+=ctx.paidAP;m.damageCards+=Number(kind('damage')||kind('dot')||kind('chant'));m.defenseCards+=Number(c.type==='defense'||kind('shield'));m.healCards+=Number(kind('heal'));m.buffCards+=Number(kind('buff'));m.drawCards+=Number(kind('draw')||ctx.totals.draw>0);m.spellCards+=Number(c.type==='spell');m.aoeCards+=Number(es.some(e=>e.target==='all_enemies'));m.drawn+=ctx.totals.draw??0;g.totals.cards++;recordBossPlayerCard(g,c,ctx);
 }
+export function legacyCardCheckpoint(state){
+ if(!state.rework)return null;
+ const g=hydrate(state.rework),debuffs=Object.fromEntries(state.enemies.map(e=>[e.id,JSON.parse(JSON.stringify(e.debuffs??{}))]));
+ return {metrics:{...g.player.thisTurn},hp:state.player.hp,shield:state.player.shield,debuffs};
+}
+export function recordLegacyCard(state,card,paidAP,before){
+ if(!state.rework||!before)return;
+ const g=hydrate(state.rework);syncExternal(g,state);const m=g.player.thisTurn;
+ const converted=es=>(es??[]).flatMap(e=>[{...e,kind:({apply_buff:'buff',apply_debuff:['poison','burn','bleed','corrosion','curse'].includes(e.debuff)?'dot':'debuff'})[e.type]??e.type},...converted(e.effects),...converted(e.then_effects),...converted(e.else_effects)]);
+ const effects=converted(card.effects),delta=k=>Math.max(0,(m[k]??0)-(before.metrics[k]??0));
+ const changed=state.enemies.flatMap(e=>Object.entries(e.debuffs??{}).filter(([k,v])=>JSON.stringify(v)!==JSON.stringify(before.debuffs?.[e.id]?.[k])).map(([k])=>k));
+ const totals={damage:delta('damage'),hpDamage:delta('hpDamage'),heal:Math.max(delta('healing'),state.player.hp-before.hp),shield:Math.max(delta('shieldGained'),state.player.shield-before.shield),draw:delta('drawn'),debuffs:effects.some(e=>e.kind==='debuff')?changed.length:0,dot:effects.some(e=>e.kind==='dot')?changed.filter(k=>['poison','burn','bleed','corrosion','curse'].includes(k)).length:0,dispel:delta('dispel')};
+ if(card.type==='defense'||totals.shield>0)m.defenseAP=(m.defenseAP??0)+paidAP;
+ m.healing+=Math.max(0,totals.heal-delta('healing'));m.shieldGained+=Math.max(0,totals.shield-delta('shieldGained'));
+ const drawn=m.drawn;counts(g,{...card,effects},{paidAP,totals});m.drawn=drawn;project(g,state);
+}
 function enableChoices(g,answers=[]){
   let index=0;
   g.choose=(title,pool,max,min=max)=>{
@@ -99,16 +115,19 @@ export function choose(state,index,finish=false){
   const answers=[...pending.answers,[...selected]];delete state.player.pendingCardChoice;delete state.reworkChoice;
   play(state,pending.index,pending.targetIndex,answers,pending.allyTargetId);
 }
-export function endPlayer(g){if(g.player.hp>0)g.controller.endTurn(g);g.endPhase(g.player);}
+export function endPlayer(g){if(g.player.hp>0)g.controller.endTurn(g);g.endPhase(g.player);g.endSide('player');}
 export function enemiesTurn(g){
   for(const a of [...g.livingEnemies()].sort((a,b)=>(a.slot??0)-(b.slot??0)||a.id.localeCompare(b.id))){
     if(g.player.hp<=0)break;
     if(a.definition?.tier==='boss'||a.flags?.bossHelper)actBoss(g,a);else actEnemy(g,a);
   }
   if(g.player.hp>0&&g.player.flags.pc.escapePending){g.outcome='escaped';g.player.flags.pc.escapePending=false;}
+  g.endSide('enemy');
 }
 export function nextTurn(g){
   if(g.player.hp<=0||!g.livingEnemies().length)return;
+  // Finish an already announced action before replacing a saved legacy kit.
+  for(const a of g.enemies){const current=monsters.get(a.definition?.id);if(current?.resetVersion===2&&a.definition?.resetVersion!==2){a.definition=structuredClone(current);a.cooldowns={};}if(a.flags?.bossHelper){const owner=g.enemies.find(x=>x.id===a.flags.bossHelper.ownerId),replacement=owner?.definition?.helpers?.find(x=>x.id===a.definition.id);if(replacement?.resetVersion===2&&a.definition.resetVersion!==2)a.definition={...structuredClone(replacement),tier:'boss_helper'};}}
   g.round++;for(const a of [...g.allies,...g.enemies]){g.ensureActor(a);a.lastTurn=a.thisTurn;a.thisTurn=makeTurnMetrics();a.receivedLastTurn=a.receivedThisTurn;a.receivedThisTurn=makeTurnMetrics();}start(g);
 }
 export function discard(state){

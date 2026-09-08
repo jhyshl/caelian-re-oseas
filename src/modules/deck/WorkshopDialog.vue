@@ -52,7 +52,11 @@ import {
 } from '@/workshop';
 
 type EditableEffect = CardEffect & Record<string, any>;
+import WorkshopStarEditor from '@/modules/deck/WorkshopStarEditor.vue';
+import { DEFAULT_STAR_SCALING, type WorkshopStarScaling } from '@/workshop-stars';
+
 interface EditableCard {
+  starScaling?: WorkshopStarScaling;
   id: string;
   name: string;
   type: string;
@@ -78,7 +82,7 @@ interface EditableClass {
   mechanismIds: string[];
 }
 
-const props = defineProps<{ context: PanelContext }>();
+const props = defineProps<{ context: PanelContext; initialCardId?: string }>();
 const emit = defineEmits<{ close: []; saved: [] }>();
 
 const tab = ref<'library' | 'editor' | 'drafts' | 'extensions' | 'test'>('library');
@@ -276,6 +280,7 @@ function editableFromValue(value: Partial<WorkshopClass>): EditableClass {
         description: String(card?.description || ''),
         tags: Array.isArray(card?.tags) ? card.tags.map(String) : [],
         effects: Array.isArray(card?.effects) ? card.effects : [],
+        starScaling: card?.starScaling,
       }))
     : [];
   return {
@@ -449,6 +454,7 @@ function addCard(): void {
     description: '',
     tags: [],
     effects: [],
+    starScaling: structuredClone(DEFAULT_STAR_SCALING),
   });
   editor.value.cardPool.push(id);
   activeCardId.value = id;
@@ -893,6 +899,11 @@ async function startWorkshopTest(): Promise<void> {
     error.value = caught instanceof Error ? caught.message : String(caught);
   }
 }
+watch(() => props.initialCardId, (id) => {
+  if (!id) return;
+  const profession = published.value.flatMap(pack => pack.classes).find(entry => entry.cards.some(card => card.id === id));
+  if (profession) { editProfession(profession); activeCardId.value = id; notice.value = '请配置这张卡牌的一至三星数值，然后保存职业。'; }
+}, { immediate: true });
 </script>
 
 <template>
@@ -1513,6 +1524,7 @@ async function startWorkshopTest(): Promise<void> {
                     <small>代码机制可读取这些标签；每张牌最多 12 个。</small>
                   </label>
                 </div>
+                <WorkshopStarEditor v-model="activeCard.starScaling" />
                 <WorkshopEffectEditor
                   v-for="(effect, index) in activeCard.effects"
                   :key="`${effect.type}:${index}`"

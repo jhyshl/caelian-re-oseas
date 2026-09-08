@@ -33,6 +33,7 @@ const relicRewards = ref<Record<string, RelicDefinition>>({});
 const playerAvatarUrl = ref('');
 const playerAvatarFallbackUrl = ref('');
 const busyStat = ref('');
+const allocationCount = ref(1);
 const busyReward = ref('');
 const preparingRewards = ref(false);
 const statEditMode = ref(false);
@@ -183,7 +184,7 @@ async function allocate(
     const result = await props.context.api.execute({
       id: commandId('player.allocate-stat'),
       type: 'player.allocate-stat',
-      payload: { stat, direction },
+      payload: { stat, direction, count: Number(allocationCount.value) },
     });
     if (result.status === 'rejected') throw new Error(result.message);
     await refreshState();
@@ -488,6 +489,11 @@ onUnmounted(() => {
             </small>
           </article>
         </div>
+        <label v-if="statEditMode" class="allocation-count">
+          每次调整次数
+          <input v-model.number="allocationCount" type="number" min="1" max="100000" step="1" inputmode="numeric" aria-label="自定义属性调整次数" />
+          <small>填写整数后增加或返还。AP与抽牌按各自费用计算；点数不足或超出上限时整笔不生效。</small>
+        </label>
         <div v-if="statEditMode" class="allocation-grid">
           <article v-for="row in statRows" :key="row.id">
             <div>
@@ -500,22 +506,22 @@ onUnmounted(() => {
                 class="ca-button"
                 :disabled="
                   invested(row.id) <= 0 ||
-                    busyStat === `${row.id}:remove`
+                    Boolean(busyStat) || !Number.isInteger(allocationCount) || allocationCount < 1
                 "
                 @click="allocate(row.id, 'remove')"
               >
-                −1
+                −{{ allocationCount }}
               </button>
               <button
                 type="button"
                 class="ca-button primary"
                 :disabled="
                   !canAddStat(row.id) ||
-                    busyStat === `${row.id}:add`
+                    Boolean(busyStat) || !Number.isInteger(allocationCount) || allocationCount < 1
                 "
                 @click="allocate(row.id, 'add')"
               >
-                +1
+                +{{ allocationCount }}
               </button>
             </div>
           </article>
@@ -1017,4 +1023,7 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
 }
+.allocation-count { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:12px 0; font-size:14px; }
+.allocation-count input { width:110px; padding:8px; font:inherit; color:var(--ca-text); background:var(--ca-bg); border:1px solid var(--ca-border); border-radius:6px; }
+.allocation-count small { flex-basis:100%; line-height:1.5; }
 </style>

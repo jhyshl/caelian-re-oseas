@@ -35,7 +35,7 @@ describe('怪物公开重置目录', () => {
     expect(JSON.stringify({ rawCatalog, legacy })).toBe(before);
   });
 
-  it('公开 v3 护盾反制、弱自强化停用及热核持续两回合，保留全部旧技能身份', () => {
+  it('公开四技能重置、准备反制和旧技能迁移记录', () => {
     const result = applyReworkMonsters({});
     let shieldChanges = 0;
     let retired = 0;
@@ -54,11 +54,13 @@ describe('怪物公开重置目录', () => {
         }
       }
     }
-    expect(shieldChanges).toBe(92);
-    expect(retired).toBe(57);
-    const heat = result.mon_heat_core!.skills!.mon_heat_core__skill_2!;
+    expect(shieldChanges).toBe(0);
+    expect(retired).toBe(0);
+    for (const source of rawCatalog.monsters) { expect(source.skills).toHaveLength(4); expect(source.retiredSkills.length).toBeGreaterThan(0); }
+    const heat = result.mon_heat_core!.skills!.mon_heat_core__reset_3!;
     expect(heat.effects![0]).toMatchObject({ type: 'buff', status: 'attack_up', value: 0.2, turns: 2 });
-    expect(heat.desc).toContain('持续2回合');
+    expect(heat.desc).toContain('迅捷');
+    expect(result.mon_dire_wolf!.skills!.mon_dire_wolf__reset_3!.desc).toContain('准备被拆除');
   });
 
   it('参考属性覆盖 1–100 级八属性，单体史莱姆 20 级含已审核攻击上调', () => {

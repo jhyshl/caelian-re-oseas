@@ -25,6 +25,7 @@ import {
 import { describeReworkEffects, reworkCard } from '@/battle/rework/catalog';
 import { hydrate as hydrateRework } from '@/battle/rework/runtime/api.mjs';
 import { previewBattleCard } from '@/battle/card-preview';
+import { needsWorkshopStars, requestStarEditor, workshopStarDescription } from '@/workshop-stars';
 import { bloodBurnCardUnavailableReason } from '@/battle/blood-burn';
 import type {
   BattleAnimationEvent,
@@ -174,6 +175,12 @@ const state = computed<LocalBattleState | null>(
 const aliveEnemies = computed(
   () => state.value?.enemies.filter((enemy) => enemy.hp > 0) ?? [],
 );
+const effectiveSpeeds = computed<Record<string, number>>(() => {
+  const data = state.value?.rework;
+  if (!data) return {};
+  const core = hydrateRework(data);
+  return Object.fromEntries([...core.allies, ...core.enemies].map(actor => [actor.id, core.stat(actor, 'speed')]));
+});
 const recentLog = computed(() =>
   [...(state.value?.log ?? [])].slice(-20).reverse(),
 );
@@ -586,7 +593,7 @@ const activePreviewCardDefinition = computed(() => {
   const index = activePreviewHandIndex.value;
   if (index === null) return undefined;
   const card = state.value?.player.hand[index];
-  return card ? cards.value[card.cardId] : undefined;
+  return card && cards.value[card.cardId] ? { ...cards.value[card.cardId]!, previewStars: card.stars ?? 1 } : undefined;
 });
 const friendlyEffectTypes = new Set([
   'shield',
@@ -670,7 +677,8 @@ const statusNames: Record<string, string> = {
   thorns: '荆棘',
   death_save: '不屈',
   fortitude: '坚韧',
-  agility: '敏捷',
+  agility: '迅捷',
+  swift: '迅捷',
   damage_resist: '减伤',
   damage_immune: '伤害免疫',
   damage_halve: '伤害减半',
@@ -937,7 +945,8 @@ const currentReworkCards = computed<Record<string, {cost:number; available:boole
 });
 function battleCardDescription(cardId:string, stars=1):string {
   const definition=reworkCard(cardId);
-  return definition ? describeReworkEffects(definition.effects,stars) : cardDefinition(cardId)?.description ?? '卡牌数据缺失';
+  const custom = cardDefinition(cardId);
+  return definition ? describeReworkEffects(definition.effects,stars) : custom?.custom ? workshopStarDescription(custom,stars) : custom?.description ?? '卡牌数据缺失';
 }
 function displayedCardApCost(cardId: string, handIndex?:number): number {
   const instance = handIndex===undefined?state.value?.player.hand.find(c => c.cardId === cardId):state.value?.player.hand[handIndex];
@@ -1124,6 +1133,7 @@ function statusDescription(
   kind: 'buff' | 'debuff',
   fallback = '',
 ): string {
+  if (['swift', 'agility', '迅捷', '敏捷'].includes(name)) return '每层提供基础速度（含装备与加点）的20%，逐层相加且无层数上限。每层独立到期，驱散移除整组；速度差影响闪避，战斗闪避最高90%。';
   const custom = customWorkshopStatus(name, kind);
   if (custom) return customWorkshopStatusDescription(custom);
   if (localStatusDescriptions[name]) return localStatusDescriptions[name];
@@ -1152,6 +1162,7 @@ function statusEffectSummary(
   name: string,
   effect: LocalBattleState['player']['buffs'][string],
 ): string {
+  if (['swift', 'agility', '迅捷', '敏捷'].includes(name)) return `${effect.stacks ?? 1}层 · 速度＋${(effect.stacks ?? 1) * 20}% · 最长剩余${effect.turns}回合，各层独立到期`;
   const custom =
     customWorkshopStatus(name, 'buff') ?? customWorkshopStatus(name, 'debuff');
   const parts = [
@@ -1717,6 +1728,7 @@ async function playSelectedCard() {
   await playCardAt(selectedHandIndex.value, selectedTarget.value);
 }
 
+const warnedLegacyStars = new Set<string>();
 async function playCardAt(
   handIndex: number,
   targetIndex: number,
@@ -1725,6 +1737,11 @@ async function playCardAt(
   if (!battle.value) return;
   const allyTargetId: BattleFriendlyTargetId = requestedAllyTarget;
   const card = state.value?.player.hand[handIndex];
+  if (card && cards.value[card.cardId] && needsWorkshopStars(cards.value[card.cardId]) && !warnedLegacyStars.has(card.cardId)) {
+    const configure = await props.context.api.confirm({ title: '旧版自定义卡牌缺少星级数值', description: '这张卡牌可以按旧版一星效果使用。前往创意工坊配置一至三星固定值和属性倍率后，即可参与升星合成。', confirmText: '前往配置', cancelText: '本次继续使用' });
+    warnedLegacyStars.add(card.cardId);
+    if (configure) { requestStarEditor(card.cardId); await props.context.api.navigatePanel('deck'); return; }
+  }
   const targetsCaelian =
     allyTargetId === 'caelian' &&
     cardFriendlyTargetMode(card ? cards.value[card.cardId] : undefined) !== 'none';
@@ -2053,7 +2070,7 @@ onUnmounted(() => {
                 <span v-if="index === selectedTarget">锁定</span>
               </div>
               <small>
-                Lv.{{ enemy.level }} · 攻 {{ Math.round(enemy.attack) }} · 防 {{ Math.round(enemy.defense) }} · 速 {{ Math.round(enemy.speed) }}<br>暴击 {{ enemy.critRate ?? 0 }}% · 暴伤 +{{ enemy.critDamage ?? 50 }}% · 命中 {{ enemy.effectHit ?? 0 }}% · 抵抗 {{ enemy.effectResist ?? 0 }}% · 盾 {{ enemy.shield }}
+                Lv.{{ enemy.level }} · 攻 {{ Math.round(enemy.attack) }} · 防 {{ Math.round(enemy.defense) }} · 速 {{ Math.round(effectiveSpeeds[enemy.id] ?? enemy.speed) }}<br>暴击 {{ enemy.critRate ?? 0 }}% · 暴伤 +{{ enemy.critDamage ?? 50 }}% · 命中 {{ enemy.effectHit ?? 0 }}% · 抵抗 {{ enemy.effectResist ?? 0 }}% · 盾 {{ enemy.shield }}
               </small>
               <MeterBar
                 label="怪物生命"
@@ -2323,7 +2340,7 @@ onUnmounted(() => {
               </span>
             </div>
             <small>
-              攻 {{ Math.round(state.player.attack) }} · 防 {{ Math.round(state.player.defense) }} · 速 {{ Math.round(state.player.speed) }} · 暴击 {{ state.player.critRate ?? 5 }}% · 暴伤 +{{ state.player.critDamage ?? 50 }}% · 命中 {{ state.player.effectHit ?? 0 }}% · 抵抗 {{ state.player.effectResist ?? 0 }}%
+              攻 {{ Math.round(state.player.attack) }} · 防 {{ Math.round(state.player.defense) }} · 速 {{ Math.round(effectiveSpeeds.player ?? state.player.speed) }} · 暴击 {{ state.player.critRate ?? 5 }}% · 暴伤 +{{ state.player.critDamage ?? 50 }}% · 命中 {{ state.player.effectHit ?? 0 }}% · 抵抗 {{ state.player.effectResist ?? 0 }}%
             </small>
           </div>
 

@@ -7,6 +7,7 @@ import { STANDARD_PASSIVE_BY_SUBCLASS } from './player-repository';
 import balanceCatalog from '@/battle/rework/catalog.json';
 import * as rework from '@/battle/rework/runtime/api.mjs';
 import { reworkCard } from '@/battle/rework/catalog';
+import { scaleWorkshopCard } from '@/workshop-stars';
 import {
   loadBattleRules,
   loadMonsterCatalog,
@@ -181,8 +182,8 @@ const ENEMY_INSTANCE_AFFIXES: EnemyInstanceAffix[] = [
     hp: 0.94,
     attack: 1.04,
     defense: 0.95,
-    speed: 1.28,
-    buff: { key: 'agility', value: 8, turns: 2 },
+    speed: 1,
+    buff: { key: 'swift', value: 1, turns: 2 },
   },
   {
     id: 'thick_hide',
@@ -569,6 +570,7 @@ export class BattleRepository {
     }
     const now = Date.now();
     const session: BattleSessionRecord = {
+      startedAt: Date.now(),
       id: battleId,
       profileId,
       active: true,
@@ -661,8 +663,10 @@ export class BattleRepository {
     }
     const cardInstance = state.player.hand[input.handIndex];
     if (!cardInstance) throw new Error('这张手牌已经不存在');
-    const card = this.cardDefinition(state, cardInstance.cardId);
-    if (!card) throw new Error('卡牌数据不存在');
+    const definition = this.cardDefinition(state, cardInstance.cardId);
+    if (!definition) throw new Error('卡牌数据不存在');
+    const card = scaleWorkshopCard(definition, cardInstance.stars ?? 1);
+    const legacyCheckpoint = rework.legacyCardCheckpoint(state);
     if (card.unplayable === true) {
       throw new Error('空白牌无法打出，只有「真相揭晓」可以将其揭晓');
     }
@@ -805,6 +809,7 @@ export class BattleRepository {
         cardCost: cost,
         mpCost,
       });
+      rework.recordLegacyCard(state, card, cost, legacyCheckpoint);
     } finally {
       this.activeMechanismCard = undefined;
       this.activeDarkPriestRedirect = false;
@@ -2804,9 +2809,9 @@ export class BattleRepository {
               : multiplier;
           const base =
             this.activeSummonEffectValue(effect.value) +
-            (card.type === 'attack'
+            (card.type === 'attack' && (!card.resolvedStarScale || !effect.scaling)
               ? Math.floor(
-                  state.player.attack * (this.rules?.playerAttackScale ?? 0.35),
+                  state.player.attack * (this.rules?.playerAttackScale ?? 0.35) * this.number((card.resolvedStarScale as { ratio?: number } | undefined)?.ratio, 1),
                 )
               : 0) +
             resolvedBonus;
@@ -4105,20 +4110,17 @@ export class BattleRepository {
     }
     let amount = Math.max(0, Math.round(rawAmount));
     if (amount > 0 && !options.ignoreAgility) {
-      const statusDodge = this.effectValue(target.buffs.agility);
-      const speedDodge = Math.min(
-        this.rules?.maxSpeedDodge ?? 25,
-        Math.floor(
-          Math.max(0, target.speed) *
-            (this.rules?.speedDodgePerPoint ?? 0.25),
-        ),
-      );
-      const dodgeChance = this.clamp(statusDodge + speedDodge, 0, 95);
+      const swiftSpeed = (actor: Combatant) => {
+        const layers = [actor.buffs.swift, actor.buffs.agility].reduce((sum, effect) => sum + (effect ? effect.instances?.length || effect.stacks || 1 : 0), 0);
+        return Math.max(1, actor.speed * (1 + 0.2 * layers));
+      };
+      const attackerSpeed = swiftSpeed(source), defenderSpeed = swiftSpeed(target);
+      const dodgeChance = this.clamp(5 + 50 * (defenderSpeed - attackerSpeed) / (defenderSpeed + attackerSpeed), 0, 90);
       if (dodgeChance > 0 && this.random() * 100 < dodgeChance) {
         this.log(
           state,
           kind,
-          `${target.name ?? (target === state.player ? state.player.name : '目标')} 凭借敏捷/速度闪避了${label}（${dodgeChance}%）`,
+          `${target.name ?? (target === state.player ? state.player.name : '目标')} 凭借速度闪避了${label}（${Math.round(dodgeChance)}%）`,
         );
         this.animation(state, {
           kind: 'status',
@@ -4129,7 +4131,6 @@ export class BattleRepository {
           amount: dodgeChance,
           label: '闪避',
         });
-        this.spendEffectCharge(target.buffs, 'agility');
         return 0;
       }
     }
@@ -4596,7 +4597,7 @@ export class BattleRepository {
               : stat === 'mp' && source === state.player
                 ? state.player.mp
                 : 0;
-    const percent = this.clamp(this.number(scaling.percent), 0, 200);
+    const percent = this.clamp(this.number(scaling.percent), 0, 200 * Math.max(1, this.number(effect.starRatioMultiplier, 1)));
     return {
       ...effect,
       value: Math.max(
@@ -6590,7 +6591,7 @@ export class BattleRepository {
           };
     state.rewards = rewards;
     if (status === 'victory') {
-      await this.advanceCombatCommissions(session.profileId, state);
+      await this.advanceCombatCommissions(session.profileId, state, session.id, session.startedAt ?? session.updatedAt);
     }
     const levelResult = await this.applyRewards(
       session.profileId,
@@ -6998,6 +6999,8 @@ export class BattleRepository {
   private async advanceCombatCommissions(
     profileId: string,
     state: LocalBattleState,
+    battleId: string,
+    battleStartedAt: number,
   ): Promise<void> {
     const defeatedNames = new Map<string, number>();
     for (const enemy of state.enemies.filter((entry) => entry.hp <= 0)) {
@@ -7013,20 +7016,23 @@ export class BattleRepository {
         (quest) =>
           quest.kind === 'commission' &&
           quest.status === 'active' &&
-          quest.commissionType === 'combat',
+          ['combat', 'combat_gather'].includes(quest.commissionType ?? ''),
       )
       .toArray();
     for (const quest of quests) {
+      if (quest.commissionBattleIds?.includes(battleId) || (quest.commissionAcceptedAt ?? 0) > battleStartedAt) continue;
       const target = (quest.commissionTarget ?? '')
         .replace(/[\s·・_\-—]+/g, '')
         .toLowerCase();
       const count = defeatedNames.get(target) ?? 0;
       if (count <= 0) continue;
-      quest.currentStage = Math.min(
+      quest.commissionBattleIds = [...(quest.commissionBattleIds ?? []), battleId];
+      quest.commissionKills = Math.min(
         quest.totalStages,
-        quest.currentStage + count,
+        (quest.commissionKills ?? quest.currentStage) + count,
       );
-      if (quest.currentStage >= quest.totalStages) quest.status = 'ready';
+      quest.currentStage = quest.commissionKills;
+      if (quest.currentStage >= quest.totalStages && (quest.commissionType === 'combat' || quest.commissionItemsSubmitted)) quest.status = 'ready';
       quest.updatedAt = Date.now();
       await this.db.questRecords.put(quest);
     }

@@ -1,4 +1,9 @@
+import { commissionCatalog } from '@/guild-commissions';
+
 export interface GuildTaskDefinition {
+  id?: string;
+  destination?: string;
+  items?: Array<{ itemId: string; count: number }>;
   name: string;
   type: string;
   difficulty: string;
@@ -45,14 +50,14 @@ export async function loadGuildCatalogs() {
         import('@/content/generated/quests/type-icons.json'),
         import('@/content/generated/quests/difficulty-names.json'),
       ]);
-    taskCache = tasks.default as GuildTaskDefinition[];
+    taskCache = commissionCatalog(tasks.default as GuildTaskDefinition[]);
     rankNameCache = rankNames.default as Record<string, string>;
     rankRequirementCache = rankRequirements.default as Record<
       string,
       GuildRankRequirement
     >;
-    typeNameCache = typeNames.default as Record<string, string>;
-    typeIconCache = typeIcons.default as Record<string, string>;
+    typeNameCache = { ...typeNames.default, gather: '提交物品', combat_gather: '战斗＋提交物品', escort: '跨区护送' };
+    typeIconCache = { ...typeIcons.default, combat_gather: '⚔', escort: '🚩' };
     difficultyNameCache = difficulties.default as Record<string, string>;
   }
   return {

@@ -11,6 +11,20 @@ function fixture() {
 }
 const direct={kind:'damage',flat:20,atk:1,hits:1,crit:true,target:'enemy'};
 describe('重置版数值物理规则',()=>{
+ it('破盾奖励只提高护盾伤害，不把额外部分转移到生命',()=>{
+  const g=fixture(),t=g.enemies[0];t.shield=200;
+  expect(g.rawHit(g.player,t,100,{shieldDamageBonus:.2})).toMatchObject({shieldDamage:120,hpDamage:0});
+  t.shield=50;expect(g.rawHit(g.player,t,100,{shieldDamageBonus:.2})).toMatchObject({shieldDamage:50,hpDamage:50});
+ });
+ it('迅捷别名统一，每层加20%永久速度，无上限且独立到期，驱散清整组',()=>{
+  const g=fixture(),p=g.player;g.phase='player';g.beginPhase(p);
+  g.addStatus(p,p,{kind:'buff',status:'agility',turns:2});g.addStatus(p,p,{kind:'buff',status:'swift',turns:2,stacks:9});
+  expect(g.status(p,'swift')).toBe(10);expect(g.stat(p,'speed')).toBe(300);g.endPhase(p);
+  g.round++;g.beginPhase(p);g.addStatus(p,p,{kind:'buff',status:'迅捷',turns:2});g.endPhase(p);
+  expect(g.status(p,'swift')).toBe(1);expect(g.stat(p,'speed')).toBeCloseTo(120);
+  g.round++;g.beginPhase(p);g.endPhase(p);expect(g.status(p,'swift')).toBe(0);
+  g.addStatus(p,p,{kind:'buff',status:'swift',turns:2,stacks:20});expect(g.stat(p,'speed')).toBe(500);expect(g.dispel(p,1)).toBe(1);expect(g.status(p,'swift')).toBe(0);
+ });
  it('基础值加倍率，按攻击方等级减伤；总值分段一次',()=>{
   const g=fixture();g.beginAction(g.player,{id:'attack'});
   expect(g.damage(g.player,g.enemies[0],{...direct,hits:4}).damage).toBeCloseTo(120*200/300);
@@ -38,10 +52,12 @@ describe('重置版数值物理规则',()=>{
   g.player.stats.ehr=999;g.enemies[0].stats.res=999;
   expect(g.effectChance(g.player,g.enemies[0],{baseChance:100})).toBeCloseTo(.36);
  });
- it('速度只改变相对闪避，最低0最高25%，不改变AP',()=>{
+ it('速度改变相对闪避，战斗上限90%，不改变AP',()=>{
   const g=fixture();g.player.ap=7;g.player.stats.speed=1;g.enemies[0].stats.speed=10000;g.hitRng=()=>.249;
   g.beginAction(g.player,direct);expect(g.damage(g.player,g.enemies[0],direct).hit).toBe(false);
-  g.hitRng=()=>.251;g.beginAction(g.player,direct);expect(g.damage(g.player,g.enemies[0],direct).hit).toBe(true);
+  g.hitRng=()=>.55;g.beginAction(g.player,direct);expect(g.damage(g.player,g.enemies[0],direct).hit).toBe(true);
+  g.addStatus(g.enemies[0],g.enemies[0],{kind:'buff',status:'evasion_up',value:1,valueUnit:'ratio',turns:10});
+  expect(g.evasion(g.player,g.enemies[0])).toBe(.9);g.hitRng=()=>.899;g.beginAction(g.player,direct);expect(g.damage(g.player,g.enemies[0],direct).hit).toBe(false);g.hitRng=()=>.901;g.beginAction(g.player,direct);expect(g.damage(g.player,g.enemies[0],direct).hit).toBe(true);g.enemies[0].buffs=[];
   g.player.stats.speed=10000;g.enemies[0].stats.speed=1;g.hitRng=()=>0;
   g.beginAction(g.player,direct);expect(g.damage(g.player,g.enemies[0],direct).hit).toBe(true);expect(g.player.ap).toBe(7);
  });

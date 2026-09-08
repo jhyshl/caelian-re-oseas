@@ -43,9 +43,9 @@ function conditionalText(g,a,i){
  if(a.flags?.bossHelper){
   if(id==='soul_heal'||id==='tentacle_heal')return '锁定治疗'+name(g,b?.id)+'最大生命4%；本附属物最多治疗2次，头领所有来源累计受疗上限15%；治疗占本次行动';
   if(id==='tail_prepare')return '本轮仅蓄势，下轮预告横扫；不会在本轮额外造成伤害';
-  if(id==='tail_sweep')return '本次横扫被成功强控或部位击破则取消，不补攻击；与其他附属物共用头领普通攻击25%的直接伤害总预算';
+  if(id==='tail_sweep')return '准备护盾被击破、成功强控或部位击破均可取消横扫，不补攻击；与其他附属物共用头领普通攻击25%的直接伤害总预算';
   if(id==='tentacle_taunt')return '本次只嘲讽并重授护首15%直接减伤；均可驱散，触须击破立即移除护首';
-  if(id==='guard_taunt'||id==='mirror_taunt')return '获得嘲讽1轮并加盾；队伍同一时间仅1名有效嘲讽者，结束后留1完整轮空窗，技能冷却3轮';
+  if(id==='guard_taunt'||id==='mirror_taunt')return '复合防护随本次技能一同获得；嘲讽到下一玩家阶段结束，队伍仅1名有效嘲讽者，随后留出空窗';
  }
  if(id==='exam'){
   const e=i.exam;
@@ -54,24 +54,24 @@ function conditionalText(g,a,i){
   if(e.exam==='guard')return '守势题：本轮实际护盾累计至少'+amount(e.guardThreshold)+'（当前'+amount(g.player.thisTurn?.shieldGained)+'），或实际治疗至少'+amount(e.healThreshold)+'（当前'+amount(g.player.thisTurn?.healing)+'），或使用1AP「标准防御」；通过后电流伤害50%，失败全额，不暴击';
   return '节制题：结束时保留至少'+number(e.remainingAP)+'AP（当前'+number(g.player.ap)+'）；通过后电流伤害50%，失败全额，不暴击';
  }
- if(id==='restart')return '本次校准不攻击，移除普通护盾；下个玩家阶段直接易伤20%。通过第2次、第4次各只执行一次';
+ if(id==='restart')return '非考试回合才校准：净化1类状态并获得护盾；被控制跳过行动时不能先净化';
  if(id==='reckoning')return '当前怨念R='+number(s.R)+'；本轮结束降至R≤1，改为70%普通镰影；否则完整反噬。两种分支不暴击，结算后R=0；1AP「安魂」每轮最多2次';
  if(id==='lantern')return '消耗本体行动召唤魂灯并清零R；本轮魂灯不行动，持续3轮，每战最多召2次';
  if(id==='guard')return '消耗本体行动召唤墓骨侍卫；本轮侍卫不行动，持续3轮，每战只召1次';
  if(id==='verdict')return '本轮集齐三证则取消裁光并崩解，当前只解除保护；下一完整玩家阶段开始暴露25%。未集齐则完整裁光，不暴击，已有证据保留；'+proofs(s.evidence);
  if(id==='crack')return '本次崩解不攻击，移除普通护盾；下一完整玩家阶段起直接易伤25%，开启时HP<40%持续1阶段，否则2阶段；只处理一次完成事件';
- if(id==='crown')return '当前'+((s.spawnCounts?.tide_pearl||0)<2&&!helperCount(g,b,'tide_pearl')&&helperCount(g,b)<2?'可召珠：仅获得半额护盾并召鸣潮珠':'不可召珠：仅获得全额护盾')+'；分支二选一，不叠加两份盾';
+ if(id==='crown')return '获得护盾与1层迅捷；'+((s.spawnCounts?.tide_pearl||0)<2&&!helperCount(g,b,'tide_pearl')&&helperCount(g,b)<2?'同时召出鸣潮珠，本轮珠不行动':'本轮不再召珠')+'；本战最多召珠2次';
  if(id==='high')return '先移除现有护盾35%，最多'+amount(100*(20+2*a.level)/60+0.8*(g.stat?g.stat(a,'attack'):a.stats.attack))+'；伤害有破珠印记×0.55，否则使用1AP「靠岸」×0.60，否则全额；两者不相乘，削盾量不打折。本招不暴击，结算后消费破珠印记';
- if(id==='ebb')return '当前玩家阶段已暴露25%；本次退潮余音伤害降低20%，不会等攻击后才开放窗口';
+ if(id==='ebb')return '当前完整玩家阶段已暴露25%；退潮回声使用较低倍率，不追加浪冠护盾';
  if(id==='reflux')return '消耗本次行动恢复自身最大生命5%；本战最多2次，累计受疗仍受15%上限';
  if(id==='trample')return '当前梦境M='+number(s.M)+'；本轮降至M≤3，改为鹿角星辉50%，否则完整梦踏；都不暴击。1AP「清醒」降低M2点，每轮最多2次';
  if(id==='copy')return '记录族：'+(families[i.recordFamily||s.recordFamily]||'尚无')+'；本轮同族实付AP少于4，或使用2AP「抹去镜痕」，复写伤害减半；否则全额。只用Boss自己的攻击数值，不暴击，结算后C=0';
  if(id==='servant')return '消耗本体行动召侍镜；本轮侍镜不行动，最多存在3轮，本战仅1次';
  if(id==='overload')return '当前热量Q='+number(s.Q)+'；本轮降到Q<80则改为蒸汽冲击50%，不削盾、不暴击、不附过载暴露；否则完整过载不暴击，重置Q并暴露2阶段（直接易伤30%、防御降低20%）。1AP「泄压阀」降低Q15点，每轮最多2次';
- if(id==='vent')return '冷却空转占本次行动，不攻击、不治疗，不刷新已有暴露时间';
+ if(id==='pressure')return '本次增加攻击、护盾与10点热量；不会在本次动作中追加过载，下个玩家阶段另行预告';
  if(id==='regrow')return '再生目标已锁定为'+name(g,i.regrowTarget)+'；仅恢复该部位原最大生命50%，下轮才能行动，不重置其使用次数或其他部位CD；本战仅再生1次';
- if(id==='devour')return '本轮只蓄势，下轮预告吞潮终噬；下一玩家阶段对头颅造成最大生命8%的实际生命伤害，或使用2AP「锚定」，可进入低伤分支';
- if(id==='devour_hit')return '本玩家阶段头颅实际生命损失须达到'+amount(a.maxHp*.08)+'（当前'+amount(t.hpDamageByTarget?.[a.id])+'），或使用2AP「锚定」；满足则改为深渊咬合50%，否则完整终噬，均不暴击';
+ if(id==='devour')return '本轮获得准备护盾与攻击增益，下轮预告吞潮终噬；破掉准备护盾或使用2AP「锚定」可削弱终噬';
+ if(id==='devour_hit')return '本轮破掉准备护盾或使用2AP「锚定」，则改为总伤害15F＋150%攻击；否则完整终噬，均不暴击。结束后消耗准备攻击增益';
  return fields(i.conditional).join('；');
 }
 

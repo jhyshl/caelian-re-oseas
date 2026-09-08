@@ -33,7 +33,10 @@ export interface WorkshopTalent {
   effects: CardEffect[];
 }
 
+import { normalizeStarScaling } from '@/workshop-stars';
+
 export interface WorkshopCard extends CardDefinition {
+  starScaling?: import('@/workshop-stars').WorkshopStarScaling;
   id: string;
   /** Player-defined classification used by imported script mechanisms. */
   tags: string[];
@@ -127,6 +130,7 @@ const ALLOWED_BUFFS = [
   'strength',
   'fortitude',
   'agility',
+  'swift',
   'regen',
   'thorns',
   'ap_regen',
@@ -662,7 +666,7 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
   if (type === 'apply_buff') {
     const buff = String(source.buff ?? '');
     if (!ALLOWED_BUFFS.includes(buff)) return undefined;
-    result.buff = buff;
+    result.buff = buff === 'agility' ? 'swift' : buff;
     result.turns = clamp(source.turns, 1, 99, 1);
     result.value = ['defense_reflect', 'counterattack'].includes(buff)
       ? 1
@@ -885,6 +889,8 @@ export function normalizeWorkshopCard(
     cls: 'custom',
     custom: true,
   };
+  const starScaling = normalizeStarScaling(source.starScaling);
+  if (starScaling) card.starScaling = starScaling;
   return card;
 }
 

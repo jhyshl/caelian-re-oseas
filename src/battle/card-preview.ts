@@ -10,6 +10,7 @@ import type {
 import { MAGICIAN_BLANK_CARD_ID } from '@/content/catalogs/magician';
 import { cardNameHistoryKey } from '@/battle/card-history';
 import { safeCardEffectHits } from '@/battle/execution-limits';
+import { scaleWorkshopCard } from '@/workshop-stars';
 
 const battleRules = battleRulesJson as {
   playerAttackScale?: number;
@@ -629,6 +630,7 @@ export function previewBattleCard(
   allyTargetId: BattleFriendlyTargetId = 'player',
 ): BattleCardPreview {
   if (state.rework && card.rework) return previewRework(state, String(card.id), selectedTarget, allyTargetId);
+  card = scaleWorkshopCard(card, number(card.previewStars, 1));
   const cardMpCost = effectiveCardMpCost(state, card);
   const preview: BattleCardPreview = {
     enemyDamage: state.enemies.map(() => 0),
@@ -704,7 +706,10 @@ export function previewBattleCard(
   let comboBonusApplied = false;
 
   const previewEffects = (effects: CardEffect[]): void => {
-    for (const effect of effects) {
+    for (const rawEffect of effects) {
+      const scaling = rawEffect.scaling as { stat?: string; percent?: number } | undefined;
+      const sourceValue = scaling?.stat === 'mp' ? availableMp : scaling?.stat ? number(state.player[scaling.stat as keyof typeof state.player]) : 0;
+      const effect = scaling ? { ...rawEffect, value: number(rawEffect.value) + sourceValue * number(scaling.percent) / 100 } : rawEffect;
       if (effect.type === 'conditional_group') {
         if (!target) continue;
         const conditions = Array.isArray(effect.conditions)
@@ -769,10 +774,10 @@ export function previewBattleCard(
           const damageMultiplier = cardDamageMultiplier(card, state, enemy);
           const base =
             number(effect.value) +
-            (card.type === 'attack'
+            (card.type === 'attack' && (!card.resolvedStarScale || !effect.scaling)
               ? Math.floor(
                   state.player.attack *
-                    number(battleRules.playerAttackScale, 0.35),
+                    number(battleRules.playerAttackScale, 0.35) * number((card.resolvedStarScale as { ratio?: number } | undefined)?.ratio, 1),
                 )
               : 0) +
             damageBonus;

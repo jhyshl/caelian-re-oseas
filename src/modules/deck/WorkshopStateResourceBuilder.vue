@@ -49,7 +49,7 @@ const targets = [
 const buffOptions = [
   ['strength', '力量'],
   ['fortitude', '坚韧'],
-  ['agility', '敏捷'],
+  ['swift', '迅捷（每层＋20%速度）'],
   ['regen', '再生'],
   ['damage_bonus', '增伤'],
   ['damage_reduce', '固定减伤'],

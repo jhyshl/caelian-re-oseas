@@ -120,6 +120,7 @@ export class GameRepository {
     await migrateCombatAttributes(this.db, profileId);
     await migrateCombatEquipment(this.db, profileId);
     await migrateCardInventory(this.db, profileId);
+    await this.guild.migrateCommissions(profileId);
     await this.market.settleFreight(profileId);
     const [
       profile,
@@ -230,6 +231,7 @@ export class GameRepository {
       };
     }
     const command = parsed.data;
+    await this.guild.migrateCommissions(profileId);
     await migrateCombatAttributes(this.db, profileId);
     await migrateCombatEquipment(this.db, profileId);
     await migrateCardInventory(this.db, profileId);
@@ -559,6 +561,7 @@ export class GameRepository {
           profileId,
           command.payload.stat,
           command.payload.direction,
+          command.payload.count,
         );
       case 'player.prepare-level-rewards':
         return this.players.populateLevelRewardChoices(profileId);

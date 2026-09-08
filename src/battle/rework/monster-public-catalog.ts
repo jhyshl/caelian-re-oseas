@@ -108,7 +108,7 @@ function publicSkill(source: SourceSkill, monsterId: string): ReworkPublicSkill 
   const shieldCounter = Boolean(copy.executeIf?.includes('无盾')) && monsterId.startsWith('mon_');
   const condition = shieldCounter
     ? shieldCounterConditions[copy.condition ?? ''] ?? copy.condition ?? ''
-    : copy.condition ?? '';
+    : text(copy.conditionDescription) || copy.condition || '';
   if (copy.id === 'mon_heat_core__skill_2') {
     for (const effect of copy.effects) {
       if ((effect.type ?? effect.kind) === 'buff' && effect.status === 'attack_up' && effect.value === 0.2 && effect.turns === 1) effect.turns = 2;
@@ -160,6 +160,7 @@ function mechanicsText(definition: SourceMonster): string {
   const mechanic = definition.mechanic && typeof definition.mechanic === 'object' ? definition.mechanic as Data : {};
   return [
     text(definition.role),
+    text(definition.tactics),
     text(mechanic.name), text(mechanic.state), text(mechanic.rules),
     text(mechanic.counterplay) || text(definition.counterplay),
     text(mechanic.failure), text(definition.teamwork),

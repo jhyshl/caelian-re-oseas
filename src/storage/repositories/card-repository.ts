@@ -1,5 +1,7 @@
 import { cardRecordId, cardStar, CARD_FUSION_COST, grantCard, repairDeckAfterFusion, resolveDeckStars } from '@/battle/card-inventory';
 import { reworkCard } from '@/battle/rework/catalog';
+import { readWorkshopPacks } from '@/workshop';
+import { needsWorkshopStars } from '@/workshop-stars';
 import type { CaelianDatabase } from '@/storage/database';
 import {
   hasPartySupportCard,
@@ -10,7 +12,9 @@ export class CardRepository {
   constructor(private readonly db: CaelianDatabase) {}
 
   async upgrade(profileId: string, cardId: string, requestedStars?: number): Promise<void> {
-    if (!reworkCard(cardId) || cardId === 'mg_blank_card') throw new Error('这张卡牌不能合成');
+    const custom = readWorkshopPacks().flatMap(pack => pack.classes).flatMap(profession => profession.cards).find(card => card.id === cardId);
+    if ((!reworkCard(cardId) && !custom) || cardId === 'mg_blank_card') throw new Error('这张卡牌不能合成');
+    if (custom && needsWorkshopStars(custom)) throw new Error('这张旧版自定义卡牌没有星级数值，请到创意工坊设置一至三星数值后再合成');
     if(await this.db.battleSessions.where('profileId').equals(profileId).filter(s=>s.active).count()) throw new Error('请在战斗结束后合成卡牌');
     const cards=await this.db.ownedCards.where('profileId').equals(profileId).toArray();
     if(requestedStars===undefined && cards.some(c=>c.cardId===cardId) && !cards.some(c=>c.cardId===cardId&&cardStar(c.stars)<3)) throw new Error('卡牌最高三星');

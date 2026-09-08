@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { loadCardCatalog } from '@/content/catalogs/cards';
 import { reworkCard, describeReworkEffects } from '@/battle/rework/catalog';
+import { needsWorkshopStars, requestStarEditor, workshopStarDescription } from '@/workshop-stars';
 import type { CardDefinition } from '@/content/types';
 import {
   loadCraftingRecipes,
@@ -19,10 +20,15 @@ const tab = ref<'items' | 'cooking' | 'equipment' | 'cards'>('items');
 const cards = ref<Record<string, CardDefinition>>({});
 const cardSearch = ref('');
 const cardStarFilter = ref('all');
-const cardGroups = computed(() => (snapshot.value?.cards ?? []).filter(c => c.quantity > 0 && reworkCard(c.cardId) && c.cardId !== 'mg_blank_card').map(c => ({...c, stars:c.stars ?? 1, definition:cards.value[c.cardId]!})).filter(c => c.definition && c.definition.name.includes(cardSearch.value.trim()) && (cardStarFilter.value === 'all' || c.stars === Number(cardStarFilter.value))).sort((a,b) => a.definition.name.localeCompare(b.definition.name,'zh-CN') || a.stars-b.stars));
-function cardDescription(id: string, stars: number) { const c = reworkCard(id); return c ? describeReworkEffects(c.effects, stars) : ''; }
+const cardGroups = computed(() => (snapshot.value?.cards ?? []).filter(c => c.quantity > 0 && (reworkCard(c.cardId) || cards.value[c.cardId]?.custom) && c.cardId !== 'mg_blank_card').map(c => ({...c, stars:c.stars ?? 1, definition:cards.value[c.cardId]!})).filter(c => c.definition && c.definition.name.includes(cardSearch.value.trim()) && (cardStarFilter.value === 'all' || c.stars === Number(cardStarFilter.value))).sort((a,b) => a.definition.name.localeCompare(b.definition.name,'zh-CN') || a.stars-b.stars));
+function cardDescription(id: string, stars: number) { const c = reworkCard(id); return c ? describeReworkEffects(c.effects, stars) : cards.value[id] ? workshopStarDescription(cards.value[id], stars) : ''; }
+async function configureStars(cardId: string) {
+  const confirmed = await props.context.api.confirm({ title: '配置自定义卡牌星级', description: '这张旧版卡牌尚未设置一至三星数值。可以前往创意工坊，一键套用倍率模板或自行填写。', confirmText: '前往配置', cancelText: '暂不配置' });
+  if (confirmed) { requestStarEditor(cardId); await props.context.api.navigatePanel('deck'); }
+}
 async function mergeCard(cardId: string, stars: number) {
   if (busy.value) return;
+  if (needsWorkshopStars(cards.value[cardId])) { await configureStars(cardId); return; }
   await execute({id:commandId('cards.upgrade'),type:'cards.upgrade',payload:{cardId,stars}}, '合成成功：获得一张' + (stars + 1) + '星卡牌，花费2000金币。已同步牌组；合成后请检查牌组张数。');
 }
 const selectedRecipeId = ref('');
@@ -297,7 +303,8 @@ onMounted(async () => {
               <small>{{ cardDescription(card.cardId, card.stars) }}</small>
               <small v-if="card.stars < 3">升星后：{{ cardDescription(card.cardId, card.stars + 1) }}</small>
             </div>
-            <button v-if="card.stars < 3" class="ca-button primary" :disabled="busy || card.quantity < 3 || snapshot.player.gold < 2000" @click="mergeCard(card.cardId, card.stars)">
+            <button v-if="needsWorkshopStars(card.definition)" class="ca-button" @click="configureStars(card.cardId)">配置星级数值</button>
+            <button v-else-if="card.stars < 3" class="ca-button primary" :disabled="busy || card.quantity < 3 || snapshot.player.gold < 2000" @click="mergeCard(card.cardId, card.stars)">
               {{ card.quantity < 3 ? '还缺' + (3 - card.quantity) + '张' : snapshot.player.gold < 2000 ? '金币不足' : '升至' + (card.stars + 1) + '星 · 2000金币' }}
             </button>
           </article>

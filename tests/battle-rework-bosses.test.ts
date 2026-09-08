@@ -42,14 +42,18 @@ describe('8个重置Boss的技能与状态机', () => {
       const { g, a, s, p } = fixture(index); planBoss(g, a);
       for (const other of a.definition.skills) a.cooldowns[other.id] = other.id === skill.id ? 0 : 999;
       const id = skill.id;
-      if (index === 0) { s.nextExamRound = 99; p.lastTurn.damageCards = 4; p.lastTurn.hitsByTarget[a.id] = 3; a.hp *= 0.5; if (id === 'exam') s.nextExamRound = 1; if (id === 'restart') s.examPasses = 2; }
+      if (index === 0) { s.nextExamRound = 99; p.lastTurn.damageCards = 4; p.lastTurn.hitsByTarget[a.id] = 3; a.hp *= 0.5; if (id === 'exam') s.nextExamRound = 1; if (id === 'restart') g.addStatus(p,a,{kind:'debuff',status:'armor_break',value:.3,turns:3},{skipEffectRoll:true}); }
       if (index === 1) { a.hp *= 0.4; s.R = id === 'reckoning' ? 2 : id === 'lantern' ? -2 : 0; }
+      if (index === 1 && id === 'whisper') { lock(g,a,'lantern'); actBoss(g,a); next(g); for(const skill of a.definition.skills)a.cooldowns[skill.id]=skill.id==='whisper'?0:999; }
       if (index === 2) { a.hp *= 0.5; s.last.addedBuffs = 2; if (id === 'verdict') s.collectRound = -1; if (id === 'crack') s.mode = 'complete'; }
+      if (index === 2 && id === 'struggle') { s.mode='exposed'; s.exposureEnd=99; }
       if (index === 3) { s.phase = id === 'high' ? 1 : id === 'ebb' ? 2 : id === 'crown' ? 0 : 3; a.hp *= 0.4; p.lastTurn.healing = p.maxHp * 0.2; }
       if (index === 4) { a.hp *= 0.5; p.lastTurn.drawn = 3; p.lastTurn.hitsByTarget[a.id] = 4; s.M = id === 'trample' ? 4 : id === 'bloom' ? 2 : 1; }
       if (index === 5) { a.hp *= 0.4; s.last.offenseAP = 6; s.last.defenseAP = 4; s.last.maxHit = a.maxHp * 0.2; s.C = id === 'copy' ? 2 : 0; }
       if (index === 6) { a.hp *= 0.6; s.Q = id === 'overload' ? 85 : id === 'shell' ? 30 : 50; s.ventPending = id === 'vent'; p.lastTurn.endShield = p.maxHp * 0.3; }
       if (index === 7) { p.lastTurn.shieldGained = p.maxHp * 0.3; p.lastTurn.damageCards = 5; a.hp *= 0.4; if (['regrow', 'devour', 'devour_hit'].includes(id)) for (const h of g.enemies.filter((x: any) => x.flags.bossHelper)) g.rawHit(p, h, h.hp + 9999, {}); if (id === 'devour_hit') s.charged = 'devour_hit'; }
+      if (index === 7 && id === 'blackwater') { const h=g.enemies.find((h:any)=>h.definition.id==='leviathan_tentacle');g.rawHit(p,h,h.hp+1,{});s.last.hpDamageByTarget[a.id]=a.maxHp*.2; }
+      if (index === 7 && id === 'devour') { g.round=2;s.round=2; }
       expect(planBoss(g, a).skillId, `${a.id}/${id}`).toBe(id); planned++;
       actBoss(g, a); expect(Number.isFinite(p.hp), id).toBe(true); executed++;
     }
@@ -59,7 +63,7 @@ describe('8个重置Boss的技能与状态机', () => {
         a.hp = a.maxHp * 0.2; lock(g, h, skill.id); actBoss(g, h); expect(Number.isFinite(h.hp)).toBe(true); helpers++; next(g);
       }
     }
-    expect(planned).toBe(44); expect(executed).toBe(44); expect(helpers).toBe(12);
+    expect(planned).toBe(44); expect(executed).toBe(44); expect(helpers).toBe(13);
   });
 
   it('12项助手技能的独立规划条件均可达，CD、嘲讽和治疗占动作', () => {
@@ -75,7 +79,7 @@ describe('8个重置Boss的技能与状态机', () => {
         expect(planBoss(g, h).skillId).toBe(skill.id); planned++;
       }
     }
-    expect(planned).toBe(12);
+    expect(planned).toBe(13);
   });
 
   it('全部9种场景动作可实际付AP执行，不产生职业资源，窗口/次数正确', () => {
@@ -102,7 +106,7 @@ describe('8个重置Boss的技能与状态机', () => {
     const { g, a, s } = fixture(0); planBoss(g, a); expect(a.intent.skillId).toBe('exam');
     const exam = a.intent.exam; expect(exam.guardThreshold).toBe(90); expect(exam.healThreshold).toBe(75);
     contextAction(g, '标准防御'); actBoss(g, a); expect(s.examPasses).toBe(1); expect(s.nextExamRound).toBe(4);
-    next(g); s.examPasses = 2; planBoss(g, a); expect(a.intent.skillId).toBe('restart'); actBoss(g, a); expect(s.calibrated).toEqual([2]);
+    next(g); g.addStatus(g.player,a,{kind:'debuff',status:'armor_break',value:.3,turns:3},{skipEffectRoll:true}); planBoss(g, a); expect(a.intent.skillId).toBe('restart'); actBoss(g, a); expect(g.hasStatus(a,'armor_break')).toBe(false);expect(a.shield).toBeGreaterThan(0);
     next(g); a.hp = a.maxHp * 0.2; planBoss(g, a); expect(a.intent.skillId).not.toBe('exam'); expect(a.intent.skillId).not.toBe('restart');
   });
 
@@ -151,9 +155,9 @@ describe('8个重置Boss的技能与状态机', () => {
     const full = fixture(6), low = fixture(6);
     for (const x of [full, low]) { x.s.Q = 85; x.g.hitRng = () => 1; planBoss(x.g, x.a); }
     contextAction(low.g, '泄压阀'); actBoss(full.g, full.a); actBoss(low.g, low.a);
-    expect(full.s.Q).toBe(20); expect(full.s.ventPending).toBe(true); expect(gain(full.a, 'overload_exposure')).toBe(true);
+    expect(full.s.Q).toBe(20); expect(gain(full.a, 'overload_exposure')).toBe(true);expect(full.a.shield).toBe(0);
     expect(gain(low.a, 'overload_exposure')).toBe(false); expect(low.s.ventPending).toBeFalsy();
-    next(full.g); planBoss(full.g, full.a); expect(full.a.intent.skillId).toBe('vent');
+    next(full.g); planBoss(full.g, full.a); expect(full.a.intent.skillId).toBe('flame');
   });
 
   it('利维坦部位有实际HP和独立行动，打头可胜；再生固定最早死亡部位且仅50%HP', () => {

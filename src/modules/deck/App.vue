@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /* global Window, window */
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { needsWorkshopStars, takeStarEditorRequest, workshopStarDescription } from '@/workshop-stars';
 import { reworkCard, describeReworkEffects } from '@/battle/rework/catalog';
 import { loadCardCatalog } from '@/content/catalogs/cards';
 import {
@@ -34,6 +35,8 @@ const search = ref('');
 const starFilter = ref('all');
 const notice = ref('');
 const workshopOpen = ref(false);
+const workshopCardId = ref<string>();
+function openRequestedStars() { const id = takeStarEditorRequest(); if (id) { workshopCardId.value = id; workshopOpen.value = true; } }
 const presetName = ref('');
 const savedDecks = ref(readSavedDeckBuilds(sourceWindow()));
 const selectedPresetId = ref('');
@@ -73,7 +76,7 @@ const ownedCards = computed(() => (snapshot.value?.cards ?? []).flatMap(owned =>
 }).filter(entry => matchFilter(entry.definition, entry.stars)).sort((a,b) => a.definition.name.localeCompare(b.definition.name, 'zh-CN') || a.stars - b.stars));
 function currentDescription(id: string, stars: number, fallback: string) {
   const c = reworkCard(id);
-  return c ? describeReworkEffects(c.effects, stars) : fallback;
+  return c ? describeReworkEffects(c.effects, stars) : catalog.value[id]?.custom ? workshopStarDescription(catalog.value[id], stars) : fallback;
 }
 function groupCards(keys: string[]) {
   const counts = keys.reduce<Record<string, number>>((out, key) => { out[key] = (out[key] ?? 0) + 1; return out; }, {});
@@ -90,8 +93,12 @@ function matchFilter(card: CardDefinition, stars: number) {
 }
 function beginEdit() { draft.value = activeTokens(); editing.value = true; notice.value = ''; }
 
-function addCard(id: string) {
+async function addCard(id: string) {
   const [cardId, stars] = stackParts(id);
+  if (catalog.value[cardId] && needsWorkshopStars(catalog.value[cardId])) {
+    const configure = await props.context.api.confirm({ title: '旧版自定义卡牌', description: '这张卡牌尚未配置一至三星数值，配置后才能升星合成。是否现在到创意工坊填写？', confirmText: '前往配置', cancelText: '暂用一星' });
+    if (configure) { workshopCardId.value = cardId; workshopOpen.value = true; return; }
+  }
   const owned = snapshot.value?.cards.find(entry => entry.cardId === cardId && (entry.stars ?? 1) === stars);
   const inDeck = draft.value.filter((cardId) => cardId === id).length;
   if (
@@ -234,12 +241,15 @@ async function workshopSaved() {
 }
 
 onMounted(async () => {
+  window.addEventListener('caelian:workshop-star-editor', openRequestedStars);
+  openRequestedStars();
   [snapshot.value, catalog.value] = await Promise.all([
     props.context.api.query('state'),
     loadCardCatalog(),
   ]);
   draft.value = activeTokens();
 });
+onUnmounted(() => window.removeEventListener('caelian:workshop-star-editor', openRequestedStars));
 </script>
 
 <template>
@@ -442,6 +452,7 @@ onMounted(async () => {
     </template>
     <WorkshopDialog
       v-if="workshopOpen"
+      :initial-card-id="workshopCardId"
       :context="context"
       @close="workshopOpen = false"
       @saved="workshopSaved"

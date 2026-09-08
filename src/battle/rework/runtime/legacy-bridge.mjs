@@ -12,7 +12,7 @@ const percentKeys=new Set(['attack_amp_percent','monster_frenzy','blood_burn','d
 const controlKeys=new Set(['freeze','stun','sleep','petrify','hard_control','taunt','silence','wet']);
 
 export function normalizeLegacyStatus(rawKey,entry){
- const key=aliases[rawKey]??rawKey;let value=number(entry.value,1),unit='count';
+  const key=['agility','敏捷','迅捷','swift'].includes(rawKey)?'swift':aliases[rawKey]??rawKey;let value=key==='swift'?1:number(entry.value,1),unit='count';
  if(percentKeys.has(rawKey)||percentKeys.has(key)){unit='percent';if(rawKey==='damage_halve')value=50;}
  else if(['weak','vulnerable','fear'].includes(key)){
   unit='percent';if(value===1)value=key==='vulnerable'?40:25;
@@ -20,9 +20,11 @@ export function normalizeLegacyStatus(rawKey,entry){
  else if(controlKeys.has(key))value=1;
  // Unknown/custom IDs stay visible and removable. They are reported to the caller;
  // their separate Workshop behavior must remain attached to the Workshop engine.
- const supported=nativeNames.has(key)||DOT.has(key)||key==='治疗量增加'||/[\u3400-\u9fff]/.test(key);
+  const supported=nativeNames.has(key)||DOT.has(key)||key==='swift'||key==='治疗量增加'||/[\u3400-\u9fff]/.test(key);
  return {key,value,valueUnit:unit,supported};
 }
+
+Object.assign(aliases,{agility:'swift','敏捷':'swift','迅捷':'swift'});
 
 /** Exactly matches api.timed: aggregated presentation only, never a source of timers. */
 export function projectLegacyTimed(actor,list){

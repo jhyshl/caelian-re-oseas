@@ -5,6 +5,8 @@ export function snapshot(game: any): unknown;
 export function project(game: any, state: LocalBattleState, options?:{checkpoint?:boolean}): void;
 export function syncExternal(game: any, state: LocalBattleState): void;
 export function sync(state: LocalBattleState): void;
+export function legacyCardCheckpoint(state: LocalBattleState): any;
+export function recordLegacyCard(state: LocalBattleState, card: any, paidAP: number, before: any): void;
 export function play(state: LocalBattleState, index:number, targetIndex?:number, answers?:number[][], allyTargetId?:string,configureGame?:(game:any,state:LocalBattleState)=>(()=>void)): boolean;
 export function choose(state: LocalBattleState,index:number,finish?:boolean): void;
 export function discard(state: LocalBattleState): void;

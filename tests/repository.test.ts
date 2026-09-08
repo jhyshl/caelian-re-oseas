@@ -448,12 +448,15 @@ describe('GameRepository', () => {
     });
     await database.playerStates.update(profile.id, { experience: 90 });
     const taskId = '升级奖励测试委托:伊拉亚城';
+    await repository.execute(profile.id,{id:'level-reward-material',type:'inventory.adjust',payload:{itemId:'测试材料',name:'测试材料',delta:1}});
     await repository.execute(profile.id, {
       id: 'accept-level-reward-commission',
       type: 'quest.accept',
       payload: {
         taskId,
         title: '升级奖励测试委托',
+        commissionType: 'gather',
+        targetName: '测试材料',
         region: '伊拉亚城',
         objective: '完成一次测试',
         totalStages: 1,

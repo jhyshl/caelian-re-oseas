@@ -96,6 +96,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
         'critRate', 'critDamage', 'effectHit', 'effectResist', 'drawPerTurn',
       ]),
       direction: z.enum(['add', 'remove']),
+      count: z.number().int().min(1).max(100000).optional(),
     }),
   }),
   z.object({
@@ -203,9 +204,10 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       rewardGuildExperience: z.number().int().min(0),
       minimumLevel: z.number().int().min(1).max(999),
       commissionType: z
-        .enum(['combat', 'gather', 'escort', 'investigate'])
+        .enum(['combat', 'gather', 'combat_gather', 'escort', 'investigate'])
         .optional(),
       targetName: z.string().trim().min(1).max(160).optional(),
+      destination: z.string().trim().min(1).max(160).optional(),
     }),
   }),
   z.object({
