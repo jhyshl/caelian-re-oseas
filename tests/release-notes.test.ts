@@ -164,10 +164,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.17.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.18.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.18',
       'Beta 1.17',
       'Beta 1.16',
       'Beta 1.15',
@@ -188,12 +189,21 @@ describe('release notes', () => {
       'Beta 1.0',
     ]);
     const latestText = releases[0]?.changes.join('\n') ?? '';
-    expect(latestText).toContain('战斗系统重置');
-    expect(latestText).toContain('卡牌升星统一放在合成台');
-    expect(latestText).toContain('2000金币');
-    expect(latestText).toContain('跨城货运');
-    expect(latestText).toContain('捕兽夹');
-    expect(latestText).toContain('完成节点');
+    expect(latestText).toContain('组合规则');
+    expect(latestText).toContain('玩家开放嘲讽');
+    expect(latestText).toContain('石化');
+    expect(latestText).toContain('生命之契');
+    expect(latestText).toContain('护送终点');
+    expect(latestText).toContain('两位小数');
+    const beta117Text = releases
+      .find((release) => release.version === '1.17.0-beta.1')
+      ?.changes.join('\n');
+    expect(beta117Text).toContain('战斗系统重置');
+    expect(beta117Text).toContain('卡牌升星统一放在合成台');
+    expect(beta117Text).toContain('2000金币');
+    expect(beta117Text).toContain('跨城货运');
+    expect(beta117Text).toContain('捕兽夹');
+    expect(beta117Text).toContain('完成节点');
     const beta116Text = releases
       .find((release) => release.version === '1.16.0-beta.1')
       ?.changes.join('\n');
