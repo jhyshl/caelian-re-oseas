@@ -33,12 +33,12 @@ function gitBuildId() {
   return dirty ? `${sha}-dirty` : sha;
 }
 
-function preserveAlphaForCommit() {
+function commitHasMarker(marker) {
   try {
     return execFileSync('git', ['log', '-1', '--pretty=%B'], {
       cwd: root,
       encoding: 'utf8',
-    }).includes('[preserve-alpha]');
+    }).includes(marker);
   } catch {
     return false;
   }
@@ -58,6 +58,17 @@ function alphaNumber(version) {
 
 function nextAlphaVersion(buildId) {
   const fallback = String(packageJson.version);
+  // A hotfix can publish new immutable assets without changing the user-facing
+  // version. Unlike preserve-alpha, this still runs the complete Alpha build.
+  if (commitHasMarker('[keep-version]')) {
+    const previous = JSON.parse(
+      readFileSync(path.join(root, 'dist', 'channels', 'alpha.json'), 'utf8'),
+    );
+    if (previous.channel !== 'alpha' || !alphaNumber(previous.version)) {
+      throw new Error('Cannot keep Alpha version: the restored manifest is invalid.');
+    }
+    return previous.version;
+  }
   try {
     const previous = JSON.parse(
       readFileSync(path.join(root, 'dist', 'channels', 'alpha.json'), 'utf8'),
@@ -75,7 +86,7 @@ function nextAlphaVersion(buildId) {
 
 // A Beta-only publication must retain the deployed Alpha manifest and assets,
 // not produce different bytes under the same Alpha version.
-if (channel === 'alpha' && preserveAlphaForCommit()) {
+if (channel === 'alpha' && commitHasMarker('[preserve-alpha]')) {
   const previous = JSON.parse(
     readFileSync(path.join(root, 'dist', 'channels', 'alpha.json'), 'utf8'),
   );
