@@ -16,6 +16,7 @@ import type {
   SocialInteractionOptions,
 } from '@/domain/types';
 import type { KernelEventMap } from '@/kernel/event-bus';
+import type { BattleSnapshot } from '@/storage/read-models';
 import type {
   ConfirmationInput,
   NotificationInput,
@@ -116,6 +117,8 @@ export type PanelName =
 export type QueryName =
   | 'runtime'
   | 'state'
+  | 'battle-state'
+  | 'affinity'
   | 'inventory'
   | 'market'
   | 'freight'
@@ -129,6 +132,8 @@ export type QueryName =
 export interface QueryResultMap {
   runtime: RuntimeInfo;
   state: GameSnapshot;
+  'battle-state': BattleSnapshot;
+  affinity: number;
   inventory: InventoryStackRecord[];
   market: MarketView;
   freight: FreightView;
@@ -267,4 +272,5 @@ export type PanelApi = Pick<
 export interface PanelContext {
   api: PanelApi;
   document: Document;
+  isActive?: () => boolean;
 }

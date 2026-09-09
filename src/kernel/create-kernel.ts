@@ -14,6 +14,7 @@ import type {
   RuntimeStatus,
 } from '@/domain/types';
 import { EventBus } from '@/kernel/event-bus';
+import { MessageUpdateBatch } from '@/kernel/message-update-batch';
 import { commandId } from '@/kernel/ids';
 import { PanelRegistry } from '@/kernel/panel-registry';
 import type {
@@ -170,6 +171,7 @@ export class CaelianKernel {
   private readonly promptedSurveyIds = new Set<string>();
   private readonly pendingTavernUpdates = new Set<Promise<void>>();
   private tavernUpdateQueue: Promise<void> = Promise.resolve();
+  private readonly messageUpdates = new MessageUpdateBatch();
   private readonly handledStoryBattleFloors = new Set<string>();
   private readonly missingQuestJudgeFloors = new Set<string>();
   private legalQuestItemCache?: Array<{ itemId: string; itemName: string }>;
@@ -498,10 +500,16 @@ export class CaelianKernel {
         this.profileId,
       )) as QueryResultMap[K];
     }
-    const snapshot = await this.repository.snapshot(this.profileId);
-    if (name === 'inventory') {
-      return snapshot.inventory as QueryResultMap[K];
+    if (name === 'battle-state') {
+      return (await this.repository.battleSnapshot(this.profileId)) as QueryResultMap[K];
     }
+    if (name === 'affinity') {
+      return (await this.repository.affinity(this.profileId)) as QueryResultMap[K];
+    }
+    if (name === 'inventory') {
+      return (await this.repository.inventorySnapshot(this.profileId)) as QueryResultMap[K];
+    }
+    const snapshot = await this.repository.snapshot(this.profileId);
     return snapshot as QueryResultMap[K];
   }
 
@@ -577,7 +585,7 @@ export class CaelianKernel {
 
   private async syncThemeFromSettings(emit: boolean): Promise<void> {
     if (!this.profileId) return;
-    const snapshot = await this.repository.snapshot(this.profileId);
+    const snapshot = await this.repository.themeSnapshot(this.profileId);
     let unlocked = snapshot.settings.caelianHeartThemeUnlocked === true;
     if (
       !unlocked &&
@@ -604,7 +612,7 @@ export class CaelianKernel {
 
   private async unlockCaelianHeartThemeIfEligible(): Promise<void> {
     if (!this.profileId || this.caelianHeartThemeUnlocked) return;
-    const snapshot = await this.repository.snapshot(this.profileId);
+    const snapshot = await this.repository.themeSnapshot(this.profileId);
     if (
       snapshot.settings.caelianHeartThemeUnlocked !== true &&
       snapshot.social.affinity < CAELIAN_HEART_AFFINITY_THRESHOLD
@@ -1039,6 +1047,8 @@ export class CaelianKernel {
   async shutdown(): Promise<void> {
     if (this.status === 'stopped') return;
     this.shuttingDown = true;
+    this.messageUpdates.clear();
+    this.adapter.host.document.body.classList.remove('caelian-generating');
     this.generationEpoch += 1;
     this.generationActive = false;
     this.cancelQuestJudge();
@@ -1067,23 +1077,35 @@ export class CaelianKernel {
     eventName: string,
     payload?: TavernEventPayload,
   ): void {
+    if (this.shuttingDown || this.status === 'stopped') return;
+    // Test at receipt time: a queued callback may run after the write flag resets.
+    if (eventName === 'MESSAGE_UPDATED' && this.projectionWriteInProgress) return;
+    const update = this.messageUpdates.accepts(eventName)
+      ? this.messageUpdates.add(eventName, payload)
+      : { eventName, payload };
+    if (!this.messageUpdates.accepts(eventName)) this.messageUpdates.clear();
+    if (!update) return;
     if (eventName === 'CHAT_CHANGED') {
       this.cancelQuestJudge();
       this.generationEpoch += 1;
       this.generationActive = false;
+      this.adapter.host.document.body.classList.remove('caelian-generating');
     }
     if (this.isGenerationStartEvent(eventName)) {
       // Mark synchronously at the adapter callback boundary so an interaction
       // cannot enter its transaction while this update is still queued.
       this.generationEpoch += 1;
       this.generationActive = true;
+      this.adapter.host.document.body.classList.add('caelian-generating');
     }
     const generationEpoch = this.generationEpoch;
     const task = this.tavernUpdateQueue
       .catch(() => undefined)
-      .then(() =>
-        this.handleTavernUpdate(eventName, payload, generationEpoch),
-      )
+      .then(() => {
+        this.messageUpdates.take(update);
+        if (this.shuttingDown) return;
+        return this.handleTavernUpdate(update.eventName, update.payload, generationEpoch);
+      })
       .catch((error) => {
         if (this.status === 'stopped') return;
         this.lastError =
@@ -1137,6 +1159,7 @@ export class CaelianKernel {
     }
     if (eventName === 'CHAT_CHANGED') {
       this.notifications.clearQuestGuidance();
+      await this.panels.resetPages();
       await this.activateCurrentProfile();
       this.handledStoryBattleFloors.clear();
       this.missingQuestJudgeFloors.clear();
@@ -1149,6 +1172,20 @@ export class CaelianKernel {
     const endedCurrentGeneration = terminalEvent
       ? this.finishGeneration(generationEpoch)
       : false;
+    if (
+      this.generationActive && !terminalEvent &&
+      (this.messageUpdates.accepts(eventName) || this.isGenerationStartEvent(eventName))
+    ) {
+      // Keep prompt context and story battle entry responsive. Reconcile history,
+      // achievements and MVU only once the generating floor is stable.
+      if (this.isGenerationStartEvent(eventName)) {
+        await this.syncQuestContext();
+        await this.events.emit('tavern.changed', { event: eventName });
+      } else if (eventName === 'MESSAGE_RECEIVED' || eventName === 'CHARACTER_MESSAGE_RENDERED') {
+        await this.triggerStoryBattle(payload);
+      }
+      return;
+    }
     try {
       await this.reconcileQuestFloors(eventName, payload);
       await this.ingestMvuNarrative();
@@ -2457,6 +2494,7 @@ export class CaelianKernel {
   private finishGeneration(epoch: number): boolean {
     if (!this.generationActive || epoch !== this.generationEpoch) return false;
     this.generationActive = false;
+    this.adapter.host.document.body.classList.remove('caelian-generating');
     return true;
   }
 

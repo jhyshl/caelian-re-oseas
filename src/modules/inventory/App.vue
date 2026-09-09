@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /* global HTMLElement, KeyboardEvent */
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue';
 import { loadItemCatalog, loadRelics } from '@/content/catalogs/inventory';
 import type {
   BattleItemDefinition,
@@ -38,8 +38,8 @@ import {
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
-const items = ref<Record<string, BattleItemDefinition>>({});
-const relics = ref<Record<string, RelicDefinition>>({});
+const items = shallowRef<Record<string, BattleItemDefinition>>({});
+const relics = shallowRef<Record<string, RelicDefinition>>({});
 const tab = ref<'items' | 'consumables' | 'cooking' | 'equipment' | 'relics'>('items');
 const equipmentCategory = ref<EquipmentCategory>('all');
 const equipmentQuery = ref('');
@@ -207,6 +207,7 @@ function closeCollectibleDetails(): void {
 }
 
 function handleDocumentKeydown(event: KeyboardEvent): void {
+  if (props.context.isActive?.() === false) return;
   if (event.key === 'Escape' && selectedCollectible.value) {
     closeCollectibleDetails();
   }

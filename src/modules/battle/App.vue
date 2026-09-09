@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /* global Document, HTMLElement, DOMRect, PointerEvent, setTimeout, requestAnimationFrame, cancelAnimationFrame */
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue';
+import type { BattleSnapshot } from '@/storage/read-models';
 import {
   loadMonsterCatalog,
   type MonsterDefinition,
@@ -34,7 +35,6 @@ import type {
   BattleEnemyState,
   BattleFriendlyTargetId,
   BattleSummonState,
-  GameSnapshot,
   LocalBattleState,
 } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
@@ -87,12 +87,12 @@ const worldStatusDescriptions =
   worldStatusDescriptionsJson as GeneratedStatusDescriptions;
 
 const props = defineProps<{ context: PanelContext }>();
-const snapshot = ref<GameSnapshot>();
-const monsters = ref<Record<string, MonsterDefinition>>({});
-const cards = ref<Record<string, CardDefinition>>({});
-const battleItems = ref<Record<string, BattleItemDefinition>>({});
-const equipmentRewards = ref<Record<string, EquipmentDefinition>>({});
-const relicRewards = ref<Record<string, RelicDefinition>>({});
+const snapshot = ref<BattleSnapshot>();
+const monsters = shallowRef<Record<string, MonsterDefinition>>({});
+const cards = shallowRef<Record<string, CardDefinition>>({});
+const battleItems = shallowRef<Record<string, BattleItemDefinition>>({});
+const equipmentRewards = shallowRef<Record<string, EquipmentDefinition>>({});
+const relicRewards = shallowRef<Record<string, RelicDefinition>>({});
 const selectedTarget = ref(0);
 const selectedAllyTarget = ref<BattleFriendlyTargetId | null>(null);
 const selectedHandIndex = ref<number | null>(null);
@@ -1265,7 +1265,7 @@ function normalizeSelection() {
 
 async function refresh() {
   if (busy.value || animationPlaying.value) return;
-  snapshot.value = await props.context.api.query('state');
+  snapshot.value = await props.context.api.query('battle-state');
   normalizeSelection();
 }
 
@@ -1279,7 +1279,7 @@ async function execute(command: unknown, success = '') {
       notice.value = result.message ?? '操作没有成功';
       return false;
     }
-    snapshot.value = await props.context.api.query('state');
+    snapshot.value = await props.context.api.query('battle-state');
     normalizeSelection();
     notice.value = success;
     return true;
@@ -1472,7 +1472,7 @@ async function executeAnimated(command: unknown, success = '') {
       notice.value = result.message ?? '操作没有成功';
       return false;
     }
-    const finalSnapshot = await props.context.api.query('state');
+    const finalSnapshot = await props.context.api.query('battle-state');
     const finalState = finalSnapshot.battle?.state ?? null;
     await playAnimationQueue(eventsAfter(finalState, previousEventId));
     snapshot.value = finalSnapshot;
@@ -1905,7 +1905,7 @@ onMounted(async () => {
     relicRewards.value,
   ] =
     await Promise.all([
-    props.context.api.query('state'),
+    props.context.api.query('battle-state'),
     loadMonsterCatalog(),
     loadCardCatalog(),
     loadBattleItems(),

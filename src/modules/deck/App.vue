@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /* global Window, window */
 import { describeRuleProgram, type RuleProgram } from '@/workshop-program';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue';
 import { needsWorkshopStars, takeStarEditorRequest, workshopStarDescription } from '@/workshop-stars';
 import { reworkCard, describeReworkEffects } from '@/battle/rework/catalog';
 import { loadCardCatalog } from '@/content/catalogs/cards';
@@ -28,7 +28,7 @@ function sourceWindow(): Window {
 }
 
 const snapshot = ref<GameSnapshot>();
-const catalog = ref<Record<string, CardDefinition>>({});
+const catalog = shallowRef<Record<string, CardDefinition>>({});
 const editing = ref(false);
 const draft = ref<string[]>([]);
 const filter = ref('all');
@@ -243,6 +243,15 @@ async function workshopSaved() {
   catalog.value = { ...(await loadCardCatalog()) };
 }
 
+let disposeStateListener: (() => void) | undefined;
+async function refreshState(): Promise<void> {
+  snapshot.value = await props.context.api.query('state');
+  catalog.value = { ...(await loadCardCatalog()) };
+  if (!editing.value) {
+    draft.value = activeTokens();
+  }
+}
+
 onMounted(async () => {
   window.addEventListener('caelian:workshop-star-editor', openRequestedStars);
   openRequestedStars();
@@ -251,8 +260,12 @@ onMounted(async () => {
     loadCardCatalog(),
   ]);
   draft.value = activeTokens();
+  disposeStateListener = props.context.api.on('state.changed', refreshState);
 });
-onUnmounted(() => window.removeEventListener('caelian:workshop-star-editor', openRequestedStars));
+onUnmounted(() => {
+  window.removeEventListener('caelian:workshop-star-editor', openRequestedStars);
+  disposeStateListener?.();
+});
 </script>
 
 <template>

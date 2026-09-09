@@ -188,6 +188,11 @@ function rarityLabel(rarity: string): string {
 onMounted(async () => {
   await refresh();
   disposers.push(props.context.api.on('state.changed', refresh));
+  disposers.push(props.context.api.on('panel.opened', ({ panel }) => {
+    if (panel === 'market' && market.value && Date.now() >= market.value.nextRefreshAt) {
+      return refresh();
+    }
+  }));
 });
 
 onUnmounted(() => {

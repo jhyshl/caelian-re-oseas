@@ -62,6 +62,7 @@ onMounted(async()=>{
   mounted=true;await refresh();if(!mounted) return;
   dispose=props.context.api.on('state.changed',()=>{void refresh();});
   timer=setInterval(()=>{
+    if(props.context.isActive?.()===false) return;
     now.value=Date.now();
     if(data.value&&(now.value>=data.value.nextResetAt||data.value.state.jobs.some(j=>!j.deliveredAt&&j.arrivesAt<=now.value)||now.value>=(data.value.regions[0]?.nextRefreshAt??Infinity))) void refresh();
   },1000);

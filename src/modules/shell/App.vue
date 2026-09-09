@@ -248,9 +248,8 @@ const launcherLabel = computed(() => {
 async function refreshAffinity(): Promise<void> {
   const revision = ++affinityRefreshRevision;
   try {
-    const snapshot = await props.context.api.query('state');
+    const nextAffinity = Number(await props.context.api.query('affinity'));
     if (revision !== affinityRefreshRevision) return;
-    const nextAffinity = Number(snapshot.social.affinity);
     affinity.value = Number.isFinite(nextAffinity) ? nextAffinity : 0;
   } catch {
     // The launcher remains usable while the active profile is still loading.

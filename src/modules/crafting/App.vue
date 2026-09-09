@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue';
 import { loadCardCatalog } from '@/content/catalogs/cards';
 import { reworkCard, describeReworkEffects } from '@/battle/rework/catalog';
 import { needsWorkshopStars, requestStarEditor, workshopStarDescription } from '@/workshop-stars';
@@ -15,9 +15,9 @@ import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
-const recipes = ref<readonly CraftingRecipeDefinition[]>([]);
+const recipes = shallowRef<readonly CraftingRecipeDefinition[]>([]);
 const tab = ref<'items' | 'cooking' | 'equipment' | 'cards'>('items');
-const cards = ref<Record<string, CardDefinition>>({});
+const cards = shallowRef<Record<string, CardDefinition>>({});
 const cardSearch = ref('');
 const cardStarFilter = ref('all');
 const cardGroups = computed(() => (snapshot.value?.cards ?? []).filter(c => c.quantity > 0 && (reworkCard(c.cardId) || cards.value[c.cardId]?.custom) && c.cardId !== 'mg_blank_card').map(c => ({...c, stars:c.stars ?? 1, definition:cards.value[c.cardId]!})).filter(c => c.definition && c.definition.name.includes(cardSearch.value.trim()) && (cardStarFilter.value === 'all' || c.stars === Number(cardStarFilter.value))).sort((a,b) => a.definition.name.localeCompare(b.definition.name,'zh-CN') || a.stars-b.stars));
@@ -164,6 +164,7 @@ async function mergeEquipment(baseId: string, stars: 1 | 2, name: string) {
   );
 }
 
+let disposeStateListener: (() => void) | undefined;
 onMounted(async () => {
   [snapshot.value, recipes.value, cards.value] = await Promise.all([
     props.context.api.query('state'),
@@ -171,7 +172,12 @@ onMounted(async () => {
     loadCardCatalog(),
   ]);
   selectedRecipeId.value = recipes.value[0]?.id ?? '';
+  disposeStateListener = props.context.api.on('state.changed', async () => {
+    snapshot.value = await props.context.api.query('state');
+    cards.value = { ...(await loadCardCatalog()) };
+  });
 });
+onUnmounted(() => disposeStateListener?.());
 </script>
 
 <template>

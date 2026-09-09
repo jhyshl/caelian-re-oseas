@@ -542,7 +542,25 @@ export class TavernAdapter {
       this.host as unknown as typeof globalThis
     ).MutationObserver;
     if (HostMutationObserver && this.host.document.body) {
-      const observer = new HostMutationObserver(detectOldPlayerEnvelope);
+      const observer = new HostMutationObserver((records) => {
+        if (this.externalPatchSignals.has('old-player')) return;
+        // Streaming text and Caelian's own renders do not add legacy overlays.
+        // Inspect only newly inserted elements outside those subtrees.
+        const selector = '#caelian_special_patch_old_player_v2_letter_overlay';
+        const relevant = records.some((record) => {
+          const target = record.target.nodeType === 1
+            ? record.target as Element
+            : record.target.parentElement;
+          if (target?.closest('#chat, .mes, .caelian-panel-host')) return false;
+          return [...record.addedNodes].some((node) => {
+            if (node.nodeType !== 1) return false;
+            const element = node as Element;
+            if (element.matches('#chat, .mes, .caelian-panel-host')) return false;
+            return element.matches(selector) || Boolean(element.querySelector(selector));
+          });
+        });
+        if (relevant) detectOldPlayerEnvelope();
+      });
       observer.observe(this.host.document.body, { childList: true, subtree: true });
       this.disposers.push(() => observer.disconnect());
       detectOldPlayerEnvelope();

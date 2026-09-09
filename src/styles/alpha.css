@@ -4067,3 +4067,16 @@ body.caelian-theme-heart .worldbook-floater .worldbook-footer {
     ) !important;
   }
 }
+/* Cached panels must never intercept input or participate in page layout. */
+.caelian-panel-host[hidden] {
+  display: none !important;
+}
+
+/* Avoid resampling the streaming chat through fullscreen backdrop filters. */
+body.caelian-generating .caelian-panel-host :is(
+  .ca-backdrop, .battle-choice-overlay, .feedback-overlay, .survey-overlay,
+  .release-overlay, .memory-overlay, .submission-overlay
+) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}

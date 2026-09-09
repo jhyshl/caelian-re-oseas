@@ -47,6 +47,8 @@ import {
   type QuestFloorRollbackResult,
 } from '@/storage/repositories/quest-progress-repository';
 import { relationshipStage } from '@/mvu/contracts';
+import type { BattleSnapshot, ThemeSnapshot } from '@/storage/read-models';
+import { ConcurrentReads } from '@/storage/concurrent-reads';
 
 type CommandApplicationResult = Pick<
   SocialInteractionOutcome,
@@ -54,6 +56,7 @@ type CommandApplicationResult = Pick<
 > & { data?: unknown };
 
 export class GameRepository {
+  private readonly reads: ConcurrentReads;
   private readonly profiles: ProfileRepository;
   private readonly players: PlayerRepository;
   private readonly world: WorldRepository;
@@ -74,6 +77,7 @@ export class GameRepository {
     private readonly events: EventBus,
     dependencies: { random?: () => number } = {},
   ) {
+    this.reads = new ConcurrentReads(db);
     this.profiles = new ProfileRepository(db);
     this.players = new PlayerRepository(db);
     this.world = new WorldRepository(db);
@@ -116,7 +120,11 @@ export class GameRepository {
     return this.profiles.unlockCaelianHeartTheme(profileId);
   }
 
-  async snapshot(profileId: string): Promise<GameSnapshot> {
+  snapshot(profileId: string): Promise<GameSnapshot> {
+    return this.reads.read(`state:${profileId}`, () => this.readSnapshot(profileId));
+  }
+
+  private async readSnapshot(profileId: string): Promise<GameSnapshot> {
     await migrateCombatAttributes(this.db, profileId);
     await migrateCombatEquipment(this.db, profileId);
     await migrateCardInventory(this.db, profileId);
@@ -219,6 +227,42 @@ export class GameRepository {
       achievements,
       settings,
     };
+  }
+
+  battleSnapshot(profileId: string): Promise<BattleSnapshot> {
+    return this.reads.read(`battle:${profileId}`, () => this.readBattleSnapshot(profileId));
+  }
+
+  private async readBattleSnapshot(profileId: string): Promise<BattleSnapshot> {
+    const [player, world, decks, inventory, battle, relics, settings] = await Promise.all([
+      this.db.playerStates.get(profileId),
+      this.db.worldStates.get(profileId),
+      this.db.decks.where('profileId').equals(profileId).toArray(),
+      this.db.inventoryStacks.where('profileId').equals(profileId).toArray(),
+      this.db.battleSessions.where('profileId').equals(profileId)
+        .filter((session) => session.active).first(),
+      this.db.ownedRelics.where('profileId').equals(profileId).toArray(),
+      this.profiles.displaySettings(profileId),
+    ]);
+    if (!player || !world) throw new Error(`档案 ${profileId} 未完成初始化`);
+    return { player, world, decks, inventory, battle: battle ?? null, relics, settings };
+  }
+
+  async affinity(profileId: string): Promise<number> {
+    return (await this.db.socialProgress.get(`${profileId}:caelian`))?.affinity ?? 0;
+  }
+
+  async themeSnapshot(profileId: string): Promise<ThemeSnapshot> {
+    const [social, settings] = await Promise.all([
+      this.db.socialProgress.get(`${profileId}:caelian`),
+      this.profiles.displaySettings(profileId),
+    ]);
+    if (!social) throw new Error(`档案 ${profileId} 未完成初始化`);
+    return { social, settings };
+  }
+
+  inventorySnapshot(profileId: string) {
+    return this.db.inventoryStacks.where('profileId').equals(profileId).toArray();
   }
 
   async execute(profileId: string, input: unknown): Promise<CommandResult> {

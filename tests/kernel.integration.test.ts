@@ -1001,7 +1001,7 @@ describe('CaelianKernel integration', () => {
 
     await kernel.api.navigatePanel('character');
     expect(
-      document.querySelector('[data-caelian-panel="inventory"]'),
+      document.querySelector('[data-caelian-panel="inventory"]:not([hidden])'),
     ).toBeNull();
     expect(
       document.querySelector('[data-caelian-panel="character"]'),
@@ -1010,7 +1010,7 @@ describe('CaelianKernel integration', () => {
 
     await kernel.api.closePanel('character');
     expect(
-      document.querySelector('[data-caelian-panel="character"]'),
+      document.querySelector('[data-caelian-panel="character"]:not([hidden])'),
     ).toBeNull();
     expect(shellHost?.classList.contains('caelian-page-panel-open')).toBe(false);
 
