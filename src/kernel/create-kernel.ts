@@ -190,6 +190,7 @@ export class CaelianKernel {
     this.regionWorldbook = new RegionWorldbookSwitcher(
       () => this.adapter.regionWorldbookApi(),
       () => this.adapter.currentCharacterName(),
+      this.adapter.host,
     );
     this.db = new CaelianDatabase(
       this.channel,

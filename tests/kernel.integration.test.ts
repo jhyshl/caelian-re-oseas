@@ -515,6 +515,8 @@ describe('CaelianKernel integration', () => {
     window.SillyTavern = {
       getContext: () => ({
         chatId: 'region-book-chat',
+        characterId: '0',
+        characters: [{ name: '凯利安', avatar: '凯利安.png', data: { extensions: { world: '孔雀开屏你说看不见' } } }],
         name1: '测试冒险者',
         name2: '凯利安',
         chat,

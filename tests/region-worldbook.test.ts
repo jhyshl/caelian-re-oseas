@@ -214,7 +214,7 @@ describe('地区世界书', () => {
       changed: 1,
       message: expect.stringContaining('写入后回读不一致'),
     });
-    expect(api.getWorldbook).toHaveBeenCalledOnce();
+    expect(api.getWorldbook).toHaveBeenCalledTimes(2);
     expect(entries[0]?.enabled).toBe(false);
   });
 

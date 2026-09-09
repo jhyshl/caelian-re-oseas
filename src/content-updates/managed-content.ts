@@ -1,8 +1,8 @@
 import {
   caelianWorldbookFamily,
-  isCaelianCharacterName,
   isCaelianWorldbookName,
 } from '@/content/character-identity';
+import { readCharacterTarget } from '@/tavern/character-target';
 
 const CHARACTER_NAME = '凯利安';
 const APPLIED_STORAGE_KEY = 'caelian:managed-content:applied:v1';
@@ -49,7 +49,8 @@ interface CurrentCharacterIdentity {
   avatar: string;
   characterIndex: number | null;
   requestHeaders: Record<string, string>;
-  safeWholeCardSelector: string | null;
+  primaryWorldbook?: string;
+  assertCurrent: () => void;
 }
 
 interface ManagedWorldbookEntry {
@@ -162,10 +163,6 @@ interface ManagedContentApi {
   getVariables?: (options: {
     type: 'character';
   }) => Record<string, unknown>;
-  updateCharacterWith?: (
-    characterName: string,
-    updater: (character: ManagedCharacter) => ManagedCharacter,
-  ) => Promise<ManagedCharacter>;
   updateWorldbookWith?: (
     worldbookName: string,
     updater: (
@@ -343,20 +340,35 @@ export class ManagedContentUpdater {
     }
 
     const api = this.resolveApi();
-    if (!api.getCharWorldbookNames) {
+    let identity: CurrentCharacterIdentity | null;
+    let worldbookName: string;
+    try {
+      identity = await this.currentCharacterIdentity();
+      if (!identity) return emptyResult('wrong-character');
+      // Prefer the selected card's actual binding. Older helpers may briefly
+      // report an empty binding while the chat is loading.
+      worldbookName = identity.primaryWorldbook ?? '';
+      if (!worldbookName) {
+        try {
+          const bindings = await api.getCharWorldbookNames?.call(api, 'current');
+          worldbookName = identity.primaryWorldbook ?? bindings?.primary?.trim() ?? '';
+        } catch {
+          // Re-read the same real avatar, without requiring a page refresh.
+        }
+        if (!worldbookName) {
+          const original = identity;
+          identity = await this.currentCharacterIdentity(true);
+          original.assertCurrent();
+          worldbookName = identity?.primaryWorldbook ?? '';
+        }
+      }
+      identity?.assertCurrent();
+    } catch {
       return emptyResult('unavailable');
     }
-
-    const identity = await this.currentCharacterIdentity(api);
-    if (!identity || !isCaelianCharacterName(identity.name)) {
+    if (!identity) {
       return emptyResult('wrong-character');
     }
-
-    // `current` is safe for this read-only helper and resolves the exact
-    // SillyTavern character id. A display name is ambiguous when duplicate
-    // cards exist.
-    const bindings = api.getCharWorldbookNames.call(api, 'current');
-    const worldbookName = bindings.primary?.trim() ?? '';
     if (!isCaelianWorldbookName(worldbookName)) {
       return emptyResult('wrong-worldbook');
     }
@@ -425,52 +437,17 @@ export class ManagedContentUpdater {
     };
   }
 
-  private async currentCharacterIdentity(
-    api: ManagedContentApi,
-  ): Promise<CurrentCharacterIdentity | null> {
-    let context: TavernContext;
-    try {
-      context =
-        (await Promise.resolve(
-          this.host.SillyTavern?.getContext?.(),
-        )) ?? {};
-    } catch {
-      context = {};
-    }
-
-    const directName = api.getCurrentCharacterName?.call(api);
-    const name =
-      (typeof directName === 'string' ? directName.trim() : '') ||
-      context.name2?.trim() ||
-      '';
-    if (!name) return null;
-
-    const characterIndex = Number(context.characterId);
-    const indexedCharacter =
-      Number.isInteger(characterIndex) && characterIndex >= 0
-        ? context.characters?.[characterIndex]
-        : undefined;
-    const directAvatar = api.getCurrentCharacterId?.call(api);
-    const avatar =
-      indexedCharacter?.avatar?.trim() ||
-      (typeof directAvatar === 'string' ? directAvatar.trim() : '') ||
-      `name:${name}`;
-    const sameNameCount =
-      context.characters?.filter((character) => character.name === name)
-        .length ?? 0;
-    const safeWholeCardSelector =
-      sameNameCount === 1 && avatar === `${name}.png` ? name : null;
-    const requestHeaders = context.getRequestHeaders?.call(context) ?? {};
-
+  private async currentCharacterIdentity(hydrate = false): Promise<CurrentCharacterIdentity | null> {
+    const target = await readCharacterTarget(this.host, { hydrate });
+    if (!target.isCaelian) return null;
+    const world = target.character.data?.extensions?.world;
     return {
-      name,
-      avatar,
-      characterIndex:
-        Number.isInteger(characterIndex) && characterIndex >= 0
-          ? characterIndex
-          : null,
-      requestHeaders,
-      safeWholeCardSelector,
+      name: target.name,
+      avatar: target.avatar,
+      characterIndex: target.characterIndex,
+      requestHeaders: target.requestHeaders,
+      primaryWorldbook: typeof world === 'string' ? world.trim() : undefined,
+      assertCurrent: target.assertCurrent,
     };
   }
 
@@ -525,6 +502,7 @@ export class ManagedContentUpdater {
     worldbookName: string,
     operation: ManagedContentOperation,
   ): Promise<void> {
+    identity.assertCurrent();
     if (
       operation.target.kind === 'character-field' ||
       operation.target.kind === 'character-first-message' ||
@@ -533,7 +511,7 @@ export class ManagedContentUpdater {
       await this.applyCharacterOperation(api, identity, operation);
       return;
     }
-    await this.applyWorldbookOperation(api, worldbookName, operation);
+    await this.applyWorldbookOperation(api, worldbookName, operation, identity);
     if (
       !isWorldbookOperationApplied(
         await this.readWorldbook(api, worldbookName),
@@ -563,46 +541,41 @@ export class ManagedContentUpdater {
       return;
     }
 
-    if (!api.updateCharacterWith) throw new Error('角色卡编辑接口不可用');
-    if (!identity.safeWholeCardSelector) {
-      throw new Error(
-        `当前角色卡 ${identity.avatar} 无法通过名称唯一定位，已停止整卡写回`,
-      );
+    const character = await this.readPersistedCharacter(identity);
+    const target = operation.target;
+    const data: Record<string, unknown> = {};
+    const legacy: Record<string, unknown> = {};
+    if (target.kind === 'character-field') {
+      const value = applyTextMutation(String(character[target.field] ?? ''), operation.mutation);
+      data[target.field] = value;
+      legacy[target.field === 'creator_notes' ? 'creatorcomment' : target.field] = value;
+    } else if (target.kind === 'character-first-message') {
+      const index = target.index;
+      if (!Number.isInteger(index) || index < 0 || index >= character.first_messages.length) {
+        throw new Error(`角色卡开场白索引 ${index} 不存在`);
+      }
+      const messages = [...character.first_messages];
+      messages[index] = applyTextMutation(messages[index] ?? '', operation.mutation);
+      if (index === 0) {
+        data.first_mes = messages[0];
+        legacy.first_mes = messages[0];
+      } else {
+        data.alternate_greetings = messages.slice(1);
+      }
+    } else {
+      throw new Error('角色卡更新目标类型不合法');
     }
-
-    await api.updateCharacterWith.call(
-      api,
-      identity.safeWholeCardSelector,
-      (character) => {
-        const target = operation.target;
-        if (target.kind === 'character-field') {
-          const field = target.field;
-          character[field] = applyTextMutation(
-            String(character[field] ?? ''),
-            operation.mutation,
-          );
-          return character;
-        }
-
-        if (target.kind === 'character-first-message') {
-          const index = target.index;
-          if (
-            !Number.isInteger(index) ||
-            index < 0 ||
-            index >= character.first_messages.length
-          ) {
-            throw new Error(`角色卡开场白索引 ${index} 不存在`);
-          }
-          character.first_messages[index] = applyTextMutation(
-            character.first_messages[index] ?? '',
-            operation.mutation,
-          );
-          return character;
-        }
-
-        throw new Error('角色卡更新目标类型不合法');
-      },
-    );
+    identity.assertCurrent();
+    // Never feed a selector or display name to the Helper whole-card writer.
+    // Its current alias and duplicate-name handling can create a different PNG.
+    const response = await this.host.fetch('/api/characters/merge-attributes', {
+      method: 'POST',
+      headers: identity.requestHeaders,
+      body: JSON.stringify({ avatar: identity.avatar, ...legacy, data }),
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error(`角色卡精确写回失败 (${response.status})`);
+    await this.refreshCurrentCharacterMemory(identity);
 
     if (
       !isCharacterOperationApplied(
@@ -866,12 +839,14 @@ export class ManagedContentUpdater {
     api: ManagedContentApi,
     worldbookName: string,
     operation: ManagedContentOperation,
+    identity: CurrentCharacterIdentity,
   ): Promise<void> {
     if (!api.updateWorldbookWith) throw new Error('世界书编辑接口不可用');
     await api.updateWorldbookWith.call(
       api,
       worldbookName,
       (entries) => {
+        identity.assertCurrent();
         const target = operation.target;
         if (target.kind === 'worldbook-upsert-entry') {
           if (!('entry' in operation)) {

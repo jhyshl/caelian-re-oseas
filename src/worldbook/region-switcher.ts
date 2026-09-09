@@ -2,6 +2,13 @@ import {
   isCaelianCharacterName,
   isCaelianWorldbookName,
 } from '@/content/character-identity';
+import {
+  CharacterTargetError,
+  captureCharacterGuard,
+  primaryWorldbook,
+  readCharacterTarget,
+  type CharacterTarget,
+} from '@/tavern/character-target';
 
 export const REGION_ALIASES = {
   圣德里安学院: [
@@ -168,7 +175,7 @@ export interface RegionWorldbookApi {
   getCurrentCharacterName?: () => string | null;
   getCharWorldbookNames?: (
     characterName: 'current',
-  ) => { primary: string | null; additional: string[] };
+  ) => { primary: string | null; additional: string[] } | Promise<{ primary: string | null; additional: string[] }>;
   getWorldbook?: (
     worldbookName: string,
   ) => Promise<RegionWorldbookEntry[]>;
@@ -291,20 +298,23 @@ export class RegionWorldbookSwitcher {
   constructor(
     private readonly resolveApi: () => RegionWorldbookApi,
     private readonly currentCharacterName: () => Promise<string | null>,
+    private readonly host?: Window,
   ) {}
 
   cleanupLegacyQuestEntries(): Promise<LegacyQuestWorldbookCleanupResult> {
+    const guard = this.host && captureCharacterGuard(this.host);
     const task = this.queue
       .catch(() => undefined)
-      .then(() => this.performLegacyQuestCleanup());
+      .then(() => this.performLegacyQuestCleanup(guard));
     this.queue = task;
     return task;
   }
 
   inspect(): Promise<RegionWorldbookOverview> {
+    const guard = this.host && captureCharacterGuard(this.host);
     const task = this.queue
       .catch(() => undefined)
-      .then(() => this.performInspect());
+      .then(() => this.performInspect(guard));
     this.queue = task;
     return task;
   }
@@ -314,9 +324,10 @@ export class RegionWorldbookSwitcher {
     enabled: boolean,
   ): Promise<RegionWorldbookSyncResult> {
     const region = normalizeRegion(rawRegion);
+    const guard = this.host && captureCharacterGuard(this.host);
     const task = this.queue
       .catch(() => undefined)
-      .then(() => this.performRegionUpdate(region, enabled));
+      .then(() => this.performRegionUpdate(region, enabled, guard));
     this.queue = task;
     return task;
   }
@@ -327,15 +338,16 @@ export class RegionWorldbookSwitcher {
   ): Promise<RegionWorldbookSyncResult> {
     const previousRegion = normalizeRegion(rawPreviousRegion);
     const nextRegion = normalizeRegion(rawNextRegion);
+    const guard = this.host && captureCharacterGuard(this.host);
     const task = this.queue
       .catch(() => undefined)
-      .then(() => this.performRegionSwitch(previousRegion, nextRegion));
+      .then(() => this.performRegionSwitch(previousRegion, nextRegion, guard));
     this.queue = task;
     return task;
   }
 
-  private async performInspect(): Promise<RegionWorldbookOverview> {
-    const target = await this.resolveWorldbook();
+  private async performInspect(guard?: () => void): Promise<RegionWorldbookOverview> {
+    const target = await this.resolveWorldbook(guard);
     if ('status' in target) {
       return { status: target.status, regions: [], message: target.message };
     }
@@ -343,7 +355,8 @@ export class RegionWorldbookSwitcher {
     if (!getWorldbook) return { status: 'unavailable', regions: [] };
     const counts = new Map<string, { total: number; enabled: number }>();
     try {
-      const entries = await getWorldbook.call(target.api, target.worldbookName);
+      const entries = target.entries ?? await getWorldbook.call(target.api, target.worldbookName);
+      target.assertCurrent?.();
       for (const entry of entries) {
         for (const region of entryRegions(entry)) {
           const current = counts.get(region) ?? { total: 0, enabled: 0 };
@@ -381,9 +394,10 @@ export class RegionWorldbookSwitcher {
   private async performRegionUpdate(
     region: string,
     enabled: boolean,
+    guard?: () => void,
   ): Promise<RegionWorldbookSyncResult> {
     if (!region) return emptyResult('invalid-region', region);
-    const target = await this.resolveWorldbook();
+    const target = await this.resolveWorldbook(guard);
     if ('status' in target) return emptyResult(target.status, region, target.message);
     const updateWorldbookWith = target.api.updateWorldbookWith;
     const getWorldbook = target.api.getWorldbook;
@@ -396,14 +410,16 @@ export class RegionWorldbookSwitcher {
       await updateWorldbookWith.call(
         target.api,
         target.worldbookName,
-        (entries) =>
-          entries.map((entry) => {
+        (entries) => {
+          target.assertCurrent?.();
+          return entries.map((entry) => {
             if (!entryRegions(entry).includes(region)) return entry;
             touched += 1;
             if (entry.enabled === enabled) return entry;
             changed += 1;
             return { ...entry, enabled };
-          }),
+          });
+        },
         { render: 'immediate' },
       );
       if (touched === 0) return emptyResult('no-tagged-entries', region);
@@ -411,6 +427,7 @@ export class RegionWorldbookSwitcher {
         target.api,
         target.worldbookName,
       );
+      target.assertCurrent?.();
       const persistedTargets = persisted.filter((entry) =>
         entryRegions(entry).includes(region),
       );
@@ -440,9 +457,10 @@ export class RegionWorldbookSwitcher {
   private async performRegionSwitch(
     previousRegion: string,
     nextRegion: string,
+    guard?: () => void,
   ): Promise<RegionWorldbookSyncResult> {
     if (!nextRegion) return emptyResult('invalid-region', nextRegion);
-    const target = await this.resolveWorldbook();
+    const target = await this.resolveWorldbook(guard);
     if ('status' in target) return emptyResult(target.status, nextRegion, target.message);
     const updateWorldbookWith = target.api.updateWorldbookWith;
     const getWorldbook = target.api.getWorldbook;
@@ -456,8 +474,10 @@ export class RegionWorldbookSwitcher {
       await updateWorldbookWith.call(
         target.api,
         target.worldbookName,
-        (entries) =>
-          entries.map((entry) => {
+        (entries) => {
+          target.assertCurrent?.();
+          if (!entries.some((entry) => entryRegions(entry).includes(nextRegion))) return entries;
+          return entries.map((entry) => {
             const regions = entryRegions(entry);
             if (regions.includes(nextRegion)) nextTagged += 1;
             const shouldEnable = regions.includes(nextRegion)
@@ -470,7 +490,8 @@ export class RegionWorldbookSwitcher {
             if (entry.enabled === shouldEnable) return entry;
             changed += 1;
             return { ...entry, enabled: shouldEnable };
-          }),
+          });
+        },
         { render: 'immediate' },
       );
       if (nextTagged === 0) {
@@ -481,6 +502,7 @@ export class RegionWorldbookSwitcher {
         target.worldbookName,
       );
       const persistedTargets = persisted
+        // Do not report success to a map panel belonging to a different card.
         .map((entry) => ({
           entry,
           enabled: switchedRegionState(entry, previousRegion, nextRegion),
@@ -491,6 +513,7 @@ export class RegionWorldbookSwitcher {
             enabled: boolean;
           } => candidate.enabled !== null,
         );
+      target.assertCurrent?.();
       if (
         persistedTargets.length !== touched ||
         persistedTargets.some(
@@ -516,63 +539,129 @@ export class RegionWorldbookSwitcher {
     };
   }
 
-  private async resolveWorldbook(): Promise<
-    | { api: RegionWorldbookApi; worldbookName: string }
+  private async resolveWorldbook(guard?: () => void): Promise<
+    | { api: RegionWorldbookApi; worldbookName: string; entries?: RegionWorldbookEntry[]; assertCurrent?: () => void }
     | {
         status: 'unavailable' | 'wrong-character' | 'wrong-worldbook';
         message?: string;
       }
   > {
-    const api = this.resolveApi();
-    if (
-      !api.getCharWorldbookNames ||
-      !api.getWorldbook ||
-      !api.updateWorldbookWith
-    ) {
-      return { status: 'unavailable' };
+    let result: Awaited<ReturnType<RegionWorldbookSwitcher['resolveWorldbookOnce']>>;
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        guard?.();
+        if (!guard && this.host) guard = captureCharacterGuard(this.host);
+      } catch (error) {
+        return { status: 'unavailable', message: error instanceof Error ? error.message : String(error) };
+      }
+      result = await this.resolveWorldbookOnce(attempt > 0);
+      try {
+        guard?.();
+      } catch (error) {
+        return { status: 'unavailable', message: error instanceof Error ? error.message : String(error) };
+      }
+      if (!this.host || !('status' in result) || result.status === 'wrong-character' || attempt >= 2) return result;
+      await new Promise((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
     }
-    const directName = api.getCurrentCharacterName?.call(api)?.trim();
-    const characterName = directName || (await this.currentCharacterName());
-    if (!isCaelianCharacterName(characterName)) {
-      return { status: 'wrong-character' };
-    }
-    const bindings = api.getCharWorldbookNames.call(api, 'current');
-    const worldbookName = bindings.primary?.trim() ?? '';
-    if (!isCaelianWorldbookName(worldbookName)) {
-      return { status: 'wrong-worldbook' };
-    }
-    return { api, worldbookName };
   }
 
-  private async performLegacyQuestCleanup(): Promise<LegacyQuestWorldbookCleanupResult> {
+  private async resolveWorldbookOnce(hydrate: boolean): Promise<
+    | { api: RegionWorldbookApi; worldbookName: string; entries?: RegionWorldbookEntry[]; assertCurrent?: () => void }
+    | { status: 'unavailable' | 'wrong-character' | 'wrong-worldbook'; message?: string }
+  > {
     const api = this.resolveApi();
-    if (!api.getCharWorldbookNames || !api.updateWorldbookWith) {
-      return cleanupResult('unavailable');
+    if (!api.getWorldbook || !api.updateWorldbookWith) {
+      return { status: 'unavailable', message: '酒馆世界书接口尚未准备好，请重试本次操作。' };
     }
+    let target: CharacterTarget | undefined;
+    try {
+      if (this.host) {
+        target = await readCharacterTarget(this.host, { hydrate });
+        if (!target.isCaelian) {
+          return { status: 'wrong-character', message: `当前角色“${target.name}”未识别为凯利安角色卡，未修改世界书。` };
+        }
+      } else {
+        const name = await this.currentCharacterName();
+        const fallbackName = await api.getCurrentCharacterName?.call(api);
+        if (!isCaelianCharacterName(name || fallbackName)) return { status: 'wrong-character' };
+      }
+      let bindings: { primary: string | null; additional: string[] } = { primary: null, additional: [] };
+      let bindingError: unknown;
+      try {
+        bindings = await api.getCharWorldbookNames?.call(api, 'current') ?? bindings;
+      } catch (error) {
+        bindingError = error;
+      }
+      target?.assertCurrent();
+      const worldValue = target?.character.data?.extensions?.world;
+      const primary = target && typeof worldValue === 'string'
+        ? primaryWorldbook(target)
+        : bindings.primary?.trim() ?? '';
+      const additional = [...new Set((bindings.additional ?? []).filter((name) => typeof name === 'string').map((name) => name.trim()).filter(Boolean))];
+      const readErrors: string[] = [];
+      const candidateEntries = new Map<string, RegionWorldbookEntry[]>();
+      const inspectCandidate = async (name: string): Promise<boolean> => {
+        try {
+          const entries = await api.getWorldbook!.call(api, name);
+          target?.assertCurrent();
+          candidateEntries.set(name, entries);
+          return isCaelianWorldbookName(name) || hasCaelianWorldbookContent(entries);
+        } catch (error) {
+          if (error instanceof CharacterTargetError) throw error;
+          readErrors.push(`${name}：${error instanceof Error ? error.message : String(error)}`);
+          return false;
+        }
+      };
+      if (primary && await inspectCandidate(primary)) {
+        return { api, worldbookName: primary, entries: candidateEntries.get(primary), assertCurrent: target?.assertCurrent };
+      }
+      // A failing official primary must not silently redirect a write to another book.
+      if (primary && isCaelianWorldbookName(primary) && readErrors.length) {
+        return { status: 'unavailable', message: `世界书读取失败：${readErrors.join('；')}` };
+      }
+      const candidates: string[] = [];
+      for (const name of additional.filter((name) => name !== primary)) {
+        if (await inspectCandidate(name)) candidates.push(name);
+      }
+      if (candidates.length === 1 && !readErrors.length) {
+        return { api, worldbookName: candidates[0]!, entries: candidateEntries.get(candidates[0]!), assertCurrent: target?.assertCurrent };
+      }
+      if (candidates.length > 1) {
+        return { status: 'wrong-worldbook', message: `绑定了多本凯利安世界书（${candidates.join('、')}），请将要使用的一本设为主世界书。` };
+      }
+      if (readErrors.length || (bindingError && !primary)) {
+        return { status: 'unavailable', message: `暂时无法读取角色绑定的世界书：${readErrors.join('；') || String(bindingError)}。请重试。` };
+      }
+      return {
+        status: 'wrong-worldbook',
+        message: primary || additional.length
+          ? `已绑定世界书“${[primary, ...additional].filter(Boolean).join('、')}”，但未找到可确认的凯利安地区资料。`
+          : '当前角色尚未绑定世界书，请在角色设置中绑定凯利安世界书。',
+      };
+    } catch (error) {
+      return { status: 'unavailable', message: error instanceof Error ? error.message : String(error) };
+    }
+  }
 
-    const directName = api.getCurrentCharacterName?.call(api)?.trim();
-    const characterName = directName || (await this.currentCharacterName());
-    if (!isCaelianCharacterName(characterName)) {
-      return cleanupResult('wrong-character');
-    }
-
-    const bindings = api.getCharWorldbookNames.call(api, 'current');
-    const worldbookName = bindings.primary?.trim() ?? '';
-    if (!isCaelianWorldbookName(worldbookName)) {
-      return cleanupResult('wrong-worldbook');
-    }
+  private async performLegacyQuestCleanup(guard?: () => void): Promise<LegacyQuestWorldbookCleanupResult> {
+    const target = await this.resolveWorldbook(guard);
+    if ('status' in target) return { ...cleanupResult(target.status), message: target.message };
+    const { api, worldbookName } = target;
+    if (!api.updateWorldbookWith) return cleanupResult('unavailable');
 
     let removed = 0;
     try {
       await api.updateWorldbookWith.call(
         api,
         worldbookName,
-        (entries) =>
-          entries.filter((entry) => {
+        (entries) => {
+          target.assertCurrent?.();
+          return entries.filter((entry) => {
             if (!isLegacyQuestWorldbookEntry(entry)) return true;
             removed += 1;
             return false;
-          }),
+          });
+        },
         { render: 'debounced' },
       );
     } catch (error) {
@@ -612,6 +701,14 @@ export function entryRegions(entry: RegionWorldbookEntry): string[] {
         .filter(Boolean),
     ),
   ];
+}
+
+function hasCaelianWorldbookContent(entries: RegionWorldbookEntry[]): boolean {
+  const labels = entries.map((entry) => entryLabel(entry));
+  const hasCharacter = labels.some((label) => label.includes('凯利安_阶段01_陌生人'));
+  const hasCompanion = labels.some((label) => label.includes('特莱奥，最好的伙伴'));
+  const regions = new Set(entries.flatMap(entryRegions));
+  return hasCharacter && hasCompanion && regions.size >= 2;
 }
 
 function emptyResult(

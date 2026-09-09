@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { loadRegions } from '@/content/catalogs/world';
 import type { RegionDefinition } from '@/content/types';
 import type { PanelContext } from '@/kernel/public-api';
@@ -13,6 +13,10 @@ const regions = ref<RegionDefinition[]>([]);
 const overview = ref<RegionWorldbookOverview>();
 const busyRegion = ref('');
 const notice = ref('');
+const refreshing = ref(false);
+let refreshTask: Promise<void> | undefined;
+let disposed = false;
+let disposeListener: (() => void) | undefined;
 
 const rows = computed(() => {
   const statusByRegion = new Map(
@@ -30,17 +34,33 @@ function stateLabel(status: RegionWorldbookRegionStatus): string {
   return `已关闭 0/${status.total}`;
 }
 
-async function refresh() {
+function refresh(): Promise<void> {
+  if (refreshTask) return refreshTask;
+  refreshing.value = true;
   notice.value = '';
-  overview.value = await props.context.api.getRegionWorldbookStatus();
-  if (overview.value.status !== 'current') {
-    notice.value =
-      overview.value.status === 'wrong-worldbook'
-        ? '当前角色没有绑定凯利安官方世界书。'
-        : overview.value.status === 'wrong-character'
-          ? '当前角色不是凯利安、凯利安alpha或凯利安beta，未修改任何世界书。'
-          : overview.value.message || '酒馆世界书接口暂不可用，请稍后重试。';
-  }
+  refreshTask = (async () => {
+    try {
+      const result = await props.context.api.getRegionWorldbookStatus();
+      if (disposed) return;
+      overview.value = result;
+      if (result.status !== 'current') {
+        notice.value = result.message || (result.status === 'wrong-character'
+          ? '当前角色尚未识别为凯利安，请重试读取。'
+          : result.status === 'wrong-worldbook'
+            ? '未找到可确认的凯利安世界书，请检查角色绑定。'
+            : '酒馆世界书接口暂不可用，请重试读取。');
+      }
+    } catch (error) {
+      if (!disposed) {
+        overview.value = { status: 'failed', regions: [] };
+        notice.value = error instanceof Error ? error.message : '世界书读取失败，请重试。';
+      }
+    } finally {
+      refreshing.value = false;
+      refreshTask = undefined;
+    }
+  })();
+  return refreshTask;
 }
 
 async function toggle(status: RegionWorldbookRegionStatus) {
@@ -65,8 +85,16 @@ async function toggle(status: RegionWorldbookRegionStatus) {
 }
 
 onMounted(async () => {
+  disposeListener = props.context.api.on?.('tavern.changed', ({ event }) => {
+    if (['CHAT_CHANGED', 'CHAT_LOADED', 'CHARACTER_EDITED'].includes(event) && !busyRegion.value) return refresh();
+  });
   regions.value = await loadRegions();
-  await refresh();
+  if (!disposed) await refresh();
+});
+
+onUnmounted(() => {
+  disposed = true;
+  disposeListener?.();
 });
 </script>
 
@@ -96,7 +124,7 @@ onMounted(async () => {
         :key="row.region.id"
         type="button"
         :class="['region-row', row.status.state]"
-        :disabled="Boolean(busyRegion)"
+        :disabled="Boolean(busyRegion) || refreshing"
         @click="toggle(row.status)"
       >
         <span class="region-copy">
@@ -111,8 +139,8 @@ onMounted(async () => {
     <div v-else class="empty">没有找到可手动控制的地区条目。</div>
     <p v-if="notice" class="notice">{{ notice }}</p>
     <footer class="worldbook-footer">
-      <button type="button" :disabled="Boolean(busyRegion)" @click="refresh">
-        刷新状态
+      <button type="button" :disabled="Boolean(busyRegion) || refreshing" @click="refresh">
+        {{ refreshing ? '正在重新读取…' : '重新读取状态' }}
       </button>
     </footer>
   </aside>

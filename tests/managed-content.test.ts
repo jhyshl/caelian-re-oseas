@@ -474,6 +474,15 @@ function createHarness(options: {
           json: async () => clone(payload ?? {}),
         };
       }
+      if (String(input) === '/api/characters/merge-attributes') {
+        const request = JSON.parse(String(init?.body ?? '{}'));
+        const persisted = persistedCharacters.get(request.avatar);
+        if (persisted && options.persistCharacterWrites !== false) {
+          Object.assign(persisted.data, clone(request.data));
+          syncCharacterView(request.avatar);
+        }
+        return { ok: Boolean(persisted), status: persisted ? 200 : 404, json: async () => ({}) };
+      }
       return {
         ok: true,
         status: 200,
@@ -499,6 +508,51 @@ function createHarness(options: {
 }
 
 describe('ManagedContentUpdater', () => {
+  it.each(['凯利安_1.png', 'current.png'])('字段与开场白更新只合并实际头像 %s，不使用整卡助手写入', async (avatar) => {
+    const h = createHarness({ characterAvatar: avatar, operations: [
+      { id: 'exact.description', target: { kind: 'character-field', field: 'description' }, mutation: { action: 'replace-exact', before: '旧段落', after: '新段落' } },
+      { id: 'exact.greeting', target: { kind: 'character-first-message', index: 0 }, mutation: { action: 'replace-exact', before: '你好', after: '欢迎' } },
+      { id: 'exact.alternate', target: { kind: 'character-first-message', index: 1 }, mutation: { action: 'replace-exact', before: '备用开场', after: '新的问候' } },
+    ] });
+    const persisted = h.persistedCharacters.get(avatar)!;
+    persisted.data.alternate_greetings = ['备用开场', '玩家自写开场'];
+    const beforeExtensions = clone(persisted.data.extensions);
+    const result = await new ManagedContentUpdater(h.host).sync({ force: true });
+    expect(result).toMatchObject({ applied: 3, conflicts: [] });
+    const writes = vi.mocked(h.host.fetch).mock.calls.filter(([url]) => String(url) === '/api/characters/merge-attributes');
+    expect(writes).toHaveLength(3);
+    for (const [, init] of writes) {
+      const body = JSON.parse(String(init?.body));
+      expect(body.avatar).toBe(avatar);
+      expect(body).not.toHaveProperty('ch_name');
+      expect(body).not.toHaveProperty('name');
+      expect(body.data).not.toHaveProperty('extensions');
+    }
+    expect(persisted.name).toBe('凯利安');
+    expect(persisted.data.extensions).toEqual(beforeExtensions);
+    expect(persisted.data.alternate_greetings).toEqual(['新的问候', '玩家自写开场']);
+    expect(h.helper.updateCharacterWith).not.toHaveBeenCalled();
+    expect([...h.persistedCharacters.keys()]).toEqual([avatar]);
+  });
+
+  it('读取字段后角色发生切换，停止发送合并请求', async () => {
+    const h = createHarness({ operations: [
+      { id: 'stop.switch', target: { kind: 'character-field', field: 'description' }, mutation: { action: 'replace-exact', before: '旧段落', after: '新段落' } },
+    ] });
+    const fetch = vi.mocked(h.host.fetch);
+    const original = fetch.getMockImplementation()!;
+    fetch.mockImplementation(async (...args) => {
+      const response = await original(...args);
+      if (args[0] === '/api/characters/get') h.characters[0]!.avatar = 'another.png';
+      return response;
+    });
+    const result = await new ManagedContentUpdater(h.host).sync({ force: true });
+    expect(result.applied).toBe(0);
+    expect(result.conflicts[0]?.reason).toContain('角色正在切换');
+    expect(fetch.mock.calls.some(([url]) => url === '/api/characters/merge-attributes')).toBe(false);
+    expect(h.helper.updateCharacterWith).not.toHaveBeenCalled();
+  });
+
   it.each(['凯利安alpha', '凯利安beta', '凯利安 Beta'])(
     '角色名为“%s”时允许同步官方受管内容',
     async (characterName) => {

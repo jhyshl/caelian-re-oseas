@@ -18,6 +18,7 @@ import {
   type AchievementPatchSignal,
 } from '@/achievements/patch-registry';
 import type { RegionWorldbookApi } from '@/worldbook/region-switcher';
+import { readCharacterTarget } from './character-target';
 
 export interface TavernEventPayload {
   avatarId?: string;
@@ -322,8 +323,11 @@ export class TavernAdapter {
   }
 
   async currentCharacterName(): Promise<string | null> {
-    const context = await this.context();
-    return context.name2?.trim() || null;
+    try {
+      return (await readCharacterTarget(this.host)).name || null;
+    } catch {
+      return null;
+    }
   }
 
   currentInputText(): string {
