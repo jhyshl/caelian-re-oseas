@@ -22,6 +22,7 @@ export interface BattleCardPreview {
   playerHp: number;
   playerHpCost: number;
   companionHp: number;
+  summonHp?: Record<string, number>;
   playerMp: number;
   playerMpCost: number;
 }
@@ -546,11 +547,15 @@ function friendlyTargetIds(
   allyTargetId: BattleFriendlyTargetId,
 ): BattleFriendlyTargetId[] {
   if (effect.target === 'all_allies') {
-    return state.companion ? ['player', 'caelian'] : ['player'];
+    return ['player', ...(state.companion ? ['caelian'] : []), ...state.player.summons.filter(s => (s.hp ?? 0) > 0).map(s => s.id), ...(state.companion?.summons.filter(s => s.hp > 0).map(s => s.id) ?? [])];
   }
-  return allyTargetId === 'caelian' && state.companion
-    ? ['caelian']
-    : ['player'];
+  return previewFriendlyActor(state, allyTargetId) ? [allyTargetId] : ['player'];
+}
+
+function previewFriendlyActor(state: LocalBattleState, targetId: BattleFriendlyTargetId) {
+  if (targetId === 'player') return state.player;
+  if (targetId === 'caelian') return state.companion;
+  return [...state.player.summons, ...(state.companion?.summons ?? [])].find(s => s.id === targetId && (s.hp ?? 0) > 0);
 }
 
 function healPreview(
@@ -558,19 +563,19 @@ function healPreview(
   targetId: BattleFriendlyTargetId,
   rawAmount: number,
 ): { restored: number; overflow: number } {
-  const target = targetId === 'caelian' ? state.companion : state.player;
+  const target = previewFriendlyActor(state, targetId);
   if (!target || (targetId === 'caelian' && state.companion?.injured)) {
     return { restored: 0, overflow: 0 };
   }
   const healBlock = Math.min(
     100,
-    Math.max(0, effectValue(target.debuffs.heal_block)),
+    Math.max(0, effectValue(target.debuffs?.heal_block)),
   );
   const amount = Math.max(
     0,
     Math.floor((Math.round(rawAmount) * (100 - healBlock)) / 100),
   );
-  const missing = Math.max(0, target.hpMax - target.hp);
+  const missing = Math.max(0, number(target.hpMax) - number(target.hp));
   return {
     restored: Math.min(missing, amount),
     overflow: Math.max(0, amount - missing),
@@ -680,7 +685,11 @@ export function previewBattleCard(
   const addHeal = (targetId: BattleFriendlyTargetId, rawAmount: number) => {
     const heal = healPreview(state, targetId, rawAmount);
     if (targetId === 'caelian') preview.companionHp += heal.restored;
-    else preview.playerHp += heal.restored;
+    else if (targetId === 'player') preview.playerHp += heal.restored;
+    else if (heal.restored) {
+      preview.summonHp ??= {};
+      preview.summonHp[targetId] = (preview.summonHp[targetId] ?? 0) + heal.restored;
+    }
     if (
       targetId === 'player' &&
       state.player.subclass === 'priest' &&
@@ -954,8 +963,7 @@ export function previewBattleCard(
         }
       } else if (effect.type === 'cleanse_heal_per') {
         for (const targetId of friendlyTargetIds(state, effect, allyTargetId)) {
-          const recipient =
-            targetId === 'caelian' ? state.companion : state.player;
+          const recipient = previewFriendlyActor(state, targetId);
           if (!recipient) continue;
           addHeal(
             targetId,
@@ -963,7 +971,7 @@ export function previewBattleCard(
               state,
               card,
               'heal',
-              removedEffectCount(recipient.debuffs, effect.amount) *
+              removedEffectCount(recipient.debuffs ?? {}, effect.amount) *
                 number(effect.value),
             ),
           );

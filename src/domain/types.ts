@@ -542,7 +542,8 @@ export interface BattleEnemyState {
   intent: BattleIntent | null;
 }
 
-export type BattleFriendlyTargetId = 'player' | 'caelian';
+/** Actor ID of the player, a companion, or a friendly summon in this battle. */
+export type BattleFriendlyTargetId = string;
 
 export interface BattleCompanionSkillState {
   id: string;

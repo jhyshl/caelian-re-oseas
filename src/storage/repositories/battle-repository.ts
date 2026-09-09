@@ -658,6 +658,11 @@ export class BattleRepository {
     const state = session.state;
     this.assertPlayerPhase(state);
     this.assertNoPendingCardChoice(state);
+    if (input.allyTargetId && input.allyTargetId !== 'player' &&
+      !(input.allyTargetId === 'caelian' && state.companion) &&
+      ![...state.player.summons, ...(state.companion?.summons ?? [])].some(summon => summon.id === input.allyTargetId && (summon.hp ?? 0) > 0)) {
+      throw new Error('所选己方目标已不在战场上');
+    }
     if (state.rework && reworkCard(state.player.hand[input.handIndex]?.cardId ?? '')) {
       playCardTransaction(state, {index:input.handIndex,targetIndex:input.targetIndex??state.selectedTarget,allyTargetId:input.allyTargetId}, this.reworkCardPorts());
       this.stabilizeWorkshopTest(state);
@@ -4609,14 +4614,10 @@ export class BattleRepository {
         this.cardFriendlyTargets(state, 'all_allies', allyTargetId),
       ).slice(0, Math.max(1, Math.floor(targetCount)));
     }
-    if (effectTarget === 'selected_allies') {
-      return allyTargetId === 'caelian' && companion
-        ? [companion]
-        : [state.player];
-    }
-    return allyTargetId === 'caelian' && companion
-      ? [companion]
-      : [state.player];
+    if (allyTargetId === 'caelian' && companion) return [companion];
+    const selectedSummon = [...playerSummons, ...(companion?.summons ?? [])]
+      .find(summon => summon.id === allyTargetId && summon.hp > 0);
+    return selectedSummon ? [selectedSummon] : [state.player];
   }
 
   private resolveWorkshopScaling(
@@ -4686,7 +4687,7 @@ export class BattleRepository {
   }
 
   private enemyFriendlyTargets(state: LocalBattleState): Combatant[] {
-    const targets: Combatant[] = [state.player];
+    const targets: Combatant[] = state.player.hp > 0 ? [state.player] : [];
     for (const summon of state.player.summons) {
       const normalized = this.normalizePlayerSummon(summon);
       if (normalized.attackable !== false && normalized.hp > 0) {
@@ -4697,17 +4698,18 @@ export class BattleRepository {
       targets.push(state.companion);
     }
     for (const summon of state.companion?.summons ?? []) {
-      if (summon.hp > 0) targets.push(summon);
+      if (summon.hp > 0 && (!('attackable' in summon) || summon.attackable !== false)) targets.push(summon);
     }
     return targets;
   }
 
   private chooseEnemyFriendlyTarget(state: LocalBattleState): Combatant {
-    const interceptingSummon = state.player.summons
-      .map((summon) => this.normalizePlayerSummon(summon))
-      .find((summon) => summon.attackable !== false && summon.hp > 0);
-    if (interceptingSummon) return interceptingSummon;
-    const targets = this.enemyFriendlyTargets(state);
+    const available = this.enemyFriendlyTargets(state);
+    const taunters = available.filter(target => ['taunt', '嘲讽'].some(key => {
+      const status = target.buffs[key];
+      return status && status.turns !== 0 && status.charges !== 0;
+    }));
+    const targets = taunters.length ? taunters : available;
     return targets[Math.floor(this.random() * targets.length)] ?? state.player;
   }
 

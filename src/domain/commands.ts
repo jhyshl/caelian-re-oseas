@@ -435,7 +435,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
       battleId: z.string().trim().min(1).max(2048),
       handIndex: z.number().int().min(0).max(99),
       targetIndex: z.number().int().min(0).max(20).optional(),
-      allyTargetId: z.enum(['player', 'caelian']).optional().default('player'),
+      allyTargetId: z.string().min(1).optional().default('player'),
     }),
   }),
   z.object({

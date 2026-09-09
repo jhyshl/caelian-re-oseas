@@ -1,4 +1,5 @@
 import {effectValue} from './tactical-ai.mjs';
+import {chooseEnemyTarget} from './enemy-targets.mjs';
 // Conditions are explicit, deterministic and use public state only.
 const alive=a=>a&&a.hp>0;
 const hp=a=>a.hp/a.maxHp;
@@ -31,9 +32,9 @@ export function resetRequirement(g,a,t,requirements=[]) {
   throw Error('Unknown reset condition '+name);
  });
 }
-export function selectResetTargets(g,a,s,e){
+export function selectResetTargets(g,a,s,e,hostileTarget){
  if(e.target==='self')return [a];
- if(e.target==='enemy')return foes(g,a).sort((x,y)=>Number(has(g,y,'taunt'))-Number(has(g,x,'taunt'))||(y.lastTurn?.hpDamageByTarget?.[a.id]??0)-(x.lastTurn?.hpDamageByTarget?.[a.id]??0)||stable(x,y)).slice(0,1);
+ if(e.target==='enemy')return [chooseEnemyTarget(g,a,hostileTarget?.id)].filter(Boolean);
  if(e.target==='all_enemies')return foes(g,a).sort(stable);
  if(e.target==='all_allies')return team(g,a).sort(stable);
  const helpful=s.effects.filter(x=>x.target==='ally');

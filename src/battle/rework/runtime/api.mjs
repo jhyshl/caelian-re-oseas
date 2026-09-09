@@ -14,7 +14,7 @@ export {encode,decode};
 
 const cards=new Map(catalog.cards.map(c=>[c.id,c]));
 const monsters=new Map([...catalog.monsters,...catalog.bosses].map(c=>[c.id,c]));
-const RNG=['rng','hitRng','effectRng','critRng'];
+const RNG=['rng','hitRng','effectRng','critRng','targetRng'];
 const patch=BALANCE_PATCH;
 
 function controller(id){return MAGE_IDS.includes(id)?createMageController(id):OTHER_PROFESSIONS.includes(id)?createOtherController(id):createPlayerController();}
@@ -28,7 +28,7 @@ function wire(g){
 export function hydrate(data){
   const saved=decode(data),g=makeGame(saved.player,saved.enemies,{seed:saved.seed,trace:true,patch});
   for(const [k,v] of Object.entries(saved))if(!RNG.includes(k)&&k!=='rngStates')g[k]=v;
-  for(const key of RNG)g[key].setState(saved.rngStates[key]);
+  for(const key of RNG)if(saved.rngStates[key]!==undefined)g[key].setState(saved.rngStates[key]);
   g.trace=[];g.events=[];wire(g);initBosses(g);return g;
 }
 export function snapshot(g){g.endAction();g.action=null;return encode({...g,rngStates:Object.fromEntries(RNG.map(k=>[k,g[k].getState()]))});}
@@ -197,6 +197,7 @@ export function preview(state,cardId,targetIndex,allyTargetId='player'){
   for(const event of g.events){const i=state.enemies.findIndex(a=>a.id===event.target.id);if(i>=0)result.enemyDamage[i]+=event.hpDamage;}
   result.playerHp=Math.max(0,g.player.hp-before[0].hp+result.playerHpCost);
   const c=g.allies.find(a=>a.isCompanion),old=before.find(a=>a.id===c?.id);result.companionHp=c&&old?Math.max(0,c.hp-old.hp):0;
+  for(const ally of g.allies){if(ally===g.player||ally.isCompanion)continue;const previous=before.find(a=>a.id===ally.id),healed=previous?Math.max(0,ally.hp-previous.hp):0;if(healed){result.summonHp??={};result.summonHp[ally.id]=healed;}}
  }catch{/* A card awaiting a player choice has no single numeric preview. */}
  return result;
 }

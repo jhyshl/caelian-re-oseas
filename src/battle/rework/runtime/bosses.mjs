@@ -1,4 +1,5 @@
 import {effectValue} from './tactical-ai.mjs';
+import {chooseEnemyTarget,enemyTargetPool} from './enemy-targets.mjs';
 /* global structuredClone */
 // Deterministic Boss state machines for the reviewed 2026-09-07 catalog.
 // Integration: initBosses once after creating/hydrating physics; planBoss for every
@@ -22,7 +23,7 @@ const pct = a => a.hp/a.maxHp;
 const last = (g,k) => g.player.lastTurn?.[k] ?? 0;
 const has = (g,a,k) => g.hasStatus(a,k);
 const all = g => [...new Map([g.player,...(g.allies || []),...(g.playerAllies || []),...g.enemies].map(a=>[a.id,a])).values()];
-const foes = (g,a) => all(g).filter(t=>alive(t)&&t.side!==a.side).sort(stable);
+const foes = (g,a) => enemyTargetPool(g,a).sort(stable);
 const bossOf = (g,a) => a.flags?.bossHelper ? g.enemies.find(t=>t.id===a.flags.bossHelper.ownerId) : a;
 const data = a => a.flags.boss;
 const def = (g,a) => a.definition || g.catalog.bosses.find(b=>b.id===a.id);
@@ -91,10 +92,10 @@ function targetIds(g,a,e,chosen) {
  const pool=foes(g,a);if(e.target==='all_enemies')return pool.map(t=>t.id);return [chosen?.id||pool[0]?.id].filter(Boolean);
 }
 function intent(g,a,skill,extra={}) {
- const hostile=foes(g,a),direct=skill.effects.some(e=>['damage','dot','debuff','dispel'].includes(kind(e))&&e.target==='enemy'),target=(direct?hostile.find(t=>has(g,t,'taunt')):null)||hostile[0];
+ const target=chooseEnemyTarget(g,a);
  const entries=skill.effects.map(e=>({effect:structuredClone(e),targetIds:targetIds(g,a,e,target)}));
  const estimate=skill.effects.filter(e=>kind(e)==='damage').reduce((n,e)=>n+raw(g,a,e),0);
- const result={skillId:skill.id,skillName:skill.name,skill:structuredClone(skill),effectTargets:entries,targetId:skill.target==='self'?a.id:skill.target==='ally'?bossOf(g,a).id:target?.id,round:g.round,isMajor:!!skill.isMajor,conditional:skill.preResolve||skill.fallback,damageEstimate:[estimate,estimate*(skill.effects.some(e=>e.crit)?1+stat(g,a,'critDamage')/100:1)],scale:1,...extra};
+ const result={targetPoolIds:enemyTargetPool(g,a,true).map(t=>t.id),skillId:skill.id,skillName:skill.name,skill:structuredClone(skill),effectTargets:entries,targetId:skill.target==='self'?a.id:skill.target==='ally'?bossOf(g,a).id:target?.id,round:g.round,isMajor:!!skill.isMajor,conditional:skill.preResolve||skill.fallback,damageEstimate:[estimate,estimate*(skill.effects.some(e=>e.crit)?1+stat(g,a,'critDamage')/100:1)],scale:1,...extra};
  a.intent=result;log(g,'boss_intent',{actor:a.id,skillId:skill.id,skillName:skill.name,targetIds:entries.flatMap(e=>e.targetIds),conditional:result.conditional,mechanic:structuredClone(a.flags.boss||a.flags.bossHelper),damageEstimate:result.damageEstimate});return result;
 }
 function waitSkill(){return {id:'wait',name:'观察待机',priority:0,cooldown:0,target:'self',effects:[],fallback:'等待，不额外攻击'};}
@@ -278,7 +279,8 @@ function dispelBoss(g,t,n) {
 function runEffects(g,a,resolved,locked) {
  const out={},isHelper=!!a.flags.bossHelper,owner=bossOf(g,a),entries=resolved.skill.effects;
  let groupScale=isHelper?helperBudgetScale(g,a,resolved.skill):helpers(g,a).some(h=>h.definition.skills.some(s=>s.effects.some(e=>kind(e)==='damage')))?.85:1;
- const target=all(g).find(t=>t.id===locked.targetId),fallbackTarget=foes(g,a)[0];
+ const lockedHostile=locked.effectTargets.find(row=>row.effect.target==='enemy')?.targetIds[0]??locked.targetId;
+ const target=chooseEnemyTarget(g,a,lockedHostile,locked.targetPoolIds),fallbackTarget=target;
  for(const e0 of entries){const e={...e0},type=kind(e);if(['utility','mechanic_state'].includes(type))continue;
   if(type==='summon'){
    if(e.summonId==='first_destroyed_part'){const h=g.enemies.find(x=>x.id===locked.regrowTarget);if(h&&!alive(h))spawn(g,owner,h.definition.id,{reuseId:h.id,hpRatio:.5});}
@@ -287,7 +289,7 @@ function runEffects(g,a,resolved,locked) {
   if(type==='charge'){if(isHelper)a.flags.charged=e.next;else data(a).charged=e.next;continue;}
   const originalRow=locked.effectTargets.find(x=>JSON.stringify(x.effect)===JSON.stringify(e0));
   let ts=originalRow?originalRow.targetIds.map(id=>all(g).find(t=>t.id===id)).filter(alive):targetIds(g,a,e,alive(target)?target:fallbackTarget).map(id=>all(g).find(t=>t.id===id)).filter(alive);
-  if(e.target==='enemy'&&['damage','debuff','dot','dispel'].includes(type)){const taunt=foes(g,a).find(t=>has(g,t,'taunt'));if(taunt)ts=[taunt];}
+  if(e.target==='enemy'&&target)ts=[target];
   if(!ts.length&&e.target==='enemy'&&fallbackTarget)ts=[fallbackTarget];
   const share=damageShare(e,ts.length);
   for(const t of ts){if(!alive(a)||!alive(t))continue;

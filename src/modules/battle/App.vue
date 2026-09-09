@@ -27,6 +27,7 @@ import { battleCardText, canViewMonsterIntent, cleanCombatCopy } from '@/battle/
 import { formatNumber, roundNumbersInText } from '@/ui/format-number';
 import MonsterSkills from './MonsterSkills.vue';
 import { hydrate as hydrateRework } from '@/battle/rework/runtime/api.mjs';
+import { nativeStatusEntries, nativeStatusNames, statusValueText, type StatusDisplayEffect, type StatusDisplayEntry } from '@/battle/status-presentation';
 import { previewBattleCard } from '@/battle/card-preview';
 import { needsWorkshopStars, requestStarEditor } from '@/workshop-stars';
 import { bloodBurnCardUnavailableReason } from '@/battle/blood-burn';
@@ -178,10 +179,11 @@ const state = computed<LocalBattleState | null>(
 const aliveEnemies = computed(
   () => state.value?.enemies.filter((enemy) => enemy.hp > 0) ?? [],
 );
+const battleCore = computed(() => state.value?.rework ? hydrateRework(state.value.rework) : null);
+const statusActors = computed(() => new Map((battleCore.value ? [...battleCore.value.allies, ...battleCore.value.enemies] : []).map(actor => [actor.id, actor])));
 const effectiveSpeeds = computed<Record<string, number>>(() => {
-  const data = state.value?.rework;
-  if (!data) return {};
-  const core = hydrateRework(data);
+  const core = battleCore.value;
+  if (!core) return {};
   return Object.fromEntries([...core.allies, ...core.enemies].map(actor => [actor.id, core.stat(actor, 'speed')]));
 });
 const revealIntent = computed(() => canViewMonsterIntent(snapshot.value, relicRewards.value));
@@ -193,7 +195,7 @@ const monsterDetails = computed(() => {
   if (summon) return {name:summon.name,skills:(summon.skills??[]).map(s=>({...s,cooldown:0}))};
   const enemy = state.value?.enemies.find(e => e.id === monsterDetailsId.value);
   if (!enemy) return null;
-  const core = state.value?.rework ? hydrateRework(state.value.rework) : null;
+  const core = battleCore.value;
   const definition = core?.enemies.find((a: {id:string}) => a.id === enemy.id)?.definition;
   const skills = definition?.skills ?? Object.entries(monsters.value[enemy.definitionId]?.skills ?? {}).map(([id,skill]) => ({...skill,id}));
   return { name: enemy.name, skills: skills.map((s: {id:string;name:string;summary?:string;desc?:string;cooldown?:number}) => ({id:s.id,name:s.name,description:s.summary ?? s.desc ?? '',cooldown:s.cooldown ?? 0})) };
@@ -685,6 +687,7 @@ const resultTitle = computed(() => {
 });
 
 const statusNames: Record<string, string> = {
+  ...nativeStatusNames,
   strength: '力量',
   weak: '虚弱',
   vulnerable: '易伤',
@@ -1046,10 +1049,17 @@ function selectEnemy(index: number, enemy: BattleEnemyState) {
   selectedTarget.value = index;
 }
 
-function toggleAllyTarget(target: BattleFriendlyTargetId) {
-  if (busy.value) return;
-  selectedAllyTarget.value =
-    target === 'player' || selectedAllyTarget.value === target ? null : target;
+function canSelectAllyTarget(target: BattleFriendlyTargetId) {
+  const current = state.value;
+  if (!current) return false;
+  if (target === 'player') return current.player.hp > 0;
+  if (target === 'caelian') return !!current.companion && current.companion.hp > 0 && !current.companion.injured;
+  return [...current.player.summons, ...(current.companion?.summons ?? [])].some(summon => summon.id === target && (summon.hp ?? 0) > 0);
+}
+
+function selectAllyTarget(target: BattleFriendlyTargetId) {
+  if (busy.value || !canSelectAllyTarget(target)) return;
+  selectedAllyTarget.value = target === 'player' ? null : target;
 }
 
 function selectCard(index: number, cardId: string) {
@@ -1092,15 +1102,13 @@ function cardStyle(index: number, total: number, cardId: string) {
   };
 }
 
-interface StatusDisplayEntry {
-  key: string;
-  name: string;
-  effect: LocalBattleState['player']['buffs'][string];
-}
-
 function effectEntries(
   effects: LocalBattleState['player']['buffs'],
+  actorId = 'player',
+  kind: 'buff' | 'debuff' = 'buff',
 ): StatusDisplayEntry[] {
+  const actor = statusActors.value.get(actorId);
+  if (actor) return nativeStatusEntries(actor, kind);
   return Object.entries(effects).flatMap(([name, aggregate]) => {
     if (aggregate.ruleHidden) return [];
     const instances = Array.isArray(aggregate.instances)
@@ -1118,7 +1126,7 @@ function effectEntries(
 }
 
 function statusDisplayName(name: string, kind: 'buff' | 'debuff'): string {
-  const actors=[state.value?.player,...(state.value?.enemies??[]),...(state.value?.player.summons??[])];
+  const actors=[state.value?.player,state.value?.companion,...(state.value?.enemies??[]),...(state.value?.player.summons??[]),...(state.value?.companion?.summons??[])];
   for(const actor of actors){const effect=actor?.[kind==='buff'?'buffs':'debuffs']?.[name];if(effect?.ruleLabel)return effect.ruleLabel;}
   const custom = customWorkshopStatus(name, kind);
   if (custom) return custom.label;
@@ -1193,22 +1201,20 @@ function formatStatusNumber(value: unknown): string {
 
 function statusEffectSummary(
   name: string,
-  effect: LocalBattleState['player']['buffs'][string],
+  effect: StatusDisplayEffect,
 ): string {
   if(effect.ruleLabel)return [...Object.entries(effect.ruleData??{}).map(([key,value])=>`${key} ${typeof value==='number'?formatStatusNumber(value):String(value)}`),effect.turns<0?'持续生效':`剩余 ${formatStatusNumber(effect.turns)} 回合`].join(' · ');
   if (['swift', 'agility', '迅捷', '敏捷'].includes(name)) return `${effect.stacks ?? 1}层 · 速度＋${(effect.stacks ?? 1) * 20}% · 最长剩余${effect.turns}回合，各层独立到期`;
   const custom =
     customWorkshopStatus(name, 'buff') ?? customWorkshopStatus(name, 'debuff');
-  const parts = [
-    `${custom ? '层数' : '数值'} ${formatStatusNumber(effect.value)}`,
-  ];
-  if (effect.stacks !== undefined) {
+  const parts = [custom ? `层数 ${formatStatusNumber(effect.value)}` : statusValueText(name, effect)].filter(Boolean);
+  if (effect.stacks !== undefined && effect.stacks > 1) {
     parts.push(`层数 ${formatStatusNumber(effect.stacks)}`);
   }
   if (effect.charges !== undefined) {
     parts.push(`可触发 ${formatStatusNumber(effect.charges)} 次`);
   }
-  parts.push(`剩余 ${formatStatusNumber(effect.turns)} 回合`);
+  parts.push(effect.turns < 0 ? '持续生效' : `剩余 ${formatStatusNumber(effect.turns)} 回合`);
   return parts.join(' · ');
 }
 
@@ -1561,7 +1567,7 @@ function battleDropTarget(
   const allyTarget = target.dataset.allyTarget;
   if (allyTarget) {
     if (cardFriendlyTargetMode(cardDefinition(cardId)) === 'none') return null;
-    if (allyTarget === 'caelian' && !state.value?.companion) return null;
+    if (!canSelectAllyTarget(allyTarget)) return null;
     return target;
   }
   const index = Number(target.dataset.enemyIndex);
@@ -1576,7 +1582,7 @@ function updateDragPreview(target: HTMLElement | null) {
     enemyIndex === undefined ? null : Number(enemyIndex);
   const allyTarget = target?.dataset.allyTarget;
   dragPreviewAllyTarget.value =
-    allyTarget === 'player' || allyTarget === 'caelian' ? allyTarget : null;
+    allyTarget && canSelectAllyTarget(allyTarget) ? allyTarget : null;
 }
 
 function handleDragMove(event: PointerEvent) {
@@ -1685,8 +1691,8 @@ async function handleDragEnd(event: PointerEvent) {
   const allyTarget = target?.dataset.allyTarget;
   await settleDragClone(session, target);
   cleanupDrag(session);
-  if (allyTarget === 'player' || allyTarget === 'caelian') {
-    selectedAllyTarget.value = allyTarget === 'caelian' ? 'caelian' : null;
+  if (allyTarget && canSelectAllyTarget(allyTarget)) {
+    selectedAllyTarget.value = allyTarget === 'player' ? null : allyTarget;
     await playCardAt(session.handIndex, selectedTarget.value, allyTarget);
   } else if (targetIndex >= 0) {
     selectedTarget.value = targetIndex;
@@ -1776,8 +1782,8 @@ async function playCardAt(
     warnedLegacyStars.add(card.cardId);
     if (configure) { requestStarEditor(card.cardId); await props.context.api.navigatePanel('deck'); return; }
   }
-  const targetsCaelian =
-    allyTargetId === 'caelian' &&
+  const targetsAlly =
+    allyTargetId !== 'player' &&
     cardFriendlyTargetMode(card ? cards.value[card.cardId] : undefined) !== 'none';
   const applied = await executeAnimated({
     id: commandId('battle.play-card'),
@@ -1789,7 +1795,7 @@ async function playCardAt(
       allyTargetId,
     },
   });
-  if (applied && targetsCaelian) selectedAllyTarget.value = null;
+  if (applied && targetsAlly) selectedAllyTarget.value = null;
 }
 
 async function endTurn() {
@@ -2121,7 +2127,7 @@ onUnmounted(() => {
               <div class="status-row">
                 <span v-if="enemy.shield">护盾 {{ formatNumber(enemy.shield) }}</span>
                 <span
-                  v-for="entry in effectEntries(enemy.buffs)"
+                  v-for="entry in effectEntries(enemy.buffs, enemy.id)"
                   :key="`eb:${entry.key}`"
                   :title="statusDescription(entry.name, 'buff')"
                 >
@@ -2129,7 +2135,7 @@ onUnmounted(() => {
                   {{ statusEffectSummary(entry.name, entry.effect) }}
                 </span>
                 <span
-                  v-for="entry in effectEntries(enemy.debuffs)"
+                  v-for="entry in effectEntries(enemy.debuffs, enemy.id, 'debuff')"
                   :key="`ed:${entry.key}`"
                   class="negative"
                   :title="statusDescription(entry.name, 'debuff')"
@@ -2173,7 +2179,10 @@ onUnmounted(() => {
                 hit: hitTargetKey === 'companion:caelian',
                 glow: glowTargetKey === 'companion:caelian',
               }"
-              @click="toggleAllyTarget('caelian')"
+              :aria-pressed="selectedAllyTarget === 'caelian'"
+              :aria-disabled="!canSelectAllyTarget('caelian')"
+              @click="selectAllyTarget('caelian')"
+              @dblclick.stop="monsterDetailsId = 'caelian'"
             >
               <span>圣辉龙骑</span>
               <strong>{{ state.companion.name }}</strong>
@@ -2188,6 +2197,10 @@ onUnmounted(() => {
                 :preview-delta="activeCardPreview.companionHp"
                 color="#f6d36a"
               />
+              <div class="status-row">
+                <span v-for="entry in effectEntries(state.companion.buffs, 'caelian')" :key="`cb:${entry.key}`" :title="statusDescription(entry.name, 'buff')">{{ statusDisplayName(entry.name, 'buff') }} {{ statusEffectSummary(entry.name, entry.effect) }}</span>
+                <span v-for="entry in effectEntries(state.companion.debuffs, 'caelian', 'debuff')" :key="`cd:${entry.key}`" class="negative" :title="statusDescription(entry.name, 'debuff')">{{ statusDisplayName(entry.name, 'debuff') }} {{ statusEffectSummary(entry.name, entry.effect) }}</span>
+              </div>
               <div class="battle-float-layer" aria-hidden="true">
                 <span
                   v-for="effect in floatsFor('companion:caelian')"
@@ -2199,16 +2212,24 @@ onUnmounted(() => {
               </div>
             </button>
 
-            <article
+            <button
               v-for="summon in state.companion.summons"
               :key="summon.id"
+              type="button"
               class="companion-summon"
+              :data-ally-target="summon.id"
+              :aria-pressed="selectedAllyTarget === summon.id"
+              :aria-disabled="!canSelectAllyTarget(summon.id)"
               :class="{
+                selected: selectedAllyTarget === summon.id,
+                'drag-over': dragPreviewAllyTarget === summon.id,
                 defeated: summon.hp <= 0,
                 acting: activeActorKey === `summon:${summon.id}`,
                 hit: hitTargetKey === `summon:${summon.id}`,
                 glow: glowTargetKey === `summon:${summon.id}`,
               }"
+              @click="selectAllyTarget(summon.id)"
+              @dblclick.stop="monsterDetailsId = summon.id"
             >
               <span>纯血光明圣龙 · 召唤物</span>
               <strong>{{ summon.name }}</strong>
@@ -2217,8 +2238,13 @@ onUnmounted(() => {
                 label="特莱奥生命"
                 :value="summon.hp"
                 :max="summon.hpMax"
+                :preview-delta="activeCardPreview.summonHp?.[summon.id] ?? 0"
                 color="#fff0a4"
               />
+              <div class="status-row">
+                <span v-for="entry in effectEntries(summon.buffs ?? {}, summon.id)" :key="`tb:${entry.key}`" :title="statusDescription(entry.name, 'buff')">{{ statusDisplayName(entry.name, 'buff') }} {{ statusEffectSummary(entry.name, entry.effect) }}</span>
+                <span v-for="entry in effectEntries(summon.debuffs ?? {}, summon.id, 'debuff')" :key="`td:${entry.key}`" class="negative" :title="statusDescription(entry.name, 'debuff')">{{ statusDisplayName(entry.name, 'debuff') }} {{ statusEffectSummary(entry.name, entry.effect) }}</span>
+              </div>
               <div class="battle-float-layer" aria-hidden="true">
                 <span
                   v-for="effect in floatsFor(`summon:${summon.id}`)"
@@ -2228,15 +2254,7 @@ onUnmounted(() => {
                   {{ effect.text }}
                 </span>
               </div>
-            </article>
-
-            <div class="companion-sequence">
-              <span>结束回合后共用剩余 AP · 自动择机行动</span>
-              <div class="party-skill-buttons">
-                <button type="button" @click="monsterDetailsId = 'caelian'">凯利安 · 查看技能</button>
-                <button v-if="state.companion.summons.length" type="button" @click="monsterDetailsId = 'trelio'">特莱奥 · 查看技能</button>
-              </div>
-            </div>
+            </button>
           </div>
 
           <div class="summon-strip">
@@ -2272,7 +2290,7 @@ onUnmounted(() => {
                   class="summon-statuses"
                 >
                   <span
-                    v-for="entry in effectEntries(summon.buffs ?? {})"
+                    v-for="entry in effectEntries(summon.buffs ?? {}, summon.id)"
                     :key="`sb:${summon.id}:${entry.key}`"
                     :title="statusDescription(entry.name, 'buff')"
                   >
@@ -2280,7 +2298,7 @@ onUnmounted(() => {
                     {{ statusEffectSummary(entry.name, entry.effect) }}
                   </span>
                   <span
-                    v-for="entry in effectEntries(summon.debuffs ?? {})"
+                    v-for="entry in effectEntries(summon.debuffs ?? {}, summon.id, 'debuff')"
                     :key="`sd:${summon.id}:${entry.key}`"
                     class="negative"
                     :title="statusDescription(entry.name, 'debuff')"
@@ -2337,7 +2355,7 @@ onUnmounted(() => {
                 {{ statusEffectSummary(entry.name, entry.effect) }}
               </span>
               <span
-                v-for="entry in effectEntries(state.player.debuffs)"
+                v-for="entry in effectEntries(state.player.debuffs, 'player', 'debuff')"
                 :key="`pd:${entry.key}`"
                 class="negative"
                 :title="statusDescription(entry.name, 'debuff')"
@@ -2411,24 +2429,25 @@ onUnmounted(() => {
         >
           <template v-if="selectedCardFriendlyMode === 'all'">
             <strong>己方全体</strong>
-            <span>玩家 + 凯利安（重伤时跳过治疗与护盾）</span>
+            <span>玩家、队友与召唤物（跳过无法受益的单位）</span>
           </template>
           <template v-else>
             <strong>选择己方目标</strong>
             <button
               type="button"
               :class="{ selected: selectedAllyTarget === null }"
-              @click="toggleAllyTarget('player')"
+              @click="selectAllyTarget('player')"
             >
               玩家（默认）
             </button>
             <button
               type="button"
               :class="{ selected: selectedAllyTarget === 'caelian' }"
-              @click="toggleAllyTarget('caelian')"
+              @click="selectAllyTarget('caelian')"
             >
               凯利安
             </button>
+            <button v-for="summon in state.companion.summons" :key="summon.id" type="button" :disabled="!canSelectAllyTarget(summon.id)" :class="{ selected: selectedAllyTarget === summon.id }" @click="selectAllyTarget(summon.id)">{{ summon.name }}</button>
           </template>
         </div>
 
@@ -2762,8 +2781,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.party-skill-buttons { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
-.party-skill-buttons button { padding:4px 8px; border:1px solid #fae6ab55; border-radius:8px; background:#ffffff0a; color:inherit; font-size:10px; cursor:pointer; }
 .legacy-battle-shell {
   --battle-line: rgba(217, 180, 98, 0.38);
   position: relative;
@@ -2982,7 +2999,8 @@ onUnmounted(() => {
 }
 
 .battle-mid.drag-over,
-.companion-unit.drag-over {
+.companion-unit.drag-over,
+.companion-summon.drag-over {
   outline: 3px solid rgba(115, 255, 135, 0.66);
   outline-offset: 2px;
   box-shadow: 0 0 28px rgba(115, 255, 135, 0.34);
@@ -2991,13 +3009,12 @@ onUnmounted(() => {
 .companion-party {
   min-height: 56px;
   display: grid;
-  grid-template-columns: minmax(132px, 0.8fr) minmax(132px, 0.8fr) minmax(220px, 1.7fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px;
 }
 
 .companion-unit,
-.companion-summon,
-.companion-sequence {
+.companion-summon {
   position: relative;
   min-width: 0;
   overflow: hidden;
@@ -3009,12 +3026,14 @@ onUnmounted(() => {
   text-align: left;
 }
 
-.companion-unit {
+.companion-unit,
+.companion-summon {
   font: inherit;
   cursor: pointer;
 }
 
-.companion-unit.selected {
+.companion-unit.selected,
+.companion-summon.selected {
   border-color: #fff2a5;
   box-shadow: 0 0 0 2px rgba(255, 235, 133, 0.18);
 }
@@ -3041,8 +3060,7 @@ onUnmounted(() => {
 }
 
 .companion-unit > span,
-.companion-summon > span,
-.companion-sequence > span {
+.companion-summon > span {
   display: block;
   color: rgba(255, 239, 177, 0.7);
   font-size: 7px;
@@ -3061,31 +3079,6 @@ onUnmounted(() => {
   font-size: 7px;
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.companion-sequence ol {
-  display: flex;
-  gap: 3px;
-  margin: 4px 0 0;
-  padding: 0;
-  overflow-x: auto;
-  list-style: none;
-}
-
-.companion-sequence li {
-  flex: 0 0 auto;
-  padding: 3px 5px;
-  border: 1px solid rgba(255, 239, 177, 0.18);
-  border-radius: 999px;
-  color: rgba(255, 244, 206, 0.65);
-  font-size: 7px;
-}
-
-.companion-sequence li.current {
-  border-color: #ffe675;
-  color: #241603;
-  background: #ffe675;
-  font-weight: 900;
 }
 
 .friendly-target-picker {
@@ -4551,10 +4544,6 @@ onUnmounted(() => {
 
   .companion-party {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .companion-sequence {
-    grid-column: 1 / -1;
   }
 
   .friendly-target-picker {

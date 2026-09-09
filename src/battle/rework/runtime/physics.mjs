@@ -13,6 +13,7 @@ const uniqueStrong=(items)=>{const m=new Map();for(const e of items){const k=e.s
 export function makeGame(player,enemies,options={}){
  const g={player,enemies,allies:[player],round:0,phase:'init',events:[],trace:options.trace?[]:null,seed:options.seed??1,rng:seeded((options.seed??1)^0x824234),hitRng:seeded((options.seed??1)^0x889aad),effectRng:seeded((options.seed??1)^0x775399),critRng:seeded((options.seed??1)^0x237aab),options,action:null,teamTauntUntil:{player:0,enemy:0},teamDotApplications:{},audit:{effects:{},statusUnitsCorrected:0},totals:{playerDamage:0,playerHpDamage:0,enemyDamage:0,enemyHpDamage:0,playerShield:0,playerHealing:0,enemyHealing:0,enemyShield:0,dotDamage:0,cards:0,crits:0,controls:0,enemyActions:0,maxPlayerHitFraction:0,maxPlayerTurnLossFraction:0}};
  g.ensureActor=a=>{a.phaseCount??=0;a.flags??={};a.buffs??=[];a.debuffs??=[];a.dots??=[];a.thisTurn??=makeTurnMetrics();a.lastTurn??=makeTurnMetrics();a.receivedThisTurn??=makeTurnMetrics();a.receivedLastTurn??=makeTurnMetrics();a.healingGiven??=0;a.healingReceived??=0;return a;};
+ g.targetRng=seeded((options.seed??1)^0x1aa781);
  g.livingEnemies=()=>g.enemies.filter(a=>a.hp>0);
  g.livingAllies=()=>g.allies.filter(a=>a.hp>0);
  g.log=(type,detail={})=>{if(g.trace)g.trace.push({round:g.round,...detail,detailType:detail.type,type});};

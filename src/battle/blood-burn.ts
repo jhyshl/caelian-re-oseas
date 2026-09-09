@@ -39,7 +39,7 @@ function effectHealsPlayer(
   if (PLAYER_HEAL_EFFECT_TYPES.has(effect.type)) {
     if (effect.target === 'all_summons') return false;
     if (effect.target === 'all_allies') return true;
-    return allyTargetId !== 'caelian';
+    return allyTargetId === 'player';
   }
   return nestedEffects(effect).some((child) =>
     effectHealsPlayer(child, allyTargetId),
