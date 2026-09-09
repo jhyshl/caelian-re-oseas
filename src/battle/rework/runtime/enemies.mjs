@@ -1,3 +1,4 @@
+import {effectValue} from './tactical-ai.mjs';
 // Deterministic execution of the reviewed 97-creature catalog. No hand access.
 import { selectResetTargets, resetEligible, resetPriority, resolveResetEntries } from './reset-enemies.mjs';
 const HEAL_SUFFIX='；且施放者总治疗额度剩余>0、锁定受益者总受治疗额度剩余>0、受益者确有生命缺口';
@@ -323,7 +324,11 @@ export function planEnemy(g,a){planState(g);if(!alive(a))return null;if(a.defini
   if(!entries.some(row=>row.targetIds.some(id=>positive(g,a,actors(g).find(t=>t.id===id),row.effect,s))))continue;
   // Hostile+friendly skills require their advertised supportive recipient to exist.
   if(entries.some(row=>row.effect.target==='ally'&&!row.targetIds.length))continue;
-   candidates.push({s,entries,target,priority:resetPriority(g,a,target,s)});
+   const resolved = resolveResetEntries(g,a,{skill:s},entries,true);
+   const tactical = resolved.reduce((n,row)=>n+row.targetIds.reduce((v,id)=>v+effectValue(g,a,actors(g).find(t=>t.id===id),row.effect,{scale:scaleOf(g,a),reservations:true}),0),0);
+   const supportOnly = resolved.length && resolved.every(row=>['heal','shield','buff','debuff','dot','cleanse','dispel'].includes(row.effect.kind??row.effect.type));
+   if(supportOnly && tactical<=0)continue;
+   candidates.push({s,entries,target,priority:resetPriority(g,a,target,s)+Math.min(35,tactical/Math.max(10,stat(g,a,'attack'))*12)});
  }
   candidates.sort((x,y)=>y.priority-x.priority||x.s.id.localeCompare(y.s.id));
  let selected=candidates[0];if(!selected){const s=fallbackSkill(a,false),target=foes(g,a).sort(stable)[0];selected={s,target,entries:[{effect:s.effects[0],targetIds:target?[target.id]:[]}]};}
@@ -333,7 +338,7 @@ export function planEnemy(g,a){planState(g);if(!alive(a))return null;if(a.defini
  const raw=forecast.filter(e=>(e.kind||e.type)==='damage').reduce((n,e)=>n+(e.flat||0)*(20+2*a.level)/60+(e.atk||0)*stat(g,a,'attack'),0)*scaleOf(g,a)*(a.offenseGroupFactor??1);
  a.intent={skillId:s.id,skillName:s.name,skill:s,isMajor:['heavy','desperation'].includes(s.cooldownGroup)||s.effects.some(e=>(e.atk||0)>=2.35),charging:/蓄力|升温/.test(s.name)||/升温/.test(s.condition||''),targetId:selected.target?.id,effectTargets:selected.entries,conditional,damageEstimate:[raw,raw*(1+stat(g,a,'critDamage')/100)],round:g.round,scale:scaleOf(g,a)};
  if(g.options?.patch?.shieldCounter&&s.executeIf?.includes('无盾')){const t=selected.target,K=100+5*a.level;const noncrit=raw*K/(K+stat(g,t,'defense'))*(a.offenseGroupFactor??1);a.intent.guardThreshold=Math.max(t.maxHp*.1,noncrit*.35);a.intent.conditional='盾量达到'+a.intent.guardThreshold.toFixed(2)+'时本次重击直伤减30%，其余状态条件仍需满足';}
- for(const row of selected.entries)for(const id of row.targetIds){const t=actors(g).find(x=>x.id===id),e=row.effect;if(e.type==='heal')g.enemyAI.reservedHealing[id]=(g.enemyAI.reservedHealing[id]||0)+Math.min(budget(g,a,t,e),g.calcBase(a,t,e,{scale:a.intent.scale}));if(e.type==='debuff'){g.enemyAI.reservedDebuffs[id+':'+canonical(e)]=Math.max(g.enemyAI.reservedDebuffs[id+':'+canonical(e)]||0,magnitude(e));}if(e.type==='buff'){g.enemyAI.reservedBuffs[id+':'+canonical(e)]=Math.max(g.enemyAI.reservedBuffs[id+':'+canonical(e)]||0,magnitude(e));if(e.status==='taunt')g.enemyAI.tauntPlanner[a.side]=a.id;}}
+ for(const row of resolveResetEntries(g,a,{skill:s},selected.entries,true))for(const id of row.targetIds){const t=actors(g).find(x=>x.id===id),e=row.effect;if(e.type==='heal')g.enemyAI.reservedHealing[id]=(g.enemyAI.reservedHealing[id]||0)+Math.min(budget(g,a,t,e),g.calcBase(a,t,e,{scale:a.intent.scale}));if(e.type==='debuff'){g.enemyAI.reservedDebuffs[id+':'+canonical(e)]=Math.max(g.enemyAI.reservedDebuffs[id+':'+canonical(e)]||0,magnitude(e));}if(e.type==='buff'){g.enemyAI.reservedBuffs[id+':'+canonical(e)]=Math.max(g.enemyAI.reservedBuffs[id+':'+canonical(e)]||0,magnitude(e));if(e.status==='taunt')g.enemyAI.tauntPlanner[a.side]=a.id;}}
  log(g,'enemy_intent',{actor:a.id,skillId:s.id,name:s.name,targetIds:selected.entries.flatMap(x=>x.targetIds),conditional:a.intent.conditional,damageEstimate:a.intent.damageEstimate});return a.intent;
 }
 export function planEnemies(g){planState(g);for(const a of [...g.enemies].filter(alive).sort(stable))planEnemy(g,a);return g.enemies.map(a=>a.intent).filter(Boolean);}

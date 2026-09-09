@@ -16,6 +16,18 @@ function fixture(){
 }
 const example=(index:number)=>normalizeRuleProgram(structuredClone(WORKSHOP_RULE_EXAMPLES[index]));
 describe('通用工坊组合规则',()=>{
+  it('自动召唤不为重复增益支付代价，仍遵守显式规则优先级',()=>{
+    const {g,p,e,r}=fixture();r.cast(example(6),p.id,e.id);const pet=g.allies.find((a:any)=>a.ruleSummon);
+    const program=emptyRuleProgram();program.id='tactical-pet';program.rules=[
+      {id:'support',event:'turn_start',priority:100,once:'turn',costs:[{type:'hp',target:'self',value:20}],steps:[{type:'native_status',target:'summoner',status:'attack_up',value:.2,turns:2}]},
+      {id:'attack',event:'turn_start',priority:1,once:'turn',costs:[],steps:[{type:'damage',target:e.id,value:100}]},
+    ];pet.ruleSummon=program;
+    g.addStatus(p,p,{kind:'buff',status:'attack_up',value:.3,turns:5});const before=pet.hp;
+    r.emit('turn_start',{sourceId:pet.id,targetId:pet.id});
+    expect(pet.hp).toBe(before);expect(g.statusRatio(p,'attack_up')).toBe(.3);
+    expect(g.player.flags.workshopPrograms.fired['tactical-pet:'+pet.id+':support']).toBeUndefined();
+    expect(g.player.flags.workshopPrograms.fired['tactical-pet:'+pet.id+':attack']).toBe(1);
+  });
   it('示例使用普通规则，状态库保留独立实现的通用效果',()=>{
     for(const p of WORKSHOP_RULE_EXAMPLES)expect(normalizeRuleProgram(p).version).toBe(2);
     expect(WORKSHOP_STATUS_LIBRARY.map(s=>s.id)).toEqual(expect.arrayContaining(['taunt','freeze','petrify','vulnerable','direct_damage_reduction']));

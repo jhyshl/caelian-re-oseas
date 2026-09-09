@@ -1,3 +1,4 @@
+import {effectValue} from './tactical-ai.mjs';
 /* global structuredClone */
 // Deterministic Boss state machines for the reviewed 2026-09-07 catalog.
 // Integration: initBosses once after creating/hydrating physics; planBoss for every
@@ -97,6 +98,15 @@ function intent(g,a,skill,extra={}) {
  a.intent=result;log(g,'boss_intent',{actor:a.id,skillId:skill.id,skillName:skill.name,targetIds:entries.flatMap(e=>e.targetIds),conditional:result.conditional,mechanic:structuredClone(a.flags.boss||a.flags.bossHelper),damageEstimate:result.damageEstimate});return result;
 }
 function waitSkill(){return {id:'wait',name:'观察待机',priority:0,cooldown:0,target:'self',effects:[],fallback:'等待，不额外攻击'};}
+function usefulSupport(g,a,skill) {
+ const kinds=['heal','shield','buff','debuff','dot','cleanse','dispel'];
+ // Boss mechanism actions and announced multi-turn sequences remain authoritative.
+ if(!skill.effects.length||skill.effects.some(e=>!kinds.includes(kind(e))))return true;
+ return skill.effects.some(e=>targetIds(g,a,e,foes(g,a)[0]).some(id=>{
+  const t=[...g.allies,...g.enemies].find(x=>x.id===id);
+  return t&&effectValue(g,a,t,e)>0;
+ }));
+}
 function ready(g,a,skill){return (a.cooldowns[skill.id]||0)<=g.round;}
 function bossCondition(g,a,id) {
  const s=data(a),p=g.player,h=helpers(g,a),prev=s.last;
@@ -149,7 +159,7 @@ function startBossRound(g,a) {
 }
 export function planBoss(g,a) {
  if(!alive(a))return null;
- if(a.flags?.bossHelper){const b=bossOf(g,a);if(!alive(b)){a.hp=0;return null;}startBossRound(g,b);if(a.flags.bossHelper.spawnRound>=g.round)return null;const choices=a.definition.skills.filter(s=>ready(g,a,s)&&helperCondition(g,a,s.id)).sort((x,y)=>y.priority-x.priority||x.id.localeCompare(y.id));return intent(g,a,choices[0]||waitSkill());}
+ if(a.flags?.bossHelper){const b=bossOf(g,a);if(!alive(b)){a.hp=0;return null;}startBossRound(g,b);if(a.flags.bossHelper.spawnRound>=g.round)return null;const choices=a.definition.skills.filter(s=>ready(g,a,s)&&helperCondition(g,a,s.id)&&usefulSupport(g,a,s)).sort((x,y)=>y.priority-x.priority||x.id.localeCompare(y.id));return intent(g,a,choices[0]||waitSkill());}
  startBossRound(g,a);const s=data(a);
  if(s.delayedIntent){const locked=structuredClone(s.delayedIntent);locked.round=g.round;locked.delayed=true;a.intent=locked;log(g,'boss_delayed_intent',{actor:a.id,skillId:locked.skillId,conditional:locked.conditional});return locked;}
  const choices=def(g,a).skills.filter(k=>ready(g,a,k)&&bossCondition(g,a,k.id)).sort((x,y)=>y.priority-x.priority||x.id.localeCompare(y.id));const skill=choices[0]||baseline(g,a);const extra={};

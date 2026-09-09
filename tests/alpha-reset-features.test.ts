@@ -72,15 +72,18 @@ describe('批量加点、异地护送和自定义卡牌升星',()=>{
   const board=commissionBoard([task],await f.db.regionAccess.toArray());expect(board).toHaveLength(1);expect(board[0]!.destination).toBe(dest.name);
   expect(escortDestinations(task.region,await f.db.regionAccess.toArray())).not.toContain(task.region);
   await f.db.worldStates.update(f.id,{region:task.region,location:task.region});
-  const input={taskId:task.id!,title:task.name,region:task.region,objective:task.desc,totalStages:1,rewardExperience:0,rewardGold:10,rewardGuildExperience:0,minimumLevel:1,commissionType:'escort' as const,destination:task.region};
-  await expect(f.tx(()=>f.guild.acceptCommission(f.id,input))).rejects.toThrow('起点以外');
-  await f.tx(()=>f.guild.acceptCommission(f.id,{...input,destination:dest.name}));
+  await f.db.guildStates.update(f.id,{commissionBoard:undefined});
+  const current=(await f.guild.refreshCommissions(f.id)).find(t=>t.region===task.region&&t.type==='escort')!;
+  await f.db.playerStates.update(f.id,{level:100});
+  const input={taskId:current.id!,title:task.name,region:task.region,objective:task.desc,totalStages:1,rewardExperience:0,rewardGold:10,rewardGuildExperience:0,minimumLevel:1,commissionType:'escort' as const,destination:task.region};
+  await f.tx(()=>f.guild.acceptCommission(f.id,input));
   const q=(await f.db.questRecords.toArray())[0]!;
+  expect(q.escortDestination).toBe(dest.name);
   await expect(f.tx(()=>f.guild.progressCommission(f.id,q.id))).rejects.toThrow('护送至');
   await expect(f.tx(()=>f.guild.completeCommission(f.id,q.id))).rejects.toThrow('尚未完成');
   await f.db.worldStates.update(f.id,{region:dest.name,location:dest.name,updatedAt:(q.commissionAcceptedAt??0)+10});
   await f.tx(()=>f.guild.progressCommission(f.id,q.id));expect(await f.db.questRecords.get(q.id)).toMatchObject({status:'ready',escortArrived:true});
-  await f.tx(()=>f.guild.completeCommission(f.id,q.id));expect((await f.db.playerStates.get(f.id))!.gold).toBe(10010);
+  await f.tx(()=>f.guild.completeCommission(f.id,q.id));expect((await f.db.playerStates.get(f.id))!.gold).toBe(10000+current.gold);
   await expect(f.tx(()=>f.guild.completeCommission(f.id,q.id))).rejects.toThrow();
  });
  it('旧版同城已就绪护送迁移后恢复异地目标，不能领取空奖励',async()=>{

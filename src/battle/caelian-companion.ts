@@ -1,92 +1,45 @@
-import type {
-  BattleCompanionSkillState,
-  BattleCompanionState,
-} from '@/domain/types';
+import type { BattleCompanionState, BattlePlayerState } from '@/domain/types';
+import { CAELIAN_SKILLS, TRELIO_SKILLS } from './rework/runtime/story-party.mjs';
+export { CAELIAN_SKILLS, TRELIO_SKILLS };
 
-export const CAELIAN_SKILLS: readonly BattleCompanionSkillState[] = [
-  {
-    id: 'radiant_lance',
-    name: '辉光龙枪',
-    apCost: 2,
-    description: '以圣辉龙枪攻击当前敌人。',
-  },
-  {
-    id: 'aegis_procession',
-    name: '圣行壁垒',
-    apCost: 2,
-    description: '为玩家与凯利安提供护盾。',
-  },
-  {
-    id: 'dawn_mend',
-    name: '破晓疗愈',
-    apCost: 3,
-    description: '治疗当前生命比例最低的可治疗友方。',
-  },
-  {
-    id: 'trelio_convergence',
-    name: '特莱奥·圣龙合击',
-    apCost: 3,
-    description: '凯利安与特莱奥依次攻击当前敌人。',
-  },
-  {
-    id: 'purifying_standard',
-    name: '净辉战旗',
-    apCost: 2,
-    description: '净化玩家与未重伤的凯利安，并短暂强化防御。',
-  },
-  {
-    id: 'sunlit_judgement',
-    name: '曜光裁决',
-    apCost: 4,
-    description: '对全部敌人造成光明伤害。',
-  },
-] as const;
-
-export function createCaelianCompanion(
-  playerLevel: number,
-  random: () => number,
-  playerLifesteal = 0,
-): BattleCompanionState {
-  const level = Math.max(1, Math.floor(playerLevel));
-  const inheritedLifesteal = Math.max(0, Number(playerLifesteal) || 0) * 0.8;
-  const sequence = [...CAELIAN_SKILLS];
-  for (let index = sequence.length - 1; index > 0; index -= 1) {
-    const swap = Math.floor(random() * (index + 1));
-    [sequence[index], sequence[swap]] = [sequence[swap]!, sequence[index]!];
+export function syncCompanionTactics(companion: BattleCompanionState, player: BattlePlayerState): void {
+  const fresh = createCaelianCompanion(companion.level,player);
+  if (companion.tacticsVersion !== 2) {
+    const inherit = (current: BattleCompanionState | BattleCompanionState['summons'][number], next: typeof current) => {
+      const hp = current.hp <= 0 ? 0 : Math.min(next.hpMax,Math.max(1,Math.round(current.hp/Math.max(1,current.hpMax)*next.hpMax)));
+      Object.assign(current,{hp,hpMax:next.hpMax,attack:next.attack,defense:next.defense,speed:next.speed,critRate:next.critRate,critDamage:next.critDamage,effectHit:next.effectHit,effectResist:next.effectResist});
+      current.shield=Math.min(current.shield,next.hpMax*.6);
+    };
+    inherit(companion,fresh);
+    if (companion.injured) companion.hp=0;
+    for (const summon of companion.summons) inherit(summon,fresh.summons[0]!);
+    companion.tacticsVersion=2;
   }
-  const hpMax = 70 + level * 12;
-  const trelioHpMax = 82 + level * 14;
-  return {
-    id: 'caelian',
-    name: '凯利安',
-    profession: '圣辉龙骑',
-    level,
-    hp: hpMax,
-    hpMax,
+  companion.lifesteal=0;companion.actionSequence=fresh.actionSequence;companion.actionIndex=0;
+  for (const summon of companion.summons) { summon.lifesteal=0;summon.skills=fresh.summons[0]!.skills; }
+}
+
+export function createCaelianCompanion(playerLevel: number, player: BattlePlayerState): BattleCompanionState {
+  const level = Math.max(1, Math.floor(playerLevel));
+  const inherit = (ratio: number, secondary = ratio) => ({
+    hp: Math.max(1, Math.round(player.hpMax * ratio)),
+    hpMax: Math.max(1, Math.round(player.hpMax * ratio)),
     shield: 0,
-    attack: 8 + level * 3,
-    defense: 6 + level * 2,
-    speed: 7 + Math.floor(level * 1.5),
-    lifesteal: inheritedLifesteal,
-    buffs: {},
-    debuffs: {},
-    injured: false,
-    actionSequence: sequence,
-    actionIndex: 0,
-    summons: [
-      {
-        id: 'trelio',
-        name: '特莱奥',
-        hp: trelioHpMax,
-        hpMax: trelioHpMax,
-        shield: 0,
-        attack: 10 + Math.floor(level * 3.4),
-        defense: 8 + Math.floor(level * 2.5),
-        speed: 6 + Math.floor(level * 1.2),
-        lifesteal: inheritedLifesteal,
-        buffs: {},
-        debuffs: {},
-      },
-    ],
+    attack: Math.round(player.attack * ratio),
+    defense: Math.round(player.defense * ratio),
+    speed: player.speed * secondary,
+    critRate: (player.critRate ?? 5) * secondary,
+    critDamage: (player.critDamage ?? 50) * secondary,
+    effectHit: (player.effectHit ?? 0) * secondary,
+    effectResist: (player.effectResist ?? 0) * secondary,
+    lifesteal: 0,
+    buffs: {}, debuffs: {},
+  });
+  const describe = (skills: typeof CAELIAN_SKILLS) => skills.map(({id,name,apCost,description}) => ({id,name,apCost,description}));
+  return {
+    id:'caelian', name:'凯利安', profession:'圣辉龙骑', level,
+    ...inherit(1.2, 1), injured:false, tacticsVersion:2,
+    actionSequence:describe(CAELIAN_SKILLS), actionIndex:0,
+    summons:[{id:'trelio', name:'特莱奥', ...inherit(.8), skills:describe(TRELIO_SKILLS)}],
   };
 }

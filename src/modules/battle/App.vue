@@ -187,6 +187,10 @@ const effectiveSpeeds = computed<Record<string, number>>(() => {
 const revealIntent = computed(() => canViewMonsterIntent(snapshot.value, relicRewards.value));
 const monsterDetailsId = ref('');
 const monsterDetails = computed(() => {
+  const companion = state.value?.companion;
+  if (companion && monsterDetailsId.value === 'caelian') return {name:companion.name,skills:companion.actionSequence.map(s=>({...s,cooldown:0}))};
+  const summon = companion?.summons.find(s=>s.id===monsterDetailsId.value);
+  if (summon) return {name:summon.name,skills:(summon.skills??[]).map(s=>({...s,cooldown:0}))};
   const enemy = state.value?.enemies.find(e => e.id === monsterDetailsId.value);
   if (!enemy) return null;
   const core = state.value?.rework ? hydrateRework(state.value.rework) : null;
@@ -2227,17 +2231,11 @@ onUnmounted(() => {
             </article>
 
             <div class="companion-sequence">
-              <span>本场固定行动序列</span>
-              <ol>
-                <li
-                  v-for="(skill, index) in state.companion.actionSequence"
-                  :key="skill.id"
-                  :class="{ current: index === state.companion.actionIndex }"
-                  :title="skill.description"
-                >
-                  {{ skill.name }} · {{ skill.apCost }}AP
-                </li>
-              </ol>
+              <span>结束回合后共用剩余 AP · 自动择机行动</span>
+              <div class="party-skill-buttons">
+                <button type="button" @click="monsterDetailsId = 'caelian'">凯利安 · 查看技能</button>
+                <button v-if="state.companion.summons.length" type="button" @click="monsterDetailsId = 'trelio'">特莱奥 · 查看技能</button>
+              </div>
             </div>
           </div>
 
@@ -2764,6 +2762,8 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.party-skill-buttons { display:flex; flex-wrap:wrap; gap:4px; margin-top:5px; }
+.party-skill-buttons button { padding:4px 8px; border:1px solid #fae6ab55; border-radius:8px; background:#ffffff0a; color:inherit; font-size:10px; cursor:pointer; }
 .legacy-battle-shell {
   --battle-line: rgba(217, 180, 98, 0.38);
   position: relative;

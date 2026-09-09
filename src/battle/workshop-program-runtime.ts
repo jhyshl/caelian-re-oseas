@@ -2,6 +2,7 @@
 import type { RuleExpression, RuleProgram, RuleStatus, RuleStep, WorkshopRule } from '@/workshop-program';
 import { workshopBuiltinStatus } from '@/workshop-status-library';
 import { normalizeLegacyStatus } from '@/battle/rework/runtime/legacy-bridge.mjs';
+import { effectValue, statusGain } from '@/battle/rework/runtime/tactical-ai.mjs';
 
 type Context={area?:boolean;program:RuleProgram;owner:any;source:any;target:any;event:any;local:Record<string,any>;status?:any;card?:any;star:number};
 const attached=new WeakMap<object,WorkshopProgramRuntime>();
@@ -73,9 +74,27 @@ export class WorkshopProgramRuntime {
     const id=c.program.id+':'+(c.status?.ruleInstance??c.card?.uid??c.owner.id)+':'+rule.id,stamp=rule.once==='turn'?this.g.round:0;
     if(rule.once!=='never'&&this.memory.fired[id]===stamp)return false;
     if(rule.cooldown&&this.memory.fired[id+':cd']>this.g.round)return false;
+    if(c.owner.ruleSummon&&c.event.type==='turn_start'&&!c.status&&!this.usefulAutomaticRule(rule,c)){this.trace(c,'当前目标无需此状态或支援，继续选择其他行动');return false;}
     if(!this.pay(rule.costs,c)){this.trace(c,'资源不足，未支付代价');if(c.event.type==='cast')throw Error('资源不足，无法支付此技能的额外代价');return false;}
     if(rule.once!=='never')this.memory.fired[id]=stamp;if(rule.cooldown)this.memory.fired[id+':cd']=this.g.round+rule.cooldown;
     this.execute(rule.steps,c);return true;
+  }
+  private usefulAutomaticRule(rule:WorkshopRule,c:Context):boolean {
+    const deterministic=(value:unknown):boolean=>!value||typeof value!=='object'||(!('op' in value&&value.op==='chance')&&Object.values(value).every(deterministic));
+    // Stateful programs keep their explicit order; inspect only pure primitives.
+    if(!rule.steps.length||!deterministic(rule.steps)||rule.steps.some(s=>s.saveAs||!['damage','heal','shield','native_status','cleanse','dispel'].includes(s.type)))return true;
+    return rule.steps.some(s=>{
+      const targets=this.targets(s,c),value=num(this.value(s.value??0,c));
+      if(s.type==='heal'&&targets.some(t=>[...t.buffs,...t.debuffs].some(status=>status.ruleInstance)))return true;
+      const effect:any={kind:s.type,flat:value,atk:0,amount:value,turns:num(this.value(s.turns??1,c)),baseChance:num(this.value(s.chance??100,c))};
+      if(s.type==='native_status'){
+        const def=workshopBuiltinStatus(s.status??'');if(!def)return true;
+        Object.assign(effect,{...def.template,kind:def.kind,status:s.status,value,valueUnit:def.unit,atk:def.kind==='dot'?value:0});
+      }
+      return targets.some(t=>['buff','debuff'].includes(effect.kind)
+        ? statusGain(this.g,c.owner,t,effect)>0 && (effect.kind==='buff'||this.g.effectChance(c.owner,t,effect)>0)
+        : effectValue(this.g,c.owner,t,effect,{flatScale:1,star:c.star})>0);
+    });
   }
   cast(program:RuleProgram,sourceId:string,targetId:string,card?:any):void{
     this.register(program);const owner=this.actors().find(a=>a.id===sourceId)??this.g.player,c=this.context(program,owner,{type:'cast',sourceId,targetId},undefined,card);

@@ -45,7 +45,9 @@ import {
   isBattleUsableEffect,
 } from '@/battle/consumables';
 import { cardNameHistoryKey } from '@/battle/card-history';
-import { createCaelianCompanion } from '@/battle/caelian-companion';
+import { createCaelianCompanion, syncCompanionTactics } from '@/battle/caelian-companion';
+import { partyTurn, legacyPartyTurn } from '@/battle/rework/runtime/story-party.mjs';
+import { legacySkillEvaluator } from '@/battle/tactical-legacy';
 import { safeCardEffectHits } from '@/battle/execution-limits';
 import {
   bloodBurnAction,
@@ -59,7 +61,6 @@ import {
 } from '@/equipment-stats';
 import type {
   BattleAnimationEvent,
-  BattleCompanionState,
   BattleEnemyState,
   BattleFriendlyTargetId,
   BattleIntent,
@@ -511,7 +512,7 @@ export class BattleRepository {
       selectedTarget: 0,
       player: battlePlayer,
       companion: input.companionPresent
-        ? createCaelianCompanion(player.level, this.random, battlePlayer.lifesteal)
+        ? createCaelianCompanion(player.level, battlePlayer)
         : undefined,
       enemies,
       rewards: null,
@@ -547,7 +548,7 @@ export class BattleRepository {
         .filter((entry) => entry.carried)
         .map((entry) => entry.relicId),
     );
-    this.syncInheritedLifesteal(state);
+    if (state.companion) syncCompanionTactics(state.companion,state.player);
     this.runWorkshopMechanisms(state, 'battle_start');
     const core = rework.create(state, {
       level: player.level, explicit: Boolean(input.monsterId), region,
@@ -1083,8 +1084,7 @@ export class BattleRepository {
         turnAfter: state.turn,
         label: state.companion.injured ? '凯利安重伤' : '凯利安行动',
       });
-      this.resolveCaelianActions(state);
-      this.resolveTrelioSummon(state);
+      this.resolveLegacyCompanionPhase(state);
     }
     state.phase = 'enemy';
     this.animation(state, {
@@ -1192,7 +1192,7 @@ export class BattleRepository {
     for (const enemy of aliveEnemies) {
       const monster = this.monsters?.[enemy.definitionId];
       enemy.intent = monster
-        ? this.chooseIntent(monster, enemy, aliveEnemies)
+        ? this.chooseIntent(monster, enemy, aliveEnemies, state)
         : null;
     }
     this.log(
@@ -1320,11 +1320,7 @@ export class BattleRepository {
   private resolveReworkCompanion(state:LocalBattleState):void {
     const core=rework.hydrate(state.rework);rework.syncExternal(core,state);const detach=this.attachReworkHooks(core,state);
     try{
-      for(const actor of core.allies.filter((a:any)=>(a.isCompanion||a.isCompanionSummon)&&a.hp>0)){
-        const allowed=core.beginPhase(actor);rework.project(core,state,{checkpoint:false});
-        if(allowed){if(actor.isCompanion)this.resolveCaelianActions(state);else this.resolveTrelioSummon(state);rework.syncExternal(core,state);}
-        core.endPhase(actor);
-      }
+      partyTurn(core);
       rework.project(core,state);
     }finally{detach();}
   }
@@ -2275,14 +2271,16 @@ export class BattleRepository {
     monster: MonsterDefinition,
     enemy: BattleEnemyState,
     allies: BattleEnemyState[] = [enemy],
+    state?: LocalBattleState,
   ): BattleIntent | null {
+    const evaluate = state ? legacySkillEvaluator(state,enemy.id) : undefined;
     const lowHpReady =
       enemy.lastSpecial !== 'low_hp' &&
       enemy.hp / Math.max(1, enemy.hpMax) < 0.35;
     const skills = Object.entries(monster.skills ?? {}).filter(
       ([skillId, skill]) =>
         (skillId !== 'low_hp' || lowHpReady) &&
-        this.enemySkillIsAvailable(skill, enemy, allies),
+        this.enemySkillIsAvailable(skill, enemy, allies) && (!evaluate || evaluate(skill.effects ?? []).value > 0),
     );
     if (skills.length === 0) return null;
 
@@ -4891,177 +4889,16 @@ export class BattleRepository {
     );
   }
 
-  private resolveCaelianActions(state: LocalBattleState): void {
-    const companion = state.companion;
-    if (!companion || companion.injured || companion.hp <= 0) return;
-    if (companion.debuffs.freeze) {
-      this.log(state, 'system', '凯利安被冰冻，本轮无法行动，技能序列保持不变。');
-      this.animation(state, {
-        kind: 'status',
-        sourceSide: 'companion',
-        sourceId: companion.id,
-        targetSide: 'companion',
-        targetId: companion.id,
-        label: '冰冻',
-      });
-      return;
-    }
-    const sequence = companion.actionSequence;
-    if (sequence.length === 0) return;
-    let resolved = 0;
-    while (resolved < sequence.length && this.aliveEnemies(state).length > 0) {
-      const skill = sequence[companion.actionIndex % sequence.length];
-      if (!skill || state.player.ap < skill.apCost) break;
-      state.player.ap -= skill.apCost;
-      this.log(
-        state,
-        'player',
-        `凯利安消耗 ${skill.apCost} AP，施放「${skill.name}」`,
-      );
-      this.animation(state, {
-        kind: 'companion-action',
-        sourceSide: 'companion',
-        sourceId: companion.id,
-        targetSide: 'enemy',
-        targetId: state.enemies[this.resolveTargetIndex(state, state.selectedTarget)]?.id,
-        apAfter: state.player.ap,
-        label: skill.name,
-      });
-      this.resolveCaelianSkill(state, companion, skill.id, skill.name);
-      companion.actionIndex = (companion.actionIndex + 1) % sequence.length;
-      resolved += 1;
-      this.stabilizeCompanion(state);
-    }
-    if (resolved === 0) {
-      const pending = sequence[companion.actionIndex % sequence.length];
-      if (pending) {
-        this.log(
-          state,
-          'system',
-          `剩余 AP 不足，凯利安保留下一行动「${pending.name}」（需要 ${pending.apCost} AP）`,
-        );
-      }
+  private resolveLegacyCompanionPhase(state: LocalBattleState): void {
+    const core = legacyPartyTurn(state);
+    const side = (id: string) => id === 'player' ? 'player' as const : id === 'caelian' ? 'companion' as const : state.enemies.some(e=>e.id===id) ? 'enemy' as const : 'summon' as const;
+    for (const event of core.trace ?? []) {
+      if (event.type === 'party_action') this.log(state,'player',`${event.source === 'caelian' ? '凯利安' : '特莱奥'}消耗 ${event.ap} AP，施放「${event.name}」`);
+      const kind = event.type === 'action_start' ? 'companion-action' : ['damage','heal','shield'].includes(event.type) ? event.type : ['buff','debuff','miss'].includes(event.type) ? 'status' : undefined;
+      if (!kind) continue;
+      this.animation(state,{kind,sourceId:event.source,sourceSide:side(event.source),targetId:event.target,targetSide:side(event.target),label:event.name ?? event.status ?? (event.type==='miss'?'闪避':'队友行动'),amount:Math.round(event.damage??event.amount??0),hpAfter:event.hp===undefined?undefined:Math.ceil(event.hp),shieldAfter:event.shield===undefined?undefined:Math.ceil(event.shield),apAfter:event.apAfter});
     }
     this.stabilizeCompanion(state);
-  }
-
-  private resolveCaelianSkill(
-    state: LocalBattleState,
-    companion: BattleCompanionState,
-    skillId: string,
-    label: string,
-  ): void {
-    const target = state.enemies[this.resolveTargetIndex(state, state.selectedTarget)];
-    if (!target) return;
-    const level = companion.level;
-    switch (skillId) {
-      case 'radiant_lance':
-        this.damage(
-          state,
-          companion,
-          target,
-          Math.round(companion.attack * 0.42 + 5 + level * 0.8),
-          'player',
-          label,
-        );
-        break;
-      case 'aegis_procession':
-        for (const ally of this.cardFriendlyTargets(state, 'all_allies', 'player')) {
-          this.grantFriendlyShield(state, ally, 6 + Math.floor(level * 0.8), label, 'companion');
-        }
-        break;
-      case 'dawn_mend': {
-        const allies = this.cardFriendlyTargets(state, 'all_allies', 'player')
-          .filter((ally) => ally.hp > 0)
-          .sort((left, right) => left.hp / left.hpMax - right.hp / right.hpMax);
-        if (allies[0]) this.heal(state, allies[0], 8 + Math.floor(level * 1.1), label);
-        break;
-      }
-      case 'trelio_convergence': {
-        this.damage(
-          state,
-          companion,
-          target,
-          Math.round(companion.attack * 0.34 + level),
-          'player',
-          label,
-        );
-        const trelio = companion.summons.find((summon) => summon.id === 'trelio' && summon.hp > 0);
-        const nextTarget = state.enemies[this.resolveTargetIndex(state, state.selectedTarget)];
-        if (trelio && nextTarget?.hp) {
-          this.animation(state, {
-            kind: 'companion-action',
-            sourceSide: 'summon',
-            sourceId: trelio.id,
-            targetSide: 'enemy',
-            targetId: nextTarget.id,
-            label: '特莱奥·圣龙吐息',
-          });
-          this.damage(
-            state,
-            trelio,
-            nextTarget,
-            Math.round(trelio.attack * 0.32 + level),
-            'player',
-            '圣龙吐息',
-          );
-        }
-        break;
-      }
-      case 'purifying_standard':
-        for (const ally of this.cardFriendlyTargets(state, 'all_allies', 'player')) {
-          const removed = this.removeEffects(ally.debuffs, 1);
-          this.addTimedEffect(ally.buffs, 'fortitude', 1, 2);
-          const identity = this.combatantIdentity(state, ally);
-          this.animation(state, {
-            kind: 'status',
-            sourceSide: 'companion',
-            sourceId: companion.id,
-            targetSide: identity.side,
-            targetId: identity.id,
-            amount: removed,
-            label: '净化·坚韧',
-          });
-        }
-        break;
-      case 'sunlit_judgement':
-        for (const enemy of this.aliveEnemies(state)) {
-          this.damage(
-            state,
-            companion,
-            enemy,
-            Math.round(companion.attack * 0.24 + 4 + level * 0.6),
-            'player',
-            label,
-          );
-        }
-        break;
-    }
-  }
-
-  private resolveTrelioSummon(state: LocalBattleState): void {
-    const companion = state.companion;
-    const trelio = companion?.summons.find(
-      (summon) => summon.id === 'trelio' && summon.hp > 0,
-    );
-    const target = state.enemies[this.resolveTargetIndex(state, state.selectedTarget)];
-    if (!trelio || trelio.debuffs.freeze || !target?.hp) return;
-    this.animation(state, {
-      kind: 'companion-action',
-      sourceSide: 'summon',
-      sourceId: trelio.id,
-      targetSide: 'enemy',
-      targetId: target.id,
-      label: '特莱奥·圣光爪击',
-    });
-    this.damage(
-      state,
-      trelio,
-      target,
-      Math.round(trelio.attack * 0.2 + companion!.level * 0.35),
-      'player',
-      '圣光爪击',
-    );
   }
 
   private resolveSummons(state: LocalBattleState): void {
@@ -5203,11 +5040,13 @@ export class BattleRepository {
       weight: 1,
       effects: [{ type: 'damage', value: summon.attack, target: 'enemy' }],
     };
-    const chosen = this.weightedChoice(
-      skills.length > 0 ? skills : [fallback],
-      (skill) => Math.max(1, this.number(skill.weight, 1)),
-    );
-    const targetIndex = this.resolveTargetIndex(state, state.selectedTarget);
+    const evaluate = legacySkillEvaluator(state,summon.id);
+    const candidates = (skills.length ? skills : [fallback]).map(skill => ({skill,...evaluate(Array.isArray(skill.effects)?skill.effects as CardEffect[]:[])}))
+      .filter(row=>row.value>0).sort((a,b)=>b.value-a.value||String(a.skill.name).localeCompare(String(b.skill.name)));
+    const best = candidates[0];
+    const chosen = best?.skill;
+    const tacticalIndex = state.enemies.findIndex(enemy=>enemy.id===best?.targetId);
+    const targetIndex = this.resolveTargetIndex(state, tacticalIndex>=0?tacticalIndex:state.selectedTarget);
     if (!chosen || !state.enemies[targetIndex]?.hp) return;
     const effects = Array.isArray(chosen.effects)
       ? (chosen.effects as CardEffect[])
@@ -6152,13 +5991,6 @@ export class BattleRepository {
 
   private playerLifestealRatio(state: LocalBattleState): number {
     return this.clamp(this.playerLifestealPercent(state) / 100, 0, 1);
-  }
-
-  private syncInheritedLifesteal(state: LocalBattleState): void {
-    if (!state.companion) return;
-    const inherited = this.playerLifestealPercent(state) * 0.8;
-    state.companion.lifesteal = inherited;
-    for (const summon of state.companion.summons) summon.lifesteal = inherited;
   }
 
   private classResourceKey(value: unknown): string {
@@ -7756,7 +7588,7 @@ export class BattleRepository {
     for (const summon of session.state.player.summons) {
       this.normalizePlayerSummon(summon);
     }
-    this.syncInheritedLifesteal(session.state);
+    if (session.state.companion) syncCompanionTactics(session.state.companion,session.state.player);
     if (session.state.player.subclass !== 'dark_mage') {
       this.syncAbyssEcho(session.state);
     }

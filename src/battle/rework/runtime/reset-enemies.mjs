@@ -1,3 +1,4 @@
+import {effectValue} from './tactical-ai.mjs';
 // Conditions are explicit, deterministic and use public state only.
 const alive=a=>a&&a.hp>0;
 const hp=a=>a.hp/a.maxHp;
@@ -39,11 +40,12 @@ export function selectResetTargets(g,a,s,e){
  const healing=helpful.some(x=>x.type==='heal'),cleanse=helpful.find(x=>x.type==='cleanse');
  const support=helpful.some(x=>x.status==='attack_up'||x.status==='swift');
  const pool=team(g,a);
+ const supportValue=x=>helpful.reduce((n,e)=>n+effectValue(g,a,x,e,{reservations:true}),0);
  const cleanScore=x=>cleanable(x).filter(b=>!cleanse?.allowed||cleanse.allowed.includes(key(b))).reduce((n,b)=>n+(hard.has(key(b))?100:key(b)==='healing_down'?80:20),0);
  pool.sort((x,y)=>{
   if(healing){const available=x=>g.healBudgetRemaining(a,x,{type:'heal',maxHp:1})>0&&x.hp+(g.enemyAI?.reservedHealing?.[x.id]??0)<x.maxHp;return Number(available(y))-Number(available(x))||hp(x)-hp(y)||cleanScore(y)-cleanScore(x)||stable(x,y);}
   if(cleanse){const diff=cleanScore(y)-cleanScore(x);if(diff)return diff;}
-  if(support){const ready=x=>x!==a&&x.flags.enemyActionRound!==g.round&&['fighter','striker','bruiser'].includes(x.definition?.roleKey);return Number(ready(y))-Number(ready(x))||Number(has(g,x,'attack_up'))-Number(has(g,y,'attack_up'))||g.status(x,'swift')-g.status(y,'swift')||g.stat(y,'attack')-g.stat(x,'attack')||stable(x,y);}
+  if(support){const gain=supportValue(y)-supportValue(x);if(gain)return gain;const ready=x=>x!==a&&x.flags.enemyActionRound!==g.round&&['fighter','striker','bruiser'].includes(x.definition?.roleKey);return Number(ready(y))-Number(ready(x))||Number(has(g,x,'attack_up'))-Number(has(g,y,'attack_up'))||g.status(x,'swift')-g.status(y,'swift')||g.stat(y,'attack')-g.stat(x,'attack')||stable(x,y);}
   return hp(x)-hp(y)||x.shield/x.maxHp-y.shield/y.maxHp||Number(x===a)-Number(y===a)||stable(x,y);
  });
  return pool.slice(0,1);

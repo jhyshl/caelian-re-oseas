@@ -129,6 +129,7 @@ export class GameRepository {
     await migrateCombatEquipment(this.db, profileId);
     await migrateCardInventory(this.db, profileId);
     await this.guild.migrateCommissions(profileId);
+    await this.guild.refreshCommissions(profileId);
     await this.market.settleFreight(profileId);
     const [
       profile,
@@ -276,6 +277,7 @@ export class GameRepository {
     }
     const command = parsed.data;
     await this.guild.migrateCommissions(profileId);
+    if (command.type === 'quest.accept') await this.guild.refreshCommissions(profileId);
     await migrateCombatAttributes(this.db, profileId);
     await migrateCombatEquipment(this.db, profileId);
     await migrateCardInventory(this.db, profileId);

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+/* global setTimeout, clearTimeout, document */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   loadGuildCatalogs,
@@ -14,11 +15,11 @@ import type {
 import type { QuestListEntry } from '@/quests/catalog';
 import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 import { normalizeRegion } from '@/worldbook/region-switcher';
-import { commissionBoard, commissionCombatPending } from '@/guild-commissions';
+import { commissionCombatPending } from '@/guild-commissions';
+import { localDayKey, nextLocalMidnight } from '@/daily-refresh';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
-const tasks = ref<GuildTaskDefinition[]>([]);
 const rankNames = ref<Record<string, string>>({});
 const rankRequirements = ref<Record<string, GuildRankRequirement>>({});
 const typeNames = ref<Record<string, string>>({});
@@ -50,12 +51,12 @@ const activeQuests = computed(() =>
     ['active', 'ready'].includes(quest.status),
   ),
 );
-const activeCommissionTitles = computed(
+const activeCommissionIds = computed(
   () =>
     new Set(
       activeQuests.value
         .filter((quest) => quest.kind === 'commission')
-        .map((quest) => quest.title),
+        .map((quest) => quest.definitionId),
     ),
 );
 const rankSequence = [
@@ -85,15 +86,32 @@ const rankProgress = computed(() => {
   return Math.min(100, (snapshot.value.guild.experience / requirement) * 100);
 });
 const availableTasks = computed(() =>
-  commissionBoard(tasks.value, snapshot.value?.regionAccess ?? []).filter(
+  (snapshot.value?.guild.commissionBoard?.tasks ?? []).filter(
     (task) =>
-      (snapshot.value?.player.level ?? 1) >= task.lvl &&
       normalizeRegion(task.region) ===
         normalizeRegion(
           snapshot.value?.world.region || snapshot.value?.world.location,
         ),
   ),
 );
+
+const completedCommissionIds = computed(() => new Set(snapshot.value?.questHistory.map(item => item.definitionId)));
+let midnightTimer: ReturnType<typeof setTimeout> | undefined;
+let mounted = false;
+function scheduleMidnight() {
+  if (!mounted) return;
+  clearTimeout(midnightTimer);
+  midnightTimer = setTimeout(async () => {
+    try { await refresh(); } catch (error) { notice.value = errorMessage(error); }
+    finally { scheduleMidnight(); }
+  }, Math.max(100, nextLocalMidnight().getTime() - Date.now() + 50));
+}
+function refreshAfterSleep() {
+  if (document.visibilityState === 'visible') {
+    if (snapshot.value?.guild.commissionBoard?.day !== localDayKey()) void refresh().catch(error => { notice.value=errorMessage(error); });
+    scheduleMidnight();
+  }
+}
 
 function taskId(task: GuildTaskDefinition) {
   return task.id ?? `${task.name}:${task.region}`;
@@ -313,8 +331,8 @@ async function abandon(quest: QuestRecord) {
 }
 
 onMounted(async () => {
+  mounted = true;
   const catalogs = await loadGuildCatalogs();
-  tasks.value = catalogs.tasks;
   rankNames.value = catalogs.rankNames;
   rankRequirements.value = catalogs.rankRequirements;
   typeNames.value = catalogs.typeNames;
@@ -322,9 +340,15 @@ onMounted(async () => {
   difficultyNames.value = catalogs.difficultyNames;
   await refresh();
   disposeStateListener = props.context.api.on('state.changed', refresh);
+  if (!mounted) { disposeStateListener(); return; }
+  scheduleMidnight();
+  document.addEventListener('visibilitychange', refreshAfterSleep);
 });
 
 onUnmounted(() => {
+  mounted = false;
+  clearTimeout(midnightTimer);
+  document.removeEventListener('visibilitychange', refreshAfterSleep);
   disposeStateListener?.();
 });
 </script>
@@ -582,10 +606,10 @@ onUnmounted(() => {
 
         <h2 class="ca-section-title">
           委托告示板
-          <small>{{ snapshot.world.region }} · {{ availableTasks.length }} 项可接取</small>
+          <small>{{ snapshot.world.region }} · 每日 4 项 · 本地时间 00:00 刷新</small>
         </h2>
         <div class="task-grid">
-          <article v-for="task in availableTasks" :key="`${task.name}:${task.region}`">
+          <article v-for="task in availableTasks" :key="taskId(task)">
             <header>
               <span>
                 {{ typeIcons[task.type] ?? '◇' }}
@@ -605,15 +629,15 @@ onUnmounted(() => {
               class="ca-button primary"
               :disabled="
                 snapshot.player.level < task.lvl ||
-                  activeCommissionTitles.has(task.name) ||
+                  activeCommissionIds.has(taskId(task)) || completedCommissionIds.has(taskId(task)) ||
                   busyTask === task.name
               "
               @click="accept(task)"
             >
               {{
-                activeCommissionTitles.has(task.name)
+                activeCommissionIds.has(taskId(task))
                   ? '已接受'
-                  : snapshot.player.level < task.lvl
+                  : completedCommissionIds.has(taskId(task)) ? '今日已完成' : snapshot.player.level < task.lvl
                     ? `需要 Lv.${task.lvl}`
                     : '接受委托'
               }}

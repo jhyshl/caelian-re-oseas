@@ -1,3 +1,4 @@
+import {bestSkillTarget} from './tactical-ai.mjs';
 /* global structuredClone */
 import {createPlayerController} from './common-player.mjs';
 export const MAGE_IDS=['elementalist','fire_mage','water_mage','wind_mage','thunder_mage','wood_mage','light_mage','dark_mage','arcane_mage','summoner'];
@@ -201,7 +202,13 @@ export function createMageHooks(profession){
   onEndTurn(ctx){const s=state(ctx.p);if(profession==='wind_mage'||profession==='thunder_mage'){const name=RESOURCE[profession][0];if(resource(ctx.p,name)>4)ctx.resource(name,4-resource(ctx.p,name));}if(profession==='dark_mage'){let expired=0;for(const b of s.echoBatches??[])if(b.expiresAfterRound<=ctx.g.round)expired+=b.amount;s.echoBatches=(s.echoBatches??[]).filter(b=>b.expiresAfterRound>ctx.g.round);if(expired)ctx.resource('深渊回声',-Math.min(expired,resource(ctx.p,'深渊回声')));}s.lastSummons=livingSummons(ctx);},
   condition,utility,canPlay,scoreCard,
   adjustCost(card,ctx,ap,commit){if(cardId(card)!=='fm_pyroclasm')return ap;const s=perRound(ctx),pc=ctx.p.flags.pc;if(dots(ctx.target,'灼烧').length<3||s.cardNameUsed['fm_pyroclasm:discount']||(pc.extraAP??0)>=3||ap<=2)return ap;if(commit){pc.extraAP++;s.cardNameUsed['fm_pyroclasm:discount']=1;}return ap-1;},
-  selectSummonSkill(ctx,pet){const sc={...ctx,source:pet,summon:pet};const skill=(pet.skills??[]).find(k=>{const hit=condition(k.condition,sc);if(hit===undefined)throw new Error('UNSUPPORTED_MAGE_SUMMON_CONDITION '+k.condition);return hit;});if(!skill)throw new Error('MAGE_NO_LEGAL_SUMMON_SKILL '+pet.name);const boosted=clone(skill);const amplify=(pet.buffs??[]).filter(b=>/下一次常规行动/.test(b.status||'')&&(b.chargesPerSummon??1)>0).sort((a,b)=>b.value-a.value)[0];if(amplify){walk(boosted.effects,e=>{if(['damage','heal','shield'].includes(e.kind)){for(const k of ['flat','atk','def'])if(e[k]!==undefined)e[k]*=1+amplify.value/100;}});amplify.chargesPerSummon=0;}pet.flags??={};if(skill.name==='储电')pet.flags.mageCharged=true;pet.flags.mageActionCount=(pet.flags.mageActionCount??0)+1;return boosted;},
+  selectSummonSkill(ctx,pet){const sc={...ctx,source:pet,summon:pet};const candidates=(pet.skills??[]).map(k=>{
+ const choice=bestSkillTarget(ctx.g,pet,k),target=choice?.target??ctx.target;
+ const hit=condition(k.condition,{...sc,target});if(hit===undefined)throw new Error('UNSUPPORTED_MAGE_SUMMON_CONDITION '+k.condition);
+ const utility=k.effects.some(e=>!['damage','heal','shield','buff','debuff','dot','cleanse','dispel'].includes(e.kind))?ctx.g.stat(pet,'attack')*1.5:0;
+ return {skill:k,target,score:hit?(choice?.value??0)+utility:-1};
+ }).filter(c=>c.score>0).sort((a,b)=>b.score-a.score);
+ const selected=candidates[0],skill=selected?.skill;if(selected)ctx.target=selected.target;if(!skill)return undefined;const boosted=clone(skill);const amplify=(pet.buffs??[]).filter(b=>/下一次常规行动/.test(b.status||'')&&(b.chargesPerSummon??1)>0).sort((a,b)=>b.value-a.value)[0];if(amplify){walk(boosted.effects,e=>{if(['damage','heal','shield'].includes(e.kind)){for(const k of ['flat','atk','def'])if(e[k]!==undefined)e[k]*=1+amplify.value/100;}});amplify.chargesPerSummon=0;}pet.flags??={};if(skill.name==='储电')pet.flags.mageCharged=true;pet.flags.mageActionCount=(pet.flags.mageActionCount??0)+1;return boosted;},
   effect(e,ctx){
    if(e.kind==='damage'&&cardId(ctx.card)==='th_ball_lightning'&&!ctx.mageResolvingBounce){
     ctx.mageResolvingBounce=true;const hitIds=new Set();const first=ctx.target;const count=e.hits??3;

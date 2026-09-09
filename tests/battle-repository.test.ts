@@ -842,7 +842,7 @@ describe('本地战斗仓库', () => {
     expect(hellLevelTen.defense).toBeGreaterThan(normalLevelOne.defense);
   });
 
-  it('让凯利安按本场固定序列消耗剩余AP并逐个生成行动动画', async () => {
+  it('剧情队友继承面板，在敌方之前共享剩余AP并逐个生成行动动画', async () => {
     const database = new CaelianDatabase(
       'alpha',
       `caelian-companion-sequence-test-${crypto.randomUUID()}`,
@@ -864,7 +864,7 @@ describe('本地战斗仓库', () => {
       type: 'player.update',
       payload: { level: 6 },
     });
-    let roll = 0.24;
+    const roll = 0.24;
     const battles = new BattleRepository(database, () => roll);
     await battles.prepare();
     await battles.start(profile.id, {
@@ -888,54 +888,29 @@ describe('本地战斗仓库', () => {
       hp: companion.summons[0]!.hpMax,
     });
     const originalSequence = companion.actionSequence.map((skill) => skill.id);
-    const startingIndex = companion.actionIndex;
+    expect(companion.hpMax).toBe(Math.round(session.state.player.hpMax*1.2));
+    expect(companion.attack).toBe(Math.round(session.state.player.attack*1.2));
+    expect(companion.defense).toBe(Math.round(session.state.player.defense*1.2));
+    expect(companion.lifesteal).toBe(0);
+    expect(companion.summons[0]!.hpMax).toBe(Math.round(session.state.player.hpMax*.8));
     session.state.player.ap = 5;
     session.state.enemies[0]!.hp = 100_000;
     session.state.enemies[0]!.hpMax = 100_000;
-    session.state.enemies[0]!.attack = 0;
-    session.state.enemies[0]!.intent = null;
-    companion.attack = 0;
-    companion.summons[0]!.attack = 0;
     const previousAnimationCount = session.state.animations?.length ?? 0;
     await database.battleSessions.put(session);
-
-    let remaining = 5;
-    const expectedSkills = [] as typeof companion.actionSequence;
-    while (expectedSkills.length < companion.actionSequence.length) {
-      const skill = companion.actionSequence[
-        (startingIndex + expectedSkills.length) % companion.actionSequence.length
-      ]!;
-      if (skill.apCost > remaining) break;
-      remaining -= skill.apCost;
-      expectedSkills.push(skill);
-    }
-    roll = 0.24;
     await battles.endTurn(profile.id, session.id);
     session = (await database.battleSessions.get(session.id))!;
-    const newAnimations = (session.state.animations ?? []).slice(
-      previousAnimationCount,
-    );
-    const caelianActions = newAnimations.filter(
-      (event) =>
-        event.kind === 'companion-action' &&
-        event.sourceSide === 'companion',
-    );
-    expect(caelianActions.map((event) => event.label)).toEqual(
-      expectedSkills.map((skill) => skill.name),
-    );
-    expect(caelianActions.map((event) => event.apAfter)).toEqual(
-      expectedSkills.map((_, index) =>
-        5 - expectedSkills
-          .slice(0, index + 1)
-          .reduce((total, skill) => total + skill.apCost, 0),
-      ),
-    );
-    expect(session.state.companion?.actionSequence.map((skill) => skill.id)).toEqual(
-      originalSequence,
-    );
-    expect(session.state.companion?.actionIndex).toBe(
-      (startingIndex + expectedSkills.length) % originalSequence.length,
-    );
+    const newAnimations = (session.state.animations ?? []).slice(previousAnimationCount);
+    const partyActions = newAnimations.filter(event => event.kind === 'companion-action' && event.apAfter !== undefined);
+    expect(partyActions.length).toBeGreaterThan(0);
+    let remaining = 5;
+    const kit = [...companion.actionSequence,...(companion.summons[0]!.skills??[])];
+    for (const action of partyActions) {
+      remaining -= kit.find(skill=>skill.name===action.label)!.apCost;
+      expect(remaining).toBeGreaterThanOrEqual(0);
+      expect(action.apAfter).toBe(remaining);
+    }
+    expect(session.state.companion?.actionSequence.map(skill=>skill.id)).toEqual(originalSequence);
     const lastCompanionAnimation = Math.max(
       ...newAnimations
         .map((event, index) =>

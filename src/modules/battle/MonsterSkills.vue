@@ -2,7 +2,7 @@
 /* global HTMLButtonElement, HTMLElement, document */
 import { onMounted, onUnmounted, ref } from 'vue';
 import { cleanCombatCopy } from '@/battle/presentation';
-defineProps<{ name: string; skills: Array<{ id: string; name: string; description: string; cooldown: number }> }>();
+defineProps<{ name: string; skills: Array<{ id: string; name: string; description: string; cooldown: number; apCost?: number }> }>();
 const emit = defineEmits<{ close: [] }>();
 const closeButton = ref<HTMLButtonElement>();
 let previousFocus: HTMLElement | null = null;
@@ -19,10 +19,11 @@ onUnmounted(() => previousFocus?.focus());
       <section class="monster-skills-panel" role="dialog" aria-modal="true" :aria-label="`${name}技能模组`" tabindex="-1">
         <header><strong>{{ name }} · 技能模组</strong><button ref="closeButton" type="button" aria-label="关闭技能模组" @click="emit('close')">×</button></header>
         <article v-for="skill in skills" :key="skill.id">
-          <h3>{{ skill.name }} <small v-if="skill.cooldown">冷却 {{ skill.cooldown }} 回合</small></h3>
+          <h3>{{ skill.name }} <small v-if="skill.apCost !== undefined">{{ skill.apCost }} AP</small><small v-if="skill.cooldown">冷却 {{ skill.cooldown }} 回合</small></h3>
           <p>{{ cleanCombatCopy(skill.description) }}</p>
         </article>
         <p v-if="!skills.length">暂无技能</p>
+        <p v-if="skills.some(s => s.apCost !== undefined)">结束回合后，在敌方行动前共用玩家剩余 AP；每个技能每轮最多施放一次。群体伤害、治疗与护盾的总量最多为单体值的 2 倍。</p>
       </section>
     </div>
   </Teleport>

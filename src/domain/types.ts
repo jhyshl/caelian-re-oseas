@@ -131,6 +131,7 @@ export interface GuildRecord {
   rank: string;
   experience: number;
   completedTaskCount: number;
+  commissionBoard?: { version: 3; day: string; tasks: import('@/content/catalogs/guild').GuildTaskDefinition[] };
   updatedAt: number;
 }
 
@@ -559,6 +560,11 @@ export interface BattleCompanionSummonState {
   attack: number;
   defense: number;
   speed: number;
+  critRate?: number;
+  critDamage?: number;
+  effectHit?: number;
+  effectResist?: number;
+  skills?: BattleCompanionSkillState[];
   lifesteal?: number;
   buffs: Record<string, BattleTimedEffect>;
   debuffs: Record<string, BattleTimedEffect>;
@@ -575,6 +581,11 @@ export interface BattleCompanionState {
   attack: number;
   defense: number;
   speed: number;
+  critRate?: number;
+  critDamage?: number;
+  effectHit?: number;
+  effectResist?: number;
+  tacticsVersion?: number;
   lifesteal?: number;
   buffs: Record<string, BattleTimedEffect>;
   debuffs: Record<string, BattleTimedEffect>;

@@ -341,30 +341,17 @@ describe('GameRepository', () => {
       },
     });
 
+    const task=(await repository.snapshot(profile.id)).guild.commissionBoard!.tasks.find(t=>t.region==='圣德里安学院'&&t.type==='combat')!;
+    await database.worldStates.update(profile.id,{region:task.region,location:task.region});
     const result = await repository.execute(profile.id, {
-      id: 'accept-chinese-commission',
-      type: 'quest.accept',
-      payload: {
-        taskId: '清理学院附近的哥布林营地:圣德里安学院',
-        title: '清理学院附近的哥布林营地',
-        region: '圣德里安学院',
-        objective: '圣德里安学院东侧森林边缘发现哥布林聚集',
-        totalStages: 5,
-        rewardExperience: 120,
-        rewardGold: 120,
-        rewardGuildExperience: 22,
-        minimumLevel: 1,
-      },
+      id:'accept-chinese-commission',type:'quest.accept',
+      payload:{taskId:task.id!,title:task.name,region:task.region,objective:task.desc,totalStages:task.count,
+        rewardExperience:task.xp,rewardGold:task.gold,rewardGuildExperience:task.gxp,minimumLevel:task.lvl},
     });
-
     expect(result.status).toBe('applied');
-    const snapshot = await repository.snapshot(profile.id);
+    const snapshot=await repository.snapshot(profile.id);
     expect(snapshot.quests).toHaveLength(1);
-    expect(snapshot.quests[0]).toMatchObject({
-      title: '清理学院附近的哥布林营地',
-      kind: 'commission',
-      totalStages: 5,
-    });
+    expect(snapshot.quests[0]).toMatchObject({title:task.name,kind:'commission',totalStages:task.count});
   });
 
   it('提交采集委托材料并完成本地结算与公会晋升', async () => {
@@ -384,29 +371,15 @@ describe('GameRepository', () => {
         subclass: 'holy_knight',
       },
     });
-    await repository.execute(profile.id, {
-      id: 'grant-commission-material',
-      type: 'inventory.adjust',
-      payload: { itemId: '食人花花粉', name: '食人花花粉', delta: 3 },
-    });
-    const taskId = '采集食人花花粉:艾瑟拉森林';
-    await repository.execute(profile.id, {
-      id: 'accept-gather-commission',
-      type: 'quest.accept',
-      payload: {
-        taskId,
-        title: '采集食人花花粉',
-        region: '艾瑟拉森林',
-        objective: '提交食人花花粉',
-        totalStages: 3,
-        rewardExperience: 90,
-        rewardGold: 165,
-        rewardGuildExperience: 220,
-        minimumLevel: 1,
-        commissionType: 'gather',
-        targetName: '食人花花粉',
-      },
-    });
+    const task=(await repository.snapshot(profile.id)).guild.commissionBoard!.tasks.find(t=>t.type==='gather')!;
+    await database.playerStates.update(profile.id,{level:100});
+    await database.guildStates.update(profile.id,{experience:195});
+    await database.worldStates.update(profile.id,{region:task.region,location:task.region});
+    for(const item of task.items!) await repository.execute(profile.id,{id:'grant:'+item.itemId,type:'inventory.adjust',payload:{itemId:item.itemId,name:item.itemId,delta:item.count}});
+    const taskId=task.id!;
+    await repository.execute(profile.id,{id:'accept-gather-commission',type:'quest.accept',
+      payload:{taskId,title:task.name,region:task.region,objective:task.desc,totalStages:task.count,
+        rewardExperience:task.xp,rewardGold:task.gold,rewardGuildExperience:task.gxp,minimumLevel:task.lvl}});
     const questId = `${profile.id}:commission:${taskId}`;
     await repository.execute(profile.id, {
       id: 'progress-gather-commission',
@@ -415,7 +388,7 @@ describe('GameRepository', () => {
     });
     expect((await repository.snapshot(profile.id)).quests[0]).toMatchObject({
       status: 'ready',
-      currentStage: 3,
+      currentStage: task.count,
     });
     await repository.execute(profile.id, {
       id: 'complete-gather-commission',
@@ -425,7 +398,7 @@ describe('GameRepository', () => {
     const settled = await repository.snapshot(profile.id);
     expect(settled.quests).toEqual([]);
     expect(settled.inventory).toEqual([]);
-    expect(settled.questHistory[0]?.title).toBe('采集食人花花粉');
+    expect(settled.questHistory[0]?.title).toBe(task.name);
     expect(settled.guild).toMatchObject({ rank: 'iron', completedTaskCount: 1 });
   });
 
@@ -448,25 +421,13 @@ describe('GameRepository', () => {
     });
     await database.playerStates.update(profile.id, { experience: 90 });
     const taskId = '升级奖励测试委托:伊拉亚城';
-    await repository.execute(profile.id,{id:'level-reward-material',type:'inventory.adjust',payload:{itemId:'测试材料',name:'测试材料',delta:1}});
-    await repository.execute(profile.id, {
-      id: 'accept-level-reward-commission',
-      type: 'quest.accept',
-      payload: {
-        taskId,
-        title: '升级奖励测试委托',
-        commissionType: 'gather',
-        targetName: '测试材料',
-        region: '伊拉亚城',
-        objective: '完成一次测试',
-        totalStages: 1,
-        rewardExperience: 20,
-        rewardGold: 0,
-        rewardGuildExperience: 0,
-        minimumLevel: 1,
-      },
-    });
-    const questId = `${profile.id}:commission:${taskId}`;
+    await repository.execute(profile.id,{id:'level-reward-material',type:'inventory.adjust',payload:{itemId:'城郊药草',name:'城郊药草',delta:5}});
+    const questId=`${profile.id}:commission:${taskId}`;
+    // An already accepted pre-refresh quest still settles and grants level rewards.
+    await database.questRecords.put({id:questId,profileId:profile.id,definitionId:taskId,kind:'commission',
+      title:'升级奖励测试委托',region:'伊拉亚城',objective:'提交城郊药草',status:'active',currentStage:0,totalStages:1,
+      commissionVersion:2,commissionType:'gather',commissionItems:[{itemId:'城郊药草',count:5}],
+      rewardExperience:20,rewardGold:0,rewardGuildExperience:0,updatedAt:Date.now()});
     await repository.execute(profile.id, {
       id: 'progress-level-reward-commission',
       type: 'quest.commission-progress',

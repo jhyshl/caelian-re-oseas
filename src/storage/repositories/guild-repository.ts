@@ -4,10 +4,30 @@ import { grantPlayerExperience } from '@/player/progression';
 import { normalizeRegion } from '@/worldbook/region-switcher';
 import type { CaelianDatabase } from '@/storage/database';
 import { loadGuildCatalogs } from '@/content/catalogs/guild';
-import { commissionBoard, commissionGoalsMet, escortDestinations } from '@/guild-commissions';
+import { commissionBoard, commissionGoalsMet, escortDestinations, dailyCommissionBoard } from '@/guild-commissions';
+import { loadCommissionSources } from '@/content/catalogs/commissions';
+import { localDayKey } from '@/daily-refresh';
 
 export class GuildRepository {
-  constructor(private readonly db: CaelianDatabase) {}
+  constructor(private readonly db: CaelianDatabase, private readonly now: () => Date = () => new Date()) {}
+
+  async refreshCommissions(profileId: string) {
+    const day = localDayKey(this.now());
+    const existing = await this.db.guildStates.get(profileId);
+    if (!existing) return [];
+    if (existing.commissionBoard?.version === 3 && existing.commissionBoard.day === day) return existing.commissionBoard.tasks;
+    const sources = await loadCommissionSources();
+    return this.db.transaction('rw', [this.db.guildStates, this.db.regionAccess], async () => {
+      const guild = await this.db.guildStates.get(profileId);
+      if (!guild) return [];
+      if (guild.commissionBoard?.version === 3 && guild.commissionBoard.day === day) return guild.commissionBoard.tasks;
+      const access = await this.db.regionAccess.where('profileId').equals(profileId).toArray();
+      const tasks = dailyCommissionBoard(sources, access, day);
+      guild.commissionBoard = {version:3,day,tasks};
+      await this.db.guildStates.put(guild);
+      return tasks;
+    });
+  }
 
   async acceptCommission(
     profileId: string,
@@ -29,9 +49,15 @@ export class GuildRepository {
     const player = await this.db.playerStates.get(profileId);
     if (!player) throw new Error('玩家档案不存在');
     if (!player.created) throw new Error('请先创建冒险者');
-    const { tasks } = await loadGuildCatalogs();
+    const tasks = await this.refreshCommissions(profileId);
     const definition = tasks.find(task => task.id === input.taskId);
-    if (definition) input = { ...input, commissionType: definition.type as typeof input.commissionType, targetName: definition.target, totalStages: definition.count ?? 1 };
+    if (!definition) throw new Error('委托已在本地时间零点刷新，请重新选择');
+    input = { ...input, title:definition.name, region:definition.region, objective:definition.desc,
+      commissionType:definition.type as typeof input.commissionType, targetName:definition.target,
+      totalStages:definition.count ?? 1, minimumLevel:definition.lvl, destination:definition.destination,
+      rewardExperience:definition.xp, rewardGold:definition.gold, rewardGuildExperience:definition.gxp };
+    const currentWorld = await this.db.worldStates.get(profileId);
+    if (normalizeRegion(currentWorld?.region || currentWorld?.location) !== normalizeRegion(input.region)) throw new Error('请先到委托所在地接取任务');
     if (!input.commissionType || input.commissionType === 'investigate') throw new Error('该旧委托需要刷新为战斗或提交物品任务');
     if (input.commissionType === 'combat_gather' && !definition?.items?.length) throw new Error('复合委托缺少物品目标');
     if (input.commissionType === 'escort') {
@@ -58,6 +84,7 @@ export class GuildRepository {
     if (active >= 3) throw new Error('同时最多接受 3 个协会委托');
 
     const id = `${profileId}:commission:${input.taskId}`;
+    if (await this.db.questHistory.get(id)) throw new Error('该委托今日已完成，请等待零点刷新');
     if (await this.db.questRecords.get(id)) {
       throw new Error('该委托已经在任务列表中');
     }

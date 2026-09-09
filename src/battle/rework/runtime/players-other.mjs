@@ -1,3 +1,4 @@
+import {bestSkillTarget} from './tactical-ai.mjs';
 import {createPlayerController,stat,has,badTypes} from './common-player.mjs';
 export const OTHER_PROFESSIONS=['holy_knight','shadow_knight','dragon_knight','alchemist','apothecary','blacksmith','mechanic','priest','nun','vampire_hunter','weapon_master','astrologer','dark_priest','merchant','magician'];
 const safeDiscovery=['hk_oath_guard','hk_lumen_slash','hk_shield_prayer','hk_bless_weapon','hk_pure_light','hk_judgement_edge','hk_holy_heal','hk_reflect_shield','hk_chain_light','hk_immaculate','sk_shadow_cut','sk_bleed_stab','sk_shadow_bind','sk_life_rend','sk_panic_blade','dk_dragon_claw','dk_scale_guard','dk_flame_breath','dk_roar','dk_wing_guard','dk_skyfall','al_acid_vial','al_toxic_mix','al_glass_bomb','ap_healing_touch','ap_cleansing_mist','ap_sleeping_spores','ap_restorative_rain','ap_paralysis_powder','pr_cleanse','pr_light_chain','vh_silver_dagger','vh_silver_net','wmst_cross_cut','wmst_blunt_hit','wmst_counter_guard'];
@@ -53,7 +54,8 @@ export function createOtherHooks(profession){if(!OTHER_PROFESSIONS.includes(prof
  case'深渊仆从':index=(p.resources['理智']||0)<30&&(pet.flags.retraces||0)<2?1:0;if(index===1)pet.flags.retraces=(pet.flags.retraces||0)+1;break;
  default:throw Error('UNKNOWN_OTHER_SUMMON '+n);}
  const chosen=pet.skills[index];pet.flags.skillLastRound??={};const isTaunt=k=>k.effects.some(e=>e.kind==='buff'&&e.status==='嘲讽');const ready=k=>!k.cooldown||g.round-(pet.flags.skillLastRound[k.name]??-100)>=k.cooldown;
- let skill=chosen;if(!ready(skill)||isTaunt(skill)&&g.allies.some(a=>a.hp>0&&has(a,'taunt')))skill=pet.skills.find(k=>!isTaunt(k)&&ready(k));if(!skill)return undefined;pet.flags.skillLastRound[skill.name]=g.round;return skill;
+ const useful=k=>k.effects.some(e=>!['damage','heal','shield','buff','debuff','dot','cleanse','dispel'].includes(e.kind))||(bestSkillTarget(g,pet,k)?.value??0)>0;
+ let skill=chosen;if(!ready(skill)||!useful(skill)||isTaunt(skill)&&g.allies.some(a=>a.hp>0&&has(a,'taunt')))skill=pet.skills.filter(k=>!isTaunt(k)&&ready(k)&&useful(k)).sort((a,b)=>(bestSkillTarget(g,pet,b)?.value??0)-(bestSkillTarget(g,pet,a)?.value??0))[0];if(!skill)return undefined;pet.flags.skillLastRound[skill.name]=g.round;return skill;
  }
  };
 }

@@ -25,7 +25,7 @@ describe('战斗技能查看入口', () => {
     const game = new GameRepository(db, new EventBus(), { random: () => 0 });
     const profile = await game.ensureProfile('ui-' + crypto.randomUUID());
     await game.execute(profile.id, { id: 'create', type: 'player.create', payload: { name: '显示验证', classMain: 'knight', subclass: 'holy_knight' } });
-    await game.execute(profile.id, { id: 'start', type: 'battle.start', payload: { monsterId: 'mon_slime', source: '显示验证' } });
+    await game.execute(profile.id, { id: 'start', type: 'battle.start', payload: { monsterId: 'mon_slime', source: '显示验证', companionPresent:true, storyTriggered:true } });
     const snapshot = await game.snapshot(profile.id);
     expect(snapshot.battle?.state.enemies.length).toBeGreaterThan(0);
     snapshot.battle!.state.enemies[0]!.critRate = 100 / 6;
@@ -64,5 +64,14 @@ describe('战斗技能查看入口', () => {
     expect(host.querySelector('.intent')).not.toBeNull();
     expect(host.textContent).toContain('秘密行动');
     expect(host.textContent).not.toContain('伤害预览按命中');
+    [...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent?.includes('凯利安 · 查看技能'))!.click();
+    await nextTick();
+    const partyDialog=document.querySelector('[role="dialog"]')!;
+    expect(partyDialog.querySelectorAll('article')).toHaveLength(8);
+    expect(partyDialog.textContent).toContain('黎明誓约');expect(partyDialog.textContent).toContain('圣辉镇压');expect(partyDialog.textContent).toContain('4 AP');
+    partyDialog.querySelector<HTMLButtonElement>('button')!.click();await nextTick();
+    [...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent?.includes('特莱奥 · 查看技能'))!.click();await nextTick();
+    const petDialog=document.querySelector('[role="dialog"]')!;
+    expect(petDialog.querySelectorAll('article')).toHaveLength(3);expect(petDialog.textContent).toContain('圣翼庇护');expect(petDialog.textContent).toContain('震慑龙息');
   });
 });

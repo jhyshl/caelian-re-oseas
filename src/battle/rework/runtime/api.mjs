@@ -117,6 +117,7 @@ export function choose(state,index,finish=false){
 }
 export function endPlayer(g){if(g.player.hp>0)g.controller.endTurn(g);g.endPhase(g.player);g.endSide('player');}
 export function enemiesTurn(g){
+  g.phase='enemy';g.log('turn',{phase:'enemy',name:'敌方行动'});
   for(const a of [...g.livingEnemies()].sort((a,b)=>(a.slot??0)-(b.slot??0)||a.id.localeCompare(b.id))){
     if(g.player.hp<=0)break;
     if(a.definition?.tier==='boss'||a.flags?.bossHelper)actBoss(g,a);else actEnemy(g,a);
@@ -146,7 +147,7 @@ function animation(g,state,e,label){
   const kind=e.type==='action_start'?(side(source)==='enemy'?'enemy-action':side(source)==='player'?'card':'companion-action'):['damage','heal','shield','draw','turn'].includes(e.type)?e.type:['buff','debuff','dot_apply','miss'].includes(e.type)?'status':null;
   if(!kind)return;state.animations??=[];
   state.reworkAnimationSequence=(state.reworkAnimationSequence??0)+1;
-  state.animations.push({id:'rework-animation:'+state.reworkAnimationSequence,turn:g.round,kind,sourceId:source,sourceSide:source?side(source):'system',targetId:target,targetSide:target?side(target):undefined,amount:Math.round(e.damage??e.amount??e.count??0),hpAfter:e.hp===undefined?undefined:Math.ceil(e.hp),shieldAfter:e.shield===undefined?undefined:Math.ceil(e.shield),phaseAfter:e.type==='turn'?'player':undefined,turnAfter:e.type==='turn'?g.round:undefined,cardInstanceId:e.uid===undefined?undefined:String(e.uid),label:label||e.name||(e.type==='turn'?'第'+g.round+'回合':kind==='draw'?'抽取'+e.count+'张牌':'状态变化')});
+  state.animations.push({id:'rework-animation:'+state.reworkAnimationSequence,turn:g.round,kind,sourceId:source,sourceSide:source?side(source):'system',targetId:target,targetSide:target?side(target):undefined,amount:Math.round(e.damage??e.amount??e.count??0),hpAfter:e.hp===undefined?undefined:Math.ceil(e.hp),shieldAfter:e.shield===undefined?undefined:Math.ceil(e.shield),apAfter:e.apAfter,phaseAfter:e.type==='turn'?(e.phase??'player'):undefined,turnAfter:e.type==='turn'?g.round:undefined,cardInstanceId:e.uid===undefined?undefined:String(e.uid),label:label||e.name||(e.type==='turn'?'第'+g.round+'回合':kind==='draw'?'抽取'+e.count+'张牌':'状态变化')});
   state.animations=state.animations.slice(-160);
 }
 export function project(g,state,options={}){
@@ -156,17 +157,18 @@ export function project(g,state,options={}){
     const i=a.intent;if(i){const s=i.skill??{},raw=i.damageEstimate??[0,0],isBoss=a.flags?.boss||a.flags?.bossHelper,condition=typeof i.conditional==='string'?i.conditional:Object.entries(i.conditional??{}).map(([k,v])=>k+' '+v).join('，'),desc=isBoss?describeBossIntent(g,a):[s.summary,condition,s.telegraph,s.fallback,i.description].filter(Boolean).join('；');e.mechanicDescription=isBoss?describeBossState(g,a):undefined;e.intent={skillId:i.skillId??s.id,name:i.skillName??s.name??'机制行动',kind:(s.effects??[]).some(e=>(e.type??e.kind)==='damage')?'attack':'buff',description:desc,amount:Math.round(raw[0]),hits:Math.max(1,...(s.effects??[]).map(e=>e.hits??1)),targetIds:i.effectTargets?.flatMap(r=>r.targetIds)??[i.targetId],cooldown:s.cooldown??0,guardThreshold:i.guardThreshold};}else e.intent=null;
   }
   const companion=g.allies.find(a=>a.isCompanion);if(companion&&state.companion){projectActor(companion,state.companion);if(companion.hp<=0){state.companion.injured=true;state.companion.shield=0;}state.companion.summons=g.allies.filter(a=>a.isCompanionSummon&&a.hp>0).map(a=>{const dto=(state.companion.summons??[]).find(x=>x.id===a.id)??{id:a.id,name:a.name};projectActor(a,dto);return dto;});}
-  state.turn=g.round;state.phase=state.status!=='ongoing'?'ended':g.phase==='enemy'?'enemy':'player';state.reworkOutcome=g.outcome;state.contextActions=contextActions(g).map(c=>({id:c.id,name:c.name,ap:c.ap,description:c.effect,available:c.enabled,reason:c.reason,remaining:c.remaining}));
+  state.turn=g.round;state.phase=state.status!=='ongoing'?'ended':['enemy','companion'].includes(g.phase)?g.phase:'player';state.reworkOutcome=g.outcome;state.contextActions=contextActions(g).map(c=>({id:c.id,name:c.name,ap:c.ap,description:c.effect,available:c.enabled,reason:c.reason,remaining:c.remaining}));
   state.reworkCards=Object.fromEntries(p.hand.map(c=>{const target=g.enemies[state.selectedTarget]??g.livingEnemies()[0];return [String(c.uid),{cost:c.ruleCost??(c.legacy?null:g.controller.price(g,c,false,target)),available:c.legacy?true:g.canAct&&g.controller.canPlay(g,c,target),stars:c.star??1,goldCost:c.id==='me_bribe'?Math.ceil(g.encounterGoldReward*1.5):undefined}];}));
   for(const e of g.trace??[]){let text='';const name=id=>id==='player'?state.player.name:state.enemies.find(a=>a.id===id)?.name??g.allies.find(a=>a.id===id)?.name??id;
     if(e.type==='damage')text=(e.dot?'持续伤害：':'')+name(e.source)+' → '+name(e.target)+' '+Math.round(e.damage)+'伤害'+(e.crits?'（'+e.crits+'段暴击）':'');
     if(e.type==='heal'||e.type==='shield')text=name(e.source)+'为'+name(e.target)+(e.type==='heal'?'恢复':'提供护盾')+Math.round(e.amount);
     if(e.type==='play_card')text='使用「'+(cards.get(e.card)?.name??e.card)+'」，消耗'+e.ap+'AP';
+    if(e.type==='party_action')text=name(e.source)+'消耗 '+e.ap+' AP，施放「'+e.name+'」';
     if(e.type==='enemy_action')text=name(e.actor)+'使用「'+(g.enemies.find(a=>a.id===e.actor)?.definition?.skills?.find(s=>s.id===e.executed)?.name??e.executed)+'」'+(e.fallback?'（按预告回退）':'');
     if(e.type==='miss')text=name(e.target)+'闪避了'+name(e.source)+'的攻击';
     if(e.type.startsWith('boss_'))text=describeBossEvent(g,e)||e.text||e.message||'';
     animation(g,state,e,text);
-    if(text)state.log.push({id:'rework:'+g.round+':'+state.log.length,turn:g.round,kind:e.source==='player'||e.type==='play_card'?'player':'enemy',text});
+    if(text)state.log.push({id:'rework:'+g.round+':'+state.log.length,turn:g.round,kind:e.source==='player'||e.type==='play_card'||e.type==='party_action'?'player':'enemy',text});
   }
   if(state.workshopTest)state.workshopRuleTrace=structuredClone(p.flags.workshopPrograms?.trace??[]);
   state.log=state.log.slice(-200);g.trace=[];if(options.checkpoint!==false)state.rework=snapshot(g);
