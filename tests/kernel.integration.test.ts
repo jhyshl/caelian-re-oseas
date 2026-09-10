@@ -2679,7 +2679,7 @@ describe('CaelianKernel integration', () => {
           (await kernel.api.getTrackedQuest())?.tracker.current.currentNodeId,
         { timeout: 10_000 },
       )
-      .toBe('flora-selling-flowers');
+      .toBe('flora-encounter');
 
     await kernel.api.pauseTrackedQuest();
     chat.push({
@@ -2695,7 +2695,7 @@ describe('CaelianKernel integration', () => {
     ).toHaveLength(1);
 
     const resumed = await kernel.api.resumeTrackedQuest();
-    expect(resumed?.tracker.current.trackerState).toBe('tracking');
+    expect(resumed?.tracker.current.trackerState).toBe('armed');
     chat.push({
       mes: '重新追踪后，这条回复应继续交给副 API 判定。',
       is_user: false,

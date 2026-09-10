@@ -206,6 +206,11 @@ export interface QuestProgressSnapshot extends QuestDeferredProgressSnapshot {
 }
 
 export interface QuestTrackerRecord {
+  /** Completion rewards are issued once even if a completed floor is rerolled. */
+  completionRewarded?: boolean;
+  completedQuest?: QuestRecord;
+  completedSelected?: boolean;
+  retentionFloor?: number;
   manualRevision?: number;
   id: string;
   profileId: string;

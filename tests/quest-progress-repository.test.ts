@@ -61,7 +61,24 @@ async function setup() {
 }
 
 describe('QuestProgressRepository', () => {
-  it('原子发放合法剧情赠礼，并在楼层变化后保留已提交结果', async () => {
+  it('只保存最近十楼；回退后同楼层的新正文重新绑定且重复事件不发双份赠礼', async () => {
+    const { database, quest, repository } = await setup();
+    for (let index=0; index<14; index++) await repository.bindFloor('profile', {
+      questId:quest.id, floor:floor(index,`body-${index}`,`lineage-${index}`), judgeResult:{}, summary:`第${index}楼`,
+      next:{status:'active',trackerState:'tracking',currentStage:1,currentNodeId:`node-${index}`,objective:'继续调查'},
+    });
+    expect((await repository.listCheckpoints('profile',quest.id)).map(item=>item.floorIndex)).toEqual([4,5,6,7,8,9,10,11,12,13]);
+    await repository.rollbackFromFloor('profile',12);
+    expect((await repository.getTracker('profile',quest.id))?.current).toMatchObject({currentNodeId:'node-11',summary:'第11楼'});
+    const input={questId:quest.id,floor:floor(12,'rerolled','new-lineage'),judgeResult:{},summary:'新分支',
+      giftItems:[{itemId:'小血瓶',itemName:'小血瓶',count:1}],
+      next:{status:'active' as const,trackerState:'tracking' as const,currentStage:1,currentNodeId:'new-branch',objective:'新目标'}};
+    await repository.bindFloor('profile',input);await repository.bindFloor('profile',input);
+    expect((await repository.getTracker('profile',quest.id))?.current.currentNodeId).toBe('new-branch');
+    expect((await database.inventoryStacks.get('profile:小血瓶'))?.quantity).toBe(1);
+    expect((await repository.listCheckpoints('profile',quest.id)).some(item=>item.floorIndex===13)).toBe(false);
+  });
+  it('原子发放合法剧情赠礼，并在删除楼层后撤回该楼赠礼', async () => {
     const { database, quest, repository } = await setup();
     await repository.bindFloor('profile', {
       questId: quest.id,
@@ -80,12 +97,8 @@ describe('QuestProgressRepository', () => {
     expect(await database.inventoryStacks.get('profile:小血瓶')).toMatchObject({
       quantity: 2,
     });
-    await expect(repository.rollbackFromFloor('profile', 2)).resolves.toEqual(
-      [],
-    );
-    expect(await database.inventoryStacks.get('profile:小血瓶')).toMatchObject({
-      quantity: 2,
-    });
+    expect(await repository.rollbackFromFloor('profile', 2)).toHaveLength(1);
+    expect(await database.inventoryStacks.get('profile:小血瓶')).toBeUndefined();
   });
 
   it('把副 API 结果、摘要和任务状态绑定到同一个楼层', async () => {
@@ -126,7 +139,7 @@ describe('QuestProgressRepository', () => {
     });
   });
 
-  it('删除楼层时不撤销已经确认的任务进度', async () => {
+  it('删除楼层时恢复到保留楼层的节点和摘要', async () => {
     const { database, quest, repository } = await setup();
     await repository.bindFloor('profile', {
       questId: quest.id,
@@ -156,17 +169,17 @@ describe('QuestProgressRepository', () => {
     });
 
     const result = await repository.rollbackFromFloor('profile', 4);
-    expect(result).toEqual([]);
+    expect(result).toHaveLength(1);
     expect(await repository.listCheckpoints('profile', quest.id)).toHaveLength(
-      2,
+      1,
     );
     expect(await database.questRecords.get(quest.id)).toMatchObject({
-      currentStage: 2,
-      objective: '追踪足迹',
+      currentStage: 1,
+      objective: '调查现场',
     });
   });
 
-  it('较早楼层被编辑时保留已确认节点并避免重复判定', async () => {
+  it('较早楼层被编辑时回退并允许重生成后重新判定', async () => {
     const { database, quest, repository } = await setup();
     await repository.bindFloor('profile', {
       questId: quest.id,
@@ -185,9 +198,9 @@ describe('QuestProgressRepository', () => {
     const result = await repository.reconcileFloors('profile', [
       floor(4, 'same-reply', 'edited-lineage'),
     ]);
-    expect(result).toEqual([]);
+    expect(result).toHaveLength(1);
     expect(await repository.listCheckpoints('profile', quest.id)).toHaveLength(
-      1,
+      0,
     );
     await expect(
       repository.hasCheckpointForFloor(
@@ -195,10 +208,10 @@ describe('QuestProgressRepository', () => {
         quest.id,
         floor(4, 'same-reply-edited', 'edited-lineage'),
       ),
-    ).resolves.toBe(true);
+    ).resolves.toBe(false);
     expect(await database.questRecords.get(quest.id)).toMatchObject({
-      currentStage: 1,
-      objective: '继续调查',
+      currentStage: 0,
+      objective: '前往任务地点',
     });
   });
 });

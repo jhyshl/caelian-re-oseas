@@ -6,6 +6,7 @@ import { hasSuccessionEvidence, imperialNoticeKey, initialImperialState, winnerI
   type ImperialFact, type ImperialNotice, type ImperialResult, type ImperialState } from './model';
 import { stripImperialContext, type ImperialPromptInput } from './prompt';
 import { IMPERIAL_FACTIONS, IMPERIAL_HEIRS } from './constants';
+import { decodeImperialRecord, imperialRecordAuthority } from './history';
 
 export async function evaluateImperialTurn(input: {
   profileId: string; quest: QuestRecord; floor: TavernFloorReference;
@@ -26,49 +27,54 @@ export async function evaluateImperialTurn(input: {
   const body = stripImperialContext(input.floor.text ?? '');
   const conversation = input.prompt.recentMessages.map(message => stripImperialContext(message.content)).join('\n');
   const playerWords = input.prompt.recentMessages.filter(message => message.role === 'user').map(message => message.content).join('\n');
-  const preserveKnowledge = (next: ImperialFact, old: ImperialFact) => {
-    if (next.known && !(old.known && old.text === next.text) && (!next.evidence || !conversation.includes(next.evidence))) {
+  const priorRecord = decodeImperialRecord(input.prompt.previousRecord?.content ?? '');
+  const authority = imperialRecordAuthority(priorRecord);
+  const preserveKnowledge = (next: ImperialFact) => {
+    if (next.known && !priorRecord.includes(`${next.text}（User知情`) && !priorRecord.includes(`${next.text}（玩家知情）`) &&
+      (!next.evidence || !conversation.includes(next.evidence))) {
       next.known = false;
     }
   };
-  preserveKnowledge(result.state.currentEvent, previous.currentEvent);
+  preserveKnowledge(result.state.currentEvent);
   for (const name of IMPERIAL_HEIRS) {
-    const next = result.state.royals[name], old = previous.royals[name];
-    for (const key of ['plan', 'action', 'next'] as const) preserveKnowledge(next[key], old[key]);
-    for (const fact of next.history) preserveKnowledge(fact, old.history.find(item => item.text === fact.text) ?? { text: '', known: false, evidence: '' });
+    const next = result.state.royals[name];
+    for (const key of ['plan', 'action', 'next'] as const) preserveKnowledge(next[key]);
+    for (const fact of next.history) preserveKnowledge(fact);
   }
-  for (const key of ['status', 'movement'] as const) preserveKnowledge(result.state.emperor[key], previous.emperor[key]);
+  for (const key of ['status', 'movement'] as const) preserveKnowledge(result.state.emperor[key]);
   for (const name of IMPERIAL_FACTIONS) {
-    for (const key of ['movement', 'stance', 'divisions'] as const) preserveKnowledge(result.state.factions[name][key], previous.factions[name][key]);
+    for (const key of ['movement', 'stance', 'divisions'] as const) preserveKnowledge(result.state.factions[name][key]);
     const score = result.state.support[name];
-    if (score.value !== previous.support[name].value && (!score.evidence || !conversation.includes(score.evidence))) {
-      result.state.support[name] = previous.support[name];
+    if (!score.evidence || !(conversation.includes(score.evidence) || priorRecord.includes(score.evidence) || score.evidence.startsWith('幕后推演：'))) {
+      result.state.support[name] = authority.support[name];
     }
   }
-  if ((result.state.playerCamp !== previous.playerCamp || result.state.playerClaimingThrone !== previous.playerClaimingThrone) &&
-    (!result.state.campEvidence || !playerWords.includes(result.state.campEvidence))) {
-    result.state.playerCamp = previous.playerCamp;
-    result.state.playerClaimingThrone = previous.playerClaimingThrone;
-    result.state.campEvidence = previous.campEvidence;
+  for (const candidate of result.state.successionLikelihood) preserveKnowledge(candidate.reason);
+  if ((result.state.playerCamp !== authority.playerCamp || result.state.playerClaimingThrone !== authority.playerClaimingThrone) &&
+    (!result.state.campEvidence || !(playerWords.includes(result.state.campEvidence) || priorRecord.includes(result.state.campEvidence)))) {
+    result.state.playerCamp = authority.playerCamp;
+    result.state.playerClaimingThrone = authority.playerClaimingThrone;
+    result.state.campEvidence = authority.campEvidence;
   }
   if (result.state.playerClaimingThrone) result.state.playerCamp = '自己';
   const reported = new Set(previous.reportedProgress);
   const notices = result.majorProgress.filter(notice => {
     const key = imperialNoticeKey(notice);
-    if (!notice.known || !body.includes(notice.evidence) || reported.has(key)) return false;
+    if (!notice.known || !conversation.includes(notice.evidence) || reported.has(key)) return false;
     reported.add(key); return true;
   });
   const completed = hasSuccessionEvidence(result, body);
   const state: ImperialState = {
     ...result.state, revision: previous.revision + 1, updatedAt: Date.now(),
     lastFloor: { index: input.floor.index, fingerprint: input.floor.fingerprint, lineageHash: input.floor.lineageHash },
-    reportedProgress: [...reported], ...(completed ? { winner: result.succession.winner } : {}),
+    reportedProgress: [...reported], majorProgress: notices, ...(completed ? { winner: result.succession.winner } : {}),
   };
   const current = latest.current;
   const updated = await input.progress.bindFloor(input.profileId, {
     questId: input.quest.id, floor: input.floor, summary: result.summary,
     baseline: initialQuestProgress(imperialQuestDefinition), expectedNodeId: current.currentNodeId,
     expectedAcceptedAt: input.quest.acceptedAt, expectedImperialRevision: previous.revision,
+    expectedManualRevision: latest.manualRevision ?? 0,
     judgeResult: { mode: 'imperial', succession: result.succession, completionAccepted: completed },
     next: { ...current, imperial: state,
       ...(completed ? { status: 'ready', trackerState: 'ended', currentNodeId: 'imperial:ready', completionConfirmed: true,

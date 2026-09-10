@@ -22,6 +22,7 @@ import { readCharacterTarget } from './character-target';
 import { IMPERIAL_GUIDANCE_ENTRY } from '@/imperial/constants';
 import { imperialHistoryContext, stripImperialContext } from '@/imperial/prompt';
 import type { ImperialState } from '@/imperial/model';
+import { readImperialRecord } from '@/imperial/history';
 import { isCaelianWorldbookName } from '@/content/character-identity';
 
 export interface TavernEventPayload {
@@ -437,13 +438,27 @@ export class TavernAdapter {
     return verified.length === 1 && verified[0]!.enabled === enabled;
   }
 
-  async writeImperialHistory(floor: TavernFloorReference, state: ImperialState, chatId: string): Promise<boolean> {
+  async previousImperialRecord(beforeIndex: number): Promise<{ index: number; content: string } | null> {
+    const chat = (await this.context()).chat;
+    if (!chat) return null;
+    for (let index = Math.min(beforeIndex - 1, chat.length - 1); index >= 0; index--) {
+      const message = chat[index];
+      if (!message || message.is_user || message.isUser || message.is_system) continue;
+      const content = readImperialRecord(message.mes ?? message.message ?? message.content ?? '');
+      if (content) return { index, content };
+    }
+    return null;
+  }
+
+  async writeImperialHistory(floor: TavernFloorReference, state: ImperialState, chatId: string, repairOnly = false): Promise<boolean> {
     const floors = await this.chatFloors();
     if ((await this.identity()).chatId !== chatId || !floors?.some(item => item.id === floor.id && item.lineageHash === floor.lineageHash)) return false;
     const context = await this.context();
     const message = context.chat?.[floor.index];
     if (!message || message.is_user || message.isUser || message.is_system) return false;
     const body = message.mes ?? message.message ?? message.content ?? '';
+    // Preserve player edits to a tagged record; repairs only fill a missing record.
+    if (repairOnly && readImperialRecord(body)) return true;
     const text = stripImperialContext(body) + imperialHistoryContext(state);
     if (body === text) return true;
     for (const scope of this.apiScopes()) {

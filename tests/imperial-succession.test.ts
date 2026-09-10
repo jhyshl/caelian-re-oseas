@@ -14,6 +14,7 @@ import { evaluateImperialTurn } from '@/imperial/service';
 import { buildImperialJudgeMessages, imperialHistoryContext, stripImperialContext } from '@/imperial/prompt';
 import { mountImperialOverlay, type ImperialOverlay } from '@/modules/imperial/mount';
 import { loadRegionPlaces } from '@/content/catalogs/world';
+import { imperialRecordAuthority, readImperialRecord } from '@/imperial/history';
 import { normalizeRegion } from '@/worldbook/region-switcher';
 
 const databases: CaelianDatabase[] = [];
@@ -43,6 +44,38 @@ async function setup() {
 }
 
 describe('动荡的皇权',()=>{
+  it('升级旧版注释记录时保留支持值与自己争位阵营，只在读取时补齐标签',()=>{
+    const old='正文\n\n<!-- CAELIAN_IMPERIAL_STATE:v1 | User当前势力：议会 45/100；圣教会 未知/100；骑士团 12/100；赛梅斯商会 30/100 | User阵营：自己 | -->';
+    const record=readImperialRecord(old)!;
+    expect(record).toMatch(/^<caelian-imperial-state>/);expect(stripImperialContext(old)).toBe('正文');
+    const authority=imperialRecordAuthority(record);
+    expect(authority).toMatchObject({playerCamp:'自己',playerClaimingThrone:true,support:{议会:{value:45},圣教会:{value:null},骑士团:{value:12}}});
+  });
+  it('以正文标签而非数据库缓存为唯一继承基准，完整保留长记录和继承可能性',()=>{
+    const previous=initialImperialState(),cached=initialImperialState();
+    previous.playerCamp='玩家编辑后的阵营';previous.royals.卢修斯.plan.text='完整长记录'.repeat(3000);
+    previous.successionLikelihood=[{name:'瓦勒里乌斯',value:60,reason:{text:'第一顺位',known:true,evidence:'册立为储君'}},{name:'塞西莉亚',value:30,reason:{text:'政治联盟',known:false,evidence:'幕后部署'}},{name:'卢修斯',value:10,reason:{text:'资源较少',known:false,evidence:'既有设定'}}];
+    cached.playerCamp='过期缓存阵营';const record=imperialHistoryContext(previous);
+    const messages=buildImperialJudgeMessages({state:cached,previousRecord:{index:3,content:record},playerName:'测试玩家',currentLocation:'旅店',worldbook:'原世界书',recentMessages:[]});
+    expect(messages[1]!.content).toContain(record);expect(messages[1]!.content).not.toContain('过期缓存阵营');
+    expect(record).toContain('瓦勒里乌斯：60%');expect(record).toContain('当前皇位继承可能性');
+    const invalid={state:{...initialImperialState(),successionLikelihood:[{name:'卢修斯',value:150,reason:{text:'',known:false,evidence:''}}]},summary:'',majorProgress:[],succession:{completed:false,winner:'',winnerIsPlayer:false,confidence:0,evidence:''}};
+    expect(imperialResultSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it('完成楼层删除后恢复皇权任务，再次完成不重复发放奖励',async()=>{
+    const h=await setup(),result=h.response(),body='塞西莉亚正式登基。';
+    result.succession={completed:true,winner:'塞西莉亚',winnerIsPlayer:false,confidence:1,evidence:body};
+    h.input.floor.text=body;h.input.prompt.recentMessages[1]!.content=body;h.judge.evaluateImperial.mockResolvedValue(result);
+    await evaluateImperialTurn(h.input);await h.repository.completeQuestDefinition(h.profile.id,imperialQuestDefinition);
+    const count=(await h.db.guildStates.get(h.profile.id))!.completedTaskCount;
+    await h.progress.rollbackFromFloor(h.profile.id,1);
+    expect((await h.db.questRecords.get(h.quest.id))?.status).toBe('active');
+    expect(await h.db.questHistory.get(h.quest.id)).toBeUndefined();
+    expect((await h.progress.selectedTracker(h.profile.id))?.questId).toBe(h.quest.id);
+    await evaluateImperialTurn(h.input);await h.repository.completeQuestDefinition(h.profile.id,imperialQuestDefinition);
+    expect((await h.db.guildStates.get(h.profile.id))!.completedTaskCount).toBe(count);
+  });
   it('六级任意地区可接取，未达等级不可接取，目录没有剧情节点',async()=>{
     const catalog=await new QuestCatalogLoader(window).load();
     for(const region of ['圣德里安学院','炉心城','未知地区']){
@@ -122,7 +155,7 @@ describe('动荡的皇权',()=>{
 
   it('副 API 提示词替换剧情判定规则，并保留世界书和最近对话资料',()=>{
     const messages=buildImperialJudgeMessages({state:initialImperialState(),playerName:'测试玩家',currentLocation:'炉心城',worldbook:'未改动的世界书内容',recentMessages:[{role:'user',content:'玩家原文'},{role:'assistant',content:'正文原文'}]});
-    expect(messages[0]!.content).toContain('不进行剧情节拍');expect(messages[0]!.content).toContain('唯一完成标准');
+    expect(messages[0]!.content).toContain('不输出剧情节拍判定');expect(messages[0]!.content).toContain('唯一完成标准');
     expect(messages[1]!.content).toContain('未改动的世界书内容');expect(messages[1]!.content).toContain('正文原文');
     expect(messages[1]!.content).not.toContain('完整路线图');
     expect(()=>imperialResultSchema.parse({state:{}})).toThrow();
@@ -133,17 +166,18 @@ describe('动荡的皇权',()=>{
     const body='正文\n包含原来的格式';const text=body+imperialHistoryContext(state);
     const target=document.createElement('div');target.innerHTML=text;
     expect(target.textContent).toBe(body+'\n\n');expect(target.querySelector('img')).toBeNull();
-    expect(text).toContain(' | User当前势力');expect(text).toContain('莱奥尼达斯');expect(text).toContain('内部成员分歧');
+    expect(text).toContain('|\nUser当前势力');expect(text).toContain('莱奥尼达斯');expect(text).toContain('内部成员分歧');
     expect(stripImperialContext(text)).toBe(body);
-    expect((stripImperialContext(text)+imperialHistoryContext(state)).match(/CAELIAN_IMPERIAL_STATE:v1/g)).toHaveLength(1);
+    expect((stripImperialContext(text)+imperialHistoryContext(state)).match(/<caelian-imperial-state>/g)).toHaveLength(1);
   });
 
-  it('独立浮窗按追踪显示、展开内容、休眠半透明，未知计划不进入可见 DOM',async()=>{
+  it('独立浮窗按追踪显示、展开内容、休眠半透明，幕后计划明确标注角色不知情',async()=>{
     vi.useFakeTimers();overlay=mountImperialOverlay(window);const state=initialImperialState();state.royals.卢修斯.plan.text='不可见秘密';
     overlay.update('alpha:test',true,state);await nextTick();
     const launcher=document.querySelector<HTMLButtonElement>('.imperial-launcher')!;expect(launcher).not.toBeNull();
     launcher.click();await nextTick();expect(document.querySelector('.imperial-panel')).not.toBeNull();
-    expect(document.querySelector('.imperial-panel')!.textContent).not.toContain('不可见秘密');
+    [...document.querySelectorAll<HTMLButtonElement>('.imperial-tabs button')].find(button=>button.textContent==='皇室')!.click();await nextTick();
+    expect(document.querySelector('.imperial-panel')!.textContent).toContain('不可见秘密（User不知情）');
     document.querySelector<HTMLButtonElement>('[aria-label="收起皇权状态栏"]')!.click();await nextTick();
     vi.advanceTimersByTime(5100);await nextTick();expect(launcher.classList.contains('sleeping')).toBe(true);
     overlay.update('alpha:test',false,state);await nextTick();expect(document.querySelector('.imperial-launcher')).toBeNull();

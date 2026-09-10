@@ -401,9 +401,10 @@ describe('副 API 与楼层编排', () => {
       ],
       requiredItemSubmission: { itemId: '圣心百合', count: 8 },
     };
+    const evaluate = vi.fn(async () => ({ result, rawResponse: '{}' }));
     const service = new QuestTrackerService(
       new QuestProgressRepository(database),
-      { evaluate: vi.fn(async () => ({ result, rawResponse: '{}' })) },
+      { evaluate },
     );
     const evaluated = await service.evaluateAssistantTurn({
       profileId: 'profile',
@@ -443,7 +444,15 @@ describe('副 API 与楼层编排', () => {
     });
     expect(await database.inventoryStacks.get('profile:不存在的礼物')).toBeUndefined();
     expect(await database.inventoryStacks.get('profile:圣心百合')).toBeUndefined();
-
+    result.giftItems=[];
+    for (const index of [3,4]) {
+      const waiting = await service.evaluateAssistantTurn({profileId:'profile',questRecord,quest:flora,
+        floor:{id:`${index}:waiting`,index,role:'assistant',fingerprint:'waiting',lineageHash:`waiting-${index}`},
+        currentLocation:'远方旅店',recentMessages:[],legalItems:[{itemId:'圣心百合',itemName:'圣心百合'}]});
+      expect(waiting).toMatchObject({status:'evaluated',decision:{accepted:false,next:{currentNodeId:'flora-encounter',
+        pendingItemSubmission:{requestedFloorIndex:2,deferredProgress:{currentNodeId:'flora-selling-flowers'}}}}});
+    }
+    expect(evaluate).toHaveBeenCalledTimes(3);
     const progress = new QuestProgressRepository(database);
     await expect(progress.submitPendingItem('profile', questRecord.id)).rejects.toThrow(
       '数量不足',
@@ -487,7 +496,7 @@ describe('副 API 与楼层编排', () => {
     ).toBe('https://api.example/openai/v1/responses');
   });
 
-  it('由本地背包推进、提交物品，并在楼层变化后保留结果再完成结算', async () => {
+  it('由本地背包推进、提交物品，并在删楼后返还交付物、回退节点，再完成结算', async () => {
     const database = new CaelianDatabase(
       'alpha',
       `caelian-tracker-local-actions-${crypto.randomUUID()}`,
@@ -587,13 +596,11 @@ describe('副 API 与楼层编排', () => {
     });
     expect((await repository.snapshot(profile.id)).inventory).toEqual([]);
 
-    await expect(
-      repository.rollbackQuestProgressFromFloor(profile.id, 6),
-    ).resolves.toEqual([]);
+    expect(await repository.rollbackQuestProgressFromFloor(profile.id, 6)).toHaveLength(1);
     expect(await repository.selectedQuestTracker(profile.id)).toMatchObject({
-      current: { currentNodeId: 'flora-offering-reaction', status: 'active' },
+      current: { currentNodeId: 'flora-await-offering', status: 'active' },
     });
-    expect((await repository.snapshot(profile.id)).inventory).toEqual([]);
+    expect((await repository.snapshot(profile.id)).inventory).toEqual([expect.objectContaining({itemId:'圣心百合',quantity:8})]);
     const endingProgress = floraProgressAt('flora-ending-ready');
     const { summary: endingSummary, ...endingNext } = endingProgress;
     await repository.bindQuestFloor(profile.id, {
@@ -1220,7 +1227,7 @@ describe('副 API 与楼层编排', () => {
     });
   });
 
-  it('尚未到场时不开判定，进入剧情后允许判断离场', async () => {
+  it('尚未到场仍每轮判定，进入剧情后也允许判断离场', async () => {
     const database = new CaelianDatabase(
       'alpha',
       `caelian-tracker-location-${crypto.randomUUID()}`,
@@ -1275,10 +1282,8 @@ describe('副 API 与楼层编排', () => {
       currentLocation: '旅店',
       recentMessages: [],
     });
-    expect(outside).toEqual({
-      status: 'skipped',
-      reason: 'outside-node-location',
-    });
+    expect(outside).toMatchObject({status:'evaluated'});
+    expect(judge.evaluate).toHaveBeenCalledTimes(1);
 
     await progress.selectQuest(
       'profile',
@@ -1313,7 +1318,7 @@ describe('副 API 与楼层编排', () => {
       status: 'evaluated',
       tracker: { current: { trackerState: 'detour' } },
     });
-    expect(judge.evaluate).toHaveBeenCalledOnce();
+    expect(judge.evaluate).toHaveBeenCalledTimes(2);
   });
 
   it('判定进行中取消追踪后丢弃迟到结果且不写入检查点', async () => {

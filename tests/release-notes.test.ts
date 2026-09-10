@@ -9,13 +9,14 @@ import {
 
 describe('release notes', () => {
   it('从当前版本开始按新到旧返回全部历史版本', () => {
-    const releases = releaseNotesFor('alpha', '0.2.0-alpha.78');
+    const releases = releaseNotesFor('alpha', '0.2.0-alpha.79');
 
-    expect(releases[0]?.version).toBe('0.2.0-alpha.78');
+    expect(releases[0]?.version).toBe('0.2.0-alpha.79');
     expect(releases).toEqual(ALPHA_RELEASE_NOTES);
     expect(releases.length).toBeGreaterThan(5);
     expect(releases[0]?.changes.join('\n')).toContain('动荡的皇权');
-    expect(releases[0]?.changes.join('\n')).toContain('不全量覆盖世界书');
+    expect(releases.find(r=>r.version==='0.2.0-alpha.78')?.changes.join('\n')).toContain('不全量覆盖世界书');
+    expect(releases[0]?.changes.join('\n')).toContain('最近十楼');
     expect(releases.find(r=>r.version==='0.2.0-alpha.77')?.changes.join('\n')).toContain('共用玩家剩余AP');
     expect(releases.find(r=>r.version==='0.2.0-alpha.77')?.changes.join('\n')).toContain('设备现实时间每天凌晨零点');
     expect(releases.find(r=>r.version==='0.2.0-alpha.77')?.changes.join('\n')).toContain('一至三种不同物品，每种五至二十个');
@@ -296,13 +297,13 @@ describe('release notes', () => {
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.999')[0]?.version).toBe(
-      '0.2.0-alpha.78',
+      '0.2.0-alpha.79',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.78',
+      '0.2.0-alpha.79',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });

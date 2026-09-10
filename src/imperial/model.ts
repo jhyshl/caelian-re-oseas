@@ -9,6 +9,9 @@ const royalSchema = z.object({
 });
 const factionSchema = z.object({ movement: imperialFactSchema, stance: imperialFactSchema, divisions: imperialFactSchema });
 const supportSchema = z.object({ value: z.number().min(0).max(100).nullable(), evidence: text });
+const likelihoodSchema = z.array(z.object({ name: z.string().min(1).max(160), value: z.number().min(0).max(100), reason: imperialFactSchema }))
+  .max(16).refine(items => !items.length || Math.abs(items.reduce((sum, item) => sum + item.value, 0) - 100) < 0.01,
+    '继承可能性的总和必须为 100').refine(items => new Set(items.map(item => item.name)).size === items.length, '候选人不能重复');
 export const imperialSnapshotSchema = z.object({
   support: z.object({ 议会: supportSchema, 圣教会: supportSchema, 骑士团: supportSchema, 赛梅斯商会: supportSchema }),
   currentEvent: imperialFactSchema,
@@ -16,6 +19,7 @@ export const imperialSnapshotSchema = z.object({
   royals: z.object({ 瓦勒里乌斯: royalSchema, 塞西莉亚: royalSchema, 卢修斯: royalSchema }),
   emperor: z.object({ status: imperialFactSchema, movement: imperialFactSchema }),
   factions: z.object({ 议会: factionSchema, 圣教会: factionSchema, 骑士团: factionSchema, 赛梅斯商会: factionSchema }),
+  successionLikelihood: likelihoodSchema.default([]),
 });
 export const imperialNoticeSchema = z.object({
   faction: z.string().min(1).max(120), title: z.string().min(1).max(120), detail: text,
@@ -40,13 +44,14 @@ export interface ImperialState extends ImperialSnapshot {
   lastFloor?: { index: number; fingerprint: string; lineageHash: string };
   reportedProgress: string[];
   winner?: string;
+  majorProgress?: ImperialNotice[];
 }
 
 export function initialImperialState(): ImperialState {
   const unknown = (): ImperialFact => ({ text: '尚无可靠情报', known: false, evidence: '' });
   const royal = () => ({ plan: unknown(), action: unknown(), next: unknown(), history: [] });
   return {
-    revision: 0, updatedAt: 0, reportedProgress: [],
+    revision: 0, updatedAt: 0, reportedProgress: [], successionLikelihood: [],
     support: Object.fromEntries(IMPERIAL_FACTIONS.map(name => [name, { value: null, evidence: '' }])) as ImperialSnapshot['support'],
     currentEvent: unknown(), playerCamp: '尚未表态', playerClaimingThrone: false, campEvidence: '',
     royals: { 瓦勒里乌斯: royal(), 塞西莉亚: royal(), 卢修斯: royal() },
@@ -56,7 +61,7 @@ export function initialImperialState(): ImperialState {
 }
 
 export function publicImperialFact(fact: ImperialFact): string {
-  return fact.known ? fact.text : '未知（玩家不知情）';
+  return `${fact.text}（User${fact.known ? '知情' : '不知情'}）`;
 }
 
 export function imperialNoticeKey(notice: ImperialNotice): string {

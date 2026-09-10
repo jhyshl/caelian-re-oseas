@@ -67,7 +67,6 @@ import { questNode, type QuestDefinition } from '@/quests/schema';
 import { initialQuestProgress } from '@/quests/state-machine';
 import {
   questLocationMatches,
-  questSceneActivationMatches,
   QuestTrackerService,
 } from '@/quests/tracker-service';
 import { QuestProgressRepository } from '@/storage/repositories/quest-progress-repository';
@@ -851,7 +850,7 @@ export class CaelianKernel {
     const profileId = this.requireProfile();
     const pending = await this.getPendingQuestSubmission();
     if (!pending) return null;
-    await this.repository.submitPendingQuestItem(profileId, pending.questId);
+    await this.repository.submitPendingQuestItem(profileId, pending.questId, (await this.adapter.chatFloors())?.at(-1));
     await this.syncQuestContext();
     await this.syncProjection();
     await this.events.emit('quest.submission-changed', { pending: false });
@@ -967,7 +966,7 @@ export class CaelianKernel {
   async completeTrackedQuestNode(input:{questId:string;expectedNodeId:string;expectedRevision:number;transitionId?:string}) {
     this.cancelQuestJudge();this.notifications.clearQuestGuidance();
     const profileId=this.requireProfile(),quest=await this.requireManagedQuest(profileId,input.questId);
-    const result=await this.repository.completeQuestNode(profileId,await this.questDefinition(quest),input);
+    const result=await this.repository.completeQuestNode(profileId,await this.questDefinition(quest),{ ...input, floor: (await this.adapter.chatFloors())?.at(-1) });
     await this.syncQuestContext();await this.syncProjection();
     await this.events.emit('quest.tracking-changed',{questId:result.completion?undefined:quest.id,trackerState:result.completion?'none':'tracking'});
     await this.events.emit('quest.submission-changed',{pending:false});
@@ -1111,7 +1110,14 @@ export class CaelianKernel {
       this.generationActive = false;
       this.adapter.host.document.body.classList.remove('caelian-generating');
     }
+    if (['MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_SWIPED'].includes(eventName)) {
+      this.cancelQuestJudge();
+      this.generationEpoch += 1;
+      this.handledStoryBattleFloors.clear();
+      this.missingQuestJudgeFloors.clear();
+    }
     if (this.isGenerationStartEvent(eventName)) {
+      this.cancelQuestJudge();
       // Mark synchronously at the adapter callback boundary so an interaction
       // cannot enter its transaction while this update is still queued.
       this.generationEpoch += 1;
@@ -1152,6 +1158,10 @@ export class CaelianKernel {
     generationEpoch = this.generationEpoch,
   ): Promise<void> {
     const profileChanged = eventName === 'CHAT_CHANGED';
+    if (this.isGenerationEndEvent(eventName) && generationEpoch !== this.generationEpoch) {
+      await this.events.emit('tavern.changed', { event: eventName });
+      return;
+    }
     if (eventName === 'ACHIEVEMENT_PATCH_CHANGED') {
       await this.syncAchievementPatches();
       if (this.profileId) {
@@ -1347,14 +1357,14 @@ export class CaelianKernel {
       'MESSAGE_DELETED',
       'MESSAGE_SWIPED',
     ].includes(eventName);
+    const floors = await this.adapter.chatFloors();
     const direct =
-      causalMutation && payload?.messageId !== undefined
+      causalMutation && payload?.messageId !== undefined && (!floors || eventName === 'MESSAGE_DELETED' || eventName === 'MESSAGE_SWIPED')
         ? await this.repository.rollbackQuestProgressFromFloor(
             this.profileId,
             payload.messageId,
           )
         : [];
-    const floors = await this.adapter.chatFloors();
     const reconciled = floors
       ? await this.repository.reconcileQuestProgress(
           this.profileId,
@@ -1365,6 +1375,9 @@ export class CaelianKernel {
     if (rollbacks.length === 0) return;
 
     this.notifications.clearQuestGuidance();
+    this.imperialOverlay?.clear();
+    if (rollbacks.some(result => result.historyLimited)) this.notifyRuntime('warning',
+      '删除范围超出最近十楼，已恢复到最早保留的进度。请核对任务节点后继续。', '任务历史超出保留范围');
 
     await this.events.emit('quest.progress-rolled-back', {
       questIds: [...new Set(rollbacks.map((result) => result.questId))],
@@ -1381,19 +1394,20 @@ export class CaelianKernel {
     payload?: TavernEventPayload,
   ): Promise<QuestEvaluationPresentation | undefined> {
     if (!this.profileId) return undefined;
+    const turnEpoch = this.generationEpoch;
     const imperial = await this.db.questRecords.where('profileId').equals(this.profileId)
       .filter(quest => quest.definitionId === IMPERIAL_QUEST_ID && quest.status === 'active').first();
     if (imperial) {
       await this.evaluateImperialQuest(imperial, payload);
-      return undefined;
     }
+    if (turnEpoch !== this.generationEpoch) return undefined;
     const tracker = await this.repository.selectedQuestTracker(
       this.profileId,
     );
     if (
       !tracker?.selected ||
       tracker.current.status !== 'active' ||
-      !['armed', 'tracking', 'detour'].includes(
+      !['armed', 'tracking', 'detour', 'suspended'].includes(
         tracker.current.trackerState,
       )
     ) {
@@ -1404,6 +1418,7 @@ export class CaelianKernel {
       (candidate) => candidate.id === tracker.questId,
     );
     if (!quest?.definitionId) return undefined;
+    if (quest.definitionId === IMPERIAL_QUEST_ID) return undefined;
     const catalog = await this.questCatalogs.load();
     const definition = catalog.get(quest.definitionId);
     if (!definition) return undefined;
@@ -1418,21 +1433,17 @@ export class CaelianKernel {
         ? direct
         : [...floors].reverse().find((item) => item.role === 'assistant');
     if (!floor) return undefined;
+    if (floor.id !== [...floors].reverse().find(item => item.role === 'assistant')?.id) return undefined;
+    const profileId = this.profileId;
+    const epoch = this.generationEpoch;
+    const identity = await this.adapter.identity();
     const currentLocation = this.snapshotLocation(snapshot);
     const recentMessages = await this.adapter.chatConversation();
 
     if (!this.questTracker) {
-      const node = questNode(definition, tracker.current.currentNodeId);
-      const trackerActive = ['armed', 'tracking', 'detour'].includes(
+      const trackerActive = ['armed', 'tracking', 'detour', 'suspended'].includes(
         tracker.current.trackerState,
       );
-      const sceneActive =
-        tracker.current.trackerState !== 'armed' ||
-        questSceneActivationMatches({
-          currentLocation,
-          node,
-          recentMessages,
-        });
       const alreadyEvaluated = await this.questProgress.hasCheckpointForFloor(
         this.profileId,
         quest.id,
@@ -1441,7 +1452,6 @@ export class CaelianKernel {
       if (
         quest.status === 'active' &&
         trackerActive &&
-        sceneActive &&
         !alreadyEvaluated &&
         !this.missingQuestJudgeFloors.has(floor.id)
       ) {
@@ -1462,6 +1472,12 @@ export class CaelianKernel {
         currentLocation,
         recentMessages,
         legalItems: await this.legalQuestItems(),
+        isCurrent: async () => {
+          if (this.shuttingDown || this.profileId !== profileId || epoch !== this.generationEpoch || (await this.adapter.identity()).chatId !== identity.chatId) return false;
+          const currentQuest = await this.db.questRecords.get(quest.id);
+          const currentFloor = (await this.adapter.chatFloors())?.find(item => item.index === floor.index);
+          return currentQuest?.status === 'active' && currentQuest.acceptedAt === quest.acceptedAt && currentFloor?.id === floor.id && currentFloor.lineageHash === floor.lineageHash;
+        },
         onEvaluationStart: () => {
           this.notifications.clearQuestGuidance();
           progressBannerId = this.notifications.show({
@@ -1581,7 +1597,7 @@ export class CaelianKernel {
     if (state?.lastFloor) {
       const floor = (await this.adapter.chatFloors())?.find(item => item.index === state.lastFloor?.index && item.fingerprint === state.lastFloor.fingerprint && item.lineageHash === state.lastFloor.lineageHash);
       if (floor && this.profileId === profileId) {
-        try { await this.adapter.writeImperialHistory(floor, state, (await this.adapter.identity()).chatId); }
+        try { await this.adapter.writeImperialHistory(floor, state, (await this.adapter.identity()).chatId, true); }
         catch (error) { this.notifyRuntime('warning', error instanceof Error ? error.message : String(error), '皇权历史记录等待同步'); }
       }
     }
@@ -1612,6 +1628,7 @@ export class CaelianKernel {
         prompt: { playerName: identity.playerName ?? snapshot.player.name,
           currentLocation: this.snapshotLocation(snapshot), recentMessages: await this.adapter.chatConversation(),
           worldbook: await this.adapter.imperialWorldbookContext(),
+          previousRecord: await this.adapter.previousImperialRecord(floor.index),
         },
         isCurrent: async () => {
           if (this.shuttingDown || profileId !== this.profileId || epoch !== this.generationEpoch || (await this.adapter.identity()).chatId !== identity.chatId) return false;
@@ -1954,9 +1971,9 @@ export class CaelianKernel {
 
   private async syncQuestContext(): Promise<boolean> {
     const imperial = await this.syncImperialPresentation();
-    if (imperial.accepted) {
+    if (imperial.tracked) {
       return this.adapter.setQuestContext(imperial.tracked
-        ? '【动荡的皇权】本支线为自由局势叙事，没有预设阶段、节拍和路线。依据当前世界书、人物利益与已有历史续写；保留玩家自主选择，不预定胜利者。正文末尾的 CAELIAN_IMPERIAL_STATE 仅为连续性资料，不得复述或泄露标注玩家不知情的信息。'
+        ? '【动荡的皇权】本支线为自由局势叙事，没有预设阶段、节拍和路线。依据当前世界书、人物利益与已有历史续写；保留玩家自主选择，不预定胜利者。正文末尾的 <caelian-imperial-state> 标签仅为连续性资料，以最新有效记录为准，不得复述或让角色直接使用 User 不知情的信息。'
         : '');
     }
     if (!this.profileId) return this.adapter.setQuestContext('');

@@ -502,8 +502,8 @@ export class GameRepository {
     return this.cards.ensurePartySupportCard(profileId, subclass);
   }
 
-  submitPendingQuestItem(profileId: string, questId: string) {
-    return this.questProgress.submitPendingItem(profileId, questId);
+  submitPendingQuestItem(profileId: string, questId: string, floor?: TavernFloorReference) {
+    return this.questProgress.submitPendingItem(profileId, questId, floor);
   }
 
   availableAutomaticQuestTransition(
@@ -518,7 +518,7 @@ export class GameRepository {
     );
   }
 
-  async completeQuestNode(profileId:string,definition:QuestDefinition,input:{questId:string;expectedNodeId:string;expectedRevision:number;transitionId?:string}) {
+  async completeQuestNode(profileId:string,definition:QuestDefinition,input:{questId:string;expectedNodeId:string;expectedRevision:number;transitionId?:string;floor?:TavernFloorReference}) {
     const result=await this.questProgress.completeNode(profileId,definition,input);
     if(result.completion) await this.achievements.recordExternal(profileId,{event:'quest.complete',questId:definition.id,ending:result.completion.ending});
     await this.events.emit('state.changed',{command:{id:'manual-quest-node:'+input.questId+':'+input.expectedRevision,status:'applied'}});

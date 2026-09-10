@@ -33,6 +33,7 @@ export interface BindQuestFloorInput {
 }
 
 export interface QuestFloorRollbackResult {
+  historyLimited?: boolean;
   questId: string;
   cutoffFloorIndex: number;
   removedCheckpointCount: number;
@@ -52,11 +53,7 @@ export interface QuestCompletionEntitlementResult {
   relicsRepaired: string[];
 }
 
-/**
- * Stores committed quest progress with Tavern floors as an audit trail.
- * Once a node is committed, later message edits, swipes, or deletions must not
- * move the player's durable quest state backwards.
- */
+/** Reversible quest progress for the latest ten Tavern message floors. */
 export class QuestProgressRepository {
   constructor(private readonly db: CaelianDatabase) {}
 
@@ -103,7 +100,7 @@ export class QuestProgressRepository {
         );
         if (
           checkpoints.some(
-            (checkpoint) => checkpoint.floorIndex >= input.floor.index,
+            (checkpoint) => this.matchesJudgeFloor(checkpoint, input.floor),
           )
         ) {
           return tracker;
@@ -132,7 +129,7 @@ export class QuestProgressRepository {
           summary,
           before,
           after,
-          createdAt: now,
+          createdAt: await this.nextCheckpointTime(profileId, input.questId),
         };
 
         for (const item of input.giftItems ?? []) {
@@ -156,6 +153,7 @@ export class QuestProgressRepository {
         };
         await this.db.questTrackerStates.put(updated);
         await this.applySnapshotToQuest(quest, after, now);
+        await this.pruneCheckpoints(profileId, input.floor.index);
         return updated;
       },
     );
@@ -487,7 +485,7 @@ export class QuestProgressRepository {
           summary,
           before: tracker.current,
           after: decision.next,
-          createdAt: now,
+          createdAt: await this.nextCheckpointTime(profileId, quest.id),
         };
         const updated: QuestTrackerRecord = {
           ...tracker,
@@ -497,6 +495,7 @@ export class QuestProgressRepository {
         await this.db.questFloorCheckpoints.put(checkpoint);
         await this.db.questTrackerStates.put(updated);
         await this.applySnapshotToQuest(quest, decision.next, now);
+        await this.pruneCheckpoints(profileId, input.floor.index);
         return updated;
       },
     );
@@ -505,6 +504,7 @@ export class QuestProgressRepository {
   async submitPendingItem(
     profileId: string,
     questId: string,
+    floor?: TavernFloorReference,
   ): Promise<QuestTrackerRecord> {
     return this.db.transaction(
       'rw',
@@ -543,7 +543,7 @@ export class QuestProgressRepository {
         };
         const checkpoint: QuestFloorCheckpointRecord = {
           id: `${this.checkpointId(trackerId, {
-            id: pending.requestedFloorId,
+            id: floor?.id ?? pending.requestedFloorId,
             index: pending.requestedFloorIndex,
             role: 'assistant',
             fingerprint: pending.requestedFloorFingerprint,
@@ -551,10 +551,10 @@ export class QuestProgressRepository {
           })}:pending-submission`,
           profileId,
           questId,
-          floorId: pending.requestedFloorId,
-          floorIndex: pending.requestedFloorIndex,
-          floorFingerprint: pending.requestedFloorFingerprint,
-          lineageHash: pending.requestedLineageHash,
+          floorId: floor?.id ?? pending.requestedFloorId,
+          floorIndex: floor?.index ?? pending.requestedFloorIndex,
+          floorFingerprint: floor?.fingerprint ?? pending.requestedFloorFingerprint,
+          lineageHash: floor?.lineageHash ?? pending.requestedLineageHash,
           source: 'local',
           judgeResult: {
             source: 'pending-item-submission',
@@ -568,7 +568,7 @@ export class QuestProgressRepository {
           summary: after.summary,
           before: tracker.current,
           after,
-          createdAt: now,
+          createdAt: await this.nextCheckpointTime(profileId, questId),
         };
         const updated: QuestTrackerRecord = {
           ...tracker,
@@ -578,6 +578,7 @@ export class QuestProgressRepository {
         await this.db.questFloorCheckpoints.put(checkpoint);
         await this.db.questTrackerStates.put(updated);
         await this.applySnapshotToQuest(quest, after, now);
+        await this.pruneCheckpoints(profileId, floor?.index ?? pending.requestedFloorIndex);
         return updated;
       },
     );
@@ -685,7 +686,7 @@ export class QuestProgressRepository {
     );
   }
 
-  async completeNode(profileId:string,definition:QuestDefinition,input:{questId:string;expectedNodeId:string;expectedRevision:number;transitionId?:string}):Promise<{completion?:QuestCompletionResult}> {
+  async completeNode(profileId:string,definition:QuestDefinition,input:{questId:string;expectedNodeId:string;expectedRevision:number;transitionId?:string;floor?:TavernFloorReference}):Promise<{completion?:QuestCompletionResult}> {
     return this.db.transaction('rw',[this.db.profiles,this.db.playerStates,this.db.guildStates,this.db.regionAccess,this.db.questRecords,this.db.questHistory,this.db.questTrackerStates,this.db.questFloorCheckpoints,this.db.specialCollectibles,this.db.ownedRelics],async()=>{
       const quest=await this.requireQuest(profileId,input.questId);
       if(quest.definitionId!==definition.id) throw new Error('任务定义不匹配');
@@ -693,8 +694,17 @@ export class QuestProgressRepository {
       if(!tracker?.selected||tracker.current.currentNodeId!==input.expectedNodeId||(tracker.manualRevision??0)!==input.expectedRevision) throw new Error('任务进度已变化，请刷新后再操作');
       if(quest.status!=='active') throw new Error('当前任务已结束或等待结算');
       const next=manualQuestProgress(definition,tracker.current,input.transitionId),now=Date.now();
+      if (input.floor) {
+        this.validateFloor(input.floor);
+        await this.db.questFloorCheckpoints.put({ id: `${this.checkpointId(tracker.id, input.floor)}:manual:${input.expectedRevision}`,
+          profileId, questId: quest.id, floorId: input.floor.id, floorIndex: input.floor.index,
+          floorFingerprint: input.floor.fingerprint, lineageHash: input.floor.lineageHash, source: 'local',
+          judgeResult: { source: 'manual' }, summary: next.summary, before: tracker.current, after: next,
+          createdAt: await this.nextCheckpointTime(profileId, quest.id) });
+      }
       tracker.current=next;tracker.manualRevision=(tracker.manualRevision??0)+1;tracker.updatedAt=now;
       await this.db.questTrackerStates.put(tracker);await this.applySnapshotToQuest(quest,next,now);
+      if (input.floor) await this.pruneCheckpoints(profileId, input.floor.index);
       return next.status==='ready'?{completion:await this.completeDefinition(profileId,definition)}:{};
     });
   }
@@ -741,11 +751,12 @@ export class QuestProgressRepository {
 
         const now = Date.now();
         const startingLevel = player.level;
-        grantPlayerExperience(player, reward.experience);
-        player.gold += reward.gold;
+        const firstReward = !tracker?.completionRewarded;
+        if (firstReward) grantPlayerExperience(player, reward.experience);
+        if (firstReward) player.gold += reward.gold;
         player.updatedAt = now;
-        guild.experience += reward.guildExperience;
-        guild.completedTaskCount += 1;
+        if (firstReward) guild.experience += reward.guildExperience;
+        if (firstReward) guild.completedTaskCount += 1;
         guild.updatedAt = now;
         updateGuildRank(guild);
         await this.db.playerStates.put(player);
@@ -808,15 +819,9 @@ export class QuestProgressRepository {
           completedDate: new Date(now).toISOString(),
           updatedAt: now,
         });
-        const checkpoints = await this.questCheckpoints(profileId, quest.id);
-        if (checkpoints.length > 0) {
-          await this.db.questFloorCheckpoints.bulkDelete(
-            checkpoints.map((checkpoint) => checkpoint.id),
-          );
-        }
-        await this.db.questTrackerStates.delete(
-          this.trackerId(profileId, quest.id),
-        );
+        if (tracker) await this.db.questTrackerStates.put({ ...tracker,
+          selected: false, completedSelected: tracker.selected, completedQuest: quest,
+          completionRewarded: true, updatedAt: now });
         await this.db.questRecords.delete(quest.id);
         await this.db.profiles.update(profileId, { updatedAt: now });
         return {
@@ -824,9 +829,9 @@ export class QuestProgressRepository {
           definitionId: definition.id,
           title: definition.name,
           ...(ending ? { ending } : {}),
-          experience: reward.experience,
-          gold: reward.gold,
-          guildExperience: reward.guildExperience,
+          experience: firstReward ? reward.experience : 0,
+          gold: firstReward ? reward.gold : 0,
+          guildExperience: firstReward ? reward.guildExperience : 0,
           collectibles: [...reward.collectibles],
           levelsGained: player.level - startingLevel,
         };
@@ -848,18 +853,21 @@ export class QuestProgressRepository {
     profileId: string,
     floorIndex: number,
   ): Promise<QuestFloorRollbackResult[]> {
-    void profileId;
-    void floorIndex;
-    return [];
+    return this.rollbackCheckpoints(profileId, checkpoint => checkpoint.floorIndex >= floorIndex, floorIndex);
   }
 
   async reconcileFloors(
     profileId: string,
     floors: TavernFloorReference[],
   ): Promise<QuestFloorRollbackResult[]> {
-    void profileId;
-    void floors;
-    return [];
+    const byIndex = new Map(floors.map(floor => [floor.index, floor]));
+    const results = await this.rollbackCheckpoints(profileId, checkpoint => {
+      const floor = byIndex.get(checkpoint.floorIndex);
+      return !floor || floor.fingerprint !== checkpoint.floorFingerprint || floor.lineageHash !== checkpoint.lineageHash;
+    }, floors.length ? Math.max(...floors.map(floor => floor.index)) + 1 : 0);
+    await this.db.transaction('rw', [this.db.questFloorCheckpoints, this.db.questTrackerStates],
+      () => this.pruneCheckpoints(profileId, floors.at(-1)?.index ?? 0));
+    return results;
   }
 
   getTracker(
@@ -883,7 +891,7 @@ export class QuestProgressRepository {
   ): Promise<boolean> {
     const checkpoints = await this.questCheckpoints(profileId, questId);
     return checkpoints.some(
-      (checkpoint) => checkpoint.floorIndex >= floor.index,
+      (checkpoint) => this.matchesJudgeFloor(checkpoint, floor),
     );
   }
 
@@ -916,16 +924,67 @@ export class QuestProgressRepository {
       .where('[profileId+questId]')
       .equals([profileId, questId])
       .toArray();
-    const flowRank = (checkpoint: QuestFloorCheckpointRecord) =>
-      checkpoint.source === 'judge' ? 0 : 1;
     return checkpoints.sort((left, right) => {
       const floorOrder = left.floorIndex - right.floorIndex;
       if (floorOrder !== 0) return floorOrder;
-      const sourceOrder = flowRank(left) - flowRank(right);
-      if (sourceOrder !== 0) return sourceOrder;
-      if (left.after.currentNodeId === right.before.currentNodeId) return -1;
-      if (right.after.currentNodeId === left.before.currentNodeId) return 1;
       return left.createdAt - right.createdAt || left.id.localeCompare(right.id);
+    });
+  }
+
+  private matchesJudgeFloor(checkpoint: QuestFloorCheckpointRecord, floor: TavernFloorReference): boolean {
+    return checkpoint.source === 'judge' && checkpoint.floorIndex === floor.index &&
+      checkpoint.floorFingerprint === floor.fingerprint && checkpoint.lineageHash === floor.lineageHash;
+  }
+
+  private async nextCheckpointTime(profileId: string, questId: string): Promise<number> {
+    const checkpoints = await this.questCheckpoints(profileId, questId);
+    return Math.max(Date.now(), ...checkpoints.map(checkpoint => checkpoint.createdAt + 1));
+  }
+
+  private async pruneCheckpoints(profileId: string, latestFloor: number): Promise<void> {
+    const cutoff = Math.max(0, latestFloor - 9);
+    const expired = await this.db.questFloorCheckpoints.where('profileId').equals(profileId)
+      .filter(checkpoint => checkpoint.floorIndex < cutoff).toArray();
+    if (!expired.length) return;
+    await this.db.questFloorCheckpoints.bulkDelete(expired.map(checkpoint => checkpoint.id));
+    for (const questId of new Set(expired.map(checkpoint => checkpoint.questId))) {
+      await this.db.questTrackerStates.update(this.trackerId(profileId, questId), { retentionFloor: cutoff });
+    }
+  }
+
+  private async rollbackCheckpoints(profileId: string, invalid: (checkpoint: QuestFloorCheckpointRecord) => boolean,
+    requestedCutoff: number): Promise<QuestFloorRollbackResult[]> {
+    return this.db.transaction('rw', [this.db.questRecords, this.db.questHistory, this.db.questTrackerStates,
+      this.db.questFloorCheckpoints, this.db.inventoryStacks, this.db.equipmentInstances], async () => {
+      const trackers = await this.db.questTrackerStates.where('profileId').equals(profileId).toArray();
+      const results: QuestFloorRollbackResult[] = [];
+      for (const tracker of trackers) {
+        const checkpoints = await this.questCheckpoints(profileId, tracker.questId);
+        const first = checkpoints.findIndex(invalid);
+        if (first < 0) continue;
+        const removed = checkpoints.slice(first);
+        const now = Date.now();
+        const quest = await this.db.questRecords.get(tracker.questId) ?? tracker.completedQuest;
+        if (!quest) continue;
+        const restored = structuredClone(removed[0]!.before);
+        // Tracking is a player's current UI choice; a history edit must not undo a later pause.
+        const selected = tracker.completedQuest ? tracker.completedSelected && !trackers.some(other => other.selected) : tracker.selected;
+        if (!selected || tracker.current.trackerState === 'manualPaused') {
+          restored.resumeTrackerState = ['armed','tracking','detour'].includes(restored.trackerState)
+            ? restored.trackerState as 'armed'|'tracking'|'detour' : 'armed';
+          restored.trackerState = tracker.current.trackerState === 'manualPaused' ? 'manualPaused' : 'idle';
+        }
+        await this.rollbackLocalEffects([...removed].reverse(), now);
+        await this.db.questFloorCheckpoints.bulkDelete(removed.map(checkpoint => checkpoint.id));
+        await this.db.questTrackerStates.put({ ...tracker, current: restored, selected: Boolean(selected),
+          completedQuest: undefined, completedSelected: undefined, manualRevision: (tracker.manualRevision ?? 0) + 1, updatedAt: now });
+        if (tracker.completedQuest) await this.db.questHistory.delete(tracker.questId);
+        await this.applySnapshotToQuest(quest, restored, now);
+        results.push({ questId: tracker.questId, cutoffFloorIndex: removed[0]!.floorIndex,
+          removedCheckpointCount: removed.length, restored,
+          historyLimited: Boolean(tracker.retentionFloor && requestedCutoff < tracker.retentionFloor) });
+      }
+      return results;
     });
   }
 

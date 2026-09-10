@@ -7,7 +7,6 @@ import type {
 import type { QuestJudgeClient } from '@/quests/judge-client';
 import type { QuestConversationMessage } from '@/quests/prompt-builder';
 import {
-  questNode,
   type QuestDefinition,
   type QuestNodeDefinition,
 } from '@/quests/schema';
@@ -27,6 +26,7 @@ export interface EvaluateQuestTurnInput {
   recentMessages: QuestConversationMessage[];
   legalItems?: Array<{ itemId: string; itemName: string }>;
   onEvaluationStart?: () => void;
+  isCurrent?: () => Promise<boolean>;
 }
 
 export type EvaluateQuestTurnResult =
@@ -78,11 +78,8 @@ export class QuestTrackerService {
     if (existing && !existing.selected) {
       return { status: 'skipped', reason: 'tracker-disabled' };
     }
-    if (current.pendingItemSubmission) {
-      return { status: 'skipped', reason: 'tracker-disabled' };
-    }
     if (
-      ['idle', 'manualPaused', 'suspended', 'ended'].includes(
+      ['idle', 'manualPaused', 'ended'].includes(
         current.trackerState,
       )
     ) {
@@ -99,18 +96,6 @@ export class QuestTrackerService {
       return { status: 'skipped', reason: 'already-evaluated' };
     }
 
-    const node = questNode(input.quest, current.currentNodeId);
-    if (
-      current.trackerState === 'armed' &&
-      !questSceneActivationMatches({
-        currentLocation: input.currentLocation,
-        node,
-        recentMessages: input.recentMessages,
-      })
-    ) {
-      return { status: 'skipped', reason: 'outside-node-location' };
-    }
-
     input.onEvaluationStart?.();
     const evaluation = await this.judge.evaluate({
       quest: input.quest,
@@ -119,6 +104,7 @@ export class QuestTrackerService {
       recentMessages: input.recentMessages,
       legalItems: input.legalItems,
     });
+    if (input.isCurrent && !(await input.isCurrent())) return { status: 'skipped', reason: 'tracking-changed' };
     const latest = existing
       ? await this.progress.getTracker(
           input.profileId,
@@ -129,7 +115,7 @@ export class QuestTrackerService {
       existing &&
       (!latest?.selected ||
         latest.current.status !== 'active' ||
-        ['idle', 'manualPaused', 'suspended', 'ended'].includes(
+        ['idle', 'manualPaused', 'ended'].includes(
           latest.current.trackerState,
         ) ||
         latest.current.currentNodeId !== current.currentNodeId ||
@@ -157,8 +143,9 @@ export class QuestTrackerService {
     const requestedName = requested
       ? legalItems.get(requested.itemId)
       : undefined;
-    const decision: QuestTransitionDecision =
-      judgedDecision.accepted && requested && requestedName
+    const decision: QuestTransitionDecision = current.pendingItemSubmission
+      ? { accepted: false, reason: 'awaiting-item-submission', next: { ...current, summary: evaluation.result.summary } }
+      : judgedDecision.accepted && requested && requestedName
         ? {
             accepted: false,
             reason: 'awaiting-item-submission',
@@ -190,6 +177,7 @@ export class QuestTrackerService {
       baseline,
       expectedNodeId: current.currentNodeId,
       expectedManualRevision: existing?.manualRevision ?? 0,
+      expectedAcceptedAt: input.questRecord.acceptedAt,
       next,
       giftItems,
       judgeResult: {
