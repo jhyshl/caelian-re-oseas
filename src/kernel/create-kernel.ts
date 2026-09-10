@@ -49,6 +49,7 @@ import {
   isQuestJudgeCancelledError,
   OpenAiCompatibleQuestJudgeClient,
   resolveChatEndpoint,
+  resolveQuestJudgeTimeout,
   type OpenAiCompatibleJudgeConfig,
   type QuestJudgeModel,
   type QuestJudgeModelListConfig,
@@ -132,6 +133,15 @@ interface QuestEvaluationPresentation {
   originRegion: string;
 }
 
+interface QuestJudgeRetryTarget {
+  profileId: string;
+  epoch: number;
+  floorId: string;
+  lineageHash: string;
+  questId: string;
+  acceptedAt: QuestRecord['acceptedAt'];
+}
+
 export class CaelianKernel {
   readonly api: CaelianPublicApi;
   private readonly channel: Extract<ReleaseChannel, 'alpha' | 'beta'>;
@@ -166,6 +176,8 @@ export class CaelianKernel {
   private questTracker?: QuestTrackerService;
   private questJudgeClient?: OpenAiCompatibleQuestJudgeClient;
   private questJudgeApiKey?: string;
+  private questJudgeRetryPending = false;
+  private questJudgeLastError?: string;
   private questJudge: QuestJudgeStatus = {
     configured: false,
     evaluating: false,
@@ -533,6 +545,7 @@ export class CaelianKernel {
   ): void {
     this.cancelQuestJudge();
     this.missingQuestJudgeFloors.clear();
+    this.questJudgeLastError = undefined;
     if (!config) {
       this.questTracker = undefined;
       this.questJudgeClient = undefined;
@@ -554,6 +567,7 @@ export class CaelianKernel {
     const apiKey = config.apiKey?.trim() || this.questJudgeApiKey;
     const resolvedConfig: OpenAiCompatibleJudgeConfig = {
       ...config,
+      timeoutMs: resolveQuestJudgeTimeout(config.timeoutMs),
       endpoint,
       ...(modelsEndpoint ? { modelsEndpoint } : {}),
       model,
@@ -577,6 +591,7 @@ export class CaelianKernel {
       model,
       jsonMode: config.jsonMode !== false,
       apiKeyPresent: Boolean(apiKey),
+      timeoutMs: resolvedConfig.timeoutMs,
     };
     saveQuestJudgePreferences(this.adapter.host, resolvedConfig);
   }
@@ -584,7 +599,8 @@ export class CaelianKernel {
   getQuestJudgeStatus(): QuestJudgeStatus {
     return {
       ...this.questJudge,
-      evaluating: this.questJudgeClient?.isEvaluating() ?? false,
+      evaluating: this.questJudgeRetryPending || (this.questJudgeClient?.isEvaluating() ?? false),
+      lastError: this.questJudgeLastError,
     };
   }
 
@@ -649,6 +665,76 @@ export class CaelianKernel {
 
   cancelQuestJudge(): boolean {
     return this.questJudgeClient?.cancel() ?? false;
+  }
+
+  async retryQuestJudge(expected?: QuestJudgeRetryTarget): Promise<void> {
+    if (this.questJudgeRetryPending || this.questJudgeClient?.isEvaluating() || this.generationActive) {
+      this.notifyRuntime('info', '请等待当前正文或副 API 请求结束后再重试。', '当前正在生成');
+      return;
+    }
+    if (!this.profileId || !this.questJudgeClient || this.shuttingDown) {
+      this.notifyRuntime('warning', '请先打开聊天并配置副 API。', '暂时无法重试');
+      return;
+    }
+    this.questJudgeRetryPending = true;
+    try {
+      const profileId = this.profileId;
+      const epoch = this.generationEpoch;
+      const identity = await this.adapter.identity();
+      const floors = await this.adapter.chatFloors();
+      const floor = [...(floors ?? [])].reverse().find(item => item.role === 'assistant');
+      if (!floor || (expected && (expected.profileId !== profileId || expected.epoch !== epoch || expected.floorId !== floor.id || expected.lineageHash !== floor.lineageHash))) {
+        this.notifyRuntime('info', '原楼层已改变，请在设置中重试当前楼层。', '重试已取消');
+        return;
+      }
+      const selected = await this.repository.selectedQuestTracker(profileId);
+      const quests = await this.db.questRecords.where('profileId').equals(profileId)
+        .filter(quest => quest.status === 'active' && (quest.definitionId === IMPERIAL_QUEST_ID || quest.id === selected?.questId)).toArray();
+      const candidates = quests.filter(quest => !expected || (quest.id === expected.questId && quest.acceptedAt === expected.acceptedAt));
+      const task = this.tavernUpdateQueue.catch(() => undefined).then(async () => {
+        const latest = [...(await this.adapter.chatFloors() ?? [])].reverse().find(item => item.role === 'assistant');
+        if (this.shuttingDown || profileId !== this.profileId || epoch !== this.generationEpoch || this.generationActive ||
+          (await this.adapter.identity()).chatId !== identity.chatId || latest?.id !== floor.id || latest.lineageHash !== floor.lineageHash) {
+          this.notifyRuntime('info', '聊天或正文已改变，未重试旧楼层。', '重试已取消');
+          return;
+        }
+        const pending: string[] = [];
+        const currentSelected = await this.repository.selectedQuestTracker(profileId);
+        for (const quest of candidates) {
+          const current = await this.db.questRecords.get(quest.id);
+          if (current?.status !== 'active' || current.acceptedAt !== quest.acceptedAt) continue;
+          if (quest.definitionId !== IMPERIAL_QUEST_ID && (currentSelected?.questId !== quest.id || !['armed','tracking','detour','suspended'].includes(currentSelected.current.trackerState))) continue;
+          if (!(await this.questProgress.hasCheckpointForFloor(profileId, quest.id, floor))) pending.push(quest.id);
+        }
+        if (!pending.length) {
+          this.notifyRuntime('info', '本楼已完成判定，或当前没有需要判定的任务。', '无需重试');
+          return;
+        }
+        await this.progressTrackedQuests({ messageId: floor.index }, pending);
+        if (profileId !== this.profileId || epoch !== this.generationEpoch || this.shuttingDown) return;
+        await this.syncQuestContext();
+        await this.scanCurrentAchievements();
+        await this.syncProjection();
+        await this.events.emit('tavern.changed', { event: 'QUEST_JUDGE_RETRY' });
+      });
+      this.tavernUpdateQueue = task;
+      this.pendingTavernUpdates.add(task);
+      try { await task; } finally { this.pendingTavernUpdates.delete(task); }
+    } catch (error) {
+      this.notifyRuntime('warning', error instanceof Error ? error.message : String(error), '副 API 重试未完成');
+    } finally {
+      this.questJudgeRetryPending = false;
+    }
+  }
+
+  private showQuestJudgeFailure(message: string, title: string, target: QuestJudgeRetryTarget): void {
+    if (target.profileId !== this.profileId || target.epoch !== this.generationEpoch || this.shuttingDown) return;
+    this.questJudgeLastError = message;
+    this.notifications.show({
+      kind: 'warning', title, description: `${message}。可重试本楼尚未完成的判定，也可稍后在设置中重试。`,
+      duration: 15_000, priority: 97, actionText: '重试副 API（重Roll）',
+      onClick: () => this.retryQuestJudge(target),
+    });
   }
 
   fetchQuestJudgeModels(
@@ -1119,6 +1205,9 @@ export class CaelianKernel {
       this.handledStoryBattleFloors.clear();
       this.missingQuestJudgeFloors.clear();
     }
+    if (eventName === 'CHAT_CHANGED' || ['MESSAGE_EDITED', 'MESSAGE_DELETED', 'MESSAGE_SWIPED'].includes(eventName) || this.isGenerationStartEvent(eventName)) {
+      this.questJudgeLastError = undefined;
+    }
     if (this.isGenerationStartEvent(eventName)) {
       this.cancelQuestJudge();
       // Mark synchronously at the adapter callback boundary so an interaction
@@ -1236,18 +1325,7 @@ export class CaelianKernel {
         await this.triggerStoryBattle(payload);
       }
       if (eventName === 'GENERATION_ENDED') {
-        const evaluation = await this.evaluateTrackedQuest(payload);
-        await this.advanceTrackedQuestFromLocalState();
-        if (evaluation) {
-          await this.presentQuestGuidance(evaluation);
-          if (evaluation.gatheringRequested) {
-            await this.presentStoryGathering(
-              evaluation.floorId,
-              evaluation.floorLineageHash,
-              evaluation.originRegion,
-            );
-          }
-        }
+        await this.progressTrackedQuests(payload);
       }
       await this.syncQuestContext();
       await this.scanCurrentAchievements();
@@ -1393,14 +1471,27 @@ export class CaelianKernel {
     if (!pending) await this.panels.close('quest-submission');
   }
 
+  private async progressTrackedQuests(payload?: TavernEventPayload, onlyQuestIds?: readonly string[]): Promise<void> {
+    const profileId = this.profileId;
+    const epoch = this.generationEpoch;
+    const evaluation = await this.evaluateTrackedQuest(payload, onlyQuestIds);
+    if (this.shuttingDown || profileId !== this.profileId || epoch !== this.generationEpoch) return;
+    await this.advanceTrackedQuestFromLocalState();
+    if (evaluation) {
+      await this.presentQuestGuidance(evaluation);
+      if (evaluation.gatheringRequested) await this.presentStoryGathering(evaluation.floorId, evaluation.floorLineageHash, evaluation.originRegion);
+    }
+  }
+
   private async evaluateTrackedQuest(
     payload?: TavernEventPayload,
+    onlyQuestIds?: readonly string[],
   ): Promise<QuestEvaluationPresentation | undefined> {
     if (!this.profileId) return undefined;
     const turnEpoch = this.generationEpoch;
     const imperial = await this.db.questRecords.where('profileId').equals(this.profileId)
       .filter(quest => quest.definitionId === IMPERIAL_QUEST_ID && quest.status === 'active').first();
-    if (imperial) {
+    if (imperial && (!onlyQuestIds || onlyQuestIds.includes(imperial.id))) {
       await this.evaluateImperialQuest(imperial, payload);
     }
     if (turnEpoch !== this.generationEpoch) return undefined;
@@ -1421,6 +1512,7 @@ export class CaelianKernel {
       (candidate) => candidate.id === tracker.questId,
     );
     if (!quest?.definitionId) return undefined;
+    if (onlyQuestIds && !onlyQuestIds.includes(quest.id)) return undefined;
     if (quest.definitionId === IMPERIAL_QUEST_ID) return undefined;
     const catalog = await this.questCatalogs.load();
     const definition = catalog.get(quest.definitionId);
@@ -1482,6 +1574,7 @@ export class CaelianKernel {
           return currentQuest?.status === 'active' && currentQuest.acceptedAt === quest.acceptedAt && currentFloor?.id === floor.id && currentFloor.lineageHash === floor.lineageHash;
         },
         onEvaluationStart: () => {
+          this.questJudgeLastError = undefined;
           this.notifications.clearQuestGuidance();
           progressBannerId = this.notifications.show({
             kind: 'task',
@@ -1490,7 +1583,7 @@ export class CaelianKernel {
             title: '正在推进剧情',
             description: `正在让副 API 判定「${quest.title}」的本轮进度，请稍候。`,
             meta: '判定中',
-            duration: 35_000,
+            duration: resolveQuestJudgeTimeout(this.questJudge.timeoutMs) + 5_000,
             priority: 96,
             actionText: '终止副 API',
             onClick: () => {
@@ -1553,11 +1646,8 @@ export class CaelianKernel {
         floorIndex: floor.index,
         message,
       });
-      this.notifications.show({
-        kind: 'warning',
-        title: '任务剧情判定暂时失败',
-        description: `${message}。本轮不会推进任务进度。`,
-        duration: 6_000,
+      this.showQuestJudgeFailure(message, '任务剧情判定暂时失败', {
+        profileId, epoch, floorId: floor.id, lineageHash: floor.lineageHash, questId: quest.id, acceptedAt: quest.acceptedAt,
       });
       return undefined;
     } finally {
@@ -1624,8 +1714,9 @@ export class CaelianKernel {
     let banner: number | undefined;
     try {
       if (await this.questProgress.hasCheckpointForFloor(profileId,quest.id,floor)) return;
+      this.questJudgeLastError = undefined;
       const snapshot = await this.repository.snapshot(profileId);
-      banner = this.notifications.show({kind:'task',icon:'♛',title:'正在更新皇权局势',description:'正在记录各方动向与玩家已知情报。',duration:35000,actionText:'终止副 API',onClick:()=>{this.cancelQuestJudge();}});
+      banner = this.notifications.show({kind:'task',icon:'♛',title:'正在更新皇权局势',description:'正在记录各方动向与玩家已知情报。',duration:resolveQuestJudgeTimeout(this.questJudge.timeoutMs)+5000,actionText:'终止副 API',onClick:()=>{this.cancelQuestJudge();}});
       const result = await evaluateImperialTurn({
         profileId, quest, floor, progress: this.questProgress, judge: this.questJudgeClient,
         prompt: { playerName: identity.playerName ?? snapshot.player.name,
@@ -1658,7 +1749,9 @@ export class CaelianKernel {
       await this.events.emit('quest.tracking-changed', { questId: result.completed ? undefined : quest.id, trackerState: result.completed ? 'none' : 'tracking' });
       if (writeError) this.notifyRuntime('warning', writeError instanceof Error ? writeError.message : String(writeError), '皇权历史记录等待同步');
     } catch (error) {
-      if (!isQuestJudgeCancelledError(error)) this.notifyRuntime('warning', error instanceof Error ? error.message : String(error), '皇权局势更新暂时失败');
+      if (!isQuestJudgeCancelledError(error)) this.showQuestJudgeFailure(error instanceof Error ? error.message : String(error), '皇权局势更新暂时失败', {
+        profileId, epoch, floorId: floor.id, lineageHash: floor.lineageHash, questId: quest.id, acceptedAt: quest.acceptedAt,
+      });
     } finally { if (banner !== undefined) this.notifications.dismiss(banner); }
   }
 
@@ -2068,6 +2161,7 @@ export class CaelianKernel {
         this.configureQuestJudge(config),
       getQuestJudgeStatus: () => this.getQuestJudgeStatus(),
       cancelQuestJudge: () => this.cancelQuestJudge(),
+      retryQuestJudge: () => this.retryQuestJudge(),
       fetchQuestJudgeModels: (config) =>
         this.fetchQuestJudgeModels(config),
       listAvailableQuests: (options) =>
@@ -2124,6 +2218,7 @@ export class CaelianKernel {
         this.configureQuestJudge(config),
       getQuestJudgeStatus: () => this.getQuestJudgeStatus(),
       cancelQuestJudge: () => this.cancelQuestJudge(),
+      retryQuestJudge: () => this.retryQuestJudge(),
       fetchQuestJudgeModels: (config) =>
         this.fetchQuestJudgeModels(config),
       listAvailableQuests: (options) =>

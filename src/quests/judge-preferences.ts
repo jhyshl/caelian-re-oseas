@@ -9,6 +9,7 @@ interface StoredQuestJudgePreferences {
   model: string;
   apiKey?: string;
   jsonMode: boolean;
+  timeoutMs?: number;
 }
 
 export function loadQuestJudgePreferences(
@@ -39,6 +40,8 @@ export function loadQuestJudgePreferences(
       ...(modelsEndpoint ? { modelsEndpoint } : {}),
       model: parsed.model.trim(),
       jsonMode: parsed.jsonMode !== false,
+      ...(typeof parsed.timeoutMs === 'number' && Number.isFinite(parsed.timeoutMs) && parsed.timeoutMs > 0
+        ? { timeoutMs: parsed.timeoutMs } : {}),
       ...(apiKey ? { apiKey } : {}),
     };
   } catch {
@@ -59,6 +62,7 @@ export function saveQuestJudgePreferences(
       model: config.model.trim(),
       ...(config.apiKey?.trim() ? { apiKey: config.apiKey.trim() } : {}),
       jsonMode: config.jsonMode !== false,
+      ...(config.timeoutMs !== undefined ? { timeoutMs: config.timeoutMs } : {}),
     };
     host.localStorage.setItem(PREFERENCES_KEY, JSON.stringify(stored));
     host.sessionStorage.removeItem(SESSION_KEY);

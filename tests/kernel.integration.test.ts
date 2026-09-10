@@ -2318,6 +2318,9 @@ describe('CaelianKernel integration', () => {
     );
     expect(model).not.toBeNull();
     setInput(model!, 'judge-large');
+    const timeout = panel!.querySelector<HTMLInputElement>('input[aria-label="副 API 等待时间（秒）"]')!;
+    expect(timeout.value).toBe('180');
+    setInput(timeout, '240');
     Array.from(panel?.querySelectorAll<HTMLButtonElement>('button') ?? [])
       .find(
         (button) =>
@@ -2332,10 +2335,12 @@ describe('CaelianKernel integration', () => {
         endpoint: 'https://judge.example/v1/chat/completions',
         model: 'judge-large',
         apiKeyPresent: true,
+        timeoutMs: 240_000,
       });
     expect(
       localStorage.getItem('caelian_quest_judge_preferences_v1'),
     ).toContain('settings-session-secret');
+    expect(JSON.parse(localStorage.getItem('caelian_quest_judge_preferences_v1')!).timeoutMs).toBe(240_000);
     expect(
       sessionStorage.getItem('caelian_quest_judge_api_key_session_v1'),
     ).toBeNull();

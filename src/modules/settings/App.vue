@@ -4,6 +4,7 @@ import type { GameSnapshot, SettingsRecord } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
 import type { QuestJudgeModel } from '@/quests/judge-client';
+import { DEFAULT_QUEST_JUDGE_TIMEOUT_MS } from '@/quests/judge-client';
 import {
   prepareThemePreviews,
   subscribeThemeAssets,
@@ -34,7 +35,9 @@ const questJudgeDraft = ref({
   apiKey: '',
   model: questJudgeStatus.value.model ?? '',
   jsonMode: questJudgeStatus.value.jsonMode ?? true,
+  timeoutSeconds: (questJudgeStatus.value.timeoutMs ?? DEFAULT_QUEST_JUDGE_TIMEOUT_MS) / 1_000,
 });
+let judgeStatusTimer: number | undefined;
 const questJudgeModels = ref<QuestJudgeModel[]>([]);
 const fetchingQuestModels = ref(false);
 const applyingQuestJudge = ref(false);
@@ -169,6 +172,11 @@ async function applyQuestJudge() {
     notice.value = '请填写副 API 地址并选择模型。';
     return;
   }
+  const timeoutSeconds = Number(questJudgeDraft.value.timeoutSeconds);
+  if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 10 || timeoutSeconds > 600) {
+    notice.value = '副 API 等待时间请输入 10～600 秒的整数。';
+    return;
+  }
   applyingQuestJudge.value = true;
   notice.value = '';
   try {
@@ -179,6 +187,7 @@ async function applyQuestJudge() {
       model,
       apiKey: questJudgeDraft.value.apiKey.trim() || undefined,
       jsonMode: questJudgeDraft.value.jsonMode,
+      timeoutMs: timeoutSeconds * 1_000,
     });
     questJudgeDraft.value.apiKey = '';
     questJudgeStatus.value = props.context.api.getQuestJudgeStatus();
@@ -200,13 +209,28 @@ function clearQuestJudge() {
     apiKey: '',
     model: '',
     jsonMode: true,
+    timeoutSeconds: DEFAULT_QUEST_JUDGE_TIMEOUT_MS / 1_000,
   };
   questJudgeModels.value = [];
   notice.value = '已停用任务剧情判定器，并清除保存的连接信息。';
 }
 
+async function retryQuestJudge() {
+  const task = props.context.api.retryQuestJudge();
+  questJudgeStatus.value = props.context.api.getQuestJudgeStatus();
+  try { await task; } finally { questJudgeStatus.value = props.context.api.getQuestJudgeStatus(); }
+}
+
+function cancelQuestJudge() {
+  props.context.api.cancelQuestJudge();
+  questJudgeStatus.value = props.context.api.getQuestJudgeStatus();
+}
+
 onMounted(async () => {
   const host = props.context.document.defaultView ?? globalThis.window;
+  judgeStatusTimer = host.setInterval(() => {
+    questJudgeStatus.value = props.context.api.getQuestJudgeStatus();
+  }, 500);
   disposeThemeAssets = subscribeThemeAssets(host, () => {
     themeState.value = props.context.api.getThemeState();
   });
@@ -222,6 +246,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  (props.context.document.defaultView ?? globalThis.window).clearInterval(judgeStatusTimer);
   disposeTheme?.();
   disposeThemeAssets?.();
 });
@@ -293,7 +318,7 @@ onBeforeUnmount(() => {
           <div>
             <h2 class="ca-section-title">任务剧情判定器</h2>
             <p>
-              副 API 只判断当前任务节点是否推进、偏离或离场，不负责续写正文。
+              副 API 判定任务进度；接取皇权支线后维护皇权局势，不负责续写正文。
             </p>
           </div>
           <span :class="{ active: questJudgeStatus.configured }">
@@ -368,6 +393,11 @@ onBeforeUnmount(() => {
               </button>
             </div>
           </label>
+          <label>
+            <span>副 API 等待时间（秒）</span>
+            <input v-model.number="questJudgeDraft.timeoutSeconds" type="number" min="10" max="600" step="1" aria-label="副 API 等待时间（秒）" />
+            <small>默认 180 秒；较慢的模型可适当延长，修改后点击应用。</small>
+          </label>
           <label class="judge-toggle">
             <div>
               <strong>JSON 模式</strong>
@@ -395,8 +425,16 @@ onBeforeUnmount(() => {
             停用并清除
           </button>
         </div>
+        <div v-if="questJudgeStatus.configured" class="judge-actions">
+          <button type="button" class="ca-button" :disabled="questJudgeStatus.evaluating" @click="retryQuestJudge">
+            {{ questJudgeStatus.evaluating ? '副 API 判定中……' : '重试本楼副 API（重Roll）' }}
+          </button>
+          <button v-if="questJudgeStatus.evaluating" type="button" class="ca-button" @click="cancelQuestJudge">终止副 API</button>
+        </div>
+        <p v-if="questJudgeStatus.lastError" class="judge-security" role="status">最近一次失败：{{ questJudgeStatus.lastError }}</p>
+        <p class="judge-security">失败或终止后可重试本楼，正文保持原样，已成功的判定不会重复执行。</p>
         <p class="judge-security">
-          地址、模型、JSON 模式和 API Key 都保存在当前浏览器本机，重新打开时会自动恢复。
+          地址、模型、等待时间、JSON 模式和 API Key 都保存在当前浏览器本机，重新打开时会自动恢复。
         </p>
       </section>
 

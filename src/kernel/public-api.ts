@@ -50,6 +50,8 @@ export interface QuestJudgeStatus {
   model?: string;
   jsonMode?: boolean;
   apiKeyPresent: boolean;
+  timeoutMs?: number;
+  lastError?: string;
 }
 
 export interface TrackedQuestView {
@@ -201,6 +203,7 @@ export interface CaelianPublicApi {
   ): void;
   getQuestJudgeStatus(): QuestJudgeStatus;
   cancelQuestJudge(): boolean;
+  retryQuestJudge(): Promise<void>;
   fetchQuestJudgeModels(
     config: QuestJudgeModelListConfig,
   ): Promise<QuestJudgeModel[]>;
@@ -248,6 +251,7 @@ export type PanelApi = Pick<
   | 'configureQuestJudge'
   | 'getQuestJudgeStatus'
   | 'cancelQuestJudge'
+  | 'retryQuestJudge'
   | 'fetchQuestJudgeModels'
   | 'listAvailableQuests'
   | 'acceptManagedQuest'

@@ -8,6 +8,14 @@ import {
 } from '@/quests/schema';
 import { buildImperialJudgeMessages, type ImperialPromptInput } from '@/imperial/prompt';
 import { imperialResultSchema, type ImperialResult } from '@/imperial/model';
+
+export const DEFAULT_QUEST_JUDGE_TIMEOUT_MS = 180_000;
+
+export function resolveQuestJudgeTimeout(timeoutMs?: number): number {
+  return typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0
+    ? Math.max(1, Math.min(600_000, Math.round(timeoutMs)))
+    : DEFAULT_QUEST_JUDGE_TIMEOUT_MS;
+}
 export interface QuestJudgeEvaluation {
   result: QuestJudgeResult;
   rawResponse: string;
@@ -192,9 +200,10 @@ export class OpenAiCompatibleQuestJudgeClient
       cancelledByPlayer: false,
     };
     this.activeRequest = request;
+    const timeoutMs = resolveQuestJudgeTimeout(this.config.timeoutMs);
     const timeout = setTimeout(
       () => request.controller.abort(),
-      this.config.timeoutMs ?? 30_000,
+      timeoutMs,
     );
     try {
       const responsesApi = isResponsesEndpoint(endpoint);
@@ -246,7 +255,7 @@ export class OpenAiCompatibleQuestJudgeClient
         if (request.cancelledByPlayer) {
           throw new QuestJudgeCancelledError();
         }
-        throw new Error('副 API 请求超时', { cause: error });
+        throw new Error(`副 API 请求超时：${Math.ceil(timeoutMs / 1_000)} 秒内未收到完整响应，可手动重试或在设置中延长等待时间`, { cause: error });
       }
       throw error;
     } finally {
