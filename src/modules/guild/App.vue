@@ -429,7 +429,7 @@ onUnmounted(() => {
             <p>{{ quest.objective }}</p>
             <p v-if="isTracked(quest)" class="tracking-state">
               当前追踪 · {{ trackedQuest?.tracker.current.trackerState }}
-              <template v-if="trackedQuest?.position">
+              <template v-if="trackedQuest?.position && quest.definitionId !== 'side_imperial_succession'">
                 · {{ trackedQuest.position.stageTitle }} / {{ trackedQuest.position.sceneTitle }} /
                 {{ trackedQuest.position.beatTitle }}
               </template>
@@ -444,7 +444,7 @@ onUnmounted(() => {
               </template>
               <template v-else>需要本地确认：{{ trackedQuest.action.label }}。</template>
             </p>
-            <div class="quest-progress">
+            <div v-if="quest.definitionId !== 'side_imperial_succession'" class="quest-progress">
               <i
                 :style="{
                   width: `${Math.min(100, (quest.currentStage / quest.totalStages) * 100)}%`,
@@ -453,15 +453,17 @@ onUnmounted(() => {
             </div>
             <footer>
               <div class="quest-meta">
-                <span>进度 {{ quest.currentStage }}/{{ quest.totalStages }}</span>
-                <span>
+                <span v-if="quest.definitionId === 'side_imperial_succession'">自由推进 · 正式继位后自动完成</span>
+                <span v-else>进度 {{ quest.currentStage }}/{{ quest.totalStages }}</span>
+                <span v-if="quest.definitionId === 'side_imperial_succession'">成就：暗夜与黎明；亲自登基另获谁人登临长阶</span>
+                <span v-else>
                   奖励 {{ quest.rewardExperience }} EXP ·
                   {{ quest.rewardGold }} 金币 ·
                   {{ quest.rewardGuildExperience }} GXP
                 </span>
               </div>
               <div class="quest-actions">
-                <template v-if="quest.definitionId && quest.status === 'active' && isTracked(quest)">
+                <template v-if="quest.definitionId && quest.definitionId !== 'side_imperial_succession' && quest.status === 'active' && isTracked(quest)">
                   <select v-if="(trackedQuest?.manualChoices?.length ?? 0) > 1" v-model="manualTransition" :disabled="!!busyManagedTask" aria-label="选择手动推进的下一节点">
                     <option v-for="choice in trackedQuest?.manualChoices" :key="choice.transitionId" :value="choice.transitionId">{{ choice.label }}{{ choice.terminal ? '（完成任务）' : '' }}</option>
                   </select>

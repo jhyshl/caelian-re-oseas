@@ -527,6 +527,11 @@ export class AchievementRepository {
       await this.unlock('ach_first_task_complete');
     }
     for (const record of [...quests, ...history]) {
+      if (record.definitionId === 'side_imperial_succession' &&
+        ('status' in record ? ['ready', 'completed'].includes(record.status as string) : true)) {
+        await this.unlock('ach_imperial_night_and_dawn');
+        if (record.ending === 'player') await this.unlock('ach_imperial_long_stair');
+      }
       for (const [questId, achievementId] of Object.entries(
         MAIN_QUEST_ACHIEVEMENTS,
       )) {
@@ -600,6 +605,10 @@ export class AchievementRepository {
         break;
       case 'quest.complete':
         await this.unlock('ach_first_task_complete');
+        if (payload.questId === 'side_imperial_succession') {
+          await this.unlock('ach_imperial_night_and_dawn');
+          if (payload.ending === 'player') await this.unlock('ach_imperial_long_stair');
+        }
         if (payload.questId) {
           const main = MAIN_QUEST_ACHIEVEMENTS[payload.questId];
           if (main) await this.unlock(main);

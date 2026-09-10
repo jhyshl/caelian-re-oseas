@@ -19,6 +19,8 @@ import {
 import { applyLocalTransition } from '@/quests/state-machine';
 
 export interface BindQuestFloorInput {
+  expectedAcceptedAt?: number;
+  expectedImperialRevision?: number;
   questId: string;
   floor: TavernFloorReference;
   judgeResult: unknown;
@@ -77,6 +79,9 @@ export class QuestProgressRepository {
       this.db.equipmentInstances,
       async () => {
         const quest = await this.requireQuest(profileId, input.questId);
+        if (input.expectedAcceptedAt !== undefined && (quest.status !== 'active' || quest.acceptedAt !== input.expectedAcceptedAt)) {
+          throw new Error('任务已结束或重新接取，本轮皇权更新已取消');
+        }
         this.validateNextState(quest, input.next);
 
         const trackerId = this.trackerId(profileId, input.questId);
@@ -89,6 +94,7 @@ export class QuestProgressRepository {
             Date.now(),
             input.baseline,
           );
+        if (input.expectedImperialRevision !== undefined && (tracker.current.imperial?.revision ?? 0) !== input.expectedImperialRevision) return tracker;
         if ((input.expectedNodeId && tracker.current.currentNodeId !== input.expectedNodeId) ||
           (input.expectedManualRevision !== undefined && (tracker.manualRevision ?? 0) !== input.expectedManualRevision)) return tracker;
         const checkpoints = await this.questCheckpoints(
@@ -189,6 +195,7 @@ export class QuestProgressRepository {
         const rewards = definition.rewards.default;
         const now = Date.now();
         const record: QuestRecord = {
+          acceptedAt: now,
           id: `${profileId}:${definition.kind}:${definition.id}`,
           profileId,
           definitionId: definition.id,
@@ -199,6 +206,7 @@ export class QuestProgressRepository {
           status: start.status,
           currentStage: start.stage,
           totalStages: Math.max(
+            0,
             ...definition.nodes.map((node) => node.stage),
           ),
           rewardExperience: rewards.experience,
@@ -786,6 +794,7 @@ export class QuestProgressRepository {
         }
 
         await this.db.questHistory.put({
+          ...(tracker?.current.imperial ? { imperial: tracker.current.imperial } : {}),
           id: quest.id,
           profileId,
           kind: quest.kind,

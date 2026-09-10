@@ -6,6 +6,8 @@ import {
   questJudgeResultSchema,
   type QuestJudgeResult,
 } from '@/quests/schema';
+import { buildImperialJudgeMessages, type ImperialPromptInput } from '@/imperial/prompt';
+import { imperialResultSchema, type ImperialResult } from '@/imperial/model';
 export interface QuestJudgeEvaluation {
   result: QuestJudgeResult;
   rawResponse: string;
@@ -179,6 +181,7 @@ export class OpenAiCompatibleQuestJudgeClient
 
   private async requestMessages(
     messages: Array<{ role: 'system' | 'user'; content: string }>,
+    maximumResponseLength = 20_000,
   ): Promise<string> {
     const endpoint = resolveChatEndpoint(this.config.endpoint);
     const model = this.config.model.trim();
@@ -236,7 +239,7 @@ export class OpenAiCompatibleQuestJudgeClient
       if (!content.trim()) {
         throw new Error('副 API 没有返回可解析的文本');
       }
-      if (content.length > 20_000) throw new Error('副 API 返回内容过长');
+      if (content.length > maximumResponseLength) throw new Error('副 API 返回内容过长');
       return content;
     } catch (error) {
       if (request.controller.signal.aborted) {
@@ -250,6 +253,11 @@ export class OpenAiCompatibleQuestJudgeClient
       clearTimeout(timeout);
       if (this.activeRequest === request) this.activeRequest = undefined;
     }
+  }
+
+  async evaluateImperial(input: ImperialPromptInput): Promise<ImperialResult> {
+    const content = await this.requestMessages(buildImperialJudgeMessages(input), 80_000);
+    return imperialResultSchema.parse(parseJsonObject(content));
   }
 }
 

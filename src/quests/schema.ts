@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { IMPERIAL_OBJECTIVE, IMPERIAL_QUEST_ID } from '@/imperial/constants';
 
 const shortText = z.string().trim().min(1).max(240);
 const longText = z.string().trim().min(1).max(8_000);
@@ -144,6 +145,7 @@ const pacingPolicySchema = z.object({
 });
 
 const questDefinitionBaseSchema = z.object({
+  trackingMode: z.literal('imperial').optional(),
   id: z.string().trim().min(1).max(160),
   name: z.string().trim().min(1).max(160),
   kind: z.enum(['main', 'side', 'commission']),
@@ -167,9 +169,15 @@ const questDefinitionBaseSchema = z.object({
 export const questDefinitionSchema = questDefinitionBaseSchema
   .extend({
     startNodeId: z.string().trim().min(1).max(160),
-    nodes: z.array(questNodeSchema).min(1).max(1_000),
+    nodes: z.array(questNodeSchema).max(1_000),
   })
   .superRefine((quest, context) => {
+    if (quest.trackingMode === 'imperial') {
+      if (quest.id !== IMPERIAL_QUEST_ID || quest.nodes.length || quest.startNodeId !== 'imperial:active') {
+        context.addIssue({ code: 'custom', message: '皇权支线只允许无剧情节点的状态维护模式', path: ['nodes'] });
+      }
+      return;
+    }
     const nodeIds = new Set<string>();
     for (const [nodeIndex, node] of quest.nodes.entries()) {
       if (nodeIds.has(node.id)) {
@@ -524,6 +532,14 @@ export function questNode(
   quest: QuestDefinition,
   nodeId: string,
 ): QuestNodeDefinition {
+  if (quest.trackingMode === 'imperial' && ['imperial:active', 'imperial:ready'].includes(nodeId)) {
+    return {
+      id: nodeId, stage: 0, stageId: '', stageTitle: '', sceneId: '', sceneTitle: '', beatIndex: 0,
+      title: '皇权局势', roadmapSummary: '', objective: IMPERIAL_OBJECTIVE, purpose: '',
+      completionGate: IMPERIAL_OBJECTIVE, locations: [], sceneContext: '', sourceMaterial: '',
+      availableClues: [], forbiddenFacts: [], transitions: [], status: nodeId === 'imperial:ready' ? 'ready' : 'active',
+    };
+  }
   const resolved = quest.nodeAliases[nodeId] ?? nodeId;
   const node = quest.nodes.find((candidate) => candidate.id === resolved);
   if (!node) throw new Error(`任务 ${quest.id} 不存在节拍 ${nodeId}`);

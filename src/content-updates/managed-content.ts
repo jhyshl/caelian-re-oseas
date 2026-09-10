@@ -3,6 +3,7 @@ import {
   isCaelianWorldbookName,
 } from '@/content/character-identity';
 import { readCharacterTarget } from '@/tavern/character-target';
+import { applyWorldbookDelta, type WorldbookDelta } from './worldbook-delta';
 
 const CHARACTER_NAME = '凯利安';
 const APPLIED_STORAGE_KEY = 'caelian:managed-content:applied:v1';
@@ -377,6 +378,10 @@ export class ManagedContentUpdater {
     if (!manifest) return emptyResult('offline');
     this.assertSafeManifest(manifest, worldbookName);
 
+    if (manifest.revision === '2026-09-10.imperial-worldbook.1') {
+      return this.syncImperialDelta(api, identity, worldbookName);
+    }
+
     const appliedState = this.readAppliedState(identity.avatar);
     const conflicts: ManagedContentSyncResult['conflicts'] = [];
     let applied = 0;
@@ -449,6 +454,59 @@ export class ManagedContentUpdater {
       primaryWorldbook: typeof world === 'string' ? world.trim() : undefined,
       assertCurrent: target.assertCurrent,
     };
+  }
+
+  private async syncImperialDelta(
+    api: ManagedContentApi, identity: CurrentCharacterIdentity, worldbookName: string,
+  ): Promise<ManagedContentSyncResult> {
+    const { default: data } = await import('../../public/managed-content/worldbook-deltas/imperial-2026-09-10.json');
+    const delta = data as WorldbookDelta;
+    const key = this.characterStorageKey(`caelian:worldbook-delta:${worldbookName}:${delta.revision}`, identity.avatar);
+    let applied = 0;
+    const conflicts: ManagedContentSyncResult['conflicts'] = [];
+    const previous = this.host.localStorage.getItem(key);
+    if (previous) {
+      const saved = JSON.parse(previous) as { conflicts?: string[] };
+      for (const reason of saved.conflicts ?? []) conflicts.push({ operationId: delta.revision, reason });
+    } else {
+      if (!api.updateWorldbookWith) throw new Error('世界书编辑接口不可用');
+      let report: ReturnType<typeof applyWorldbookDelta> | undefined;
+      await api.updateWorldbookWith.call(api, worldbookName, entries => {
+        identity.assertCurrent();
+        report = applyWorldbookDelta(entries, delta);
+        // Persist recovery evidence before any host mutation. Never replace from the Beta file.
+        this.host.localStorage.setItem(`${key}:backup`, JSON.stringify(entries));
+        return report.entries as ManagedWorldbookEntry[];
+      }, { render: 'debounced' });
+      if (!report) throw new Error('世界书差量更新未执行');
+      identity.assertCurrent();
+      const verified = await this.readWorldbook(api, worldbookName);
+      if (verified.length !== report.entries.length || report.entries.some(expected =>
+        !verified.some(actual => String(actual.uid) === String(expected.uid) && actual.name === expected.name && actual.content === expected.content))) {
+        throw new Error('世界书差量更新回读失败，保留备份以便重试');
+      }
+      this.host.localStorage.setItem(key, JSON.stringify({ conflicts: report.conflicts, appliedAt: Date.now() }));
+      applied += report.applied;
+      for (const reason of report.conflicts) conflicts.push({ operationId: delta.revision, reason });
+    }
+    // Fetch and merge only greeting fields by the actual PNG avatar identity.
+    const character = await this.readPersistedCharacter(identity);
+    const greetings = character.first_messages.map(message => message.replaceAll('朱利安', '卢修斯'));
+    if (greetings.some((message, index) => message !== character.first_messages[index])) {
+      identity.assertCurrent();
+      const response = await this.host.fetch('/api/characters/merge-attributes', {
+        method: 'POST', headers: identity.requestHeaders, cache: 'no-store',
+        body: JSON.stringify({ avatar: identity.avatar, first_mes: greetings[0],
+          data: { first_mes: greetings[0], alternate_greetings: greetings.slice(1) } }),
+      });
+      if (!response.ok) throw new Error(`角色卡开场白写回失败 (${response.status})`);
+      await this.refreshCurrentCharacterMemory(identity);
+      const verified = await this.readPersistedCharacter(identity);
+      if (JSON.stringify(verified.first_messages) !== JSON.stringify(greetings)) throw new Error('角色卡开场白回读失败');
+      applied += 1;
+    }
+    this.writeConflicts(delta.revision, conflicts, identity.avatar);
+    return { status: applied ? 'applied' : 'current', revision: delta.revision, applied, skipped: previous ? 1 : 0, conflicts };
   }
 
   private resolveApi(): ManagedContentApi {

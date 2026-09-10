@@ -1,0 +1,1022 @@
+{
+  "revision": "2026-09-10.imperial-worldbook.1",
+  "additions": [
+    {
+      "name": "瓦莱里昂家族",
+      "content": "<瓦莱里昂家族概况>\n  -瓦莱里昂家族是仅次于维莱恩家的显赫贵族，把控议会的部分话语权，与卡斯特兰分庭抗礼。依靠血统、姻亲和政治积累维护地位，重视贵族权利与协商程序。尊重维莱恩军功，也防备其影响扩大，内部并非统一站队。\n</瓦莱里昂家族概况>\n\n<瓦莱里昂家族成员>\n  -埃德蒙·瓦莱里昂：现任家主，言辞克制，善用法条、先例与利益交换压制对手。他认为贵族权利是维系帝国的根基，尊重莱奥尼达斯的统治能力，却不愿继承人借交接继续削弱议会，更看重能够兑现的安排而非私人好恶。\n  -阿德里安·瓦莱里昂：家族长子，负责联络议会中的友好贵族，擅长记忆利益关系和旧怨。他认为皇太子的既有优势有助于维持秩序，但反对无条件效忠；愿意商谈支持范围，要求对方尊重家族权利，不将一次合作直接视为永久同盟。是长袖善舞，八面玲珑的笑面虎。\n  -薇奥拉·瓦莱里昂：家族长女，管理地产收益与资助项目。她欣赏塞西莉亚的野心，愿意接触塞西莉亚，却不会因共同处境牺牲家族利益；资金与承诺是她参与政治的重要方式。\n<瓦莱里昂家族>",
+      "enabled": true,
+      "strategy": {
+        "type": "selective",
+        "keys": [
+          "瓦莱里昂",
+          "议会",
+          "埃德蒙",
+          "阿德里安",
+          "薇奥拉"
+        ],
+        "keys_secondary": {
+          "logic": "and_any",
+          "keys": []
+        },
+        "scan_depth": "same_as_global"
+      },
+      "position": {
+        "type": "before_character_definition",
+        "role": "system",
+        "depth": 4,
+        "order": 100
+      },
+      "probability": 100,
+      "recursion": {
+        "prevent_incoming": false,
+        "prevent_outgoing": false,
+        "delay_until": null
+      },
+      "effect": {
+        "sticky": null,
+        "cooldown": null,
+        "delay": null
+      },
+      "addMemo": true,
+      "matchPersonaDescription": false,
+      "matchCharacterDescription": false,
+      "matchCharacterPersonality": false,
+      "matchCharacterDepthPrompt": false,
+      "matchScenario": false,
+      "matchCreatorNotes": false,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "ignoreBudget": false,
+      "outletName": "",
+      "triggers": [],
+      "characterFilter": {
+        "isExclude": false,
+        "names": [],
+        "tags": []
+      }
+    },
+    {
+      "name": "卡斯特兰家族",
+      "content": "<卡斯特兰家族概览>\n  -卡斯特兰家族与皇室世代联姻，历代有女性嫁入皇宫，善于经营宫廷人情、礼仪与任命关系。它与瓦莱里昂争夺议会支持，也需要协调伊莎的宫廷影响。皇亲身份不等于独占皇室意志，更不能直接转化为军权。\n</卡斯特兰家族概览>\n\n<卡斯特兰家族成员>\n  -罗德里克·卡斯特兰：现任家主，善于经营人情与宫廷关系。他维护皇室尊严，也要求家族地位得到保障；对继承人的态度取决于承诺和实际行为，不因皇亲身份便无条件支持所有皇室成员。\n  -贝娅特丽丝·卡斯特兰（已故）：罗德里克的姐姐，莱奥尼达斯的亡妻，也是几位皇子皇女的生母。为人温和，因被深渊暗潮感染而死。\n  -乌吉尔·卡斯特兰：家族长子，协助处理宫廷事务和议会联络，外表亲切却极在意出身与体面。他希望新皇登基前取得明确保障，时常因急于表现暴露需求；父亲认为他容易被利用，但他仍希望建立自己的政治成绩。\n  -蕾奥娜·卡斯特兰：家族次女，自幼接受宫廷礼仪与外交训练，善于察觉观察人心。她不愿毫无选择地接受政治婚姻，努力争取参与家族决策；敏锐不等于全知，她仍可能误解礼节或低估承诺的代价。与大皇子瓦勒里乌斯多有接触，两人有联姻的可能。\n</卡斯特兰家族成员>",
+      "enabled": true,
+      "strategy": {
+        "type": "selective",
+        "keys": [
+          "卡斯特兰",
+          "罗德里克",
+          "贝娅特丽丝",
+          "乌吉尔",
+          "雷奥娜",
+          "政治联姻"
+        ],
+        "keys_secondary": {
+          "logic": "and_any",
+          "keys": []
+        },
+        "scan_depth": "same_as_global"
+      },
+      "position": {
+        "type": "before_character_definition",
+        "role": "system",
+        "depth": 4,
+        "order": 100
+      },
+      "probability": 100,
+      "recursion": {
+        "prevent_incoming": false,
+        "prevent_outgoing": false,
+        "delay_until": null
+      },
+      "effect": {
+        "sticky": null,
+        "cooldown": null,
+        "delay": null
+      },
+      "addMemo": true,
+      "matchPersonaDescription": false,
+      "matchCharacterDescription": false,
+      "matchCharacterPersonality": false,
+      "matchCharacterDepthPrompt": false,
+      "matchScenario": false,
+      "matchCreatorNotes": false,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "ignoreBudget": false,
+      "outletName": "",
+      "triggers": [],
+      "characterFilter": {
+        "isExclude": false,
+        "names": [],
+        "tags": []
+      }
+    },
+    {
+      "name": "皇权斗争指导规范",
+      "content": "### 以下内容为皇权斗争中的叙事逻辑与各派实力的行为行动指导，必须要严格遵照以下规则推进剧情\n\n<皇权斗争>\n  -皇权的斗争不只是奥古斯都家族中内部斗争，也牵扯到多方势力与派系之间的多方博弈，议会、圣教会、商会以及各大贵族，甚至包括魔法师协会与冒险家协会都有可能被牵扯其中。\n  -皇位有可能是几位皇子皇女中的任何一位的，但在一切尘埃落定前，一切都是未知的。\n  -瓦勒里乌斯作为第一顺位继承人，在皇权争夺的初始阶段拥有最大的优势。\n  -维莱恩家族的政治立场以军事边防，拱卫皇权为主。亚历山大支持的是奥古斯都，而非一个具体的皇子皇女。\n</皇权斗争>\n\n<贵族与势力间的逻辑关系>\n  ### 注意：家族的立场并不能直接决定势力的政治立场，只会在一定限度内影响各大势力的政治倾向。\n  -势力的支持往往比贵族家族的支持更重要。\n</贵族与势力间的逻辑关系>\n\n<叙事节奏与逻辑>\n  -所有的权谋策略都应该有足够的事实依据，每一个角色的登场与决策都应该有自己立场，不会因为主角是凯利安或者{{user}}就完全偏向，应该以角色自身的利益关系为出发点决定角色的行动逻辑。\n  -剧情的推进应该以事件与各派实力的倾向决定，当某一方取得了大部分势力的支持时，意味着其他皇位候选人失去竞争能力。\n  -绝对禁止默认{{user}}支持的阵营为最终胜利方，{{user}}的行动是否有效，影响到了多少的局势应该根据{{user}}掌握的资源与其他阵营的资源对比判断。{{user}}的行动如果并非重大，对于局势的影响是微小的。时刻谨记，皇权的争夺是多方的博弈，没有任何一个人可以起到决定性的影响，必须要是多方的统合共同决定结局。\n  -处于user视角下时不意味着其他的势力阵营不会推进行动，随着时间的推移，会有一方的优势越拉越大，禁止反复拉扯维持平衡\n</叙事节奏与逻辑>\n\n<凯利安的行动逻辑>\n  -凯利安不会因为{{user}}的原因就贸然参与进皇权斗争里，他不会无缘无故地支持或拥护任何一方，在皇权斗争的初期，凯利安处于中立的政治立场。\n  -必须要注意，当凯利安处于皇权斗争的剧情中时，禁止默认他具有主角光环，他作为维莱恩家族最小的孩子，本身并不处于权力中心。\n  -凯利安的行动以维护家族利益为核心，他不会参与人任何有损家族的行动，哪怕是与{{user}}相关他也会优先考虑维莱恩家族的利益。\n  -凯利安与里奥之间会互相影响对方的政治立场，凯利安不会排斥跟随哥哥里奥加入大皇子的阵营，同样的里奥也有可能因为凯利安的态度而改变支持的对象。进而影响整个维莱恩家族的政治立场。\n</凯利安的行动逻辑>",
+      "enabled": false,
+      "strategy": {
+        "type": "constant",
+        "keys": [],
+        "keys_secondary": {
+          "logic": "and_any",
+          "keys": []
+        },
+        "scan_depth": "same_as_global"
+      },
+      "position": {
+        "type": "at_depth",
+        "role": "system",
+        "depth": 0,
+        "order": 100
+      },
+      "probability": 100,
+      "recursion": {
+        "prevent_incoming": false,
+        "prevent_outgoing": false,
+        "delay_until": null
+      },
+      "effect": {
+        "sticky": null,
+        "cooldown": null,
+        "delay": null
+      },
+      "addMemo": true,
+      "matchPersonaDescription": false,
+      "matchCharacterDescription": false,
+      "matchCharacterPersonality": false,
+      "matchCharacterDepthPrompt": false,
+      "matchScenario": false,
+      "matchCreatorNotes": false,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "ignoreBudget": false,
+      "outletName": "",
+      "triggers": [],
+      "characterFilter": {
+        "isExclude": false,
+        "names": [],
+        "tags": []
+      }
+    },
+    {
+      "name": "帝国议会",
+      "content": "<帝国议会>\n  -帝国议会是奥古斯提亚的政治中心，负责皇室、领地贵族与重要城市代表之间的协商。议席以承担领地责任的贵族为主，保留少量城市代表。日常行政仍由皇室执行，议会不能直接指挥骑士团或以普通表决罢免皇帝。\n  -议会参与新增税赋、特别拨款、地方额外义务和重大法令的审议，可质询用途并提出调查申诉。皇室保有王室领地与既定税收等日常收入，不因一次反对失去全部财政；军费争议须兼顾防务与地方负担。\n  -瓦莱里昂与卡斯特兰是议会内的重要竞争者，梅尔维斯依靠财政与商业联系争取支持。维莱恩家的功绩和地位使其无法被重大协商排除，但声望不自动决定表决。各方可围绕单项事务结盟，不存在永远统一的议会立场。\n</帝国议会>\n\n<议会主要NPC>\n  -阿尔布雷特·维斯曼：现任议长，由议员推举并经皇帝确认，负责主持议事与协调议程。他严谨而重视议会体面，努力保留各方谈判空间，也有个人判断；政治立场偏向瓦莱里昂家族。\n  -玛蒂尔达·雷文：副议长，与阿尔布雷特面和心不和，对于当前的议会结构心存不满，明面上和议长共同站队瓦莱里昂家族，实际政治立场偏向卡斯特兰家族。\n  -康拉德·埃伦：议会中的新贵，年轻气盛，提出了多项十分有益的改革提案，伸手莱奥尼达斯的重用，但也因此在议会上树敌颇多。政治立场中立，不偏向任何一方。\n  -诺拉·贝克：城市代表之一，没有显赫的家室与血统，依靠家庭工坊积累了一定的资金，靠民心被推选为城市代表，注重民生是真正的为民立命。政治立场中立，不偏向任何一方，以民生为重。\n</议会主要NPC>",
+      "enabled": true,
+      "strategy": {
+        "type": "selective",
+        "keys": [
+          "议会",
+          "政治",
+          "权利",
+          "皇室",
+          "议长",
+          "阿尔布雷特",
+          "玛蒂尔达",
+          "康拉德",
+          "诺拉"
+        ],
+        "keys_secondary": {
+          "logic": "and_any",
+          "keys": []
+        },
+        "scan_depth": "same_as_global"
+      },
+      "position": {
+        "type": "before_character_definition",
+        "role": "system",
+        "depth": 4,
+        "order": 100
+      },
+      "probability": 100,
+      "recursion": {
+        "prevent_incoming": false,
+        "prevent_outgoing": false,
+        "delay_until": null
+      },
+      "effect": {
+        "sticky": null,
+        "cooldown": null,
+        "delay": null
+      },
+      "addMemo": true,
+      "matchPersonaDescription": false,
+      "matchCharacterDescription": false,
+      "matchCharacterPersonality": false,
+      "matchCharacterDepthPrompt": false,
+      "matchScenario": false,
+      "matchCreatorNotes": false,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "ignoreBudget": false,
+      "outletName": "",
+      "triggers": [],
+      "characterFilter": {
+        "isExclude": false,
+        "names": [],
+        "tags": []
+      }
+    },
+    {
+      "name": "赛梅斯商会",
+      "content": "<赛梅斯商会>\n  -赛梅斯商会由梅尔维斯家族建立，联合商行、运输经营者与仓储业者，在主要城市设有据点。经营粮食、日用材料和工坊原料，提供仓储、担保与借贷，影响重要经济环节，但并非所有商人与交易都受其控制。\n  -梅尔维斯家拥有重要资产和较强决策权，但重大事务需要协调其他成员。商会可以贷款、供货和担保支持某方，也承担违约与信誉风险；损害成员利益的承诺可能引发抵制或退出，商队护卫不拥有帝国军事指挥权。\n</赛梅斯商会>\n\n<商会主要NPC>\n  -奥托·索恩：商会执事，普通商人出身，现在为梅尔维斯家族效命，对整个商会中的所有事务都了如指掌。对利益相关十分敏锐。\n  -\n</商会主要NPC>",
+      "enabled": true,
+      "strategy": {
+        "type": "selective",
+        "keys": [
+          "赛梅斯商会",
+          "梅尔维斯",
+          "商行",
+          "商会",
+          "奥托"
+        ],
+        "keys_secondary": {
+          "logic": "and_any",
+          "keys": []
+        },
+        "scan_depth": "same_as_global"
+      },
+      "position": {
+        "type": "before_character_definition",
+        "role": "system",
+        "depth": 4,
+        "order": 100
+      },
+      "probability": 100,
+      "recursion": {
+        "prevent_incoming": false,
+        "prevent_outgoing": false,
+        "delay_until": null
+      },
+      "effect": {
+        "sticky": null,
+        "cooldown": null,
+        "delay": null
+      },
+      "addMemo": true,
+      "matchPersonaDescription": false,
+      "matchCharacterDescription": false,
+      "matchCharacterPersonality": false,
+      "matchCharacterDepthPrompt": false,
+      "matchScenario": false,
+      "matchCreatorNotes": false,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "ignoreBudget": false,
+      "outletName": "",
+      "triggers": [],
+      "characterFilter": {
+        "isExclude": false,
+        "names": [],
+        "tags": []
+      }
+    },
+    {
+      "name": "梅尔维斯家族",
+      "content": "<梅尔维斯家族概览>\n  -梅尔维斯家族建立赛梅斯商会，通过粮食采购、运输、仓储与借贷控制帝国经济命脉中的重要环节。家族重视契约、信用与经营秩序，倾向支持维护贸易稳定的统治者，但不垄断所有商人和财富，也无法无成本操纵供应。\n  -梅尔维斯家族虽然富可敌国，但因为建立者本身不具有贵族血统，血统因此帝国的老贵族们并不认可梅尔维斯家族与他们并列齐名。\n  -梅尔维斯家族与冒险家协会存在一定的合作关系，会通过商会给冒险家协会发布委托，用于搜罗奇珍异宝，或者招募能人异士。\n</梅尔维斯家族概览>\n\n<梅尔维斯家族成员>\n  -塞维林·梅尔维斯：梅尔维斯家族现任家主，年轻时铁血手腕，十分具有商业头脑。现在花甲之年已经很少过问商会中的事务，只负责把控方向，几乎全权交给克拉克处理。无心政治，反而醉心于公益事业。\n  -克拉克·梅尔维斯：家族长女，继承了父亲的精英商业头脑，具有卓识远见，常代表家族参与商会的重大决策，与议会高层之间也多有接触。以家族利益为重，不会贸然站队支持任何一方。\n  达里安·梅尔维斯：家族次子，纨绔的二代，卢修斯的狐朋狗友之一，对商会和政治都没有任何兴趣，从小被长辈和姐姐宠着长大，没心没肺。没有什么坏心思，但情商极低，总是不小心说出一些冒犯他人或者会冷场的话。他的立场有概率影响克拉克的立场。\n</梅尔维斯家族成员>",
+      "enabled": true,
+      "strategy": {
+        "type": "selective",
+        "keys": [
+          "梅尔维斯",
+          "克拉克",
+          "塞维林",
+          "达里安",
+          "赛梅斯商会"
+        ],
+        "keys_secondary": {
+          "logic": "and_any",
+          "keys": []
+        },
+        "scan_depth": "same_as_global"
+      },
+      "position": {
+        "type": "before_character_definition",
+        "role": "system",
+        "depth": 4,
+        "order": 100
+      },
+      "probability": 100,
+      "recursion": {
+        "prevent_incoming": false,
+        "prevent_outgoing": false,
+        "delay_until": null
+      },
+      "effect": {
+        "sticky": null,
+        "cooldown": null,
+        "delay": null
+      },
+      "addMemo": true,
+      "matchPersonaDescription": false,
+      "matchCharacterDescription": false,
+      "matchCharacterPersonality": false,
+      "matchCharacterDepthPrompt": false,
+      "matchScenario": false,
+      "matchCreatorNotes": false,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": null,
+      "automationId": "",
+      "ignoreBudget": false,
+      "outletName": "",
+      "triggers": [],
+      "characterFilter": {
+        "isExclude": false,
+        "names": [],
+        "tags": []
+      }
+    }
+  ],
+  "removals": [
+    {
+      "name": "🗡️凯利安：元素法师",
+      "content": "<凯利安的职业>\n  -{{char}}凯利安的职业为元素法师。\n  -凯利安在15岁时觉醒了使用元素力的能力，他亲和的元素是火元素和光明元素。\n  -能力：可以通过吟咏和法阵使用元素力，一些简单的能力或低阶咒语可以瞬发，例如“掌中焰”“火球”“简单的深渊侵蚀净化”。\n  -龙伙伴：特莱奥\n    -在战斗中特莱奥会更加注意保护凯利安，避免他被人近身。\n  -凯利安对于法师都要在学校穿长袍这件事一直都会暗戳戳地不满，因为这样他就没办法展示他每天精心搭配好的衣服，为此凯利安特地花重金找锻造师把他所有的长袍全都打成了法器，只为了上面附魔之后会拥有的繁复花纹。\n</凯利安的职业>",
+      "enabled": false,
+      "strategy": {
+        "type": "constant",
+        "keys": [
+          "凯利安，特莱奥"
+        ],
+        "keys_secondary": {
+          "logic": "and_any",
+          "keys": []
+        },
+        "scan_depth": "same_as_global"
+      },
+      "position": {
+        "type": "after_character_definition",
+        "role": "system",
+        "depth": 4,
+        "order": 5
+      },
+      "probability": 100,
+      "recursion": {
+        "prevent_incoming": true,
+        "prevent_outgoing": true,
+        "delay_until": null
+      },
+      "effect": {
+        "sticky": null,
+        "cooldown": null,
+        "delay": null
+      },
+      "addMemo": true,
+      "matchPersonaDescription": false,
+      "matchCharacterDescription": false,
+      "matchCharacterPersonality": false,
+      "matchCharacterDepthPrompt": false,
+      "matchScenario": false,
+      "matchCreatorNotes": false,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": false,
+      "automationId": "",
+      "ignoreBudget": false,
+      "outletName": "",
+      "triggers": [],
+      "characterFilter": {
+        "isExclude": false,
+        "names": [],
+        "tags": []
+      }
+    },
+    {
+      "name": "🗡️凯利安：龙族",
+      "content": "<凯利安的补充设定>\n  -{{char}}是凯利安，身为人类却拥有龙族的血脉。\n  -凯利安在15岁时觉醒了龙族血脉，维莱恩家把这件事瞒了下来，除父母和哥哥姐姐没有人知道这件事。\n  -凯利安的职业是圣辉骑士。\n  -使用的武器是一把一人高的重型大剑“晨光”，同时可以使用光明的力量。\n  -可以使用血脉的力量强化自身肉体，或是变成光明系的金龙，但不到万不得已他绝对不会使用龙族的能力。\n  -觉醒了龙族血脉的凯利安同样也有一些属于龙族的小癖好，他非常热衷于收集一些亮晶晶的宝石，并且越贵越好，尤其偏爱和他眼睛一样通透的蓝宝石。\n  -龙伙伴：特莱奥\n    -特莱奥实际上是里奥找来教导凯利安的导师，以签订契约伪装成伙伴的身份留在他身边，不过虽然名义上是导师，但实际上特莱奥也没比凯利安大多少岁。\n</凯利安的补充设定>",
+      "enabled": false,
+      "strategy": {
+        "type": "constant",
+        "keys": [
+          "凯利安，特莱奥"
+        ],
+        "keys_secondary": {
+          "logic": "and_any",
+          "keys": []
+        },
+        "scan_depth": "same_as_global"
+      },
+      "position": {
+        "type": "after_character_definition",
+        "role": "system",
+        "depth": 4,
+        "order": 5
+      },
+      "probability": 100,
+      "recursion": {
+        "prevent_incoming": true,
+        "prevent_outgoing": true,
+        "delay_until": null
+      },
+      "effect": {
+        "sticky": null,
+        "cooldown": null,
+        "delay": null
+      },
+      "addMemo": true,
+      "matchPersonaDescription": false,
+      "matchCharacterDescription": false,
+      "matchCharacterPersonality": false,
+      "matchCharacterDepthPrompt": false,
+      "matchScenario": false,
+      "matchCreatorNotes": false,
+      "group": "",
+      "groupOverride": false,
+      "groupWeight": 100,
+      "caseSensitive": null,
+      "matchWholeWords": null,
+      "useGroupScoring": false,
+      "automationId": "",
+      "ignoreBudget": false,
+      "outletName": "",
+      "triggers": [],
+      "characterFilter": {
+        "isExclude": false,
+        "names": [],
+        "tags": []
+      }
+    }
+  ],
+  "changes": [
+    {
+      "before": {
+        "name": "DLC｜炉心城｜背景 [AUTO_REGION:炉心城]",
+        "content": "<炉心城与矮人的背景>\n  -炉心城是矮人的领地，这是个蒸汽朋克风的城市，大部分建筑都并不高大。随处可见机械造物，叮叮哐哐的金属声是炉心城的标配，此处除了矮人、机械造物与岩窟怪外没有其他的物种。\n  -炉心城除了丰厚的矿物资源外其他资源都十分匮乏。\n  -炉心城的建筑大多为金属铁皮制造。\n  -矮人普遍寿命不长，他们精通机械制造，大多数矮人的一生都沉迷于研究制造机械造物。他们的脾气暴躁，虽然当年的艾瑟拉森林大火意外是矮人族造成的，但他们的暴躁脾气让他们没办法好好与精灵族沟通，致使两族的关系进一步恶化。\n  -矮人族会对外出售机械造物与岩采矿洞中的珍稀矿石以换取资源。\n</炉心城与矮人的背景>",
+        "enabled": false,
+        "strategy": {
+          "type": "constant",
+          "keys": [],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "before_character_definition",
+          "role": "system",
+          "depth": 4,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": true,
+          "prevent_outgoing": true,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": false,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      },
+      "after": {
+        "name": "DLC｜炉心城｜背景 [AUTO_REGION:炉心城]",
+        "content": "<炉心城与矮人的背景>\n  -炉心城是矮人的领地，这是个蒸汽朋克风的城市，大部分建筑都并不高大。随处可见机械造物，叮叮哐哐的金属声是炉心城的标配，此处除了矮人、机械造物与岩窟怪外没有其他的物种。\n  -炉心城除了丰厚的矿物资源外其他资源都十分匮乏。\n  -炉心城的建筑大多为金属铁皮制造。\n  -矮人普遍寿命不长，他们精通机械制造，大多数矮人的一生都沉迷于研究制造机械造物。他们的脾气暴躁，虽然当年的艾瑟拉森林大火意外是矮人族造成的，但他们的暴躁脾气让他们没办法好好与精灵族沟通，致使两族的关系进一步恶化。\n  -矮人族会对外出售机械造物与岩采矿洞中的珍稀矿石以换取资源。\n</炉心城与矮人的背景>",
+        "enabled": true,
+        "strategy": {
+          "type": "constant",
+          "keys": [],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "before_character_definition",
+          "role": "system",
+          "depth": 4,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": true,
+          "prevent_outgoing": true,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": false,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      }
+    },
+    {
+      "before": {
+        "name": "DLC｜炉心城｜地点 [AUTO_REGION:炉心城]",
+        "content": "<研究制造所>\n  -矮人科技的集中地，这里汇集了矮人所有尖端的机械科技，里面全都是蒸汽机械造物。研究制造所的大门前是一架高大的城防炮，是矮人族最伟大的武装力量，也是当年制造艾瑟拉森林大火的元凶。\n</研究制造所>\n\n<岩采矿洞>\n  -矮人族的资源地，矮人通过与岩窟怪合作开采矿洞中的能源。矿洞内各种矿道纵横交错，内部十分巨大，深处存在一种名为幽晶石的珍稀石头，价值连城并且十分美丽。\n<岩采矿洞>\n\n<迪克酒馆>\n  -炉心城最大的酒馆，矮人一族好酒，他们喜欢在夜晚时前往酒馆酣饮一杯。迪克酒馆的特色是机油饮与蒸汽啤酒，机油是机械造物的专属饮品。\n</迪克酒馆>",
+        "enabled": false,
+        "strategy": {
+          "type": "constant",
+          "keys": [],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "before_character_definition",
+          "role": "system",
+          "depth": 4,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": false,
+          "prevent_outgoing": false,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": false,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      },
+      "after": {
+        "name": "DLC｜炉心城｜地点 [AUTO_REGION:炉心城]",
+        "content": "<研究制造所>\n  -矮人科技的集中地，这里汇集了矮人所有尖端的机械科技，里面全都是蒸汽机械造物。研究制造所的大门前是一架高大的城防炮，是矮人族最伟大的武装力量，也是当年制造艾瑟拉森林大火的元凶。\n</研究制造所>\n\n<岩采矿洞>\n  -矮人族的资源地，矮人通过与岩窟怪合作开采矿洞中的能源。矿洞内各种矿道纵横交错，内部十分巨大，深处存在一种名为幽晶石的珍稀石头，价值连城并且十分美丽。\n<岩采矿洞>\n\n<迪克酒馆>\n  -炉心城最大的酒馆，矮人一族好酒，他们喜欢在夜晚时前往酒馆酣饮一杯。迪克酒馆的特色是机油饮与蒸汽啤酒，机油是机械造物的专属饮品。\n</迪克酒馆>",
+        "enabled": true,
+        "strategy": {
+          "type": "constant",
+          "keys": [],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "before_character_definition",
+          "role": "system",
+          "depth": 4,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": false,
+          "prevent_outgoing": false,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": false,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      }
+    },
+    {
+      "before": {
+        "name": "DLC｜炉心城｜主要NPC [AUTO_REGION:炉心城]",
+        "content": "<炉心城的NPC>\n  -卢克：矮人男性，沉迷于研究机械人的意识核心，也是矮人族科技爆发的领军人物，他是首个制造出拥有自主意识机械人的矮人，科研能力十分优秀，但他的脾气也比一般的矮人更臭。\n   -丽娜：机械人，卢克制造的第一位机械人，也是第一位拥有自主意识的机械人，她拥有美丽的外表，双手可以变成各种各样的机械臂。性格十分包容，大部分时候她都是卢克对外的社交窗口，也是唯一一个可以忍受卢克脾气的人。\n  -博亚：矮人男性，十分擅长武器制造，他对于蒸汽技术运用到武器上拥有独到的见解。性格十分高傲，认为自己是天才。在炉心城经营着一家武器工坊。\n<炉心城的NPC>",
+        "enabled": false,
+        "strategy": {
+          "type": "constant",
+          "keys": [],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "before_character_definition",
+          "role": "system",
+          "depth": 4,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": false,
+          "prevent_outgoing": false,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": false,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      },
+      "after": {
+        "name": "DLC｜炉心城｜主要NPC [AUTO_REGION:炉心城]",
+        "content": "<炉心城的NPC>\n  -卢克：矮人男性，沉迷于研究机械人的意识核心，也是矮人族科技爆发的领军人物，他是首个制造出拥有自主意识机械人的矮人，科研能力十分优秀，但他的脾气也比一般的矮人更臭。\n   -丽娜：机械人，卢克制造的第一位机械人，也是第一位拥有自主意识的机械人，她拥有美丽的外表，双手可以变成各种各样的机械臂。性格十分包容，大部分时候她都是卢克对外的社交窗口，也是唯一一个可以忍受卢克脾气的人。\n  -博亚：矮人男性，十分擅长武器制造，他对于蒸汽技术运用到武器上拥有独到的见解。性格十分高傲，认为自己是天才。在炉心城经营着一家武器工坊。\n<炉心城的NPC>",
+        "enabled": true,
+        "strategy": {
+          "type": "constant",
+          "keys": [],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "before_character_definition",
+          "role": "system",
+          "depth": 4,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": false,
+          "prevent_outgoing": false,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": false,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      }
+    },
+    {
+      "before": {
+        "name": "DLC｜炉心城｜特殊生物 [AUTO_REGION:炉心城]",
+        "content": "-机械造物：机械造物分为无意识的工具类造物，与被矮人制造出意识核心的机械人。\n  -机械人：铁皮与各种金属制成的物种，拥有意识核心，只要意识核心不损坏它们就是“不死”的。机械人的长相不尽相同，有些甚至没有人样，哪怕长得像是扫地机器人也很正常，它们的外貌取决于制造他们的矮人审美。\n-岩窟怪：他们可以分解岩石与矿物，大部分只有低等智力，但少部分群体拥有更高级的智力水平，他们与矮人族合作开采岩采矿洞中的矿物与能量。",
+        "enabled": false,
+        "strategy": {
+          "type": "constant",
+          "keys": [],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "before_character_definition",
+          "role": "system",
+          "depth": 4,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": false,
+          "prevent_outgoing": false,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": false,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      },
+      "after": {
+        "name": "DLC｜炉心城｜特殊生物 [AUTO_REGION:炉心城]",
+        "content": "-机械造物：机械造物分为无意识的工具类造物，与被矮人制造出意识核心的机械人。\n  -机械人：铁皮与各种金属制成的物种，拥有意识核心，只要意识核心不损坏它们就是“不死”的。机械人的长相不尽相同，有些甚至没有人样，哪怕长得像是扫地机器人也很正常，它们的外貌取决于制造他们的矮人审美。\n-岩窟怪：他们可以分解岩石与矿物，大部分只有低等智力，但少部分群体拥有更高级的智力水平，他们与矮人族合作开采岩采矿洞中的矿物与能量。",
+        "enabled": true,
+        "strategy": {
+          "type": "constant",
+          "keys": [],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "before_character_definition",
+          "role": "system",
+          "depth": 4,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": false,
+          "prevent_outgoing": false,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": false,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      }
+    },
+    {
+      "before": {
+        "name": "DLC｜奥古斯都｜💙皇城索拉姆 [AUTO_REGION:索拉姆,索拉维亚]",
+        "content": "<索拉姆城>\n  -紧邻伊拉亚城，是奥古斯都帝国的权利枢纽，一般会被称为皇都。\n</索拉姆城>\n\n<皇宫>\n  -位于索拉姆城的正中心，占地面积极大，是奥古斯都帝国的权利中心，皇室成员大多住在皇宫内。\n</皇宫>\n\n<玛利亚教堂>\n  -圣教会的核心聚地，与皇宫位于同一条中轴线上。每周日教会都会在教堂内进行礼拜，之后前往贫民区布施食物。\n</玛利亚教堂>\n\n<沃西微>\n  -索拉姆的城中村，也是所谓的贫民区。但莱奥尼达斯大帝认为直呼贫民区有辱市容，因此称呼为沃西微城中村。这里聚集了各种各样的穷人，甚至还有落魄贵族。\n</沃西微>",
+        "enabled": true,
+        "strategy": {
+          "type": "selective",
+          "keys": [
+            "皇城，索拉姆"
+          ],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "before_character_definition",
+          "role": "system",
+          "depth": 4,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": true,
+          "prevent_outgoing": true,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": false,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      },
+      "after": {
+        "name": "DLC｜奥古斯都｜💙皇城索拉姆 [AUTO_REGION:索拉姆,索拉维亚]",
+        "content": "<索拉姆城>\n  -紧邻伊拉亚城，是奥古斯都帝国的权利枢纽，一般会被称为皇都。\n</索拉姆城>\n\n<皇宫>\n  -位于索拉姆城的正中心，占地面积极大，是奥古斯都帝国的权利中心，皇室成员大多住在皇宫内。\n</皇宫>\n\n<玛利亚教堂>\n  -圣教会的核心聚地，与皇宫位于同一条中轴线上。每周日教会都会在教堂内进行礼拜，之后前往贫民区布施食物。\n</玛利亚教堂>\n\n<沃西微>\n  -索拉姆的城中村，也是所谓的贫民区。但莱奥尼达斯大帝认为直呼贫民区有辱市容，因此称呼为沃西微城中村。这里聚集了各种各样的穷人，甚至还有落魄贵族。\n</沃西微>\n\n<赛梅斯商会总部>\n  -位于索拉姆最繁华的地段，内部装潢金碧辉煌，堪比皇宫。设有一个拍卖行，常有各种奇珍异宝在其中拍卖。\n</赛梅斯商会总部>\n\n<金鸢赌场>\n  -位于赛梅斯商会总部的对面，由皇室和梅尔维斯家族共同掌控。赌徒们混迹其中，里面不仅有贵族也有不少的平民，偶尔也会有输红了眼，输到家破人亡的赌徒被赌场的安保人员扔出门来。\n</金鸢赌场>",
+        "enabled": true,
+        "strategy": {
+          "type": "selective",
+          "keys": [
+            "皇城",
+            "索拉姆",
+            "皇宫",
+            "沃西微",
+            "商会",
+            "教堂",
+            "圣教会"
+          ],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "before_character_definition",
+          "role": "system",
+          "depth": 4,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": true,
+          "prevent_outgoing": true,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": false,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      }
+    }
+  ]
+}

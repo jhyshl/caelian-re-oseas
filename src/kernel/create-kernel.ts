@@ -106,6 +106,11 @@ import type {
   CaelianThemeState,
 } from '@/themes/types';
 import { clampInteractionAffinity } from '@/social-interaction-rules';
+import { IMPERIAL_QUEST_ID } from '@/imperial/constants';
+import { imperialQuestDefinition } from '@/imperial/definition';
+import { initialImperialState } from '@/imperial/model';
+import { evaluateImperialTurn } from '@/imperial/service';
+import type { ImperialOverlay } from '@/modules/imperial/mount';
 
 const SURVEY_POLL_INTERVAL_MS = 2 * 60 * 1_000;
 
@@ -177,6 +182,9 @@ export class CaelianKernel {
   private legalQuestItemCache?: Array<{ itemId: string; itemName: string }>;
   private activeTheme: CaelianThemeId = 'default';
   private caelianHeartThemeUnlocked = false;
+  private imperialOverlay?: ImperialOverlay;
+  private imperialOverlayTask?: Promise<ImperialOverlay>;
+  private imperialPresentationRevision = 0;
 
   constructor(options: KernelOptions) {
     this.channel = options.channel;
@@ -343,6 +351,9 @@ export class CaelianKernel {
     }
     try {
       const type = this.commandType(command);
+      if (type === 'quest.abandon') {
+        this.cancelQuestJudge();
+      }
       if (this.generationActive && this.isCaelianInteractionCommand(command)) {
         return {
           id: this.commandId(command),
@@ -449,6 +460,10 @@ export class CaelianKernel {
           battleMayResolveQuest)
       ) {
         await this.syncQuestContext();
+      }
+      if (result.status === 'applied' && type === 'quest.abandon' &&
+        !(await this.repository.snapshot(this.profileId)).quests.some(quest => quest.definitionId === IMPERIAL_QUEST_ID && quest.status === 'active')) {
+        this.imperialOverlay?.clear();
       }
       return result;
     } catch (error) {
@@ -1065,6 +1080,8 @@ export class CaelianKernel {
       this.managedContentTimer = undefined;
     }
     await Promise.all([...this.pendingTavernUpdates]);
+    this.imperialOverlay?.destroy();
+    this.imperialOverlay = undefined;
     await this.adapter.setQuestContext('');
     for (const dispose of this.stateDisposers.splice(0)) dispose();
     clearAppliedTheme(this.adapter.host);
@@ -1088,6 +1105,8 @@ export class CaelianKernel {
     if (!update) return;
     if (eventName === 'CHAT_CHANGED') {
       this.cancelQuestJudge();
+      this.imperialPresentationRevision += 1;
+      this.imperialOverlay?.clear();
       this.generationEpoch += 1;
       this.generationActive = false;
       this.adapter.host.document.body.classList.remove('caelian-generating');
@@ -1314,14 +1333,8 @@ export class CaelianKernel {
   }
 
   private async initializeWorldbook(): Promise<void> {
-    const cleanup = await this.regionWorldbook.cleanupLegacyQuestEntries();
-    if (cleanup.status === 'applied') {
-      this.notifyRuntime(
-        'success',
-        `已删除 ${cleanup.removed} 条旧版任务/剧情世界书条目；地区与人物资料均已保留。`,
-        '旧剧情世界书清理完成',
-      );
-    }
+    // Deletions now run only through the verified author delta. Name/UID-only
+    // legacy cleanup cannot distinguish player-edited entries safely.
   }
 
   private async reconcileQuestFloors(
@@ -1368,6 +1381,12 @@ export class CaelianKernel {
     payload?: TavernEventPayload,
   ): Promise<QuestEvaluationPresentation | undefined> {
     if (!this.profileId) return undefined;
+    const imperial = await this.db.questRecords.where('profileId').equals(this.profileId)
+      .filter(quest => quest.definitionId === IMPERIAL_QUEST_ID && quest.status === 'active').first();
+    if (imperial) {
+      await this.evaluateImperialQuest(imperial, payload);
+      return undefined;
+    }
     const tracker = await this.repository.selectedQuestTracker(
       this.profileId,
     );
@@ -1527,6 +1546,100 @@ export class CaelianKernel {
         this.notifications.dismiss(progressBannerId);
       }
     }
+  }
+
+  private async imperialOverlayView(): Promise<ImperialOverlay> {
+    this.imperialOverlayTask ??= import('@/modules/imperial/mount').then(module => {
+      this.imperialOverlay = module.mountImperialOverlay(this.adapter.host);
+      return this.imperialOverlay;
+    });
+    return this.imperialOverlayTask;
+  }
+
+  private async syncImperialPresentation(): Promise<{ accepted: boolean; tracked: boolean }> {
+    const profileId = this.profileId;
+    const revision = ++this.imperialPresentationRevision;
+    if (!profileId) { this.imperialOverlay?.clear(); return { accepted: false, tracked: false }; }
+    const quest = await this.db.questRecords.where('profileId').equals(profileId)
+      .filter(item => item.definitionId === IMPERIAL_QUEST_ID).first();
+    const tracker = quest ? await this.questProgress.getTracker(profileId, quest.id) : undefined;
+    const accepted = quest?.status === 'active';
+    const tracked = accepted && tracker?.selected === true && ['armed','tracking','detour'].includes(tracker.current.trackerState);
+    if (profileId !== this.profileId || revision !== this.imperialPresentationRevision || this.shuttingDown) return { accepted: false, tracked: false };
+    try {
+      const applied = await this.adapter.setImperialWorldbookEnabled(tracked);
+      if (!applied && tracked) this.notifyRuntime('warning', '皇权指导条目暂时不可用，请在内容更新完成后重新追踪。', '世界书同步未完成');
+    } catch (error) {
+      if (tracked) this.notifyRuntime('warning', error instanceof Error ? error.message : String(error), '皇权指导条目切换失败');
+    }
+    if (tracked) await this.imperialOverlayView();
+    if (profileId !== this.profileId || revision !== this.imperialPresentationRevision || this.shuttingDown) return { accepted: false, tracked: false };
+    this.imperialOverlay?.update(`${this.channel}:${profileId}`, tracked, tracker?.current.imperial ?? (accepted ? initialImperialState() : null));
+    // A failed host write can be retried without paying for another model call.
+    const state = tracker?.current.imperial ?? (await this.db.questHistory.where('profileId').equals(profileId)
+      .filter(item => item.definitionId === IMPERIAL_QUEST_ID).first())?.imperial;
+    if (state?.lastFloor) {
+      const floor = (await this.adapter.chatFloors())?.find(item => item.index === state.lastFloor?.index && item.fingerprint === state.lastFloor.fingerprint && item.lineageHash === state.lastFloor.lineageHash);
+      if (floor && this.profileId === profileId) {
+        try { await this.adapter.writeImperialHistory(floor, state, (await this.adapter.identity()).chatId); }
+        catch (error) { this.notifyRuntime('warning', error instanceof Error ? error.message : String(error), '皇权历史记录等待同步'); }
+      }
+    }
+    return { accepted, tracked };
+  }
+
+  private async evaluateImperialQuest(quest: QuestRecord, payload?: TavernEventPayload): Promise<void> {
+    const profileId = this.profileId;
+    if (!profileId) return;
+    const epoch = this.generationEpoch;
+    const identity = await this.adapter.identity();
+    const floors = await this.adapter.chatFloors();
+    const latest = [...(floors ?? [])].reverse().find(item => item.role === 'assistant');
+    const direct = payload?.messageId === undefined ? undefined : floors?.find(item => item.index === payload.messageId);
+    const floor = direct?.role === 'assistant' ? direct : latest;
+    if (!floor || floor.id !== latest?.id) return;
+    if (!this.questJudgeClient) {
+      if (!this.missingQuestJudgeFloors.has(floor.id)) { this.missingQuestJudgeFloors.add(floor.id); this.showQuestJudgeSetupNotice(quest.title); }
+      return;
+    }
+    let banner: number | undefined;
+    try {
+      if (await this.questProgress.hasCheckpointForFloor(profileId,quest.id,floor)) return;
+      const snapshot = await this.repository.snapshot(profileId);
+      banner = this.notifications.show({kind:'task',icon:'♛',title:'正在更新皇权局势',description:'正在记录各方动向与玩家已知情报。',duration:35000,actionText:'终止副 API',onClick:()=>{this.cancelQuestJudge();}});
+      const result = await evaluateImperialTurn({
+        profileId, quest, floor, progress: this.questProgress, judge: this.questJudgeClient,
+        prompt: { playerName: identity.playerName ?? snapshot.player.name,
+          currentLocation: this.snapshotLocation(snapshot), recentMessages: await this.adapter.chatConversation(),
+          worldbook: await this.adapter.imperialWorldbookContext(),
+        },
+        isCurrent: async () => {
+          if (this.shuttingDown || profileId !== this.profileId || epoch !== this.generationEpoch || (await this.adapter.identity()).chatId !== identity.chatId) return false;
+          const currentQuest = await this.db.questRecords.get(quest.id);
+          const currentFloor = (await this.adapter.chatFloors())?.find(item => item.index === floor.index);
+          return currentQuest?.status === 'active' && currentQuest.acceptedAt === quest.acceptedAt && currentFloor?.id === floor.id && currentFloor.lineageHash === floor.lineageHash;
+        },
+      });
+      if (!result) return;
+      let writeError: unknown;
+      try { await this.adapter.writeImperialHistory(floor,result.state,identity.chatId); } catch (error) { writeError=error; }
+      if (result.completed) await this.repository.completeQuestDefinition(profileId,imperialQuestDefinition);
+      if (this.shuttingDown || profileId !== this.profileId || (await this.adapter.identity()).chatId !== identity.chatId) return;
+      if (result.notices.length) {
+        const overlay = await this.imperialOverlayView();
+        const tracker = await this.questProgress.getTracker(profileId, quest.id);
+        const visible = !result.completed && tracker?.selected === true && ['armed','tracking','detour'].includes(tracker.current.trackerState);
+        overlay.update(`${this.channel}:${profileId}`,visible,result.state);
+        overlay.announce(result.notices);
+      }
+      if (result.completed) {
+        this.notifications.show({kind:'success',icon:'♛',title:'动荡的皇权 · 已完成',description:`${result.state.winner}已正式继承皇位。`,duration:8000});
+      }
+      await this.events.emit('quest.tracking-changed', { questId: result.completed ? undefined : quest.id, trackerState: result.completed ? 'none' : 'tracking' });
+      if (writeError) this.notifyRuntime('warning', writeError instanceof Error ? writeError.message : String(writeError), '皇权历史记录等待同步');
+    } catch (error) {
+      if (!isQuestJudgeCancelledError(error)) this.notifyRuntime('warning', error instanceof Error ? error.message : String(error), '皇权局势更新暂时失败');
+    } finally { if (banner !== undefined) this.notifications.dismiss(banner); }
   }
 
   private async presentStoryGathering(
@@ -1840,6 +1953,12 @@ export class CaelianKernel {
   }
 
   private async syncQuestContext(): Promise<boolean> {
+    const imperial = await this.syncImperialPresentation();
+    if (imperial.accepted) {
+      return this.adapter.setQuestContext(imperial.tracked
+        ? '【动荡的皇权】本支线为自由局势叙事，没有预设阶段、节拍和路线。依据当前世界书、人物利益与已有历史续写；保留玩家自主选择，不预定胜利者。正文末尾的 CAELIAN_IMPERIAL_STATE 仅为连续性资料，不得复述或泄露标注玩家不知情的信息。'
+        : '');
+    }
     if (!this.profileId) return this.adapter.setQuestContext('');
     const tracker = await this.repository.selectedQuestTracker(
       this.profileId,
@@ -2355,6 +2474,7 @@ export class CaelianKernel {
     force: boolean,
   ): Promise<ManagedContentSyncResult> {
     const result = await this.managedContent.sync({ force });
+    if (this.status === 'ready' && result.applied > 0) await this.syncImperialPresentation();
     if (result.conflicts.length > 0 && (force || result.applied > 0)) {
       this.notifyRuntime(
         'warning',

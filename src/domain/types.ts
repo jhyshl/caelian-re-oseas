@@ -136,6 +136,7 @@ export interface GuildRecord {
 }
 
 export interface QuestRecord {
+  acceptedAt?: number;
   id: string;
   profileId: string;
   definitionId?: string;
@@ -195,6 +196,7 @@ export interface QuestPendingItemSubmission {
 }
 
 export interface QuestProgressSnapshot extends QuestDeferredProgressSnapshot {
+  imperial?: import('@/imperial/model').ImperialState;
   /** Active state to restore after the player manually pauses tracking. */
   resumeTrackerState?: Extract<
     QuestTrackerState,
@@ -246,6 +248,7 @@ export interface QuestFloorCheckpointRecord {
 }
 
 export interface QuestHistoryRecord {
+  imperial?: import('@/imperial/model').ImperialState;
   id: string;
   profileId: string;
   kind: QuestKind;

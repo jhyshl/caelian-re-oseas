@@ -5,6 +5,7 @@ import {
 } from '@/quests/schema';
 import bundledQuestCatalog from '../../public/managed-content/quests/alpha.json';
 import { normalizeRegion } from '@/worldbook/region-switcher';
+import { imperialQuestDefinition } from '@/imperial/definition';
 
 export interface QuestAvailabilityInput {
   region: string;
@@ -51,7 +52,7 @@ export class QuestCatalog {
       (quest) =>
         quest.visibility !== 'hidden' &&
         quest.availableRegions.some((candidate) =>
-          currentRegions.has(normalizeRegion(candidate)),
+          candidate === '*' || currentRegions.has(normalizeRegion(candidate)),
         ) &&
         quest.minimumLevel <= input.level &&
         quest.prerequisiteQuestIds.every((questId) =>
@@ -68,7 +69,7 @@ export class QuestCatalog {
 }
 
 export class QuestCatalogLoader {
-  private catalog: QuestCatalog = QuestCatalog.parse(bundledQuestCatalog);
+  private catalog: QuestCatalog = withImperialQuest(QuestCatalog.parse(bundledQuestCatalog));
   private loadTask?: Promise<QuestCatalog>;
 
   constructor(
@@ -99,7 +100,7 @@ export class QuestCatalogLoader {
           errors.push(`${url.origin}: HTTP ${response.status}`);
           continue;
         }
-        const catalog = QuestCatalog.parse(await response.json());
+        const catalog = withImperialQuest(QuestCatalog.parse(await response.json()));
         this.catalog = catalog;
         return catalog;
       } catch (error) {
@@ -109,6 +110,12 @@ export class QuestCatalogLoader {
     if (this.catalog) return this.catalog;
     throw new Error(`任务目录暂时不可用：${errors.join('；')}`);
   }
+}
+
+function withImperialQuest(catalog: QuestCatalog): QuestCatalog {
+  return new QuestCatalog({ ...catalog.data, quests: [
+    ...catalog.data.quests.filter(quest => quest.id !== imperialQuestDefinition.id), imperialQuestDefinition,
+  ] });
 }
 
 function defaultQuestCatalogSources(): string[] {

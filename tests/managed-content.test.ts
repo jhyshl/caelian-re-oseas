@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import imperialDelta from '../public/managed-content/worldbook-deltas/imperial-2026-09-10.json';
 import {
   applyTextMutation,
   ManagedContentUpdater,
@@ -508,6 +509,36 @@ function createHarness(options: {
 }
 
 describe('ManagedContentUpdater', () => {
+  it('皇权迁移只合并作者差量，改写条目和新建条目保留，所有开场白只改指定姓名', async () => {
+    const h = createHarness({ operations: [{ id:'old-unsafe',target:{kind:'worldbook-entry',entryName:'玩家资料'},mutation:{action:'replace-entire',content:'不应写入'} }] });
+    h.manifest.revision = imperialDelta.revision;
+    const original = [...imperialDelta.removals, ...imperialDelta.changes.map(change=>change.before)];
+    h.worldbook.splice(0,h.worldbook.length,...original.map((entry,index)=>({uid:index+200,...clone(entry)}) as TestWorldbookEntry));
+    const changed = h.worldbook.find(entry=>entry.name.includes('皇城索拉姆'))!;
+    changed.content += '\n玩家追加政治设定';
+    const removed = h.worldbook.find(entry=>entry.name==='🗡️凯利安：龙族')!;
+    removed.content += '\n玩家保留的职业';
+    const custom = { ...clone(h.worldbook[0]!), uid:10, name:'玩家资料', content:'完整保留我' };
+    h.worldbook.push(custom);
+    const persisted = h.persistedCharacters.get('凯利安.png')!;
+    persisted.data.first_mes='朱利安来了，朱利安又走了。\n玩家格式';
+    persisted.data.alternate_greetings=['第二个朱利安','玩家自写：朱利安；保留其余内容'];
+    const updater=new ManagedContentUpdater(h.host);
+    const result=await updater.sync({force:true});
+    expect(result.conflicts.some(conflict=>conflict.reason.includes('皇城索拉姆'))).toBe(true);
+    expect(h.worldbook.find(e=>e.uid===custom.uid)).toEqual(custom);
+    expect(h.worldbook.find(e=>e.uid===changed.uid)?.content).toBe(changed.content);
+    expect(h.worldbook.some(e=>e.name==='🗡️凯利安：龙族')).toBe(true);
+    expect(h.worldbook.some(e=>e.name==='🗡️凯利安：元素法师')).toBe(false);
+    expect(h.worldbook.filter(e=>e.name==='瓦莱里昂家族')).toHaveLength(1);
+    expect(new Set(h.worldbook.map(e=>e.uid)).size).toBe(h.worldbook.length);
+    expect(h.character.first_messages).toEqual(['卢修斯来了，卢修斯又走了。\n玩家格式','第二个卢修斯','玩家自写：卢修斯；保留其余内容']);
+    const added=h.worldbook.find(e=>e.name==='瓦莱里昂家族')!;added.content='迁移后玩家再编辑';
+    const before=JSON.stringify(h.worldbook);const writes=h.helper.updateWorldbookWith.mock.calls.length;
+    await updater.sync({force:true});expect(JSON.stringify(h.worldbook)).toBe(before);expect(h.helper.updateWorldbookWith).toHaveBeenCalledTimes(writes);
+    expect([...h.storage.keys()].some(key=>key.endsWith(':backup'))).toBe(true);
+  });
+
   it.each(['凯利安_1.png', 'current.png'])('字段与开场白更新只合并实际头像 %s，不使用整卡助手写入', async (avatar) => {
     const h = createHarness({ characterAvatar: avatar, operations: [
       { id: 'exact.description', target: { kind: 'character-field', field: 'description' }, mutation: { action: 'replace-exact', before: '旧段落', after: '新段落' } },
@@ -719,38 +750,15 @@ describe('ManagedContentUpdater', () => {
         mutation?: { action: string };
       }>;
     };
-    expect(manifest.revision).toBe('2026-08-31.2');
+    expect(manifest.revision).toBe('2026-09-10.imperial-worldbook.1');
     expect(manifest.target.worldbookNames).toEqual(
       expect.arrayContaining([
         '孔雀开屏你说你看不见alpha',
         '孔雀开屏你说你看不见beta',
       ]),
     );
-    expect(manifest.operations).toHaveLength(14);
-    expect(new Set(manifest.operations.map((operation) => operation.id)).size).toBe(
-      manifest.operations.length,
-    );
-    expect(manifest.operations.map((operation) => operation.id)).toEqual(
-      expect.arrayContaining([
-        '2026-08-31.affinity-500.schema-rebuild-v2-11',
-        '2026-08-31.affinity-500.phase-controller',
-        '2026-08-31.affinity-500.variable-rules',
-      ]),
-    );
-    expect(
-      manifest.operations.filter(
-        (operation) => operation.target.kind === 'character-script',
-      ),
-    ).toEqual([
-      expect.objectContaining({
-        mutation: expect.objectContaining({ action: 'replace-entire' }),
-      }),
-    ]);
-    expect(
-      manifest.operations.filter(
-        (operation) => operation.target.kind === 'worldbook-upsert-entry',
-      ),
-    ).toHaveLength(13);
+    // Clients that have not reloaded the new runtime must perform no legacy writes.
+    expect(manifest.operations).toEqual([]);
   });
 
   it('发布清单可在最新版角色卡上幂等执行且不产生额外改动', async () => {
@@ -871,7 +879,7 @@ describe('ManagedContentUpdater', () => {
     });
 
     expect(result.conflicts).toEqual([]);
-    expect(result.applied).toBe(manifest.operations.length);
+    expect(result.applied).toBe(0);
     expect(JSON.stringify({ character, worldbook })).toBe(before);
   });
 

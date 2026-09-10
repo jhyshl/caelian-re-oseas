@@ -22,7 +22,10 @@ export async function loadRegionPlaces(): Promise<
     const module = await import(
       '@/content/generated/world/region-places.json'
     );
-    placesCache = module.default as Record<string, RegionPlaceDefinition[]>;
+    placesCache = { ...module.default, solavia: [...module.default.solavia,
+      { name: '赛梅斯商会总部', desc: '位于索拉姆最繁华的地段，内部装潢金碧辉煌，设有拍卖行。' },
+      { name: '金鸢赌场', desc: '位于赛梅斯商会总部对面，由皇室和梅尔维斯家族共同掌控，贵族与平民赌徒混迹其中。' },
+    ] } as Record<string, RegionPlaceDefinition[]>;
   }
   return placesCache;
 }

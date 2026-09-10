@@ -532,3 +532,6 @@ function stripLegacyQuestBlocks(value) {
 function integerRange(first, last) {
   return Array.from({ length: last - first + 1 }, (_, index) => first + index);
 }
+
+// Keep regenerated public artifacts on the current safe three-way migration.
+await import('./build-imperial-worldbook.mjs');

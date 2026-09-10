@@ -126,7 +126,9 @@ describe('AchievementRepository integration', () => {
 
   it('保留旧版 95 项并接入内置特殊成就', async () => {
     const definitions = await loadAchievementDefinitions();
-    expect(Object.keys(definitions)).toHaveLength(99);
+    expect(Object.keys(definitions)).toHaveLength(101);
+    expect(definitions.ach_imperial_night_and_dawn).toMatchObject({ name: '暗夜与黎明', category: 'story', description: '拥有权力的缺点：期待奇迹的出现' });
+    expect(definitions.ach_imperial_long_stair).toMatchObject({ name: '谁人登临长阶', category: 'special', description: '我来，我见，我征服' });
     expect(definitions.ach_re_oseas).toMatchObject({
       name: 'Re∞: 欧西亚斯',
       star: 3,

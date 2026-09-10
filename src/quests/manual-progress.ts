@@ -1,6 +1,7 @@
 import type {QuestProgressSnapshot} from '@/domain/types';
 import {questNode,type QuestDefinition} from '@/quests/schema';
 export function manualQuestChoices(definition:QuestDefinition,current:QuestProgressSnapshot) {
+  if (definition.trackingMode === 'imperial') return [];
   const node=questNode(definition,current.currentNodeId),completed=new Set(current.completedSceneIds??[]);
   return node.transitions.filter(t=>t.to!==node.id&&questNode(definition,t.to).status!=='failed'&&
     (!t.guards?.incompleteSceneId||!completed.has(t.guards.incompleteSceneId))&&
@@ -8,6 +9,7 @@ export function manualQuestChoices(definition:QuestDefinition,current:QuestProgr
     .map(t=>({transitionId:t.id,label:questNode(definition,t.to).title,terminal:questNode(definition,t.to).status==='ready'}));
 }
 export function manualQuestProgress(definition:QuestDefinition,current:QuestProgressSnapshot,transitionId?:string):QuestProgressSnapshot {
+  if (definition.trackingMode === 'imperial') throw new Error('皇权支线只根据正式继位事实自动完成，没有可手动完成的剧情节点');
   const node=questNode(definition,current.currentNodeId),choices=manualQuestChoices(definition,current);
   if(choices.length>1&&!transitionId) throw new Error('请选择要推进的下一节点');
   const choice=choices.find(c=>c.transitionId===(transitionId??choices[0]?.transitionId));

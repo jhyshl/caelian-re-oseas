@@ -19,6 +19,10 @@ import {
 } from '@/achievements/patch-registry';
 import type { RegionWorldbookApi } from '@/worldbook/region-switcher';
 import { readCharacterTarget } from './character-target';
+import { IMPERIAL_GUIDANCE_ENTRY } from '@/imperial/constants';
+import { imperialHistoryContext, stripImperialContext } from '@/imperial/prompt';
+import type { ImperialState } from '@/imperial/model';
+import { isCaelianWorldbookName } from '@/content/character-identity';
 
 export interface TavernEventPayload {
   avatarId?: string;
@@ -60,6 +64,7 @@ export class TavernAdapter {
   private characterAvatarOriginalUrl: string | undefined;
   private userAvatarId: string | undefined;
   private questContext?: string;
+  private imperialWorldbookTask: Promise<unknown> = Promise.resolve();
   private readonly externalPatchSignals = new Map<
     string,
     AchievementPatchSignal
@@ -314,7 +319,7 @@ export class TavernAdapter {
                 message.is_user || message.isUser
                   ? ('user' as const)
                   : ('assistant' as const),
-              content,
+              content: stripImperialContext(content),
             },
           ];
         })
@@ -387,6 +392,71 @@ export class TavernAdapter {
     );
     this.questContext = value;
     return true;
+  }
+
+  async imperialWorldbookContext(): Promise<string> {
+    try {
+      const target = await readCharacterTarget(this.host);
+      const name = target.character.data?.extensions?.world;
+      if (!target.isCaelian || typeof name !== 'string' || !isCaelianWorldbookName(name)) return '';
+      const api = this.regionWorldbookApi();
+      const entries = await api.getWorldbook?.call(api, name);
+      target.assertCurrent();
+      return (entries ?? []).filter(entry => entry.enabled).map(entry =>
+        `【${entry.name ?? entry.comment ?? ''}】\n${entry.content ?? ''}`).join('\n\n');
+    } catch { return ''; }
+  }
+
+  async setImperialWorldbookEnabled(enabled: boolean): Promise<boolean> {
+    const task = this.imperialWorldbookTask.catch(() => undefined).then(() => this.applyImperialWorldbookEnabled(enabled));
+    this.imperialWorldbookTask = task;
+    return task;
+  }
+
+  private async applyImperialWorldbookEnabled(enabled: boolean): Promise<boolean> {
+    let target;
+    try { target = await readCharacterTarget(this.host); } catch { return false; }
+    const name = target.character.data?.extensions?.world;
+    if (!target.isCaelian || typeof name !== 'string' || !isCaelianWorldbookName(name)) return false;
+    const api = this.regionWorldbookApi();
+    if (!api.getWorldbook || !api.updateWorldbookWith) return false;
+    const matches = (await api.getWorldbook.call(api, name)).filter(entry => (entry.name ?? entry.comment) === IMPERIAL_GUIDANCE_ENTRY);
+    target.assertCurrent();
+    if (!matches.length) return !enabled;
+    if (matches.length !== 1) return false;
+    if (matches[0]!.enabled === enabled) return true;
+    await api.updateWorldbookWith.call(api, name, entries => {
+      target.assertCurrent();
+      const current = entries.filter(entry => (entry.name ?? entry.comment) === IMPERIAL_GUIDANCE_ENTRY);
+      if (current.length !== 1) throw new Error('皇权指导条目不唯一，已停止切换');
+      // Tracking owns only this flag, never the player's text, keys or other entries.
+      return entries.map(entry => entry === current[0] ? { ...entry, enabled } : entry);
+    }, { render: 'debounced' });
+    target.assertCurrent();
+    const verified = (await api.getWorldbook.call(api, name)).filter(entry => (entry.name ?? entry.comment) === IMPERIAL_GUIDANCE_ENTRY);
+    return verified.length === 1 && verified[0]!.enabled === enabled;
+  }
+
+  async writeImperialHistory(floor: TavernFloorReference, state: ImperialState, chatId: string): Promise<boolean> {
+    const floors = await this.chatFloors();
+    if ((await this.identity()).chatId !== chatId || !floors?.some(item => item.id === floor.id && item.lineageHash === floor.lineageHash)) return false;
+    const context = await this.context();
+    const message = context.chat?.[floor.index];
+    if (!message || message.is_user || message.isUser || message.is_system) return false;
+    const body = message.mes ?? message.message ?? message.content ?? '';
+    const text = stripImperialContext(body) + imperialHistoryContext(state);
+    if (body === text) return true;
+    for (const scope of this.apiScopes()) {
+      const record = scope as unknown as Record<string, unknown>;
+      const api = (record.TavernHelper ?? record) as { setChatMessages?: (messages: Array<{message_id:number;message:string}>, options: {refresh:'none'}) => Promise<void> };
+      if (api.setChatMessages) {
+        // Refresh none avoids duplicate generation/render events; the appended HTML comment is invisible.
+        await api.setChatMessages.call(api, [{ message_id: floor.index, message: text }], { refresh: 'none' });
+        const saved = (await this.context()).chat?.[floor.index];
+        return (await this.identity()).chatId === chatId && (saved?.mes ?? saved?.message ?? saved?.content) === text;
+      }
+    }
+    throw new Error('酒馆助手缺少 setChatMessages，皇权局势已保存但尚未写入正文历史');
   }
 
   hasLegacyRuntime(): boolean {
@@ -1181,6 +1251,7 @@ export class TavernAdapter {
   ): TavernFloorReference[] {
     let lineageHash = 'caelian-chat-root';
     return messages.map((message, index) => {
+      message = { ...message, text: stripImperialContext(message.text) };
       const fingerprint = this.hashText(
         `${message.role}\u0000${message.text}`,
       );

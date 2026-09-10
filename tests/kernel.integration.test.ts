@@ -500,7 +500,7 @@ describe('CaelianKernel integration', () => {
     fetchMock.mockRestore();
   });
 
-  it('清理旧剧情，但只在玩家手动操作时切换地区世界书', async () => {
+  it('没有原文校验时保留旧剧情条目，只在玩家手动操作时切换地区世界书', async () => {
     const databaseName = `caelian-alpha-region-book-${crypto.randomUUID()}`;
     databaseNames.push(databaseName);
     const handlers = new Map<unknown, (...args: unknown[]) => void>();
@@ -577,7 +577,7 @@ describe('CaelianKernel integration', () => {
 
     await kernel.initialize();
 
-    expect(worldbook.map((entry) => entry.uid)).toEqual([43, 79, 78, 500]);
+    expect(worldbook.map((entry) => entry.uid)).toEqual([85, 43, 79, 78, 500]);
     expect(worldbook.find((entry) => entry.uid === 79)).toMatchObject({
       enabled: false,
     });
