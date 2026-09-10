@@ -21,7 +21,7 @@ describe('皇权支线完整酒馆事件链',()=>{
   it('接取/取消追踪/继续追踪/放弃/完成精确控制世界书与浮窗，副 API 按正文更新并写回隐藏历史',async()=>{
     const handlers=new Map<string,(...args:unknown[])=>unknown>();
     window.eventOn=vi.fn((event,handler)=>{handlers.set(String(event),handler);return{stop:()=>handlers.delete(String(event))};});
-    window.tavern_events={GENERATION_ENDED:'ended',CHAT_CHANGED:'changed',MESSAGE_DELETED:'deleted'};
+    window.tavern_events={GENERATION_ENDED:'ended',GENERATION_STARTED:'started',GENERATION_AFTER_COMMANDS:'after-commands',CHAT_CHANGED:'changed',MESSAGE_DELETED:'deleted'};
     const bookName='孔雀开屏你说你看不见alpha';
     const chat:Array<{mes:string;is_user:boolean}>=[];
     const card={name:'凯利安',avatar:'real-card.png',data:{extensions:{world:bookName}}};
@@ -39,9 +39,15 @@ describe('皇权支线完整酒馆事件链',()=>{
     (window as unknown as Record<string,unknown>).TavernHelper=helper;
     const apiMessages:Array<Array<{role:string;content:string}>>=[];
     let finish=false;
+    let previewWasIgnored=false;
     window.fetch=vi.fn(async(url,init)=>{
       if(String(url)!=='https://judge.example/v1/chat/completions')return new Response(null,{status:404});
       const request=JSON.parse(String(init?.body));apiMessages.push(request.messages);
+      // The live Tavern token counter starts a dry run during the secondary request.
+      handlers.get('started')?.('normal', {}, true);
+      handlers.get('after-commands')?.('normal', {}, true);
+      await Promise.resolve();
+      previewWasIgnored=!init?.signal?.aborted;
       const body=finish?'测试玩家正式登基，成为帝国新皇。':'议会向玩家递交了正式邀请。';
       const result:ImperialResult={state:initialImperialState(),summary:body,majorProgress:[],succession:{completed:finish,winner:finish?'测试玩家':'',winnerIsPlayer:finish,confidence:finish?1:0,evidence:finish?body:''}};
       result.state.currentEvent={text:body,known:true,evidence:body};
@@ -60,6 +66,8 @@ describe('皇权支线完整酒馆事件链',()=>{
     const adapter=new TavernAdapter(window),before=(await adapter.chatFloors())![1];
     handlers.get('ended')?.();
     await expect.poll(()=>chat[1]!.mes).toContain('<caelian-imperial-state>');
+    expect(previewWasIgnored).toBe(true);
+    expect(document.body.classList.contains('caelian-generating')).toBe(false);
     expect((await adapter.chatFloors())![1]).toEqual(before);
     expect(apiMessages).toHaveLength(1);expect(apiMessages[0]![0]!.content).toContain('不输出剧情节拍判定');
     expect(apiMessages[0]![1]!.content).toContain('原指导规则，玩家补充也保留');

@@ -28,6 +28,7 @@ import { isCaelianWorldbookName } from '@/content/character-identity';
 export interface TavernEventPayload {
   avatarId?: string;
   messageId?: number;
+  dryRun?: boolean;
 }
 
 type TavernEventHandler = (
@@ -1205,6 +1206,9 @@ export class TavernAdapter {
     eventName: string,
     args: unknown[],
   ): TavernEventPayload | undefined {
+    if (['GENERATION_STARTED', 'GENERATION_AFTER_COMMANDS'].includes(eventName) && args[2] === true) {
+      return { dryRun: true };
+    }
     const messageId = this.messageEventId(eventName, args[0]);
     if (eventName === 'CHAT_CHANGED') {
       this.userAvatarUrl = undefined;

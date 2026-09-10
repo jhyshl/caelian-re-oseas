@@ -1095,6 +1095,9 @@ export class CaelianKernel {
     payload?: TavernEventPayload,
   ): void {
     if (this.shuttingDown || this.status === 'stopped') return;
+    // Tavern also emits generation events while assembling a token-count preview.
+    // That preview has no new floor and must not cancel the real secondary request.
+    if (payload?.dryRun) return;
     // Test at receipt time: a queued callback may run after the write flag resets.
     if (eventName === 'MESSAGE_UPDATED' && this.projectionWriteInProgress) return;
     const update = this.messageUpdates.accepts(eventName)
