@@ -9,7 +9,8 @@ import guidance from '../public/managed-content/worldbook-deltas/imperial-guidan
 describe('皇权显示与证据边界', () => {
   it('在装饰正则前隐藏原标签或转义标签，提示词保留完整原记录且不吞正文', async () => {
     let rules: Array<Record<string,unknown>> = [{id:'player-decoration',find_regex:'<[^>]+>',replace_string:'',enabled:true}];
-    const update = vi.fn(async (fn:(r:typeof rules)=>typeof rules) => {rules=fn(rules);});
+    // Tavern Helper normalizes a falsy trim_strings to [] when reading its persisted rules.
+    const update = vi.fn(async (fn:(r:typeof rules)=>typeof rules) => {rules=fn(rules).map(rule => ({...rule,trim_strings:rule.trim_strings || []}));});
     const api = {getTavernRegexes:()=>rules,updateTavernRegexesWith:update};
     await ensureImperialDisplayRegex(api); await ensureImperialDisplayRegex(api);
     expect(update).toHaveBeenCalledTimes(1); expect(rules[1]!.id).toBe('player-decoration');

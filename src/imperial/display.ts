@@ -4,7 +4,7 @@ export const IMPERIAL_DISPLAY_REGEX = {
   script_name: '凯利安 · 隐藏皇权连续性记录（仅显示）',
   enabled: true, run_on_edit: true,
   find_regex: '/(?:<caelian-imperial-state\\b[^>]*>[\\s\\S]*?<\\/caelian-imperial-state>|&lt;caelian-imperial-state\\b[\\s\\S]*?&lt;\\/caelian-imperial-state&gt;|<!-- CAELIAN_IMPERIAL_STATE:v1\\b[\\s\\S]*?-->)/gi',
-  trim_strings: '', replace_string: '',
+  trim_strings: [] as string[], replace_string: '',
   source: { user_input: false, ai_output: true, slash_command: false, world_info: false },
   destination: { display: true, prompt: false },
   min_depth: null, max_depth: null,
@@ -30,6 +30,7 @@ export function playerText(text: string, playerName: string): string {
 }
 
 function sameValue(actual: unknown, expected: unknown): boolean {
+  if (Array.isArray(expected)) return Array.isArray(actual) && actual.length === expected.length && expected.every((value,index) => sameValue(actual[index],value));
   if (expected && typeof expected === 'object') return !!actual && typeof actual === 'object' && Object.entries(expected).every(([key,value]) => sameValue((actual as Record<string,unknown>)[key],value));
   return actual === expected;
 }
