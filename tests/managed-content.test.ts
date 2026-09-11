@@ -750,7 +750,7 @@ describe('ManagedContentUpdater', () => {
         mutation?: { action: string };
       }>;
     };
-    expect(manifest.revision).toBe('2026-09-10.imperial-worldbook.1');
+    expect(manifest.revision).toBe('2026-09-11.imperial-guidance.2');
     expect(manifest.target.worldbookNames).toEqual(
       expect.arrayContaining([
         '孔雀开屏你说你看不见alpha',

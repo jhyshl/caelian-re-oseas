@@ -8,15 +8,24 @@ import { stripImperialContext, type ImperialPromptInput } from './prompt';
 import { IMPERIAL_FACTIONS, IMPERIAL_HEIRS } from './constants';
 import { decodeImperialRecord, imperialRecordAuthority } from './history';
 
+/** Ignore quote typography and speaker labels, but still require an actual contiguous quotation. */
+export function hasImperialEvidence(source: string, evidence: string): boolean {
+  const normalize = (text: string) => text.replace(/^(?:玩家|主API|User)\s*[：:]\s*/i, '')
+    .replace(/[\s“”‘’「」『』"'，,。.!！?？；;：:]/g, '');
+  const quote = normalize(evidence);
+  return quote.length >= 4 && normalize(source).includes(quote);
+}
+
 export async function evaluateImperialTurn(input: {
   profileId: string; quest: QuestRecord; floor: TavernFloorReference;
   progress: QuestProgressRepository;
   judge: { evaluateImperial(input: ImperialPromptInput): Promise<ImperialResult> };
   prompt: Omit<ImperialPromptInput, 'state'>;
   isCurrent: () => Promise<boolean>;
+  reroll?: boolean;
 }): Promise<{ state: ImperialState; notices: ImperialNotice[]; completed: boolean } | null> {
   if (input.quest.status !== 'active' || input.floor.role !== 'assistant') return null;
-  if (await input.progress.hasCheckpointForFloor(input.profileId, input.quest.id, input.floor)) return null;
+  if (!input.reroll && await input.progress.hasCheckpointForFloor(input.profileId, input.quest.id, input.floor)) return null;
   const tracker = await input.progress.getTracker(input.profileId, input.quest.id);
   if (!tracker) return null;
   const previous = tracker.current.imperial ?? initialImperialState();
@@ -30,12 +39,15 @@ export async function evaluateImperialTurn(input: {
   const priorRecord = decodeImperialRecord(input.prompt.previousRecord?.content ?? '');
   const authority = imperialRecordAuthority(priorRecord);
   const preserveKnowledge = (next: ImperialFact) => {
-    if (next.known && !priorRecord.includes(`${next.text}（User知情`) && !priorRecord.includes(`${next.text}（玩家知情）`) &&
-      (!next.evidence || !conversation.includes(next.evidence))) {
+    const inherited = ['User', '玩家', input.prompt.playerName].some(name => priorRecord.includes(`${next.text}（${name}知情`));
+    if (next.known && !inherited && !hasImperialEvidence(conversation, next.evidence)) {
       next.known = false;
     }
   };
+  // The player's own stated action is known even when the model accidentally returns false.
+  if (hasImperialEvidence(playerWords, result.state.currentEvent.evidence)) result.state.currentEvent.known = true;
   preserveKnowledge(result.state.currentEvent);
+  if (!result.state.currentEvent.known) result.state.currentEvent = {text:'尚无新的可知事件',known:false,evidence:''};
   for (const name of IMPERIAL_HEIRS) {
     const next = result.state.royals[name];
     for (const key of ['plan', 'action', 'next'] as const) preserveKnowledge(next[key]);
@@ -60,7 +72,7 @@ export async function evaluateImperialTurn(input: {
   const reported = new Set(previous.reportedProgress);
   const notices = result.majorProgress.filter(notice => {
     const key = imperialNoticeKey(notice);
-    if (!notice.known || !conversation.includes(notice.evidence) || reported.has(key)) return false;
+    if (!notice.known || !hasImperialEvidence(conversation, notice.evidence) || reported.has(key)) return false;
     reported.add(key); return true;
   });
   const completed = hasSuccessionEvidence(result, body);
@@ -75,6 +87,7 @@ export async function evaluateImperialTurn(input: {
     baseline: initialQuestProgress(imperialQuestDefinition), expectedNodeId: current.currentNodeId,
     expectedAcceptedAt: input.quest.acceptedAt, expectedImperialRevision: previous.revision,
     expectedManualRevision: latest.manualRevision ?? 0,
+    replaceImperialFloor: input.reroll,
     judgeResult: { mode: 'imperial', succession: result.succession, completionAccepted: completed },
     next: { ...current, imperial: state,
       ...(completed ? { status: 'ready', trackerState: 'ended', currentNodeId: 'imperial:ready', completionConfirmed: true,

@@ -378,7 +378,7 @@ export class ManagedContentUpdater {
     if (!manifest) return emptyResult('offline');
     this.assertSafeManifest(manifest, worldbookName);
 
-    if (manifest.revision === '2026-09-10.imperial-worldbook.1') {
+    if (['2026-09-10.imperial-worldbook.1', '2026-09-11.imperial-guidance.2'].includes(manifest.revision)) {
       return this.syncImperialDelta(api, identity, worldbookName);
     }
 
@@ -460,6 +460,7 @@ export class ManagedContentUpdater {
     api: ManagedContentApi, identity: CurrentCharacterIdentity, worldbookName: string,
   ): Promise<ManagedContentSyncResult> {
     const { default: data } = await import('../../public/managed-content/worldbook-deltas/imperial-2026-09-10.json');
+    const {default: guidance} = await import('../../public/managed-content/worldbook-deltas/imperial-guidance-2026-09-11.json');
     const delta = data as WorldbookDelta;
     const key = this.characterStorageKey(`caelian:worldbook-delta:${worldbookName}:${delta.revision}`, identity.avatar);
     let applied = 0;
@@ -473,7 +474,12 @@ export class ManagedContentUpdater {
       let report: ReturnType<typeof applyWorldbookDelta> | undefined;
       await api.updateWorldbookWith.call(api, worldbookName, entries => {
         identity.assertCurrent();
-        report = applyWorldbookDelta(entries, delta);
+        // A newly imported current author card may already contain the follow-up patch.
+        const additions = delta.additions.map(addition => {
+          const followup = guidance.changes.find(change => change.before.name === addition.name);
+          return followup && entries.some(entry => entry.name === addition.name && entry.content === followup.after.content) ? followup.after : addition;
+        });
+        report = applyWorldbookDelta(entries, {...delta, additions});
         // Persist recovery evidence before any host mutation. Never replace from the Beta file.
         this.host.localStorage.setItem(`${key}:backup`, JSON.stringify(entries));
         return report.entries as ManagedWorldbookEntry[];
@@ -488,6 +494,26 @@ export class ManagedContentUpdater {
       this.host.localStorage.setItem(key, JSON.stringify({ conflicts: report.conflicts, appliedAt: Date.now() }));
       applied += report.applied;
       for (const reason of report.conflicts) conflicts.push({ operationId: delta.revision, reason });
+    }
+    const guidanceKey = this.characterStorageKey('caelian:worldbook-delta:' + worldbookName + ':' + guidance.revision, identity.avatar);
+    if (!this.host.localStorage.getItem(guidanceKey)) {
+      if (!api.updateWorldbookWith) throw new Error('世界书编辑接口不可用');
+      let patch: ReturnType<typeof applyWorldbookDelta> | undefined;
+      await api.updateWorldbookWith.call(api, worldbookName, entries => {
+        identity.assertCurrent();
+        patch = applyWorldbookDelta(entries, guidance as WorldbookDelta);
+        this.host.localStorage.setItem(guidanceKey + ':backup', JSON.stringify(entries));
+        return patch.entries as ManagedWorldbookEntry[];
+      }, {render:'debounced'});
+      identity.assertCurrent();
+      if (!patch) throw new Error('皇权指导规则增量更新未执行');
+      const saved = await this.readWorldbook(api, worldbookName);
+      if (patch.entries.some(expected => !saved.some(actual => String(actual.uid) === String(expected.uid) && actual.content === expected.content))) throw new Error('皇权指导规则回读失败');
+      applied += patch.applied;
+      for (const reason of patch.conflicts) conflicts.push({operationId:guidance.revision, reason});
+      this.host.localStorage.setItem(guidanceKey, JSON.stringify({conflicts:patch.conflicts}));
+    } else {
+      for (const reason of (JSON.parse(this.host.localStorage.getItem(guidanceKey)!) as {conflicts:string[]}).conflicts) conflicts.push({operationId:guidance.revision, reason});
     }
     // Fetch and merge only greeting fields by the actual PNG avatar identity.
     const character = await this.readPersistedCharacter(identity);
@@ -505,8 +531,8 @@ export class ManagedContentUpdater {
       if (JSON.stringify(verified.first_messages) !== JSON.stringify(greetings)) throw new Error('角色卡开场白回读失败');
       applied += 1;
     }
-    this.writeConflicts(delta.revision, conflicts, identity.avatar);
-    return { status: applied ? 'applied' : 'current', revision: delta.revision, applied, skipped: previous ? 1 : 0, conflicts };
+    this.writeConflicts(guidance.revision, conflicts, identity.avatar);
+    return { status: applied ? 'applied' : 'current', revision: guidance.revision, applied, skipped: previous ? 1 : 0, conflicts };
   }
 
   private resolveApi(): ManagedContentApi {

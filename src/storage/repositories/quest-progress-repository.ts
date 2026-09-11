@@ -19,6 +19,8 @@ import {
 import { applyLocalTransition } from '@/quests/state-machine';
 
 export interface BindQuestFloorInput {
+  /** Replace only the latest imperial judge result after a successful model response. */
+  replaceImperialFloor?: boolean;
   expectedAcceptedAt?: number;
   expectedImperialRevision?: number;
   questId: string;
@@ -98,14 +100,13 @@ export class QuestProgressRepository {
           profileId,
           input.questId,
         );
-        if (
-          checkpoints.some(
-            (checkpoint) => this.matchesJudgeFloor(checkpoint, input.floor),
-          )
-        ) {
-          return tracker;
-        }
-        const before = tracker.current;
+        const same = checkpoints.find(checkpoint => this.matchesJudgeFloor(checkpoint, input.floor));
+        if (same && !input.replaceImperialFloor) return tracker;
+        if (input.replaceImperialFloor && (!input.next.imperial || input.expectedImperialRevision === undefined ||
+          input.giftItems?.length || checkpoints.some(checkpoint => checkpoint.floorIndex > input.floor.index) ||
+          (same && same.after.imperial?.revision !== tracker.current.imperial?.revision))) return tracker;
+        // Preserve the original before snapshot so deleting a re-rolled floor still rolls back one floor.
+        const before = same?.before ?? tracker.current;
         const after: QuestProgressSnapshot = {
           ...input.next,
           summary,

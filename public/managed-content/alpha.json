@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "channel": "alpha",
-  "revision": "2026-09-10.imperial-worldbook.1",
+  "revision": "2026-09-11.imperial-guidance.2",
   "target": {
     "characterName": "凯利安",
     "worldbookNames": [
@@ -16,7 +16,7 @@
   },
   "sourceCard": {
     "url": "https://jhyshl.github.io/caelian-re-oseas/managed-content/cards/caelian-alpha-mvu-v3.json",
-    "sha256": "2a8cd4c6807d5d4cf790a4ff42b2a158c14815e421d60ef71fb192d7d780e64f"
+    "sha256": "f4785711cdd727494c5bed2ad0fae47537145149a719507c65cbe8d4835b28aa"
   },
   "operations": []
 }

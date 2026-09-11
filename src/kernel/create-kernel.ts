@@ -667,7 +667,7 @@ export class CaelianKernel {
     return this.questJudgeClient?.cancel() ?? false;
   }
 
-  async retryQuestJudge(expected?: QuestJudgeRetryTarget): Promise<void> {
+  async retryQuestJudge(expected?: QuestJudgeRetryTarget, rerollImperial = false): Promise<void> {
     if (this.questJudgeRetryPending || this.questJudgeClient?.isEvaluating() || this.generationActive) {
       this.notifyRuntime('info', '请等待当前正文或副 API 请求结束后再重试。', '当前正在生成');
       return;
@@ -690,7 +690,7 @@ export class CaelianKernel {
       const selected = await this.repository.selectedQuestTracker(profileId);
       const quests = await this.db.questRecords.where('profileId').equals(profileId)
         .filter(quest => quest.status === 'active' && (quest.definitionId === IMPERIAL_QUEST_ID || quest.id === selected?.questId)).toArray();
-      const candidates = quests.filter(quest => !expected || (quest.id === expected.questId && quest.acceptedAt === expected.acceptedAt));
+      const candidates = quests.filter(quest => (!rerollImperial || (quest.definitionId === IMPERIAL_QUEST_ID && selected?.questId === quest.id)) && (!expected || (quest.id === expected.questId && quest.acceptedAt === expected.acceptedAt)));
       const task = this.tavernUpdateQueue.catch(() => undefined).then(async () => {
         const latest = [...(await this.adapter.chatFloors() ?? [])].reverse().find(item => item.role === 'assistant');
         if (this.shuttingDown || profileId !== this.profileId || epoch !== this.generationEpoch || this.generationActive ||
@@ -704,13 +704,17 @@ export class CaelianKernel {
           const current = await this.db.questRecords.get(quest.id);
           if (current?.status !== 'active' || current.acceptedAt !== quest.acceptedAt) continue;
           if (quest.definitionId !== IMPERIAL_QUEST_ID && (currentSelected?.questId !== quest.id || !['armed','tracking','detour','suspended'].includes(currentSelected.current.trackerState))) continue;
-          if (!(await this.questProgress.hasCheckpointForFloor(profileId, quest.id, floor))) pending.push(quest.id);
+          if (rerollImperial && (currentSelected?.questId !== quest.id || !['armed','tracking','detour'].includes(currentSelected.current.trackerState))) continue;
+          if (rerollImperial || !(await this.questProgress.hasCheckpointForFloor(profileId, quest.id, floor))) pending.push(quest.id);
         }
         if (!pending.length) {
           this.notifyRuntime('info', '本楼已完成判定，或当前没有需要判定的任务。', '无需重试');
           return;
         }
-        await this.progressTrackedQuests({ messageId: floor.index }, pending);
+        if (rerollImperial) {
+          const quest = await this.db.questRecords.get(pending[0]!);
+          if (quest) await this.evaluateImperialQuest(quest, {messageId:floor.index}, true);
+        } else await this.progressTrackedQuests({ messageId: floor.index }, pending);
         if (profileId !== this.profileId || epoch !== this.generationEpoch || this.shuttingDown) return;
         await this.syncQuestContext();
         await this.scanCurrentAchievements();
@@ -1659,7 +1663,7 @@ export class CaelianKernel {
 
   private async imperialOverlayView(): Promise<ImperialOverlay> {
     this.imperialOverlayTask ??= import('@/modules/imperial/mount').then(module => {
-      this.imperialOverlay = module.mountImperialOverlay(this.adapter.host);
+      this.imperialOverlay = module.mountImperialOverlay(this.adapter.host, () => this.retryQuestJudge(undefined, true));
       return this.imperialOverlay;
     });
     return this.imperialOverlayTask;
@@ -1681,9 +1685,11 @@ export class CaelianKernel {
     } catch (error) {
       if (tracked) this.notifyRuntime('warning', error instanceof Error ? error.message : String(error), '皇权指导条目切换失败');
     }
+    if (accepted) await this.adapter.ensureImperialDisplayFilter();
     if (tracked) await this.imperialOverlayView();
+    const playerName = (await this.adapter.identity()).playerName || (profileId ? (await this.repository.snapshot(profileId)).player.name : '玩家');
     if (profileId !== this.profileId || revision !== this.imperialPresentationRevision || this.shuttingDown) return { accepted: false, tracked: false };
-    this.imperialOverlay?.update(`${this.channel}:${profileId}`, tracked, tracker?.current.imperial ?? (accepted ? initialImperialState() : null));
+    this.imperialOverlay?.update(`${this.channel}:${profileId}`, tracked, tracker?.current.imperial ?? (accepted ? initialImperialState() : null), playerName);
     // A failed host write can be retried without paying for another model call.
     const state = tracker?.current.imperial ?? (await this.db.questHistory.where('profileId').equals(profileId)
       .filter(item => item.definitionId === IMPERIAL_QUEST_ID).first())?.imperial;
@@ -1697,7 +1703,7 @@ export class CaelianKernel {
     return { accepted, tracked };
   }
 
-  private async evaluateImperialQuest(quest: QuestRecord, payload?: TavernEventPayload): Promise<void> {
+  private async evaluateImperialQuest(quest: QuestRecord, payload?: TavernEventPayload, reroll = false): Promise<void> {
     const profileId = this.profileId;
     if (!profileId) return;
     const epoch = this.generationEpoch;
@@ -1713,12 +1719,12 @@ export class CaelianKernel {
     }
     let banner: number | undefined;
     try {
-      if (await this.questProgress.hasCheckpointForFloor(profileId,quest.id,floor)) return;
+      if (!reroll && await this.questProgress.hasCheckpointForFloor(profileId,quest.id,floor)) return;
       this.questJudgeLastError = undefined;
       const snapshot = await this.repository.snapshot(profileId);
       banner = this.notifications.show({kind:'task',icon:'♛',title:'正在更新皇权局势',description:'正在记录各方动向与玩家已知情报。',duration:resolveQuestJudgeTimeout(this.questJudge.timeoutMs)+5000,actionText:'终止副 API',onClick:()=>{this.cancelQuestJudge();}});
       const result = await evaluateImperialTurn({
-        profileId, quest, floor, progress: this.questProgress, judge: this.questJudgeClient,
+        profileId, quest, floor, progress: this.questProgress, judge: this.questJudgeClient, reroll,
         prompt: { playerName: identity.playerName ?? snapshot.player.name,
           currentLocation: this.snapshotLocation(snapshot), recentMessages: await this.adapter.chatConversation(),
           worldbook: await this.adapter.imperialWorldbookContext(),
@@ -1740,7 +1746,7 @@ export class CaelianKernel {
         const overlay = await this.imperialOverlayView();
         const tracker = await this.questProgress.getTracker(profileId, quest.id);
         const visible = !result.completed && tracker?.selected === true && ['armed','tracking','detour'].includes(tracker.current.trackerState);
-        overlay.update(`${this.channel}:${profileId}`,visible,result.state);
+        overlay.update(`${this.channel}:${profileId}`,visible,result.state,identity.playerName || snapshot.player.name);
         overlay.announce(result.notices);
       }
       if (result.completed) {

@@ -45,6 +45,15 @@ async function setup() {
 }
 
 describe('动荡的皇权',()=>{
+  it('玩家已接取的任务不会因标点或来源前缀误判为不知情，秘密仍保持未知',async()=>{
+    const h=await setup(),value=h.response();
+    h.input.prompt.recentMessages[0]!.content='已接取任务 「动荡的皇权」 。';
+    value.state.currentEvent={text:'测试玩家已接取任务。',known:false,evidence:'玩家：已接取任务「动荡的皇权」。'};
+    value.state.royals.卢修斯.plan={text:'秘密联络骑士团',known:true,evidence:'没有发生的告知'};
+    h.judge.evaluateImperial.mockResolvedValue(value);const result=await evaluateImperialTurn(h.input);
+    expect(result!.state.currentEvent.known).toBe(true);expect(result!.state.royals.卢修斯.plan.known).toBe(false);
+  });
+
   it('三名皇室成员行踪缺少依据时仍写入状态，但不能凭空获得玩家知情标记',async()=>{
     const h=await setup(),raw=h.response();
     for(const royal of Object.values(raw.state.royals)) {
@@ -215,11 +224,13 @@ describe('动荡的皇权',()=>{
 
   it('独立浮窗按追踪显示、展开内容、休眠半透明，幕后计划明确标注角色不知情',async()=>{
     vi.useFakeTimers();overlay=mountImperialOverlay(window);const state=initialImperialState();state.royals.卢修斯.plan.text='不可见秘密';
-    overlay.update('alpha:test',true,state);await nextTick();
+    overlay.update('alpha:test',true,state,'江');await nextTick();
     const launcher=document.querySelector<HTMLButtonElement>('.imperial-launcher')!;expect(launcher).not.toBeNull();
     launcher.click();await nextTick();expect(document.querySelector('.imperial-panel')).not.toBeNull();
     [...document.querySelectorAll<HTMLButtonElement>('.imperial-tabs button')].find(button=>button.textContent==='皇室')!.click();await nextTick();
-    expect(document.querySelector('.imperial-panel')!.textContent).toContain('不可见秘密（User不知情）');
+    expect(document.querySelector('.imperial-panel')!.textContent).toContain('不可见秘密');
+    expect(document.querySelector('.imperial-panel')!.textContent).not.toContain('（User不知情）');
+    expect(document.querySelector('[aria-label="江尚未知晓"]')).not.toBeNull();
     document.querySelector<HTMLButtonElement>('[aria-label="收起皇权状态栏"]')!.click();await nextTick();
     vi.advanceTimersByTime(5100);await nextTick();expect(launcher.classList.contains('sleeping')).toBe(true);
     overlay.update('alpha:test',false,state);await nextTick();expect(document.querySelector('.imperial-launcher')).toBeNull();

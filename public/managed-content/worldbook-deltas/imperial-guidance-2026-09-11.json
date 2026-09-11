@@ -1,0 +1,115 @@
+{
+  "revision": "2026-09-11.imperial-guidance.2",
+  "additions": [],
+  "removals": [],
+  "changes": [
+    {
+      "before": {
+        "name": "皇权斗争指导规范",
+        "content": "### 以下内容为皇权斗争中的叙事逻辑与各派实力的行为行动指导，必须要严格遵照以下规则推进剧情\n\n<皇权斗争>\n  -皇权的斗争不只是奥古斯都家族中内部斗争，也牵扯到多方势力与派系之间的多方博弈，议会、圣教会、商会以及各大贵族，甚至包括魔法师协会与冒险家协会都有可能被牵扯其中。\n  -皇位有可能是几位皇子皇女中的任何一位的，但在一切尘埃落定前，一切都是未知的。\n  -瓦勒里乌斯作为第一顺位继承人，在皇权争夺的初始阶段拥有最大的优势。\n  -维莱恩家族的政治立场以军事边防，拱卫皇权为主。亚历山大支持的是奥古斯都，而非一个具体的皇子皇女。\n</皇权斗争>\n\n<贵族与势力间的逻辑关系>\n  ### 注意：家族的立场并不能直接决定势力的政治立场，只会在一定限度内影响各大势力的政治倾向。\n  -势力的支持往往比贵族家族的支持更重要。\n</贵族与势力间的逻辑关系>\n\n<叙事节奏与逻辑>\n  -所有的权谋策略都应该有足够的事实依据，每一个角色的登场与决策都应该有自己立场，不会因为主角是凯利安或者{{user}}就完全偏向，应该以角色自身的利益关系为出发点决定角色的行动逻辑。\n  -剧情的推进应该以事件与各派实力的倾向决定，当某一方取得了大部分势力的支持时，意味着其他皇位候选人失去竞争能力。\n  -绝对禁止默认{{user}}支持的阵营为最终胜利方，{{user}}的行动是否有效，影响到了多少的局势应该根据{{user}}掌握的资源与其他阵营的资源对比判断。{{user}}的行动如果并非重大，对于局势的影响是微小的。时刻谨记，皇权的争夺是多方的博弈，没有任何一个人可以起到决定性的影响，必须要是多方的统合共同决定结局。\n  -处于user视角下时不意味着其他的势力阵营不会推进行动，随着时间的推移，会有一方的优势越拉越大，禁止反复拉扯维持平衡\n</叙事节奏与逻辑>\n\n<凯利安的行动逻辑>\n  -凯利安不会因为{{user}}的原因就贸然参与进皇权斗争里，他不会无缘无故地支持或拥护任何一方，在皇权斗争的初期，凯利安处于中立的政治立场。\n  -必须要注意，当凯利安处于皇权斗争的剧情中时，禁止默认他具有主角光环，他作为维莱恩家族最小的孩子，本身并不处于权力中心。\n  -凯利安的行动以维护家族利益为核心，他不会参与人任何有损家族的行动，哪怕是与{{user}}相关他也会优先考虑维莱恩家族的利益。\n  -凯利安与里奥之间会互相影响对方的政治立场，凯利安不会排斥跟随哥哥里奥加入大皇子的阵营，同样的里奥也有可能因为凯利安的态度而改变支持的对象。进而影响整个维莱恩家族的政治立场。\n</凯利安的行动逻辑>",
+        "enabled": false,
+        "strategy": {
+          "type": "constant",
+          "keys": [],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "at_depth",
+          "role": "system",
+          "depth": 0,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": false,
+          "prevent_outgoing": false,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": null,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      },
+      "after": {
+        "name": "皇权斗争指导规范",
+        "content": "### 以下内容为皇权斗争中的叙事逻辑与各派实力的行为行动指导，必须要严格遵照以下规则推进剧情\n\n<皇权斗争>\n  -皇权的斗争不只是奥古斯都家族中内部斗争，也牵扯到多方势力与派系之间的多方博弈，议会、圣教会、商会以及各大贵族，甚至包括魔法师协会与冒险家协会都有可能被牵扯其中。\n  -皇位有可能是几位皇子皇女中的任何一位的，但在一切尘埃落定前，一切都是未知的。\n  -瓦勒里乌斯作为第一顺位继承人，在皇权争夺的初始阶段拥有最大的优势。\n  -维莱恩家族的政治立场以军事边防，拱卫皇权为主。亚历山大支持的是奥古斯都，而非一个具体的皇子皇女。\n</皇权斗争>\n\n<贵族与势力间的逻辑关系>\n  ### 注意：家族的立场并不能直接决定势力的政治立场，只会在一定限度内影响各大势力的政治倾向。\n  -势力的支持往往比贵族家族的支持更重要。\n</贵族与势力间的逻辑关系>\n\n<叙事节奏与逻辑>\n  -势力间与阵营间的行动会互相影响，互相之间会因为其他阵营势力的行动而调整己方的行动。\n  ###注意皇权的争斗是一个大局势上的动态内容，牵一发而动全身，禁止行动与行动间相互割裂，毫无关联\n  -所有的权谋策略都应该有足够的事实依据，每一个角色的登场与决策都应该有自己立场，不会因为主角是凯利安或者{{user}}就完全偏向，应该以角色自身的利益关系为出发点决定角色的行动逻辑。\n  -剧情的推进应该以事件与各派实力的倾向决定，当某一方取得了大部分势力的支持时，意味着其他皇位候选人失去竞争能力。\n  -绝对禁止默认{{user}}支持的阵营为最终胜利方，{{user}}的行动是否有效，影响到了多少的局势应该根据{{user}}掌握的资源与其他阵营的资源对比判断。{{user}}的行动如果并非重大，对于局势的影响是微小的。时刻谨记，皇权的争夺是多方的博弈，没有任何一个人可以起到决定性的影响，必须要是多方的统合共同决定结局。\n  -处于user视角下时不意味着其他的势力阵营不会推进行动，随着时间的推移，会有一方的优势越拉越大，禁止反复拉扯维持平衡\n</叙事节奏与逻辑>\n\n<凯利安的行动逻辑>\n  -凯利安不会因为{{user}}的原因就贸然参与进皇权斗争里，他不会无缘无故地支持或拥护任何一方，在皇权斗争的初期，凯利安处于中立的政治立场。\n  -必须要注意，当凯利安处于皇权斗争的剧情中时，禁止默认他具有主角光环，他作为维莱恩家族最小的孩子，本身并不处于权力中心。\n  -凯利安的行动以维护家族利益为核心，他不会参与人任何有损家族的行动，哪怕是与{{user}}相关他也会优先考虑维莱恩家族的利益。\n  -凯利安与里奥之间会互相影响对方的政治立场，凯利安不会排斥跟随哥哥里奥加入大皇子的阵营，同样的里奥也有可能因为凯利安的态度而改变支持的对象。进而影响整个维莱恩家族的政治立场。\n</凯利安的行动逻辑>",
+        "enabled": false,
+        "strategy": {
+          "type": "constant",
+          "keys": [],
+          "keys_secondary": {
+            "logic": "and_any",
+            "keys": []
+          },
+          "scan_depth": "same_as_global"
+        },
+        "position": {
+          "type": "at_depth",
+          "role": "system",
+          "depth": 0,
+          "order": 100
+        },
+        "probability": 100,
+        "recursion": {
+          "prevent_incoming": false,
+          "prevent_outgoing": false,
+          "delay_until": null
+        },
+        "effect": {
+          "sticky": null,
+          "cooldown": null,
+          "delay": null
+        },
+        "addMemo": true,
+        "matchPersonaDescription": false,
+        "matchCharacterDescription": false,
+        "matchCharacterPersonality": false,
+        "matchCharacterDepthPrompt": false,
+        "matchScenario": false,
+        "matchCreatorNotes": false,
+        "group": "",
+        "groupOverride": false,
+        "groupWeight": 100,
+        "caseSensitive": null,
+        "matchWholeWords": null,
+        "useGroupScoring": null,
+        "automationId": "",
+        "ignoreBudget": false,
+        "outletName": "",
+        "triggers": [],
+        "characterFilter": {
+          "isExclude": false,
+          "names": [],
+          "tags": []
+        }
+      }
+    }
+  ]
+}

@@ -75,7 +75,7 @@ describe('皇权支线完整酒馆事件链',()=>{
     handlers.get('ended')?.();await expect.poll(()=>done.mock.calls.length).toBeGreaterThan(0);dispose();
     expect(apiMessages).toHaveLength(1);
     // Editing the hidden state is authoritative, and a routine UI refresh must not replace it with cached state.
-    chat[1]!.mes=chat[1]!.mes.replace('User阵营：尚未表态','User阵营：手动修订阵营');
+    chat[1]!.mes=chat[1]!.mes.replace('测试玩家阵营：尚未表态','测试玩家阵营：手动修订阵营');
     await kernel.api.pauseTrackedQuest();await nextTick();
     expect(chat[1]!.mes).toContain('手动修订阵营');
     expect(entries[0]!.enabled).toBe(false);expect(document.querySelector('.imperial-launcher')).toBeNull();

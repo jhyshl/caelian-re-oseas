@@ -60,11 +60,18 @@ for(const change of delta.changes){
   if(JSON.stringify(change.before.strategy.keys)!==JSON.stringify(change.after.strategy.keys))e.keys=change.after.strategy.keys;
 }
 for(const addition of delta.additions){if(entries.some(e=>(e.comment??e.name)===addition.name))continue; const raw=beta.find(e=>e.comment===addition.name);const used=new Set(entries.map(e=>e.uid??e.id));let uid=0;while(used.has(uid))uid++;entries.push(toCard({...raw,uid}));}
+const guidance = JSON.parse(await readFile(path.join(root,'public/managed-content/worldbook-deltas/imperial-guidance-2026-09-11.json'),'utf8'));
+for (const {before,after} of guidance.changes) {
+  const entry=entries.find(e=>(e.comment??e.name)===before.name);
+  if (!entry || ![before.content,after.content].includes(entry.content)) throw new Error('Author guidance content mismatch');
+  entry.content=after.content;
+  if(entry.extensions?.content===before.content)entry.extensions.content=after.content;
+}
 const cardText=JSON.stringify(card,null,2)+'\n';
 await writeFile(cardPath,cardText);
 const manifestPath=path.join(root,'public/managed-content/alpha.json');
 const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
-manifest.revision=delta.revision;
+manifest.revision=guidance.revision;
 // Old runtimes can read this manifest before their script reloads. They must not
 // replay historical whole-entry upserts against player edits. New runtimes use
 // the bundled three-way delta selected by this exact revision.

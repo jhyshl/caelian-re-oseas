@@ -1,3 +1,4 @@
+import { ensureImperialDisplayRegex, type ImperialRegexApi } from '@/imperial/display';
 import type {
   AiProjection,
   TavernConversationMessage,
@@ -439,6 +440,15 @@ export class TavernAdapter {
     return verified.length === 1 && verified[0]!.enabled === enabled;
   }
 
+  async ensureImperialDisplayFilter(): Promise<boolean> {
+    for (const scope of this.apiScopes()) {
+      const record = scope as unknown as Record<string, unknown>;
+      const api = (record.TavernHelper ?? record) as ImperialRegexApi;
+      if (api.getTavernRegexes && api.updateTavernRegexesWith) return ensureImperialDisplayRegex(api);
+    }
+    return false;
+  }
+
   async previousImperialRecord(beforeIndex: number): Promise<{ index: number; content: string } | null> {
     const chat = (await this.context()).chat;
     if (!chat) return null;
@@ -460,13 +470,13 @@ export class TavernAdapter {
     const body = message.mes ?? message.message ?? message.content ?? '';
     // Preserve player edits to a tagged record; repairs only fill a missing record.
     if (repairOnly && readImperialRecord(body)) return true;
-    const text = stripImperialContext(body) + imperialHistoryContext(state);
+    const text = stripImperialContext(body) + imperialHistoryContext(state, (await this.identity()).playerName || '玩家');
     if (body === text) return true;
     for (const scope of this.apiScopes()) {
       const record = scope as unknown as Record<string, unknown>;
       const api = (record.TavernHelper ?? record) as { setChatMessages?: (messages: Array<{message_id:number;message:string}>, options: {refresh:'none'}) => Promise<void> };
       if (api.setChatMessages) {
-        // Refresh none avoids duplicate generation/render events; the appended HTML comment is invisible.
+        // Refresh none avoids duplicate generation events; our display-only regex handles later renders.
         await api.setChatMessages.call(api, [{ message_id: floor.index, message: text }], { refresh: 'none' });
         const saved = (await this.context()).chat?.[floor.index];
         return (await this.identity()).chatId === chatId && (saved?.mes ?? saved?.message ?? saved?.content) === text;

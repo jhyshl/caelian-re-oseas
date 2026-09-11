@@ -1,3 +1,4 @@
+import { playerText } from './display';
 import { IMPERIAL_FACTIONS, IMPERIAL_HEIRS } from './constants';
 import { initialImperialState, type ImperialFact, type ImperialState } from './model';
 
@@ -26,8 +27,8 @@ export function imperialRecordAuthority(record: string) {
       if (old) support[name] = { value: old[1] === '未知' ? null : Number(old[1]), evidence: '' };
     }
   }
-  return { support, playerCamp: decoded.match(/User阵营：([^\n|]*)/)?.[1]?.trim() || '尚未表态',
-    playerClaimingThrone: /User是否争位：是/.test(decoded) || /User阵营：自己(?:\s|\||$)/.test(decoded),
+  return { support, playerCamp: decoded.match(/(?:^|[\n|])[^\n|：]*阵营：([^\n|]*)/m)?.[1]?.trim() || '尚未表态',
+    playerClaimingThrone: /^[^\n|：]*是否争位：是/m.test(decoded) || /[^\n|：]*阵营：自己(?:\s|\||$)/.test(decoded),
     campEvidence: decoded.match(/表态依据：([^\n]*)/)?.[1] ?? '' };
 }
 /** Only our own records are removed; unrelated player tags/comments remain intact. */
@@ -35,7 +36,7 @@ export function stripImperialContext(text: string): string {
   return text.replace(/\n{0,2}<caelian-imperial-state\b[^>]*>[\s\S]*?<\/caelian-imperial-state>/g, '')
     .replace(/\n{0,2}<!-- CAELIAN_IMPERIAL_STATE:v1\b[\s\S]*?-->/g, '');
 }
-export function imperialHistoryContext(state: ImperialState): string {
+export function imperialHistoryContext(state: ImperialState, playerName = 'User'): string {
   const safe = (value: string) => value.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('|','｜').replaceAll('--','—');
   const fact = (value: ImperialFact) => `${safe(value.text)}（User${value.known ? '知情' : '不知情'}；依据：${safe(value.evidence || '待确认')}）`;
   const parts = [
@@ -49,6 +50,6 @@ export function imperialHistoryContext(state: ImperialState): string {
     `重大进展播报：${state.majorProgress?.map(item => `${safe(item.faction)}／${safe(item.title)}：${safe(item.detail)}（User知情；依据：${safe(item.evidence)}）`).join('；') || '无新增播报'}`,
     `皇位继承结果：${state.winner ? `${safe(state.winner)}已正式继位` : '尚未有人继承皇位'}`,
   ];
-  // Comment hides content even when the host sanitizes the custom element. Raw history still sends it to AI.
-  return `\n\n<caelian-imperial-state><!--\n${parts.join('\n|\n')}\n--></caelian-imperial-state>`;
+  // Display-only Tavern regex hides the record before Markdown; raw history retains it.
+  return `\n\n<caelian-imperial-state><!--\n${playerText(parts.join('\n|\n'), safe(playerName))}\n--></caelian-imperial-state>`;
 }

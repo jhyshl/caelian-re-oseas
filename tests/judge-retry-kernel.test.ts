@@ -64,6 +64,28 @@ async function setup(imperial = false) {
 }
 
 describe('副 API 失败后手动重试', () => {
+  it('皇权面板可重Roll成功楼层，失败保持原状态，成功替换且删除仍回退到原始基线', async () => {
+    const h=await setup(true);h.mode('pass');await h.api.retryQuestJudge();
+    const first=(await db!.questFloorCheckpoints.toArray())[0]!;
+    const original=h.chat[1]!.mes;
+    await expect.poll(() => document.querySelector<HTMLButtonElement>('.imperial-launcher')).not.toBeNull();
+    document.querySelector<HTMLButtonElement>('.imperial-launcher')!.click();
+    await expect.poll(() => document.querySelector<HTMLButtonElement>('.imperial-tools button')).not.toBeNull();
+    h.mode('fail');document.querySelector<HTMLButtonElement>('.imperial-tools button')!.click();
+    await expect.poll(() => h.calls.length).toBe(2);
+    await expect.poll(() => document.querySelector<HTMLButtonElement>('.imperial-tools button')?.disabled).toBe(false);
+    expect(h.chat[1]!.mes).toBe(original);expect((await db!.questFloorCheckpoints.toArray())[0]).toEqual(first);
+    h.mode('hold');const button=document.querySelector<HTMLButtonElement>('.imperial-tools button')!;button.click();button.click();
+    await expect.poll(() => h.calls.length).toBe(3);expect(button.disabled).toBe(true);
+    h.release();await expect.poll(async () => (await db!.questFloorCheckpoints.toArray())[0]?.after.imperial?.revision).toBe(2);
+    expect(await db!.questFloorCheckpoints.count()).toBe(1);
+    expect((await db!.questFloorCheckpoints.toArray())[0]!.before).toEqual(first.before);
+    expect(h.calls[2]!.messages[1]!.content).toContain('不存在上一条有效标签记录');
+    h.chat.splice(1,1);h.handlers.get('deleted')?.(1);
+    await expect.poll(async () => db!.questFloorCheckpoints.count()).toBe(0);
+    expect((await db!.questTrackerStates.toArray())[0]!.current.imperial).toBeUndefined();
+  });
+
   it('普通任务失败提示可重试同楼；成功后再次点击不重复判定或新增检查点', async () => {
     const h = await setup(); await h.fail(); h.mode('pass');
     await expect.poll(() => [...document.querySelectorAll<HTMLButtonElement>('.notification-action')].find(button => button.textContent?.includes('重试副 API'))).toBeDefined();
