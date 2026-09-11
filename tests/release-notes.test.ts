@@ -174,10 +174,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.20.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.21.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.21',
       'Beta 1.20',
       'Beta 1.19',
       'Beta 1.18',
@@ -200,9 +201,13 @@ describe('release notes', () => {
       'Beta 1.1',
       'Beta 1.0',
     ]);
-    expect(releases[0]?.changes.join('\n')).toContain('等概率选择');
-    expect(releases[0]?.changes.join('\n')).toContain('双击查看完整技能');
-    expect(releases[0]?.changes.join('\n')).toContain('凌晨零点');
+    expect(releases[0]?.changes.join('\n')).toContain('重Roll本楼状态栏');
+    expect(releases[0]?.changes.join('\n')).toContain('仅显示正则');
+    expect(releases[0]?.changes.join('\n')).toContain('最近十楼');
+    const beta120 = releases.find(release=>release.version==='1.20.0-beta.1');
+    expect(beta120?.changes.join('\n')).toContain('等概率选择');
+    expect(beta120?.changes.join('\n')).toContain('双击查看完整技能');
+    expect(beta120?.changes.join('\n')).toContain('凌晨零点');
     const beta119Text = releases.find(r=>r.version==='1.19.0-beta.1')?.changes.join('\n') ?? '';
     expect(beta119Text).toContain('41个可独立生效');
     expect(beta119Text).toContain('不转换为模板');
