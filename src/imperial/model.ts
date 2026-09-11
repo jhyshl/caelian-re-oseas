@@ -2,7 +2,14 @@ import { z } from 'zod';
 import { IMPERIAL_FACTIONS } from './constants';
 
 const text = z.string().trim().max(800);
-export const imperialFactSchema = z.object({ text, known: z.boolean(), evidence: text });
+// Missing provenance is not a missing fact. Keep the text, but never invent a
+// supporting quote; the service still verifies knowledge against tagged history.
+const factEvidence = z.preprocess(value => {
+  if (value == null) return '';
+  if (Array.isArray(value) && value.every(item => typeof item === 'string')) return value.join('\n');
+  return value;
+}, text);
+export const imperialFactSchema = z.object({ text, known: z.boolean(), evidence: factEvidence });
 const royalSchema = z.object({
   plan: imperialFactSchema, action: imperialFactSchema, next: imperialFactSchema,
   history: z.array(imperialFactSchema.extend({ at: z.string().max(120) })).max(16),

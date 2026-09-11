@@ -16,6 +16,7 @@ import { mountImperialOverlay, type ImperialOverlay } from '@/modules/imperial/m
 import { loadRegionPlaces } from '@/content/catalogs/world';
 import { imperialRecordAuthority, readImperialRecord } from '@/imperial/history';
 import { normalizeRegion } from '@/worldbook/region-switcher';
+import { OpenAiCompatibleQuestJudgeClient } from '@/quests/judge-client';
 
 const databases: CaelianDatabase[] = [];
 let overlay: ImperialOverlay | undefined;
@@ -44,6 +45,47 @@ async function setup() {
 }
 
 describe('动荡的皇权',()=>{
+  it('三名皇室成员行踪缺少依据时仍写入状态，但不能凭空获得玩家知情标记',async()=>{
+    const h=await setup(),raw=h.response();
+    for(const royal of Object.values(raw.state.royals)) {
+      royal.history=[{at:'时间未明',text:'在内廷秘密会见军官。',known:true,evidence:''}];
+      Reflect.deleteProperty(royal.history[0]!, 'evidence');
+    }
+    const client=new OpenAiCompatibleQuestJudgeClient({endpoint:'https://judge.example',model:'test'},vi.fn(async()=>
+      new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(raw)}}]}),{status:200})));
+    const updated=await evaluateImperialTurn({...h.input,judge:client});
+    expect(updated).not.toBeNull();
+    for(const royal of Object.values(updated!.state.royals)) expect(royal.history).toEqual([
+      {at:'时间未明',text:'在内廷秘密会见军官。',known:false,evidence:''},
+    ]);
+    expect(imperialHistoryContext(updated!.state)).toContain('在内廷秘密会见军官。（User不知情；依据：待确认）');
+    expect(await h.progress.listCheckpoints(h.profile.id,h.quest.id)).toHaveLength(1);
+    expect(updated!.completed).toBe(false);expect(updated!.notices).toEqual([]);
+  });
+
+  it.each([null, [], ['对应正文'], ['第一条依据','第二条依据']])('事实依据兼容空值或文字列表：%j',async(evidence)=>{
+    const h=await setup(),raw=h.response();
+    Reflect.set(raw.state.royals.瓦勒里乌斯.plan,'evidence',evidence);
+    const parsed=imperialResultSchema.parse(raw);
+    expect(parsed.state.royals.瓦勒里乌斯.plan.evidence).toBe(Array.isArray(evidence)?evidence.join('\n'):'');
+  });
+
+  it('仍拒绝真正缺失的行踪内容，提示中文字段路径，保留原进度',async()=>{
+    const h=await setup(),raw=h.response();
+    raw.state.royals.瓦勒里乌斯.history=[{at:'时间未明',text:'占位',known:false,evidence:''}];
+    Reflect.deleteProperty(raw.state.royals.瓦勒里乌斯.history[0]!,'text');
+    const client=new OpenAiCompatibleQuestJudgeClient({endpoint:'https://judge.example',model:'test'},vi.fn(async()=>
+      new Response(JSON.stringify({choices:[{message:{content:JSON.stringify(raw)}}]}),{status:200})));
+    await expect(evaluateImperialTurn({...h.input,judge:client})).rejects.toThrow('皇权状态 → 皇室 → 瓦勒里乌斯 → 过往行踪 → 第 1 条 → 内容：缺失或类型错误，应为文字');
+    expect(await h.progress.listCheckpoints(h.profile.id,h.quest.id)).toHaveLength(0);
+    expect((await h.progress.getTracker(h.profile.id,h.quest.id))!.current.imperial).toBeUndefined();
+  });
+
+  it('补齐行踪格式说明，空白结构不再是 history 元素的唯一示例',()=>{
+    const prompt=buildImperialJudgeMessages({state:initialImperialState(),playerName:'玩家',currentLocation:'学院',worldbook:'',recentMessages:[]});
+    expect(prompt[0]!.content).toContain('history 每条必须包含四个字段');
+    expect(prompt[1]!.content).toContain('"at":"时间未明","text":"实际发生的行动","known":false,"evidence":');
+  });
   it('升级旧版注释记录时保留支持值与自己争位阵营，只在读取时补齐标签',()=>{
     const old='正文\n\n<!-- CAELIAN_IMPERIAL_STATE:v1 | User当前势力：议会 45/100；圣教会 未知/100；骑士团 12/100；赛梅斯商会 30/100 | User阵营：自己 | -->';
     const record=readImperialRecord(old)!;

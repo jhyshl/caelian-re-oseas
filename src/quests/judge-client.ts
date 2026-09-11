@@ -8,6 +8,7 @@ import {
 } from '@/quests/schema';
 import { buildImperialJudgeMessages, type ImperialPromptInput } from '@/imperial/prompt';
 import { imperialResultSchema, type ImperialResult } from '@/imperial/model';
+import type { ZodType } from 'zod';
 
 export const DEFAULT_QUEST_JUDGE_TIMEOUT_MS = 180_000;
 
@@ -182,7 +183,7 @@ export class OpenAiCompatibleQuestJudgeClient
     const content = await this.requestMessages(buildQuestJudgeMessages(input));
     const parsed = parseJsonObject(content);
     return {
-      result: questJudgeResultSchema.parse(normalizeJudgeResult(parsed)),
+      result: parseJudgeOutput(questJudgeResultSchema, normalizeJudgeResult(parsed)),
       rawResponse: content,
     };
   }
@@ -266,8 +267,31 @@ export class OpenAiCompatibleQuestJudgeClient
 
   async evaluateImperial(input: ImperialPromptInput): Promise<ImperialResult> {
     const content = await this.requestMessages(buildImperialJudgeMessages(input), 80_000);
-    return imperialResultSchema.parse(parseJsonObject(content));
+    return parseJudgeOutput(imperialResultSchema, parseJsonObject(content));
   }
+}
+
+function parseJudgeOutput<T>(schema: ZodType<T>, value: unknown): T {
+  const parsed = schema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  const labels: Record<string, string> = {
+    state:'皇权状态', royals:'皇室', history:'过往行踪', evidence:'依据', text:'内容', known:'是否知情', at:'时间',
+    plan:'当前计划', action:'当前行动', next:'下一步措施', emperor:'皇帝', factions:'各势力', support:'支持度',
+    currentEvent:'当前事件', playerCamp:'玩家阵营', campEvidence:'阵营依据', playerClaimingThrone:'玩家是否争位',
+    successionLikelihood:'皇位继承可能性', reason:'原因', majorProgress:'重大进展', succession:'继位判定',
+    completed:'是否完成', winner:'继位者', winnerIsPlayer:'是否玩家继位', confidence:'置信度', summary:'本轮摘要',
+  };
+  const types: Record<string, string> = {string:'文字',number:'数字',boolean:'true 或 false',array:'列表',object:'对象'};
+  const details = parsed.error.issues.slice(0, 4).map(issue => {
+    const path = issue.path.map(part => typeof part === 'number' ? `第 ${part + 1} 条` : labels[String(part)] ?? String(part)).join(' → ') || '返回结果';
+    const reason = issue.code === 'invalid_type' ? `缺失或类型错误，应为${types[issue.expected] ?? issue.expected}`
+      : issue.code === 'too_big' ? '内容长度、数量或数值超过允许范围'
+      : issue.code === 'too_small' ? '内容为空或数值低于允许范围'
+      : issue.code === 'custom' ? issue.message : '格式不符合要求';
+    return `${path}：${reason}`;
+  });
+  if (parsed.error.issues.length > 4) details.push(`另有 ${parsed.error.issues.length - 4} 项字段需要修正`);
+  throw new Error(`副 API 返回格式不符合要求：\n${details.join('\n')}`, { cause: parsed.error });
 }
 
 function isResponsesEndpoint(endpoint: string): boolean {
