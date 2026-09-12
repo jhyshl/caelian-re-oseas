@@ -29,7 +29,7 @@ Object.assign(aliases,{agility:'swift','敏捷':'swift','迅捷':'swift'});
 /** Exactly matches api.timed: aggregated presentation only, never a source of timers. */
 export function projectLegacyTimed(actor,list){
  const out={};for(const effect of list){const key=keyOf(effect),rawTurns=effect.remaining??Math.max(1,(effect.expireAtPhase??actor.phaseCount+1)-actor.phaseCount),turns=Number.isFinite(rawTurns)?rawTurns:-1,value=effect.snapshotDamage??(effect.valueUnit==='ratio'?(effect.value??0)*100:effect.value??1);
-  if(!out[key])out[key]={value,turns,stacks:1,...(effect.ruleLabel?{ruleLabel:effect.ruleLabel,ruleData:structuredClone(effect.ruleData)}:{}),...(effect.ruleHidden?{ruleHidden:true}:{})};else{out[key].value=key.startsWith('workshop_status:')?out[key].value+value:Math.max(out[key].value,value);out[key].turns=Math.max(out[key].turns,turns);out[key].stacks++;}
+  if(!out[key])out[key]={value,turns,stacks:1,...(effect.ruleLabel?{ruleLabel:effect.ruleLabel,ruleData:structuredClone(effect.ruleData)}:{}),...(effect.ruleHidden?{ruleHidden:true}:{})};else{out[key].value=key.startsWith('workshop_status:')?out[key].value+value:Math.max(out[key].value,value);out[key].turns=out[key].turns<0||turns<0?-1:Math.max(out[key].turns,turns);out[key].stacks++;}
  }return out;
 }
 function comparable(v){if(!v)return '';return JSON.stringify({value:v.value,turns:v.turns,stacks:v.stacks??1,charges:v.charges,instances:v.instances?.map(i=>({value:i.value,turns:i.turns,charges:i.charges,fresh:i.fresh,undispellable:i.undispellable,uncleanseable:i.uncleanseable}))});}
@@ -54,7 +54,7 @@ function importStatus(g,target,rawKey,entry,bucket,options,summary){
   // The old effect has already resolved. Store its exact per-tick amount as a
   // source-attack snapshot; all later ticks use new DEF/shield rules and no crit.
   const candidate={kind:'dot',status:rawKey,canonicalStatus:n.key,sourceId:source.id,sourceActor:source,sourceSkill:id,sourceLevel:source.level,snapshotDamage:Math.max(0,number(entry.value)),remaining:Math.min(2,turns),turns:Math.min(2,turns),firstTickPhase:target.phaseCount+1,addedRound:g.round,legacy:true,legacyKey:rawKey,cleanseable:entry.uncleanseable!==true};
-  const group=target.dots.filter(e=>keyOf(e)===n.key);
+  const group=target.dots.filter(e=>keyOf(e)===n.key&&!e.workshopDot);
   if(group.length>=3){const weakest=group.slice().sort((a,b)=>a.snapshotDamage-b.snapshotDamage)[0];if(candidate.snapshotDamage<=weakest.snapshotDamage)return;target.dots.splice(target.dots.indexOf(weakest),1,candidate);}else target.dots.push(candidate);
   summary.statusesImported++;return;
  }
@@ -74,7 +74,7 @@ function patchExisting(actor,key,entry,bucket){
  if(strongest.snapshotDamage!==undefined)strongest.snapshotDamage=Math.max(0,desired);
  else strongest.value=strongest.valueUnit==='ratio'?desired/100:desired;
  const currentTurns=strongest.remaining??Math.max(1,(strongest.expireAtPhase??actor.phaseCount+1)-actor.phaseCount);
- if(number(entry.turns,1)!==currentTurns){if(strongest.remaining!==undefined)strongest.remaining=Math.min(2,Math.max(1,number(entry.turns,1)));else strongest.expireAtPhase=entry.turns<0?Infinity:actor.phaseCount+Math.max(1,number(entry.turns,1));}
+ if(number(entry.turns,1)!==currentTurns){if(strongest.remaining!==undefined)strongest.remaining=strongest.workshopDot?(entry.turns<0?Infinity:Math.max(1,number(entry.turns,1))):Math.min(2,Math.max(1,number(entry.turns,1)));else strongest.expireAtPhase=entry.turns<0?Infinity:actor.phaseCount+Math.max(1,number(entry.turns,1));}
  if(entry.charges!==undefined)strongest.charges=number(entry.charges);
  const count=Math.max(1,Math.floor(number(entry.stacks,list.length)));
  if(count<list.length){const keep=new Set(list.slice().sort((a,b)=>display(b)-display(a)).slice(0,count));for(const pool of bucket==='buffs'?['buffs']:['debuffs','dots'])actor[pool]=actor[pool].filter(e=>keyOf(e)!==key||keep.has(e)||!cleanable(e,bucket));}

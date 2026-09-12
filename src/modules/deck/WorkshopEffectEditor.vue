@@ -3,7 +3,7 @@
 /* eslint-disable vue/no-mutating-props */
 import { computed } from 'vue';
 import WorkshopProgramEditor from './WorkshopProgramEditor.vue';
-import { WORKSHOP_STATUS_LIBRARY } from '@/workshop-status-library';
+import { WORKSHOP_STATUS_LIBRARY, workshopBuiltinStatus, workshopStatusInput, WORKSHOP_DOT_STACK_HINT } from '@/workshop-status-library';
 import {
   WORKSHOP_EFFECT_OPTIONS,
   WORKSHOP_SCALING_STATS,
@@ -24,7 +24,7 @@ interface WorkshopStatusOption {
   polarity: 'buff' | 'debuff';
 }
 
-function selectNativeStatus():void{const effect=props.effect,option=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===(effect.buff??effect.debuff));if(!option)return;effect.nativeStatus=true;effect.value=option.value;}
+function selectNativeStatus():void{const effect=props.effect,option=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===(effect.buff??effect.debuff));if(!option)return;effect.nativeStatus=true;effect.value=option.value;if(option.kind==='dot')effect.maxStacks??=3;}
 const props = defineProps<{
   effect: EditableEffect;
   nested?: boolean;
@@ -64,6 +64,9 @@ const hasValue = computed(() => {
     ['defense_reflect', 'counterattack'].includes(props.effect.buff)
   );
 });
+const nativeStatus = computed(() => props.effect.nativeStatus === true ? workshopBuiltinStatus(String(props.effect.buff ?? props.effect.debuff)) : undefined);
+const dotStatus = computed(() => props.effect.type === 'apply_debuff' && workshopBuiltinStatus(String(props.effect.debuff))?.kind === 'dot');
+const statusInput = computed(() => dotStatus.value && !nativeStatus.value ? {label:'每跳固定值（减伤前）',hint:'此旧版效果按每跳固定伤害保存，仍会计算目标防御和护盾。重新选择状态后改用攻击倍率，请按提示重新填写数值。'} : workshopStatusInput(nativeStatus.value?.id ?? ''));
 const hasAmount = computed(() =>
   [
     'cleanse',
@@ -330,7 +333,7 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
       </label>
       <label>
         <span>持续回合</span>
-        <input v-model.number="effect.turns" type="number" min="1" max="99" />
+        <input v-model.number="effect.turns" type="number" :min="effect.nativeStatus || dotStatus ? -1 : 1" step="1" />
       </label>
       <label>
         <span>目标</span>
@@ -383,9 +386,10 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
       class="effect-fields"
     >
       <label v-if="hasValue">
-        <span>数值</span>
-        <input v-model.number="effect.value" type="number" min="0" step="1" />
+        <span>{{ statusInput.label }}</span>
+        <input v-model.number="effect.value" type="number" min="0" :step="nativeStatus?.unit === 'ratio' ? 0.01 : 1" />
       </label>
+      <p v-if="hasValue && statusInput.hint" class="effect-hint">{{ statusInput.hint }}</p>
       <label v-if="supportsScaling">
         <span>数值公式</span>
         <select
@@ -425,8 +429,13 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
       </label>
       <label v-if="hasTurns">
         <span>持续回合</span>
-        <input v-model.number="effect.turns" type="number" min="1" max="99" />
+        <input v-model.number="effect.turns" type="number" :min="effect.nativeStatus || dotStatus ? -1 : 1" step="1" />
       </label>
+      <p v-if="hasTurns && (effect.nativeStatus || dotStatus)" class="effect-hint">正整数为持续回合，-1 为整场战斗。DOT 每层在目标行动阶段结束时结算一次。</p>
+      <template v-if="dotStatus">
+        <label><span>可叠加上限（0 为不设上限）</span><input :value="effect.maxStacks ?? 3" type="number" min="0" step="1" @input="effect.maxStacks = Number(($event.target as HTMLInputElement).value)" /></label>
+        <p class="effect-hint">{{ WORKSHOP_DOT_STACK_HINT }}</p>
+      </template>
       <label v-if="effect.type === 'damage_from_shield'">
         <span>护盾比例（0.5 = 50%）</span>
         <input
@@ -447,7 +456,7 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
         />
       </label>
       <label v-if="effect.type === 'damage'">
-        <span>吸血比例</span>
+        <span>吸血比例（0.2 = 伤害的 20%）</span>
         <input
           v-model.number="effect.lifesteal_ratio"
           type="number"
@@ -662,7 +671,7 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
           </select>
         </label>
         <label v-if="effect.attackable">
-          <span>生命比例</span>
+          <span>生命百分数（100 = 100%）</span>
           <input
             v-model.number="effect.hp_ratio"
             type="number"

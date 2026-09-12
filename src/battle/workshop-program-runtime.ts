@@ -1,6 +1,6 @@
 
 import type { RuleExpression, RuleProgram, RuleStatus, RuleStep, WorkshopRule } from '@/workshop-program';
-import { workshopBuiltinStatus } from '@/workshop-status-library';
+import { workshopBuiltinStatus, workshopTurns, workshopMaxStacks } from '@/workshop-status-library';
 import { normalizeLegacyStatus } from '@/battle/rework/runtime/legacy-bridge.mjs';
 import { effectValue, statusGain } from '@/battle/rework/runtime/tactical-ai.mjs';
 
@@ -89,7 +89,7 @@ export class WorkshopProgramRuntime {
       const effect:any={kind:s.type,flat:value,atk:0,amount:value,turns:num(this.value(s.turns??1,c)),baseChance:num(this.value(s.chance??100,c))};
       if(s.type==='native_status'){
         const def=workshopBuiltinStatus(s.status??'');if(!def)return true;
-        Object.assign(effect,{...def.template,kind:def.kind,status:s.status,value,valueUnit:def.unit,atk:def.kind==='dot'?value:0});
+        Object.assign(effect,{...def.template,kind:def.kind,status:s.status,value,valueUnit:def.unit,atk:def.kind==='dot'?value:0,workshopDot:def.kind==='dot',maxStacks:workshopMaxStacks(s.maxStacks===undefined?undefined:this.value(s.maxStacks,c))});
       }
       return targets.some(t=>['buff','debuff'].includes(effect.kind)
         ? statusGain(this.g,c.owner,t,effect)>0 && (effect.kind==='buff'||this.g.effectChance(c.owner,t,effect)>0)
@@ -119,7 +119,7 @@ export class WorkshopProgramRuntime {
     });
     this.nativeEvent(type,event);this.syncModifiers();return event;
   }
-  private freeze(steps:RuleStep[],c:Context):RuleStep[]{return steps.map(s=>{const out=clone(s);for(const field of ['value','chance','turns','hits','count'] as const)if(s[field]!==undefined)out[field]=this.value(s[field],c);if(s.steps)out.steps=this.freeze(s.steps,c);if(s.otherwise)out.otherwise=this.freeze(s.otherwise,c);return out;});}
+  private freeze(steps:RuleStep[],c:Context):RuleStep[]{return steps.map(s=>{const out=clone(s);for(const field of ['value','chance','turns','maxStacks','hits','count'] as const)if(s[field]!==undefined)out[field]=this.value(s[field],c);if(s.steps)out.steps=this.freeze(s.steps,c);if(s.otherwise)out.otherwise=this.freeze(s.otherwise,c);return out;});}
   private execute(steps:RuleStep[],c:Context):void {
     for(const s of steps){this.budget();let result:any;const value=()=>this.value(s.value??0,c),targets=()=>this.targets(s,c);const scaled=()=>num(value())*(s.stars?.[Math.max(0,Math.min(2,c.star-1))]??(1+.1*(c.star-1)));
       if(s.type==='stop')return;
@@ -136,7 +136,7 @@ export class WorkshopProgramRuntime {
           else {const amount=this.g[s.type](c.owner,target,scaled()*share,{finalAmount:s.mode==='recorded'});result[s.type]+=num(amount);if(s.type==='heal'){result.overflow+=num(this.g.lastHealResult?.overflow);result.absorbed+=num(this.g.lastHealResult?.absorbed);}}
         }
       }
-      else if(s.type==='native_status'){result=0;for(const target of targets())result+=Number(this.nativeStatus(c.owner,target,s.status??'taunt',num(value()),num(this.value(s.turns??1,c)),num(this.value(s.chance??100,c)),c.star));}
+      else if(s.type==='native_status'){result=0;for(const target of targets())result+=Number(this.nativeStatus(c.owner,target,s.status??'taunt',num(value()),num(this.value(s.turns??1,c)),num(this.value(s.chance??100,c)),c.star,{maxStacks:s.maxStacks===undefined?undefined:this.value(s.maxStacks,c)}));}
       else if(s.type==='apply_status'){result=[];for(const target of targets()){const added=this.applyStatus(c.program,s.status??'',c.owner,target,c,s);if(added)result.push(added.ruleInstance);}}
       else if(s.type==='remove_status'){result=0;for(const a of targets()){for(const status of [...a.buffs,...a.debuffs].filter(x=>x.ruleInstance&&(s.status==='self'?x===c.status:x.ruleStatus===s.status||x.ruleInstance===s.status))){this.removeStatus(a,status,'rule');result++;}}}
       else if(s.type==='cleanse'||s.type==='dispel'){result=targets().reduce((sum,t)=>sum+this.g[s.type](t,num(value())||1),0);}
@@ -171,8 +171,9 @@ export class WorkshopProgramRuntime {
     const translated=normalizeLegacyStatus(id,{value});const template={...def.template};delete template.condition;delete template.target;const canonical=String(template.canonicalStatus??translated.key);
     if(canonical==='swift'){const count=Math.max(1,Math.floor(value));if(!Number.isSafeInteger(count)||this.steps+count>4096)throw Error('本次施加层数超过执行保护范围');this.steps+=count;}
     const opts={star,skipEffectRoll:extra.skipEffectRoll,skillId:extra.ruleModifier};
-    if(def.kind==='dot')return this.g.addDot(source,target,{...template,kind:'dot',status:id,canonicalStatus:canonical,atk:value,stacks:1,baseChance:chance,...extra},opts);
-    const resolved=extra.valueUnit??def.unit;return this.g.addStatus(source,target,{...template,kind:def.kind,status:id,canonicalStatus:canonical,ruleNative:true,value:resolved==='percent'?translated.value:value,valueUnit:resolved,turns:turns<0?Infinity:turns,stacks:translated.key==='swift'?Math.max(1,Math.floor(value)):undefined,baseChance:chance,legacy:true,legacyKey:id,...extra},opts);
+    const duration=workshopTurns(turns);
+    if(def.kind==='dot')return this.g.addDot(source,target,{...template,...extra,kind:'dot',status:id,canonicalStatus:canonical,workshopDot:true,atk:extra.valueUnit==='percent'?value/100:value,stacks:1,turns:duration<0?Infinity:duration,maxStacks:workshopMaxStacks(extra.maxStacks,extra.ruleParent?0:3),baseChance:chance},opts);
+    const resolved=extra.valueUnit??def.unit;return this.g.addStatus(source,target,{...template,kind:def.kind,status:id,canonicalStatus:canonical,ruleNative:true,value,valueUnit:resolved,turns:turns<0?Infinity:turns,stacks:translated.key==='swift'?Math.max(1,Math.floor(value)):undefined,baseChance:chance,legacy:true,legacyKey:id,...extra},opts);
   }
   applyStatus(program:RuleProgram,id:string,source:any,target:any,c?:Context,step?:RuleStep):any {
     this.register(program);const def=program.statuses.find(x=>x.id===id);if(!def)throw Error('自定义状态不存在：'+id);
@@ -183,11 +184,13 @@ export class WorkshopProgramRuntime {
     if(def.stacking==='add'&&same.length){for(const [k,v] of Object.entries(data))same[0].ruleData[k]=typeof v==='number'?num(same[0].ruleData[k])+v:clone(v);this.syncModifiers();return same[0];}
     if(def.stacking==='strongest'&&same.some((x:any)=>num(x.ruleData.value??x.ruleData.remaining)>=num(data.value??data.remaining)))return same[0];
     if(def.stacking==='replace'||def.stacking==='strongest')for(const old of same)this.removeStatus(target,old,'replace');
-    const turns=step?.turns===undefined?def.turns:num(this.value(step.turns,context)),instance='rule-status:'+ ++this.memory.sequence;
+    const maxStacks=workshopMaxStacks(def.maxStacks,0);
+    if(def.stacking==='independent'&&maxStacks>0)for(const old of same.slice().sort((a,b)=>a.expireAtPhase-b.expireAtPhase).slice(0,Math.max(0,same.length-maxStacks+1)))this.removeStatus(target,old,'replace');
+    const turns=workshopTurns(step?.turns===undefined?def.turns:this.value(step.turns,context)),instance='rule-status:'+ ++this.memory.sequence;
     const status={kind:def.polarity,status:'workshop_rule:'+program.id+':'+id+':'+instance,canonicalStatus:'workshop_rule:'+program.id+':'+id+':'+instance,ruleProgram:program.id,ruleStatus:id,ruleInstance:instance,ruleLabel:def.name,ruleData:data,ruleStar:context.star,sourceId:source.id,sourceActor:source,value:1,valueUnit:'count',turns,expireMode:'end',expireAtPhase:turns<0?Infinity:target.phaseCount+Math.max(1,turns),cleanseable:def.cleanseable,dispellable:def.dispellable};
     const control=def.modifiers.find(m=>['freeze','petrify','stun','sleep','hard_control'].includes(String(workshopBuiltinStatus(m.status)?.template?.canonicalStatus??normalizeLegacyStatus(m.status,{}).key)));
     if(control&&target.phaseCount+1<=(target.flags.controlImmuneUntil??-1))return null;
-    if(def.polarity==='buff'&&!control){status.expireMode='start';if(source.side===target.side&&target!==source&&target.flags.phaseRound!==this.g.round&&turns>=0)status.expireAtPhase++;}
+    if(def.polarity==='buff'&&!control&&!def.modifiers.some(m=>workshopBuiltinStatus(m.status)?.kind==='dot')){status.expireMode='start';if(source.side===target.side&&target!==source&&target.flags.phaseRound!==this.g.round&&turns>=0)status.expireAtPhase++;}
     (def.polarity==='buff'?target.buffs:target.debuffs).push(status);this.syncModifiers();this.emit('status_added',{sourceId:source.id,targetId:target.id,statusId:id,statusInstance:instance});return status;
   }
   private removeStatus(owner:any,status:any,reason:string):void{for(const pool of ['buffs','debuffs','dots'])owner[pool]=owner[pool].filter((x:any)=>x!==status&&x.ruleParent!==status.ruleInstance);const p=this.memory.programs[status.ruleProgram];if(p){const c=this.context(p,owner,{type:'status_removed',sourceId:status.sourceId,targetId:owner.id,statusId:status.ruleStatus,reason},status);for(const r of p.statuses.find((s:RuleStatus)=>s.id===status.ruleStatus)?.rules??[])if(r.event==='status_removed')this.run(r,c);}}
@@ -200,7 +203,7 @@ export class WorkshopProgramRuntime {
         if(!active){status.ruleApplied=(status.ruleApplied??[]).filter((x:string)=>x!==token);for(const pool of ['buffs','debuffs','dots'])owner[pool]=owner[pool].filter((x:any)=>x.ruleModifier!==token);return;}
         if(child){child.value=num(this.value(m.value,c));child.expireAtPhase=status.expireAtPhase;return;}
         const applied=status.ruleApplied??=([]);if(applied.includes(token))return;applied.push(token);
-        const all=[...owner.buffs,...owner.debuffs,...owner.dots];this.nativeStatus(c.source,owner,m.status,num(this.value(m.value,c)),status.turns,100,status.ruleStar,{skipEffectRoll:true,ruleParent:status.ruleInstance,ruleModifier:token,ruleHidden:true,cleanseable:false,dispellable:false,valueUnit:m.unit});
+        const all=[...owner.buffs,...owner.debuffs,...owner.dots];this.nativeStatus(c.source,owner,m.status,num(this.value(m.value,c)),Number.isFinite(status.expireAtPhase)?Math.max(1,status.expireAtPhase-owner.phaseCount):-1,100,status.ruleStar,{skipEffectRoll:true,ruleParent:status.ruleInstance,ruleModifier:token,ruleHidden:true,cleanseable:false,dispellable:false,valueUnit:m.unit});
         for(const x of [...owner.buffs,...owner.debuffs,...owner.dots])if(!all.includes(x)){x.ruleParent=status.ruleInstance;x.ruleModifier=token;x.ruleHidden=true;if(x.kind!=='dot')x.expireAtPhase=status.expireAtPhase;}
       });}
     }}finally{this.syncing=false;}

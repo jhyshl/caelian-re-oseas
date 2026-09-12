@@ -49,7 +49,7 @@ export function battleCardText(card: CardDefinition, stars: number, state: Local
       next.flat = Math.round(state.player.shield * Number(effect.ratio ?? 0));
       next.hits = 1;
     } else if (effect.type === 'apply_buff' || effect.type === 'apply_debuff') {
-      next.kind = effect.type === 'apply_buff' ? 'buff' : 'debuff';next.status = native?.name ?? effect.buff ?? effect.debuff;next.value = value; if (native) next.valueUnit = native.unit;
+      if(!native&&effect.type==='apply_debuff'&&workshopBuiltinStatus(String(effect.debuff))?.kind==='dot'){next.dotFixedDamage=value;next.workshopDot=true;next.maxStacks=effect.maxStacks??3;}next.kind = next.workshopDot?'dot':native?.kind ?? (effect.type === 'apply_buff' ? 'buff' : 'debuff');if(native?.kind==='dot'){next.atk=value;next.workshopDot=true;next.maxStacks=effect.maxStacks??3;}next.status = native?.name ?? effect.buff ?? effect.debuff;next.value = value; if (native) next.valueUnit = native.unit;
     } else if (['draw', 'discard', 'cleanse', 'dispel'].includes(effect.type)) next.amount = effect.amount ?? effect.value;
     else if (!['summon', 'conditional', 'chant', 'resource'].includes(effect.type)) {
       next.kind = 'utility';next.action = String(effect.description ?? scaled.description ?? '');

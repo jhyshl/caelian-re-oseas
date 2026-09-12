@@ -1,6 +1,6 @@
 import type { CardDefinition, CardEffect } from '@/content/types';
 import { normalizeRuleProgram, emptyRuleProgram, type RuleProgram } from '@/workshop-program';
-import { WORKSHOP_STATUS_LIBRARY } from '@/workshop-status-library';
+import { WORKSHOP_STATUS_LIBRARY, workshopTurns, workshopMaxStacks } from '@/workshop-status-library';
 import { safeCardEffectHits } from '@/battle/execution-limits';
 import {
   normalizeWorkshopMechanism,
@@ -268,7 +268,7 @@ export const WORKSHOP_EFFECT_OPTIONS = [
   { type: 'gain_ap', label: '获得 AP', value: 1, target: 'self' },
   { type: 'gain_mp', label: '恢复 MP', value: 4, target: 'self' },
   { type: 'apply_buff', label: '施加增益', nativeStatus: true, value: 1, turns: 1, buff: 'strength', target: 'self' },
-  { type: 'apply_debuff', label: '施加减益', nativeStatus: true, value: .35, turns: 2, debuff: 'burn', target: 'enemy' },
+  { type: 'apply_debuff', label: '施加减益', nativeStatus: true, value: .35, turns: 2, maxStacks: 3, debuff: 'burn', target: 'enemy' },
   { type: 'cleanse', label: '净化自身', amount: 1, target: 'self' },
   { type: 'dispel', label: '驱散敌人', amount: 1, target: 'enemy' },
   { type: 'strip_shield', label: '移除护盾', target: 'enemy' },
@@ -591,7 +591,7 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
   const type = String(source.type ?? '').trim();
   if (!VALID_CARD_EFFECT_TYPES.has(type)) return undefined;
   if (type === 'rule_program') return {type,target:normalizeTarget(source,type),program:normalizeRuleProgram(source.program)};
-  if(['apply_buff','apply_debuff'].includes(type)&&source.nativeStatus===true){const id=String(source.buff??source.debuff),option=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===id);if(!option)throw Error('状态效果不存在');const scaling=normalizeScaling(source.scaling);return {type,nativeStatus:true,[type==='apply_buff'?'buff':'debuff']:id,value:number(source.value,option.value),turns:clamp(source.turns,-1,999999,1),baseChance:clamp(source.baseChance,0,100,100),target:normalizeTarget(source,type),...(scaling?{scaling}:{})};}
+  if(['apply_buff','apply_debuff'].includes(type)&&source.nativeStatus===true){const id=String(source.buff??source.debuff),option=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===id);if(!option)throw Error('状态效果不存在');const scaling=normalizeScaling(source.scaling);return {type,nativeStatus:true,[type==='apply_buff'?'buff':'debuff']:id,value:number(source.value,option.value),turns:workshopTurns(source.turns,option.kind==='dot'?2:1),...(option.kind==='dot'?{maxStacks:workshopMaxStacks(source.maxStacks)}:{}),baseChance:clamp(source.baseChance,0,100,100),target:normalizeTarget(source,type),...(scaling?{scaling}:{})};}
   if (type === 'workshop_resource_change') {
     const mechanismId = extensionId(source.mechanismId, '');
     const resourceId = extensionId(source.resourceId, '');
@@ -615,7 +615,7 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
       mechanismId,
       statusId,
       value: clamp(source.value, 1, 999_999, 1),
-      turns: clamp(source.turns, 1, 99, 2),
+      turns: workshopTurns(source.turns,2),
     };
   }
   if (type === 'summon') return normalizeSummon(source);
@@ -666,6 +666,7 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
     type,
     target: normalizeTarget(source, type),
   };
+  if(type==='apply_debuff'&&WORKSHOP_STATUS_LIBRARY.some(s=>s.id===source.debuff&&s.kind==='dot'))result.maxStacks=workshopMaxStacks(source.maxStacks);
   const numericKeys = [
     'value',
     'turns',
@@ -678,7 +679,7 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
     if (source[key] !== undefined) {
       result[key] =
         key === 'turns'
-          ? clamp(source[key], 1, 99, 1)
+          ? workshopTurns(source[key])
           : key === 'hits'
             ? safeCardEffectHits(source[key])
           : clamp(source[key], 0, 999999);
@@ -794,7 +795,7 @@ export function normalizeTalentEffect(value: unknown): CardEffect | undefined {
       mechanismId,
       statusId,
       value: clamp(source.value, 1, 999_999, 1),
-      turns: rawTurns === -1 ? -1 : clamp(rawTurns, 1, 99, 1),
+      turns: workshopTurns(rawTurns),
     };
   }
   if (type === 'workshop_resource_change') {
