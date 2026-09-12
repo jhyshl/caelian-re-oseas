@@ -286,24 +286,9 @@ export class TavernAdapter {
       );
     }
 
-    const elements = [
-      ...this.host.document.querySelectorAll<HTMLElement>('.mes'),
-    ];
-    if (elements.length === 0) return null;
-    return this.createFloorReferences(
-      elements.map((element) => ({
-        text:
-          element.querySelector<HTMLElement>('.mes_text')?.innerText ??
-          element.querySelector<HTMLElement>('.mes_text')?.textContent ??
-          '',
-        role:
-          element.getAttribute('is_system') === 'true'
-            ? 'system'
-            : element.getAttribute('is_user') === 'true'
-              ? 'user'
-              : 'assistant',
-      })),
-    );
+    // Rendered Markdown and partially loaded DOM floors are not raw history.
+    // Switching between them changes fingerprints and can undo valid progress.
+    return null;
   }
 
   async chatConversation(

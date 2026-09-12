@@ -861,6 +861,17 @@ export class QuestProgressRepository {
     profileId: string,
     floors: TavernFloorReference[],
   ): Promise<QuestFloorRollbackResult[]> {
+    // Older releases did not reconcile branches. Preserve their confirmed current
+    // progress as the new baseline instead of replaying stale pre-edit checkpoints.
+    await this.db.transaction('rw', [this.db.questTrackerStates, this.db.questFloorCheckpoints], async () => {
+      const trackers = await this.db.questTrackerStates.where('profileId').equals(profileId).toArray();
+      for (const tracker of trackers) {
+        if (tracker.floorHistoryVersion === 2) continue;
+        await this.db.questFloorCheckpoints.where('[profileId+questId]').equals([profileId, tracker.questId]).delete();
+        await this.db.questTrackerStates.put({ ...tracker, floorHistoryVersion: 2,
+          baseline: structuredClone(tracker.current), retentionFloor: floors.at(-1)?.index ?? 0 });
+      }
+    });
     const byIndex = new Map(floors.map(floor => [floor.index, floor]));
     const results = await this.rollbackCheckpoints(profileId, checkpoint => {
       const floor = byIndex.get(checkpoint.floorIndex);
@@ -1114,6 +1125,7 @@ export class QuestProgressRepository {
         summary: '',
       };
     return {
+      floorHistoryVersion: 2,
       id: this.trackerId(profileId, quest.id),
       profileId,
       questId: quest.id,

@@ -1,4 +1,5 @@
 import { HUNTING_TRAPS } from '@/content/hunting-traps';
+import { loadCardCatalog } from '@/content/catalogs/cards';
 import { migrateCardInventory } from '@/battle/card-inventory';
 import { migrateCombatEquipment } from '@/battle/rework/equipment';
 import { migrateCombatAttributes } from '@/battle/rework/attributes';
@@ -125,6 +126,8 @@ export class GameRepository {
   }
 
   private async readSnapshot(profileId: string): Promise<GameSnapshot> {
+    await this.cards.repairWorkshopDecks(profileId);
+    const cardCatalog = await loadCardCatalog();
     await migrateCombatAttributes(this.db, profileId);
     await migrateCombatEquipment(this.db, profileId);
     await migrateCardInventory(this.db, profileId);
@@ -219,7 +222,7 @@ export class GameRepository {
       inventory,
       equipment,
       loadout,
-      cards,
+      cards: cards.filter(card => cardCatalog[card.cardId]),
       decks,
       relics,
       specialCollectibles,
@@ -286,9 +289,11 @@ export class GameRepository {
       profileId,
       command,
     );
+    if (command.type === 'deck.update') await this.cards.prepare();
     if (command.type.startsWith('battle.')) {
       await this.battles.prepare();
     }
+    if (command.type === 'battle.start') await this.cards.repairWorkshopDecks(profileId);
     if (command.type === 'player.create' || command.type === 'player.reclass') {
       await this.players.prepare();
     }

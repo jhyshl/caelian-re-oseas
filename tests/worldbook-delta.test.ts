@@ -17,6 +17,21 @@ describe('作者世界书差量',()=>{
     expect(result.entries.some(e=>e.name==='🗡️凯利安：元素法师')).toBe(false);
     expect(applyWorldbookDelta(result.entries,delta).applied).toBe(0);
   });
+  it('助手省略默认配置、补空 extra、换行规范化不会误报两个待删除条目', () => {
+    const entries = original();
+    for (const entry of entries.slice(0, 2)) {
+      delete entry.addMemo;
+      delete entry.matchPersonaDescription;
+      delete entry.characterFilter;
+      entry.extra = {};
+      entry.displayIndex = 999;
+      entry.content = entry.content.replaceAll('\n', '\r\n');
+      (entry.effect as Record<string, unknown>).sticky = 0;
+    }
+    const result = applyWorldbookDelta(entries, delta);
+    expect(result.conflicts).toEqual([]);
+    expect(result.entries.some(entry => delta.removals.some(old => old.name === entry.name))).toBe(false);
+  });
   it('玩家改写原文、同名自建、改名、改配置及 UID 复用均不能被误覆盖或误删',()=>{
     const entries=original();
     entries[0]!.extra={playerMemo:'玩家自定义字段'};

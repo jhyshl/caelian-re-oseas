@@ -78,6 +78,17 @@ function workshopMechanism(id: string) {
 }
 
 describe('创意工坊自由创作规则', () => {
+  it('删除已勾选但未使用的自定义状态后，职业仍可读取、修改和保存', () => {
+    const mechanism = saveWorkshopMechanism(workshopMechanism('test.deleted-selection'));
+    const pack = workshopPack('custom_class_deleted_selection');
+    pack.classes[0]!.mechanismIds = [mechanism.id];
+    saveWorkshopPack(pack);
+    localStorage.setItem(WORKSHOP_MECHANISM_STORAGE_KEY, '[]');
+    expect(readWorkshopPacks().find(item => item.classes[0]?.id === pack.classes[0]!.id)?.classes[0]?.mechanismIds).toEqual([]);
+    pack.classes[0]!.name = '删除状态后继续编辑';
+    expect(saveWorkshopPack(pack).classes[0]!.mechanismIds).toEqual([]);
+  });
+
   it('保存与导入职业后立即进入正式目录', () => {
     saveWorkshopPack(workshopPack('custom_class_direct'));
     const imported = importWorkshopArtifact(

@@ -19,6 +19,6 @@ export function encode(value:unknown): unknown;
 export function decode(value:unknown): any;
 export function regionLevel(level:number,region:string): number;
 
-export function preview(state:LocalBattleState,cardId:string,targetIndex:number,allyTargetId?:string): import('@/battle/card-preview').BattleCardPreview;
+export function preview(state:LocalBattleState,cardId:string,targetIndex:number,allyTargetId?:string,instanceId?:string): import('@/battle/card-preview').BattleCardPreview;
 
 export function planActor(game:any,actor:any):any;

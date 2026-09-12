@@ -196,6 +196,7 @@ export interface CaelianPublicApi {
   ): Promise<SurveyResponseRecord>;
   ignoreSurvey(surveyId: string): Promise<SurveyResponseRecord>;
   syncSurveyCatalog(): Promise<SurveyCatalogSyncResult>;
+  getManagedContentResult(): ManagedContentSyncResult | null;
   getManagedContentAutoUpdate(): boolean;
   setManagedContentAutoUpdate(enabled: boolean): void;
   configureQuestJudge(
@@ -246,6 +247,7 @@ export type PanelApi = Pick<
   | 'submitSurvey'
   | 'ignoreSurvey'
   | 'syncSurveyCatalog'
+  | 'getManagedContentResult'
   | 'getManagedContentAutoUpdate'
   | 'setManagedContentAutoUpdate'
   | 'configureQuestJudge'

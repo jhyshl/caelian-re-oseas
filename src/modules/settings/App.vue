@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import type { ManagedContentSyncResult } from '@/content-updates/managed-content';
 import type { GameSnapshot, SettingsRecord } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
@@ -25,6 +26,11 @@ const themeState = ref(props.context.api.getThemeState());
 let disposeTheme: (() => void) | undefined;
 let disposeThemeAssets: (() => void) | undefined;
 const contentSyncing = ref(false);
+const initialContentResult = props.context.api.getManagedContentResult?.();
+const contentConflicts = ref<ManagedContentSyncResult['conflicts']>(initialContentResult?.conflicts ?? []);
+const contentRevision = ref(initialContentResult?.revision ?? '');
+const contentReport = computed(() => [`版本：${runtime.version}`, `更新批次：${contentRevision.value}`,
+  ...contentConflicts.value.map(item => `${item.reason}（操作：${item.operationId}）`)].join('\n'));
 const managedContentAutoUpdate = ref(
   props.context.api.getManagedContentAutoUpdate(),
 );
@@ -105,8 +111,18 @@ async function syncMvu() {
 
 async function syncManagedContent() {
   contentSyncing.value = true;
-  const result = await props.context.api.syncManagedContent({ force: true });
-  contentSyncing.value = false;
+  contentConflicts.value = [];
+  let result: ManagedContentSyncResult;
+  try {
+    result = await props.context.api.syncManagedContent({ force: true });
+  } catch (error) {
+    notice.value = `内容更新失败：${error instanceof Error ? error.message : String(error)}`;
+    return;
+  } finally {
+    contentSyncing.value = false;
+  }
+  contentConflicts.value = result.conflicts;
+  contentRevision.value = result.revision ?? '';
   if (result.status === 'wrong-character') {
     notice.value =
       '当前角色不是“凯利安”“凯利安alpha”或“凯利安beta”，未读取或修改任何角色卡内容。';
@@ -126,7 +142,7 @@ async function syncManagedContent() {
   }
   notice.value =
     result.conflicts.length > 0
-      ? `已更新 ${result.applied} 项；${result.conflicts.length} 项未能安全写入，请稍后重试。`
+      ? `已更新 ${result.applied} 项；${result.conflicts.length} 项未更新，详情见下方，可复制给作者。`
       : result.applied > 0
         ? `已安全更新 ${result.applied} 项角色卡/世界书内容。`
         : '角色卡与绑定世界书内容已经是最新版本。';
@@ -452,6 +468,12 @@ onBeforeUnmount(() => {
             <option value="hell">炼狱</option>
           </select>
         </label>
+        <section v-if="contentConflicts.length" class="content-conflicts" aria-label="未更新条目详情">
+          <strong>未更新条目（{{ contentConflicts.length }} 项）</strong>
+          <ul><li v-for="(item, index) in contentConflicts" :key="`${item.operationId}:${index}`">{{ item.reason }}<small>操作：{{ item.operationId }}</small></li></ul>
+          <label>反馈给作者的更新详情<textarea :value="contentReport" readonly rows="6" @focus="($event.target as HTMLTextAreaElement).select()" /></label>
+          <span>点击文本框可全选复制。修正对应条目或恢复原版后，可再次检查更新。</span>
+        </section>
         <label class="setting-row">
           <div>
             <strong>角色卡 / 世界书安全增量更新</strong>
@@ -538,6 +560,11 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.content-conflicts { padding: 12px; border: 1px solid var(--ca-border); border-radius: 8px; overflow-wrap: anywhere; }
+.content-conflicts small { display: block; opacity: .8; }
+.content-conflicts textarea { display: block; width: 100%; box-sizing: border-box; color: var(--ca-text-bright); background: var(--ca-surface, #1b1712); font: inherit; padding: 8px; }
+.content-conflicts li { margin: 8px 0; }
+
 .settings-title {
   display: flex;
   align-items: center;
