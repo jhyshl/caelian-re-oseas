@@ -42,6 +42,12 @@ export function battleCardText(card: CardDefinition, stars: number, state: Local
     if (['damage', 'shield', 'heal'].includes(effect.type)) {
       next.flat = value + (effect.type === 'damage' && card.type === 'attack' && (!scaled.resolvedStarScale || !effect.scaling) ? Math.floor(stats.attack * .35 * Number((scaled.resolvedStarScale as {ratio?:number} | undefined)?.ratio ?? 1)) : 0);
       if (effect.type === 'damage') next.flat = Number(next.flat) * Math.max(1, Number(effect.hits ?? 1));
+    } else if (effect.type === 'damage_from_shield') {
+      // This effect uses ratio only. Older editor exports can also contain
+      // value/scaling/hits, which the battle interpreter never consumes here.
+      next.kind = 'damage';
+      next.flat = Math.round(state.player.shield * Number(effect.ratio ?? 0));
+      next.hits = 1;
     } else if (effect.type === 'apply_buff' || effect.type === 'apply_debuff') {
       next.kind = effect.type === 'apply_buff' ? 'buff' : 'debuff';next.status = native?.name ?? effect.buff ?? effect.debuff;next.value = value; if (native) next.valueUnit = native.unit;
     } else if (['draw', 'discard', 'cleanse', 'dispel'].includes(effect.type)) next.amount = effect.amount ?? effect.value;

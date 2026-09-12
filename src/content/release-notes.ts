@@ -9,6 +9,15 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.81',
+    label: 'Alpha 81',
+    releasedAt: '2026-09-12',
+    changes: [
+      '修复创意工坊“按护盾造成伤害”等效果显示不参与结算的数值与属性公式输入框；护盾伤害明确按当前护盾乘比例结算，并说明如何配置单段混合公式及多个伤害积木的独立暴击。',
+      '修复自定义卡的护盾伤害卡面误用手写描述及无效公式，改为显示当前护盾对应的减伤前基础伤害；战斗记录为这段伤害注明来源。保留已有卡组配置与实际结算规则。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.80',
     label: 'Alpha 80',
     releasedAt: '2026-09-12',

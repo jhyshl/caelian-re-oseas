@@ -12,8 +12,9 @@ describe('release notes', () => {
     const releases = releaseNotesFor('alpha', '0.2.0-alpha.79');
 
     expect(releases[0]?.version).toBe('0.2.0-alpha.79');
-    expect(releases).toEqual(ALPHA_RELEASE_NOTES.filter(note => note.version !== '0.2.0-alpha.80'));
-    expect(releaseNotesFor('alpha', '0.2.0-alpha.80')).toEqual(ALPHA_RELEASE_NOTES);
+    expect(releases).toEqual(ALPHA_RELEASE_NOTES.filter(note => !['0.2.0-alpha.80', '0.2.0-alpha.81'].includes(note.version)));
+    expect(releaseNotesFor('alpha', '0.2.0-alpha.81')).toEqual(ALPHA_RELEASE_NOTES);
+    expect(releaseNotesFor('alpha', '0.2.0-alpha.80')[0]?.version).toBe('0.2.0-alpha.80');
     expect(releases.length).toBeGreaterThan(5);
     expect(releases[0]?.changes.join('\n')).toContain('动荡的皇权');
     expect(releases.find(r=>r.version==='0.2.0-alpha.78')?.changes.join('\n')).toContain('不全量覆盖世界书');
@@ -303,13 +304,13 @@ describe('release notes', () => {
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.999')[0]?.version).toBe(
-      '0.2.0-alpha.80',
+      '0.2.0-alpha.81',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.80',
+      '0.2.0-alpha.81',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });
