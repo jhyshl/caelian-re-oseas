@@ -1513,7 +1513,7 @@ export function readWorkshopDrafts(): WorkshopDraft[] {
 }
 
 export function saveWorkshopDraft(draft: WorkshopDraft): void {
-  const kept = readWorkshopDrafts().filter((entry) => entry.id !== draft.id);
+  const kept = readWorkshopDrafts().filter((entry) => entry?.id !== draft.id);
   localStorage.setItem(
     WORKSHOP_DRAFT_STORAGE_KEY,
     JSON.stringify([draft, ...kept].slice(0, 40)),

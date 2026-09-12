@@ -1,6 +1,6 @@
 <script setup lang="ts">
-/* global Blob, Event, HTMLInputElement, URL, clearTimeout, document, setTimeout, structuredClone, window */
-import { computed, onBeforeUnmount, ref, toRaw, watch } from 'vue';
+/* global Blob, Event, HTMLInputElement, URL, clearTimeout, document, setTimeout, window */
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { refreshWorkshopPassiveCatalog } from '@/content/catalogs/battle';
 import {
   loadCardCatalog,
@@ -53,6 +53,7 @@ import {
 
 import WorkshopProgramEditor from './WorkshopProgramEditor.vue';
 import { emptyRuleProgram } from '@/workshop-program';
+import { cloneWorkshopData as cloneData, prepareWorkshopDraft } from '@/workshop-drafts';
 
 type EditableEffect = CardEffect & Record<string, any>;
 import WorkshopStarEditor from '@/modules/deck/WorkshopStarEditor.vue';
@@ -98,10 +99,10 @@ function readEditorAppearance() {
 const editorAppearance = ref(readEditorAppearance());
 watch(editorAppearance, value => window.localStorage.setItem(editorAppearanceKey, JSON.stringify(value)), { deep: true });
 
-const props = defineProps<{ context: PanelContext; initialCardId?: string }>();
+const props = defineProps<{ context: PanelContext; initialCardId?: string; initialTab?: 'drafts' }>();
 const emit = defineEmits<{ close: []; saved: [] }>();
 
-const tab = ref<'library' | 'editor' | 'drafts' | 'extensions' | 'test'>('library');
+const tab = ref<'library' | 'editor' | 'drafts' | 'extensions' | 'test'>(props.initialTab ?? 'library');
 const published = ref(readWorkshopPacks());
 const drafts = ref(readWorkshopDrafts());
 const extensions = ref(readWorkshopExtensions());
@@ -222,25 +223,24 @@ function supportsCardType(
   return option.cardTypes.includes(cardType);
 }
 
-function cloneData<T>(value: T): T {
-  if (typeof structuredClone === 'function') return structuredClone(value);
-  return JSON.parse(JSON.stringify(value)) as T;
-}
 
 watch(
   editor,
-  () => {
+  (value, previous) => {
     clearTimeout(autosaveTimer);
+    // Opening/migrating a draft must not overwrite its stored source.
+    if(value !== previous)return;
     autosaveTimer = setTimeout(() => {
-      saveWorkshopDraft({
-        id: editor.value.id,
-        updatedAt: Date.now(),
-        value: cloneData(toRaw(editor.value)) as unknown as Partial<WorkshopClass>,
-      });
-      drafts.value = readWorkshopDrafts();
-    }, 400);
+      try {
+        saveWorkshopDraft({id:editor.value.id,updatedAt:Date.now(),value:cloneData(editor.value) as unknown as Partial<WorkshopClass>});
+        drafts.value=readWorkshopDrafts();
+        if(error.value.startsWith('草稿自动保存失败：'))error.value='';
+      } catch(caught) {
+        error.value=`草稿自动保存失败：${caught instanceof Error?caught.message:String(caught)}。请保留当前编辑页面后重试。`;
+      }
+    },400);
   },
-  { deep: true },
+  { deep:true },
 );
 
 watch(
@@ -280,7 +280,7 @@ function createEditor(): EditableClass {
 
 function editableFromValue(value: Partial<WorkshopClass>): EditableClass {
   const fallback = createEditor();
-  const source = cloneData(toRaw(value)) as Partial<EditableClass>;
+  const source = prepareWorkshopDraft(value) as Partial<EditableClass>;
   const talent = source.talent ?? fallback.talent;
   const cards = Array.isArray(source.cards)
     ? source.cards.map((card, index) => ({
@@ -472,7 +472,7 @@ function addCard(): void {
     description: '',
     tags: [],
     effects: [],
-    starScaling: structuredClone(DEFAULT_STAR_SCALING),
+    starScaling: cloneData(DEFAULT_STAR_SCALING),
   });
   editor.value.cardPool.push(id);
   activeCardId.value = id;
@@ -1227,13 +1227,13 @@ watch(() => props.initialCardId, (id) => {
             编辑职业时会自动保存草稿，最多保留 40 份。
           </div>
           <button
-            v-for="draft in drafts"
-            :key="draft.id"
+            v-for="(draft, index) in drafts"
+            :key="draft?.id ?? index"
             type="button"
             @click="loadDraft(draft)"
           >
-            <strong>{{ draft.value.name || '未命名职业' }}</strong>
-            <span>{{ new Date(draft.updatedAt).toLocaleString('zh-CN') }}</span>
+            <strong>{{ draft?.value?.name || '未命名职业' }}</strong>
+            <span>{{ new Date(draft?.updatedAt ?? 0).toLocaleString('zh-CN') }}</span>
           </button>
         </main>
 
@@ -1699,7 +1699,7 @@ watch(() => props.initialCardId, (id) => {
         </main>
 
         <p v-if="notice" class="workshop-notice">{{ notice }}</p>
-        <p v-if="error" class="workshop-error">{{ error }}</p>
+        <p v-if="error" class="workshop-error" role="alert">{{ error }}</p>
       </section>
     </div>
   </Teleport>

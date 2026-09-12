@@ -1,7 +1,7 @@
 <script setup lang="ts">
-/* global structuredClone */
-import { ref, toRaw } from 'vue';
+import { ref } from 'vue';
 import { DEFAULT_STAR_SCALING, readStarTemplates, saveStarTemplate, type WorkshopStarScaling } from '@/workshop-stars';
+import { cloneWorkshopData } from '@/workshop-drafts';
 const props = defineProps<{ modelValue?: WorkshopStarScaling }>();
 const emit = defineEmits<{ 'update:modelValue': [value: WorkshopStarScaling] }>();
 const templates = ref(readStarTemplates());
@@ -10,10 +10,10 @@ const templateName = ref('');
 const notice = ref('');
 function apply() {
   const value = selected.value === 'default' ? DEFAULT_STAR_SCALING : templates.value.find(t => t.id === selected.value)?.scaling;
-  if (value) emit('update:modelValue', structuredClone(toRaw(value)));
+  if (value) emit('update:modelValue', cloneWorkshopData(value));
 }
 function update(index: number, key: 'flat' | 'ratio', value: string) {
-  const next = structuredClone(toRaw(props.modelValue ?? DEFAULT_STAR_SCALING));
+  const next = cloneWorkshopData(props.modelValue ?? DEFAULT_STAR_SCALING);
   next.levels[index]![key] = Number(value); emit('update:modelValue', next);
 }
 function save() {
