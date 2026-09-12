@@ -214,6 +214,8 @@ export interface QuestTrackerRecord {
   completedSelected?: boolean;
   retentionFloor?: number;
   manualRevision?: number;
+  /** A manual confirmation establishes a durable baseline, independent of old replies. */
+  manualFloor?: Omit<TavernFloorReference, 'text'>;
   id: string;
   profileId: string;
   questId: string;

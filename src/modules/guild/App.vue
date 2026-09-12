@@ -39,7 +39,7 @@ async function completeNode(quest:QuestRecord) {
   busyManagedTask.value=quest.id;notice.value='';
   try {
     const result=await props.context.api.completeTrackedQuestNode({questId:quest.id,expectedNodeId:tracker.current.currentNodeId,expectedRevision:tracker.manualRevision??0,transitionId:manualTransition.value||undefined});
-    notice.value=result.completion?'任务已完成，获得'+result.completion.gold+'金币、'+result.completion.experience+'经验和'+result.completion.guildExperience+'协会经验。':'当前节点已完成，已推进到下一节点。';
+    notice.value=result.completion?'任务已完成，获得'+result.completion.gold+'金币、'+result.completion.experience+'经验和'+result.completion.guildExperience+'协会经验。':'当前节点已完成，新节点已保存为确认进度；后续正文从这里继续。';
     await refresh();
   } catch(e) {notice.value=errorMessage(e);await refresh();}
   finally {busyManagedTask.value='';}
@@ -467,7 +467,7 @@ onUnmounted(() => {
                   <select v-if="(trackedQuest?.manualChoices?.length ?? 0) > 1" v-model="manualTransition" :disabled="!!busyManagedTask" aria-label="选择手动推进的下一节点">
                     <option v-for="choice in trackedQuest?.manualChoices" :key="choice.transitionId" :value="choice.transitionId">{{ choice.label }}{{ choice.terminal ? '（完成任务）' : '' }}</option>
                   </select>
-                  <button class="ca-button primary" :disabled="!!busyManagedTask" @click="completeNode(quest)">完成节点</button>
+                  <button class="ca-button primary" title="手动确认的新节点不会被旧正文回退；后续自动推进仍可随聊天回退至此" :disabled="!!busyManagedTask" @click="completeNode(quest)">完成节点</button>
                 </template>
                 <button
                   v-if="

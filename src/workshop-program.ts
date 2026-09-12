@@ -1,3 +1,4 @@
+import { randomUuid } from '@/kernel/random-uuid';
 import { formatNumber } from '@/ui/format-number';
 import { workshopBuiltinStatus } from '@/workshop-status-library';
 
@@ -103,7 +104,7 @@ export function normalizeRuleProgram(raw: unknown): RuleProgram {
   validate(result);
   return result;
 }
-export function emptyRuleProgram():RuleProgram {return {version:2,id:'program-'+crypto.randomUUID(),name:'自定义规则',variables:[],statuses:[],rules:[{id:'cast',event:'cast',priority:0,once:'never',costs:[],steps:[]}]};}
+export function emptyRuleProgram():RuleProgram {return {version:2,id:'program-'+randomUuid(),name:'自定义规则',variables:[],statuses:[],rules:[{id:'cast',event:'cast',priority:0,once:'never',costs:[],steps:[]}]};}
 export const ruleVar=(scope:string,key:string):RuleExpression=>({op:'var',scope,key});
 export const ruleEvent=(key:string):RuleExpression=>({op:'event',key});
 export const ruleMath=(op:string,...args:RuleExpression[]):RuleExpression=>({op,args});

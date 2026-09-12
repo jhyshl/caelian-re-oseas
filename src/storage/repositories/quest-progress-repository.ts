@@ -695,14 +695,18 @@ export class QuestProgressRepository {
       if(!tracker?.selected||tracker.current.currentNodeId!==input.expectedNodeId||(tracker.manualRevision??0)!==input.expectedRevision) throw new Error('任务进度已变化，请刷新后再操作');
       if(quest.status!=='active') throw new Error('当前任务已结束或等待结算');
       const next=manualQuestProgress(definition,tracker.current,input.transitionId),now=Date.now();
-      if (input.floor) {
-        this.validateFloor(input.floor);
-        await this.db.questFloorCheckpoints.put({ id: `${this.checkpointId(tracker.id, input.floor)}:manual:${input.expectedRevision}`,
-          profileId, questId: quest.id, floorId: input.floor.id, floorIndex: input.floor.index,
-          floorFingerprint: input.floor.fingerprint, lineageHash: input.floor.lineageHash, source: 'local',
-          judgeResult: { source: 'manual' }, summary: next.summary, before: tracker.current, after: next,
-          createdAt: await this.nextCheckpointTime(profileId, quest.id) });
-      }
+      if (input.floor) this.validateFloor(input.floor);
+      // The player explicitly confirms the new node. Older reply checkpoints
+      // must not undo that decision when a later generation reconciles history.
+      // Future automatic progress still records its before snapshot and can roll
+      // back to this baseline. Already confirmed local effects remain committed.
+      await this.db.questFloorCheckpoints.where('[profileId+questId]').equals([profileId, quest.id]).delete();
+      tracker.baseline=structuredClone(next);tracker.floorHistoryVersion=2;
+      tracker.retentionFloor=input.floor?.index ?? tracker.retentionFloor;
+      tracker.manualFloor=input.floor ? {
+        id:input.floor.id,index:input.floor.index,role:input.floor.role,
+        fingerprint:input.floor.fingerprint,lineageHash:input.floor.lineageHash,
+      } : undefined;
       tracker.current=next;tracker.manualRevision=(tracker.manualRevision??0)+1;tracker.updatedAt=now;
       await this.db.questTrackerStates.put(tracker);await this.applySnapshotToQuest(quest,next,now);
       if (input.floor) await this.pruneCheckpoints(profileId, input.floor.index);
@@ -866,7 +870,24 @@ export class QuestProgressRepository {
     await this.db.transaction('rw', [this.db.questTrackerStates, this.db.questFloorCheckpoints], async () => {
       const trackers = await this.db.questTrackerStates.where('profileId').equals(profileId).toArray();
       for (const tracker of trackers) {
-        if (tracker.floorHistoryVersion === 2) continue;
+        if (tracker.floorHistoryVersion === 2) {
+          // Promote manual confirmations made in the previous release before
+          // reconciling its old reply fingerprints.
+          const checkpoints = await this.questCheckpoints(profileId, tracker.questId);
+          let manualIndex = -1;
+          checkpoints.forEach((checkpoint, index) => {
+            if (checkpoint.source === 'local' && typeof checkpoint.judgeResult === 'object' && checkpoint.judgeResult !== null &&
+              'source' in checkpoint.judgeResult && checkpoint.judgeResult.source === 'manual') manualIndex = index;
+          });
+          if (manualIndex >= 0) {
+            const manual = checkpoints[manualIndex]!;
+            await this.db.questFloorCheckpoints.bulkDelete(checkpoints.slice(0, manualIndex + 1).map(checkpoint => checkpoint.id));
+            await this.db.questTrackerStates.put({ ...tracker, baseline: structuredClone(manual.after),
+              retentionFloor: manual.floorIndex, manualFloor: { id:manual.floorId,index:manual.floorIndex,role:'assistant',
+                fingerprint:manual.floorFingerprint,lineageHash:manual.lineageHash } });
+          }
+          continue;
+        }
         await this.db.questFloorCheckpoints.where('[profileId+questId]').equals([profileId, tracker.questId]).delete();
         await this.db.questTrackerStates.put({ ...tracker, floorHistoryVersion: 2,
           baseline: structuredClone(tracker.current), retentionFloor: floors.at(-1)?.index ?? 0 });

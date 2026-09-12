@@ -87,6 +87,9 @@ export class QuestTrackerService {
     }
 
     if (
+      (existing?.manualFloor?.index === input.floor.index &&
+        existing.manualFloor.fingerprint === input.floor.fingerprint &&
+        existing.manualFloor.lineageHash === input.floor.lineageHash) ||
       await this.progress.hasCheckpointForFloor(
         input.profileId,
         input.questRecord.id,

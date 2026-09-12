@@ -1,3 +1,4 @@
+import { randomUuid } from '@/kernel/random-uuid';
 import { HUNTING_TRAPS, TRAP_ITEMS } from '@/content/hunting-traps';
 import { CARRIAGES, freightDayKey, freightFee, nextFreightReset, type CarriageTier, type FreightState, type FreightView, type FreightRegion, type FreightOrder, type FreightCargo } from '@/market-freight';
 import { grantCard } from '@/battle/card-inventory';
@@ -1339,7 +1340,7 @@ function difficultyRarity(difficulty?: string): string {
 
 function uniqueSuffix(): string {
   try {
-    return crypto.randomUUID();
+    return randomUuid();
   } catch {
     return `${Date.now().toString(36)}-${Math.random()
       .toString(36)

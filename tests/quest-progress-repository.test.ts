@@ -61,6 +61,22 @@ async function setup() {
 }
 
 describe('QuestProgressRepository', () => {
+  it('升级保留旧版手动确认节点，之后自动推进仍能回退至该确认点', async () => {
+    const { database, quest, repository } = await setup();
+    for (const index of [1,2,3]) await repository.bindFloor('profile', {questId:quest.id,
+      floor:floor(index,`body-${index}`,`lineage-${index}`),judgeResult:{},summary:`节点${index}`,
+      next:{status:'active',trackerState:'tracking',currentStage:index,currentNodeId:`node-${index}`,objective:'继续'}});
+    const manual=(await repository.listCheckpoints('profile',quest.id))[1]!;
+    await database.questFloorCheckpoints.update(manual.id,{source:'local',judgeResult:{source:'manual'}});
+    await repository.reconcileFloors('profile',[floor(1,'edited','edited'),floor(2,'changed','changed'),floor(3,'new','new')]);
+    expect((await repository.getTracker('profile',quest.id))?.current.currentNodeId).toBe('node-2');
+    expect((await repository.getTracker('profile',quest.id))?.baseline.currentNodeId).toBe('node-2');
+    await repository.bindFloor('profile',{questId:quest.id,floor:floor(4,'newest','newest'),judgeResult:{},summary:'自动推进',
+      next:{status:'active',trackerState:'tracking',currentStage:3,currentNodeId:'node-3',objective:'继续'}});
+    await repository.rollbackFromFloor('profile',4);
+    expect((await repository.getTracker('profile',quest.id))?.current.currentNodeId).toBe('node-2');
+  });
+
   it('升级时以旧存档已确认进度为基准，旧分支记录不再把主线推回零', async () => {
     const { database, quest, repository } = await setup();
     await repository.bindFloor('profile', { questId: quest.id, floor: floor(2, 'old-body', 'old-lineage'),
