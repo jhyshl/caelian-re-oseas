@@ -64,6 +64,34 @@ async function setup(imperial = false) {
 }
 
 describe('副 API 失败后手动重试', () => {
+  it('手动推进后继续正文以新节点判定，旧楼层变化及迟到副 API 不能撤销确认', async () => {
+    const h = await setup(); h.mode('pass');
+    await h.api.retryQuestJudge();
+    const before = (await db!.questTrackerStates.toArray())[0]!;
+    expect(await db!.questFloorCheckpoints.count()).toBe(1);
+    await h.api.completeTrackedQuestNode({questId:before.questId,expectedNodeId:before.current.currentNodeId,expectedRevision:before.manualRevision??0,transitionId:(await h.api.getTrackedQuest())!.manualChoices![0]!.transitionId});
+    const confirmed = (await db!.questTrackerStates.toArray())[0]!;
+    expect(confirmed.current.currentNodeId).not.toBe(before.current.currentNodeId);
+    expect(confirmed.baseline).toEqual(confirmed.current);
+    await h.api.retryQuestJudge();
+    expect(h.calls).toHaveLength(1); // Old body cannot judge the next node.
+    h.chat[1]!.mes += '\n旧正文的后处理内容。';
+    h.handlers.get('started')?.();
+    h.chat.push({mes:'我继续和芙萝拉交谈。',is_user:true},{mes:'芙萝拉继续整理花束。',is_user:false});
+    h.mode('hold');h.handlers.get('ended')?.();
+    await expect.poll(() => h.calls.length).toBe(2);
+    expect(h.calls[1]!.messages.map(message=>message.content).join('\n')).toContain(confirmed.current.currentNodeId);
+    expect((await db!.questTrackerStates.toArray())[0]!.current.currentNodeId).toBe(confirmed.current.currentNodeId);
+    await h.api.completeTrackedQuestNode({questId:confirmed.questId,expectedNodeId:confirmed.current.currentNodeId,expectedRevision:confirmed.manualRevision??0,transitionId:(await h.api.getTrackedQuest())!.manualChoices![0]!.transitionId});
+    const second = (await db!.questTrackerStates.toArray())[0]!;
+    h.release();
+    await expect.poll(() => h.api.getQuestJudgeStatus().evaluating).toBe(false);
+    expect((await db!.questTrackerStates.toArray())[0]!.current.currentNodeId).toBe(second.current.currentNodeId);
+    h.chat.splice(3,1); h.handlers.get('deleted')?.(3);
+    await expect.poll(async () => db!.questFloorCheckpoints.count()).toBe(0);
+    expect((await db!.questTrackerStates.toArray())[0]!.current.currentNodeId).toBe(second.current.currentNodeId);
+  });
+
   it('皇权面板可重Roll成功楼层，失败保持原状态，成功替换且删除仍回退到原始基线', async () => {
     const h=await setup(true);h.mode('pass');await h.api.retryQuestJudge();
     const first=(await db!.questFloorCheckpoints.toArray())[0]!;

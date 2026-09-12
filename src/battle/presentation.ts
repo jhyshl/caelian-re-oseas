@@ -1,6 +1,7 @@
 import type { CardDefinition, CardEffect, RelicDefinition } from '@/content/types';
-import type { GameSnapshot, LocalBattleState } from '@/domain/types';
+import type { BattleAnimationEvent, GameSnapshot, LocalBattleState } from '@/domain/types';
 import { describeReworkEffects, reworkCard, type ReworkEffect, type CardDisplayStats } from './rework/catalog';
+import { workshopBuiltinStatus } from '@/workshop-status-library';
 import { scaleWorkshopCard } from '@/workshop-stars';
 import { roundNumbersInText } from '@/ui/format-number';
 import { describeRuleProgram, type RuleProgram } from '@/workshop-program';
@@ -34,14 +35,15 @@ export function battleCardText(card: CardDefinition, stars: number, state: Local
     if(effect.type==='rule_program')return {kind:'utility',text:describeRuleProgram(effect.program as RuleProgram,{self:{...stats,hp:state.player.hp,hpMax:state.player.hpMax,shield:state.player.shield,ap:state.player.ap},target:state.enemies[state.selectedTarget] as unknown as Record<string,number>,star:stars})};
     const next = { ...effect, kind: effect.type } as ReworkEffect;
     const scaling = effect.scaling as { stat?: string; percent?: number } | undefined;
-    const attr: Record<string, number> = { attack: stats.attack, defense: stats.defense, hp: state.player.hp, shield: state.player.shield, mp: state.player.mp };
-    const scaledValue = Number(effect.value ?? 0) + (scaling ? (attr[scaling.stat ?? ''] ?? 0) * Math.max(0, Math.min(Number(scaling.percent ?? 0), 200 * Math.max(1, Number(effect.starRatioMultiplier ?? 1)))) / 100 : 0);
-    const value = scaling ? Math.max(0, Math.round(scaledValue)) : scaledValue;
+    const attr: Record<string, number> = { attack: stats.attack, defense: stats.defense, hp: state.player.hp, hpMax: state.player.hpMax, lostHp: Math.max(0, state.player.hpMax - state.player.hp), shield: state.player.shield, mp: state.player.mp, mpMax: state.player.mpMax, speed: stats.speed ?? state.player.speed, critRate: stats.critRate ?? state.player.critRate ?? 0, critDamage: stats.critDamage ?? state.player.critDamage ?? 0, effectHit: stats.effectHit ?? state.player.effectHit ?? 0, effectResist: stats.effectResist ?? state.player.effectResist ?? 0, ap: state.player.ap };
+    const scaledValue = Number(effect.value ?? 0) + (scaling ? (attr[scaling.stat ?? ''] ?? 0) * Math.max(0, Math.min(Number(scaling.percent ?? 0), 999_999 * Math.max(1, Number(effect.starRatioMultiplier ?? 1)))) / 100 : 0);
+    const native = effect.nativeStatus === true ? workshopBuiltinStatus(String(effect.buff ?? effect.debuff)) : undefined;
+    const value = scaling && native?.unit !== 'ratio' ? Math.max(0, Math.round(scaledValue)) : scaledValue;
     if (['damage', 'shield', 'heal'].includes(effect.type)) {
       next.flat = value + (effect.type === 'damage' && card.type === 'attack' && (!scaled.resolvedStarScale || !effect.scaling) ? Math.floor(stats.attack * .35 * Number((scaled.resolvedStarScale as {ratio?:number} | undefined)?.ratio ?? 1)) : 0);
       if (effect.type === 'damage') next.flat = Number(next.flat) * Math.max(1, Number(effect.hits ?? 1));
     } else if (effect.type === 'apply_buff' || effect.type === 'apply_debuff') {
-      next.kind = effect.type === 'apply_buff' ? 'buff' : 'debuff';next.status = effect.buff ?? effect.debuff;next.value = value;
+      next.kind = effect.type === 'apply_buff' ? 'buff' : 'debuff';next.status = native?.name ?? effect.buff ?? effect.debuff;next.value = value; if (native) next.valueUnit = native.unit;
     } else if (['draw', 'discard', 'cleanse', 'dispel'].includes(effect.type)) next.amount = effect.amount ?? effect.value;
     else if (!['summon', 'conditional', 'chant', 'resource'].includes(effect.type)) {
       next.kind = 'utility';next.action = String(effect.description ?? scaled.description ?? '');
@@ -52,4 +54,10 @@ export function battleCardText(card: CardDefinition, stars: number, state: Local
     return next;
   };
   return cleanCombatCopy(describeReworkEffects(scaled.effects.map(toEffect), 1, stats));
+}
+
+export function battleDamageFloat(event: BattleAnimationEvent): string {
+  const prefix = event.critical ? '暴击 ' : '';
+  if ((event.shieldDamage ?? 0) > 0) return `${prefix}护盾−${Math.round(event.shieldDamage!)} · 生命−${Math.round(event.hpDamage ?? 0)}`;
+  return `${prefix}−${event.amount ?? 0}`;
 }

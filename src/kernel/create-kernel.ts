@@ -1054,6 +1054,7 @@ export class CaelianKernel {
   }
 
   async completeTrackedQuestNode(input:{questId:string;expectedNodeId:string;expectedRevision:number;transitionId?:string}) {
+    if (this.generationActive) throw new Error('正文正在生成，请生成结束后再确认任务节点');
     this.cancelQuestJudge();this.notifications.clearQuestGuidance();
     const profileId=this.requireProfile(),quest=await this.requireManagedQuest(profileId,input.questId);
     const result=await this.repository.completeQuestNode(profileId,await this.questDefinition(quest),{ ...input, floor: (await this.adapter.chatFloors())?.at(-1) });
@@ -1443,6 +1444,13 @@ export class CaelianKernel {
       'MESSAGE_SWIPED',
     ].includes(eventName);
     const floors = await this.adapter.chatFloors();
+    if (floors?.length === 0 && !causalMutation) return;
+    const reconciled = floors
+      ? await this.repository.reconcileQuestProgress(
+          this.profileId,
+          floors,
+        )
+      : [];
     const direct =
       causalMutation && payload?.messageId !== undefined && (!floors || eventName === 'MESSAGE_DELETED' || eventName === 'MESSAGE_SWIPED')
         ? await this.repository.rollbackQuestProgressFromFloor(
@@ -1450,12 +1458,6 @@ export class CaelianKernel {
             payload.messageId,
           )
         : [];
-    const reconciled = floors
-      ? await this.repository.reconcileQuestProgress(
-          this.profileId,
-          floors,
-        )
-      : [];
     const rollbacks = [...direct, ...reconciled];
     if (rollbacks.length === 0) return;
 
@@ -2159,6 +2161,7 @@ export class CaelianKernel {
         this.surveys.submit(surveyId, draft),
       ignoreSurvey: (surveyId) => this.surveys.ignore(surveyId),
       syncSurveyCatalog: () => this.syncSurveyCatalog(true),
+      getManagedContentResult: () => this.managedContent.lastResult,
       getManagedContentAutoUpdate: () =>
         this.managedContent.autoUpdateEnabled(),
       setManagedContentAutoUpdate: (enabled) =>
@@ -2216,6 +2219,7 @@ export class CaelianKernel {
         this.surveys.submit(surveyId, draft),
       ignoreSurvey: (surveyId) => this.surveys.ignore(surveyId),
       syncSurveyCatalog: () => this.syncSurveyCatalog(true),
+      getManagedContentResult: () => this.managedContent.lastResult,
       getManagedContentAutoUpdate: () =>
         this.managedContent.autoUpdateEnabled(),
       setManagedContentAutoUpdate: (enabled) =>

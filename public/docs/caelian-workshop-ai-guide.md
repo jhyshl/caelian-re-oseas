@@ -226,7 +226,11 @@
 }
 ```
 
-`stat` 可用：`hp`、`attack`、`shield`、`defense`、`mp`。
+`stat` 可用：`hp`（当前生命）、`hpMax`（生命上限）、`lostHp`（已损生命）、`attack`、`shield`、`defense`、`mp`、`mpMax`、`speed`、`critRate`、`critDamage`、`effectHit`、`effectResist`、`ap`。
+
+`nativeStatus: true` 的增益与减益同样支持公式。例如施加 `strength`，设置 `value: 5`、`scaling: { "stat": "hpMax", "percent": 10 }`，会在施放时一次计算并增加「5 + 生命上限的 10%」攻击力，持续 `turns` 回合。来源属性本身不被扣除；需要付出代价时，使用条件组中的支付生命等条件。攻击、防御、速度与暴击来源读取包含当前增益的战斗数值。
+
+新增增益：`speed_flat`（固定速度）、`crit_up`（增加暴击率百分点）、`crit_damage_up`（增加暴击伤害百分点）。`strength` 与 `fortitude` 增加固定攻击/防御；`attack_up`、`defense_up`、`speed_up` 使用比例，`value: 0.2` 表示提高 20%。暴击增益遵循战斗上限并按回合到期，可正常驱散。
 
 常用目标：
 
@@ -237,6 +241,8 @@
 随机或指定多个目标时使用 `target_count`。
 
 ## 条件效果组
+
+条件下拉框与新版状态库同步。`self_has_specific_buff`、`self_no_specific_buff`、`enemy_has_specific_buff`、`enemy_no_specific_buff` 使用 `buff`；对应的 `*_specific_debuff` 使用 `debuff`。自定义状态使用 `self_has_workshop_status`、`self_no_workshop_status`、`enemy_has_workshop_status`、`enemy_no_workshop_status`，同时填写 `mechanismId` 与 `statusId` 并启用对应机制。
 
 `conditional_group` 至少需要一个条件和一个 `then_effects` 效果：
 
@@ -325,3 +331,9 @@
 6. 机制、资源和状态引用均有对应定义，且职业已在 `mechanismIds` 中启用。
 7. 召唤技能至少一个，权重大于零。
 8. 代码机制通过沙箱确认与校验。
+
+### 伤害数值与攻击次数
+
+卡面的伤害是公式算出的基础值，尚未计入目标防御、直接增减伤和暴击；血条预览表示命中且未暴击时预计损失的生命，已经扣除防御减伤与护盾吸收。随机目标或额外触发可能改变最终结果。
+
+自定义 `damage` 效果的 `hits` 默认为 1；`value` 与 `scaling` 合成一次伤害，不会把固定值和百分比分别结算。仅在明确需要重复攻击时配置 `hits > 1`，此时每次使用完整公式并各自判定暴击。编辑器会显示攻击次数，日志会标出第几次攻击。暴击是本次伤害的倍率，不自动添加一次普通攻击。

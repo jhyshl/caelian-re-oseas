@@ -83,7 +83,7 @@ const hasTurns = computed(() =>
   ),
 );
 const supportsScaling = computed(
-  () => hasValue.value && !['apply_buff', 'apply_debuff', 'thorns'].includes(props.effect.type),
+  () => hasValue.value && props.effect.type !== 'thorns',
 );
 const hasTarget = computed(
   () =>
@@ -179,6 +179,16 @@ const conditions = [
   ['enemy_no_specific_debuff', '敌人无指定减益'],
   ['self_has_buff', '自身有增益'],
   ['self_no_buff', '自身无增益'],
+  ['self_has_specific_buff', '自身有指定增益'],
+  ['self_no_specific_buff', '自身无指定增益'],
+  ['enemy_has_specific_buff', '敌人有指定增益'],
+  ['enemy_no_specific_buff', '敌人无指定增益'],
+  ['self_has_specific_debuff', '自身有指定减益'],
+  ['self_no_specific_debuff', '自身无指定减益'],
+  ['self_has_workshop_status', '自身有自定义状态'],
+  ['self_no_workshop_status', '自身无自定义状态'],
+  ['enemy_has_workshop_status', '敌人有自定义状态'],
+  ['enemy_no_workshop_status', '敌人无自定义状态'],
   ['self_full_hp', '自身满生命'],
   ['self_not_full_hp', '自身非满生命'],
   ['has_summon', '拥有召唤物'],
@@ -220,6 +230,9 @@ function setStatus(value: EditableEffect, key: string): void {
 }
 
 function initializeConditionResource(condition: EditableEffect): void {
+  if (condition.type.includes('specific_buff')) condition.buff ??= WORKSHOP_STATUS_LIBRARY.find(item => item.polarity === 'buff')?.id;
+  if (condition.type.includes('specific_debuff')) condition.debuff ??= WORKSHOP_STATUS_LIBRARY.find(item => item.polarity === 'debuff')?.id;
+  if (condition.type.endsWith('workshop_status') && !condition.mechanismId && props.statusOptions?.[0]) setStatus(condition, statusKey(props.statusOptions[0]));
   if (condition.type !== 'spend_workshop_resource') return;
   const option = props.resourceOptions?.[0];
   if (option && !condition.mechanismId) setResource(condition, resourceKey(option));
@@ -425,6 +438,13 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
         />
       </label>
       <label v-if="effect.type === 'damage'">
+        <span>攻击次数（每次使用此伤害公式）</span>
+        <input
+          :value="effect.hits ?? 1" type="number" min="1" max="64" step="1"
+          @input="effect.hits = Math.max(1, Math.min(64, Math.floor(Number(($event.target as HTMLInputElement).value) || 1)))"
+        />
+      </label>
+      <label v-if="effect.type === 'damage'">
         <span>吸血比例</span>
         <input
           v-model.number="effect.lifesteal_ratio"
@@ -519,12 +539,15 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
           v-if="String(condition.type).includes('specific_debuff')"
           v-model="condition.debuff"
         >
-          <option value="burn">灼烧</option>
-          <option value="poison">中毒</option>
-          <option value="weak">虚弱</option>
-          <option value="vulnerable">易伤</option>
-          <option value="freeze">冻结</option>
-          <option value="entangle">缠绕</option>
+          <option v-for="status in WORKSHOP_STATUS_LIBRARY.filter(item => item.polarity === 'debuff')" :key="status.id" :value="status.id">{{ status.name }}</option>
+          <option value="entangle">缠绕（旧版）</option>
+        </select>
+        <select v-if="String(condition.type).includes('specific_buff')" v-model="condition.buff">
+          <option v-for="status in WORKSHOP_STATUS_LIBRARY.filter(item => item.polarity === 'buff')" :key="status.id" :value="status.id">{{ status.name }}</option>
+        </select>
+        <select v-if="String(condition.type).endsWith('workshop_status')" :value="statusKey(condition)" @change="setStatus(condition, ($event.target as HTMLSelectElement).value)">
+          <option value="" disabled>请选择自定义状态</option>
+          <option v-for="status in statusOptions" :key="statusKey(status)" :value="statusKey(status)">{{ status.label }}</option>
         </select>
         <input
           v-if="['spend_mp', 'spend_hp', 'discard', 'destroy_summon'].includes(condition.type) || (condition.type === 'spend_workshop_resource' && condition.amount !== 'all')"

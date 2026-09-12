@@ -241,6 +241,7 @@ function removePreset(build: SavedDeckBuild): void {
 
 async function workshopSaved() {
   catalog.value = { ...(await loadCardCatalog()) };
+  await refreshState();
 }
 
 let disposeStateListener: (() => void) | undefined;

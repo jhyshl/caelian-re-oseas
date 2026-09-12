@@ -147,7 +147,7 @@ function animation(g,state,e,label){
   const kind=e.type==='action_start'?(side(source)==='enemy'?'enemy-action':side(source)==='player'?'card':'companion-action'):['damage','heal','shield','draw','turn'].includes(e.type)?e.type:['buff','debuff','dot_apply','miss'].includes(e.type)?'status':null;
   if(!kind)return;state.animations??=[];
   state.reworkAnimationSequence=(state.reworkAnimationSequence??0)+1;
-  state.animations.push({id:'rework-animation:'+state.reworkAnimationSequence,turn:g.round,kind,sourceId:source,sourceSide:source?side(source):'system',targetId:target,targetSide:target?side(target):undefined,amount:Math.round(e.damage??e.amount??e.count??0),hpAfter:e.hp===undefined?undefined:Math.ceil(e.hp),shieldAfter:e.shield===undefined?undefined:Math.ceil(e.shield),apAfter:e.apAfter,phaseAfter:e.type==='turn'?(e.phase??'player'):undefined,turnAfter:e.type==='turn'?g.round:undefined,cardInstanceId:e.uid===undefined?undefined:String(e.uid),label:label||e.name||(e.type==='turn'?'第'+g.round+'回合':kind==='draw'?'抽取'+e.count+'张牌':'状态变化')});
+  state.animations.push({id:'rework-animation:'+state.reworkAnimationSequence,turn:g.round,kind,sourceId:source,sourceSide:source?side(source):'system',targetId:target,targetSide:target?side(target):undefined,amount:Math.round(e.damage??e.amount??e.count??0),critical:e.crits>0,hpDamage:e.hpDamage,shieldDamage:e.shieldDamage,hpAfter:e.hp===undefined?undefined:Math.ceil(e.hp),shieldAfter:e.shield===undefined?undefined:Math.ceil(e.shield),apAfter:e.apAfter,phaseAfter:e.type==='turn'?(e.phase??'player'):undefined,turnAfter:e.type==='turn'?g.round:undefined,cardInstanceId:e.uid===undefined?undefined:String(e.uid),label:label||e.name||(e.type==='turn'?'第'+g.round+'回合':kind==='draw'?'抽取'+e.count+'张牌':'状态变化')});
   state.animations=state.animations.slice(-160);
 }
 export function project(g,state,options={}){
@@ -160,7 +160,7 @@ export function project(g,state,options={}){
   state.turn=g.round;state.phase=state.status!=='ongoing'?'ended':['enemy','companion'].includes(g.phase)?g.phase:'player';state.reworkOutcome=g.outcome;state.contextActions=contextActions(g).map(c=>({id:c.id,name:c.name,ap:c.ap,description:c.effect,available:c.enabled,reason:c.reason,remaining:c.remaining}));
   state.reworkCards=Object.fromEntries(p.hand.map(c=>{const target=g.enemies[state.selectedTarget]??g.livingEnemies()[0];return [String(c.uid),{cost:c.ruleCost??(c.legacy?null:g.controller.price(g,c,false,target)),available:c.legacy?true:g.canAct&&g.controller.canPlay(g,c,target),stars:c.star??1,goldCost:c.id==='me_bribe'?Math.ceil(g.encounterGoldReward*1.5):undefined}];}));
   for(const e of g.trace??[]){let text='';const name=id=>id==='player'?state.player.name:state.enemies.find(a=>a.id===id)?.name??g.allies.find(a=>a.id===id)?.name??id;
-    if(e.type==='damage')text=(e.dot?'持续伤害：':'')+name(e.source)+' → '+name(e.target)+' '+Math.round(e.damage)+'伤害'+(e.crits?'（'+e.crits+'段暴击）':'');
+    if(e.type==='damage')text=(e.dot?'持续伤害：':'')+name(e.source)+(e.skillName?'「'+e.skillName+'」':'')+' → '+name(e.target)+' '+Math.round(e.damage)+'伤害'+(e.crits?(e.crits===1?'（暴击）':'（'+e.crits+'段暴击）'):'')+(e.shieldDamage>0?'，护盾吸收'+Math.round(e.shieldDamage)+'，生命减少'+Math.round(e.hpDamage):'');
     if(e.type==='heal'||e.type==='shield')text=name(e.source)+'为'+name(e.target)+(e.type==='heal'?'恢复':'提供护盾')+Math.round(e.amount);
     if(e.type==='play_card')text='使用「'+(cards.get(e.card)?.name??e.card)+'」，消耗'+e.ap+'AP';
     if(e.type==='party_action')text=name(e.source)+'消耗 '+e.ap+' AP，施放「'+e.name+'」';
@@ -188,10 +188,10 @@ export function legacyDamage(state,sourceId,targetId,amount,label,ignoreDefense=
 }
 
 /** Hit/non-critical preview from a disposable graph; never reads future combat rolls. */
-export function preview(state,cardId,targetIndex,allyTargetId='player'){
+export function preview(state,cardId,targetIndex,allyTargetId='player',instanceId){
  const g=hydrate(state.rework);syncExternal(g,state);g.selectedAllyId=allyTargetId;
  const result={enemyDamage:state.enemies.map(()=>0),playerHp:0,playerHpCost:0,companionHp:0,playerMp:0,playerMpCost:0};
- const card=g.player.hand.find(c=>c.id===cardId);if(!card||card.legacy)return result;
+ const card=g.player.hand.find(c=>instanceId?String(c.uid)===instanceId:c.id===cardId);if(!card||card.legacy)return result;
  const before=g.allies.map(a=>({id:a.id,hp:a.hp}));g.hitRng=()=>1;g.critRng=()=>1;g.effectRng=()=>0.5;g.rng=()=>0.5;
  try{const ctx=g.controller.playCard(g,card,g.enemies[targetIndex]);result.playerHpCost=ctx.totals.selfDamage;
   for(const event of g.events){const i=state.enemies.findIndex(a=>a.id===event.target.id);if(i>=0)result.enemyDamage[i]+=event.hpDamage;}

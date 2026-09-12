@@ -80,6 +80,12 @@ afterEach(() => {
 });
 
 describe('TavernAdapter', () => {
+  it('原始聊天接口暂不可用时不使用渲染后的正文作为回退依据', async () => {
+    const message = document.createElement('div');
+    message.className = 'mes'; message.innerHTML = '<div class="mes_text">渲染后的内容</div>';
+    document.body.appendChild(message);
+    try { expect(await new TavernAdapter(window).chatFloors()).toBeNull(); } finally { message.remove(); }
+  });
   it('世界书适配器跳过残缺对象，只返回具备真实读写接口的作用域', () => {
     const host = window as unknown as Record<string, unknown>;
     host.TavernHelper = {

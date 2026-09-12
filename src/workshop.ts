@@ -120,10 +120,19 @@ type Amount = number | 'all';
 
 export const WORKSHOP_SCALING_STATS = [
   ['hp', '当前生命值'],
+  ['hpMax', '生命上限'],
+  ['lostHp', '已损生命值'],
   ['attack', '攻击力'],
   ['shield', '当前护盾值'],
   ['defense', '防御力'],
   ['mp', '当前魔力'],
+  ['mpMax', '魔力上限'],
+  ['speed', '速度'],
+  ['critRate', '暴击率'],
+  ['critDamage', '暴击伤害'],
+  ['effectHit', '效果命中'],
+  ['effectResist', '效果抵抗'],
+  ['ap', '当前 AP'],
 ] as const;
 
 type WorkshopScalingStat = (typeof WORKSHOP_SCALING_STATS)[number][0];
@@ -220,6 +229,16 @@ const VALID_CONDITION_TYPES = new Set([
   'enemy_no_specific_debuff',
   'self_has_buff',
   'self_no_buff',
+  'self_has_specific_buff',
+  'self_no_specific_buff',
+  'enemy_has_specific_buff',
+  'enemy_no_specific_buff',
+  'self_has_specific_debuff',
+  'self_no_specific_debuff',
+  'self_has_workshop_status',
+  'self_no_workshop_status',
+  'enemy_has_workshop_status',
+  'enemy_no_workshop_status',
   'self_full_hp',
   'self_not_full_hp',
   'has_summon',
@@ -470,6 +489,11 @@ function normalizeCondition(value: unknown): CardEffect | undefined {
   const type = String(source.type ?? source.condition ?? '');
   if (!VALID_CONDITION_TYPES.has(type)) return undefined;
   const result: CardEffect = { type };
+  if (type.endsWith('workshop_status')) {
+    const mechanismId = extensionId(source.mechanismId, ''), statusId = extensionId(source.statusId, '');
+    if (!mechanismId || !statusId) return undefined;
+    return { type, mechanismId, statusId };
+  }
   if (type === 'spend_workshop_resource') {
     const mechanismId = extensionId(source.mechanismId, '');
     const resourceId = extensionId(source.resourceId, '');
@@ -484,6 +508,11 @@ function normalizeCondition(value: unknown): CardEffect | undefined {
     const debuff = String(source.debuff ?? '');
     if (!ALLOWED_DEBUFFS.includes(debuff)) return undefined;
     result.debuff = debuff;
+  }
+  if (type.includes('specific_buff')) {
+    const buff = String(source.buff ?? '');
+    if (!ALLOWED_BUFFS.includes(buff)) return undefined;
+    result.buff = buff;
   }
   if (['spend_mp', 'spend_hp', 'discard', 'destroy_summon'].includes(type)) {
     const normalized =
@@ -562,7 +591,7 @@ export function normalizeCardEffect(value: unknown): CardEffect | undefined {
   const type = String(source.type ?? '').trim();
   if (!VALID_CARD_EFFECT_TYPES.has(type)) return undefined;
   if (type === 'rule_program') return {type,target:normalizeTarget(source,type),program:normalizeRuleProgram(source.program)};
-  if(['apply_buff','apply_debuff'].includes(type)&&source.nativeStatus===true){const id=String(source.buff??source.debuff),option=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===id);if(!option)throw Error('状态效果不存在');return {type,nativeStatus:true,[type==='apply_buff'?'buff':'debuff']:id,value:number(source.value,option.value),turns:clamp(source.turns,-1,999999,1),baseChance:clamp(source.baseChance,0,100,100),target:normalizeTarget(source,type)};}
+  if(['apply_buff','apply_debuff'].includes(type)&&source.nativeStatus===true){const id=String(source.buff??source.debuff),option=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===id);if(!option)throw Error('状态效果不存在');const scaling=normalizeScaling(source.scaling);return {type,nativeStatus:true,[type==='apply_buff'?'buff':'debuff']:id,value:number(source.value,option.value),turns:clamp(source.turns,-1,999999,1),baseChance:clamp(source.baseChance,0,100,100),target:normalizeTarget(source,type),...(scaling?{scaling}:{})};}
   if (type === 'workshop_resource_change') {
     const mechanismId = extensionId(source.mechanismId, '');
     const resourceId = extensionId(source.resourceId, '');
@@ -1071,7 +1100,7 @@ function workshopStatusReferences(
   }
   if (!value || typeof value !== 'object') return result;
   const source = value as UnknownRecord;
-  if (source.type === 'apply_workshop_status') {
+  if (source.type === 'apply_workshop_status' || String(source.type).endsWith('_workshop_status')) {
     result.push({
       mechanismId: String(source.mechanismId ?? ''),
       statusId: String(source.statusId ?? ''),
@@ -1093,6 +1122,20 @@ function validateWorkshopResourceReferences(
     [...readWorkshopMechanisms(), ...bundled].map((entry) => [entry.id, entry]),
   );
   for (const profession of classes) {
+    // Removing a checked but unused status must not orphan the entire profession.
+    // References in actual effects still require their original definition.
+    const referenced = new Set([
+      ...workshopResourceReferences({ cards: profession.cards, talent: profession.talent.effects }),
+      ...workshopStatusReferences({ cards: profession.cards, talent: profession.talent.effects }),
+    ].map(reference => reference.mechanismId));
+    const previousSelections = new Set(readWorkshopStorageValues(WORKSHOP_STORAGE_KEY).flatMap(pack => {
+      const classes = record(pack).classes;
+      return Array.isArray(classes) ? classes.flatMap(value => {
+        const old = record(value);
+        return old.id === profession.id && Array.isArray(old.mechanismIds) ? old.mechanismIds.map(String) : [];
+      }) : [];
+    }));
+    profession.mechanismIds = (profession.mechanismIds ?? []).filter(id => manifests.has(id) || referenced.has(id) || !previousSelections.has(id));
     const enabled = new Set(profession.mechanismIds ?? []);
     for (const mechanismId of enabled) {
       if (!manifests.has(mechanismId)) {

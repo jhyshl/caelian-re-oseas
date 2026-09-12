@@ -1,3 +1,4 @@
+import { randomUuid } from '@/kernel/random-uuid';
 import { z } from 'zod';
 import type { CaelianDatabase } from '@/storage/database';
 import type {
@@ -535,13 +536,13 @@ export class SurveyService {
     if (!tokenRecord) {
       tokenRecord = {
         surveyId,
-        token: this.sourceWindow.crypto.randomUUID(),
+        token: randomUuid(this.sourceWindow.crypto),
         createdAt: Date.now(),
       };
       await this.db.surveyTokens.add(tokenRecord);
     }
 
-    const submissionId = this.sourceWindow.crypto.randomUUID();
+    const submissionId = randomUuid(this.sourceWindow.crypto);
     const payload: SurveySubmissionPayload = {
       id: submissionId,
       survey_id: definition.id,

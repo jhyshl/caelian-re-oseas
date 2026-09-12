@@ -1,3 +1,4 @@
+import { randomUuid } from '@/kernel/random-uuid';
 import { z } from 'zod';
 import type { RuntimeInfo } from '@/domain/types';
 
@@ -267,8 +268,8 @@ export async function submitFeedback(
     throw new Error(validation.errors[0]);
   }
 
-  const id = sourceWindow.crypto.randomUUID();
-  const receiptToken = sourceWindow.crypto.randomUUID();
+  const id = randomUuid(sourceWindow.crypto);
+  const receiptToken = randomUuid(sourceWindow.crypto);
   const createdAt = new Date().toISOString();
   const payload = createPayload(
     draft,

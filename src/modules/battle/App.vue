@@ -23,7 +23,7 @@ import {
   canApplyBattleConsumable,
   isBattleUsableItem,
 } from '@/battle/consumables';
-import { battleCardText, canViewMonsterIntent, cleanCombatCopy } from '@/battle/presentation';
+import { battleDamageFloat, battleCardText, canViewMonsterIntent, cleanCombatCopy } from '@/battle/presentation';
 import { formatNumber, roundNumbersInText } from '@/ui/format-number';
 import MonsterSkills from './MonsterSkills.vue';
 import { hydrate as hydrateRework } from '@/battle/rework/runtime/api.mjs';
@@ -186,6 +186,10 @@ const effectiveSpeeds = computed<Record<string, number>>(() => {
   if (!core) return {};
   return Object.fromEntries([...core.allies, ...core.enemies].map(actor => [actor.id, core.stat(actor, 'speed')]));
 });
+function effectiveStat(id: string, key: string, fallback: number): number {
+  const actor = statusActors.value.get(id);
+  return actor && battleCore.value ? fallback + battleCore.value.stat(actor, key) - actor.stats[key] : fallback;
+}
 const revealIntent = computed(() => canViewMonsterIntent(snapshot.value, relicRewards.value));
 const monsterDetailsId = ref('');
 const monsterDetails = computed(() => {
@@ -612,7 +616,7 @@ const activePreviewCardDefinition = computed(() => {
   const index = activePreviewHandIndex.value;
   if (index === null) return undefined;
   const card = state.value?.player.hand[index];
-  return card && cards.value[card.cardId] ? { ...cards.value[card.cardId]!, previewStars: card.stars ?? 1 } : undefined;
+  return card && cards.value[card.cardId] ? { ...cards.value[card.cardId]!, previewStars: card.stars ?? 1, previewInstanceId: card.instanceId } : undefined;
 });
 const friendlyEffectTypes = new Set([
   'shield',
@@ -969,7 +973,7 @@ const battleDisplayStats = computed(() => {
   const core = current.rework ? hydrateRework(current.rework) : null;
   const allies = core?.allies.filter((a: {hp:number}) => a.hp > 0) ?? [];
   const ally = allies.find((a: {id:string}) => a.id === selectedAllyTarget.value) ?? [...allies].sort((a: {hp:number;maxHp:number;id:string}, b: {hp:number;maxHp:number;id:string}) => a.hp/a.maxHp-b.hp/b.maxHp || a.id.localeCompare(b.id))[0];
-  return {attack: core ? core.stat(core.player, 'attack') : current.player.attack, defense: core ? core.stat(core.player, 'defense') : current.player.defense, hpMax:current.player.hpMax, targetHpMax:current.enemies[selectedTarget.value]?.hpMax ?? 0, allyHpMax:ally?.maxHp ?? current.player.hpMax, speed:core ? core.stat(core.player,'speed') : current.player.speed};
+  return {attack: core ? core.stat(core.player, 'attack') : current.player.attack, defense: core ? core.stat(core.player, 'defense') : current.player.defense, hpMax:current.player.hpMax, targetHpMax:current.enemies[selectedTarget.value]?.hpMax ?? 0, allyHpMax:ally?.maxHp ?? current.player.hpMax, speed:core ? core.stat(core.player,'speed') : current.player.speed, critRate: core ? core.stat(core.player,'crit') : current.player.critRate, critDamage: core ? core.stat(core.player,'critDamage') : current.player.critDamage, effectHit: core ? core.stat(core.player,'ehr') : current.player.effectHit, effectResist: core ? core.stat(core.player,'res') : current.player.effectResist};
 });
 const battleDescriptions = computed(() => {
   const current = state.value, stats = battleDisplayStats.value;
@@ -1426,7 +1430,7 @@ async function playAnimation(event: BattleAnimationEvent) {
   if (event.kind === 'damage') {
     if (event.hpAfter !== undefined) target.hp = event.hpAfter;
     if (event.shieldAfter !== undefined) target.shield = event.shieldAfter;
-    floatId = addFloat(event, 'damage', `−${event.amount ?? 0}`);
+    floatId = addFloat(event, 'damage', battleDamageFloat(event));
   } else if (event.kind === 'heal') {
     if (event.hpAfter !== undefined) target.hp = event.hpAfter;
     floatId = addFloat(event, 'heal', `+${event.amount ?? 0} HP`);
@@ -2110,7 +2114,7 @@ onUnmounted(() => {
                 <span v-if="index === selectedTarget">锁定</span>
               </div>
               <small>
-                Lv.{{ enemy.level }} · 攻 {{ formatNumber(enemy.attack) }} · 防 {{ formatNumber(enemy.defense) }} · 速 {{ formatNumber(effectiveSpeeds[enemy.id] ?? enemy.speed) }}<br>暴击 {{ formatNumber(enemy.critRate ?? 0) }}% · 暴伤 +{{ formatNumber(enemy.critDamage ?? 50) }}% · 命中 {{ formatNumber(enemy.effectHit ?? 0) }}% · 抵抗 {{ formatNumber(enemy.effectResist ?? 0) }}% · 盾 {{ formatNumber(enemy.shield) }}
+                Lv.{{ enemy.level }} · 攻 {{ formatNumber(effectiveStat(enemy.id, 'attack', enemy.attack)) }} · 防 {{ formatNumber(effectiveStat(enemy.id, 'defense', enemy.defense)) }} · 速 {{ formatNumber(effectiveSpeeds[enemy.id] ?? enemy.speed) }}<br>暴击 {{ formatNumber(effectiveStat(enemy.id, 'crit', enemy.critRate ?? 0)) }}% · 暴伤 +{{ formatNumber(effectiveStat(enemy.id, 'critDamage', enemy.critDamage ?? 50)) }}% · 命中 {{ formatNumber(enemy.effectHit ?? 0) }}% · 抵抗 {{ formatNumber(enemy.effectResist ?? 0) }}% · 盾 {{ formatNumber(enemy.shield) }}
               </small>
               <MeterBar
                 label="怪物生命"
@@ -2383,7 +2387,7 @@ onUnmounted(() => {
               </span>
             </div>
             <small>
-              攻 {{ formatNumber(state.player.attack) }} · 防 {{ formatNumber(state.player.defense) }} · 速 {{ formatNumber(effectiveSpeeds.player ?? state.player.speed) }} · 暴击 {{ formatNumber(state.player.critRate ?? 5) }}% · 暴伤 +{{ formatNumber(state.player.critDamage ?? 50) }}% · 命中 {{ formatNumber(state.player.effectHit ?? 0) }}% · 抵抗 {{ formatNumber(state.player.effectResist ?? 0) }}%
+              攻 {{ formatNumber(effectiveStat('player', 'attack', state.player.attack)) }} · 防 {{ formatNumber(effectiveStat('player', 'defense', state.player.defense)) }} · 速 {{ formatNumber(effectiveSpeeds.player ?? state.player.speed) }} · 暴击 {{ formatNumber(effectiveStat('player', 'crit', state.player.critRate ?? 5)) }}% · 暴伤 +{{ formatNumber(effectiveStat('player', 'critDamage', state.player.critDamage ?? 50)) }}% · 命中 {{ formatNumber(state.player.effectHit ?? 0) }}% · 抵抗 {{ formatNumber(state.player.effectResist ?? 0) }}%
             </small>
           </div>
 
@@ -2569,6 +2573,7 @@ onUnmounted(() => {
             <button type="button" @click="showBattleInfo = false">×</button>
           </header>
           <details v-if="state.workshopTest && state.workshopRuleTrace?.length"><summary>积木执行记录</summary><ol><li v-for="(entry,index) in state.workshopRuleTrace" :key="index">T{{ entry.turn }} · {{ entry.name }} · {{ entry.event }}：{{ entry.message }}</li></ol></details>
+          <p class="damage-preview-help">卡面显示基础伤害；血条预览为命中且未暴击时的预计生命损失，计入防御、减伤与护盾。随机目标、触发效果可能改变结果。</p>
           <ol>
             <li
               v-for="entry in recentLog"

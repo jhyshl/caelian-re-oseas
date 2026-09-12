@@ -206,12 +206,16 @@ export interface QuestProgressSnapshot extends QuestDeferredProgressSnapshot {
 }
 
 export interface QuestTrackerRecord {
+  /** Checkpoints before v2 were retained even after edits; they cannot drive rollback. */
+  floorHistoryVersion?: 2;
   /** Completion rewards are issued once even if a completed floor is rerolled. */
   completionRewarded?: boolean;
   completedQuest?: QuestRecord;
   completedSelected?: boolean;
   retentionFloor?: number;
   manualRevision?: number;
+  /** A manual confirmation establishes a durable baseline, independent of old replies. */
+  manualFloor?: Omit<TavernFloorReference, 'text'>;
   id: string;
   profileId: string;
   questId: string;
@@ -644,6 +648,9 @@ export interface BattleAnimationEvent {
   targetSide?: 'player' | 'companion' | 'summon' | 'enemy' | 'system';
   targetId?: string;
   amount?: number;
+  critical?: boolean;
+  hpDamage?: number;
+  shieldDamage?: number;
   hpAfter?: number;
   shieldAfter?: number;
   mpAfter?: number;

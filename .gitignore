@@ -3,5 +3,6 @@ node_modules/
 dist/
 card/
 coverage/
+.tavern-qa/
 *.local
 *.log

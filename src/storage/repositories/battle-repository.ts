@@ -1,3 +1,5 @@
+import { normalizeLegacyStatus } from '@/battle/rework/runtime/legacy-bridge.mjs';
+import { workshopBuiltinStatus } from '@/workshop-status-library';
 import { grantCard, resolveDeckStars } from '@/battle/card-inventory';
 import { installWorkshopPrograms, type WorkshopProgramRuntime } from '@/battle/workshop-program-runtime';
 import type { RuleProgram } from '@/workshop-program';
@@ -344,6 +346,7 @@ export class BattleRepository {
   ) {}
 
   async prepare(): Promise<void> {
+    this.cards = await loadCardCatalog();
     if (
       !this.cards ||
       !this.monsters ||
@@ -440,6 +443,7 @@ export class BattleRepository {
     if (!deck || deck.cardIds.length === 0) {
       throw new Error('请先准备至少一张卡牌的出战牌组');
     }
+    if (deck.cardIds.some(id => !this.cards?.[id])) throw new Error('出战牌组含已删除或未安装的卡牌，请打开牌组重新整理');
     this.assertOwnedDeck(deck.cardIds, ownedCards);
     const deckStars = resolveDeckStars(deck.cardIds, ownedCards, deck.cardStars);
     const region = world?.region || '伊拉亚城';
@@ -2868,7 +2872,7 @@ export class BattleRepository {
               enemy,
               Math.max(0, Math.round(base * resolvedMultiplier)),
               'player',
-              card.name,
+              hits > 1 ? `${card.name} · 第${hit + 1}/${hits}次攻击` : card.name,
             );
           }
           if (beforeHp > 0 && enemy.hp <= 0) killCount += 1;
@@ -4631,25 +4635,29 @@ export class BattleRepository {
         ? this.normalizePlayerSummon(this.activePlayerSummon)
         : state.player;
     const stat = String(scaling.stat ?? '');
-    const sourceValue =
-      stat === 'hp'
-        ? source.hp
-        : stat === 'attack'
-          ? source.attack
-          : stat === 'shield'
-            ? source.shield
-            : stat === 'defense'
-              ? source.defense
-              : stat === 'mp' && source === state.player
-                ? state.player.mp
-                : 0;
-    const percent = this.clamp(this.number(scaling.percent), 0, 200 * Math.max(1, this.number(effect.starRatioMultiplier, 1)));
+    const values: Record<string, number> = {
+      hp: source.hp, hpMax: source.hpMax, lostHp: Math.max(0, source.hpMax - source.hp),
+      attack: source.attack, defense: source.defense, shield: source.shield,
+      speed: source.speed ?? 0, critRate: this.number('critRate' in source ? source.critRate : 0), critDamage: this.number('critDamage' in source ? source.critDamage : 0),
+      effectHit: this.number('effectHit' in source ? source.effectHit : 0), effectResist: this.number('effectResist' in source ? source.effectResist : 0),
+      mp: source === state.player ? state.player.mp : 0,
+      mpMax: source === state.player ? state.player.mpMax : 0,
+      ap: source === state.player ? state.player.ap : 0,
+    };
+    let sourceValue = values[stat] ?? 0;
+    const coreStats: Record<string, string> = { attack: 'attack', defense: 'defense', speed: 'speed',
+      critRate: 'crit', critDamage: 'critDamage', effectHit: 'ehr', effectResist: 'res' };
+    if (state.rework && coreStats[stat]) {
+      const core = this.activeReworkCore ?? rework.hydrate(state.rework);
+      const actor = core.allies.find((item: { id: string }) => item.id === (source === state.player ? 'player' : this.activePlayerSummon?.id));
+      if (actor) sourceValue = core.stat(actor, coreStats[stat]);
+    }
+    const percent = this.clamp(this.number(scaling.percent), 0, 999_999 * Math.max(1, this.number(effect.starRatioMultiplier, 1)));
+    const value = Math.max(0, this.number(effect.value) + sourceValue * percent / 100);
+    const native = effect.nativeStatus === true ? workshopBuiltinStatus(String(effect.buff ?? effect.debuff)) : undefined;
     return {
       ...effect,
-      value: Math.max(
-        0,
-        Math.round(this.number(effect.value) + (sourceValue * percent) / 100),
-      ),
+      value: native?.unit === 'ratio' ? value : Math.round(value),
     };
   }
 
@@ -5848,6 +5856,22 @@ export class BattleRepository {
       typeof raw === 'object' && raw !== null
         ? (raw as Record<string, unknown>)
         : {};
+    if (/^(self|enemy)_(has|no)_(specific_(buff|debuff)|workshop_status)$/.test(condition)) {
+      const actor = condition.startsWith('self_') ? state.player : target;
+      const custom = condition.endsWith('workshop_status');
+      const id = custom ? workshopStatusKey(String(detail.mechanismId), String(detail.statusId))
+        : String(detail.buff ?? detail.debuff ?? '');
+      const option = workshopBuiltinStatus(id);
+      const key = String(option?.template?.canonicalStatus ?? (state.rework ? normalizeLegacyStatus(id, { value: 1 }).key : id));
+      let has = custom ? Boolean(actor.buffs[key] || actor.debuffs[key])
+        : condition.endsWith('_debuff') ? Boolean(actor.debuffs[key]) : Boolean(actor.buffs[key]);
+      if (state.rework && ['speed_up', 'speed_flat'].includes(id)) {
+        const core = this.activeReworkCore ?? rework.hydrate(state.rework);
+        const native = [...core.allies, ...core.enemies].find((a: { id: string }) => a.id === (actor === state.player ? 'player' : target.id));
+        has = native?.buffs.some((e: { status: string; canonicalStatus?: string; speedFlat?: boolean }) => (e.canonicalStatus ?? e.status) === 'speed_up' && Boolean(e.speedFlat) === (id === 'speed_flat')) ?? false;
+      }
+      return condition.includes('_no_') ? !has : has;
+    }
     switch (condition) {
       case 'has_shield':
       case 'self_has_shield':

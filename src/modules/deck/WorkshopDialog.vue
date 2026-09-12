@@ -85,6 +85,19 @@ interface EditableClass {
   mechanismIds: string[];
 }
 
+const editorAppearanceKey = 'caelian:workshop:editor-appearance:v1';
+const defaultAppearance = { fontSize: 16, text: '#f5f0e8', background: '#1b1712' };
+function readEditorAppearance() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(editorAppearanceKey) ?? '{}');
+    return { fontSize: Math.min(28, Math.max(14, Number(saved.fontSize) || 16)),
+      text: /^#[0-9a-f]{6}$/i.test(saved.text) ? saved.text : defaultAppearance.text,
+      background: /^#[0-9a-f]{6}$/i.test(saved.background) ? saved.background : defaultAppearance.background };
+  } catch { return { ...defaultAppearance }; }
+}
+const editorAppearance = ref(readEditorAppearance());
+watch(editorAppearance, value => window.localStorage.setItem(editorAppearanceKey, JSON.stringify(value)), { deep: true });
+
 const props = defineProps<{ context: PanelContext; initialCardId?: string }>();
 const emit = defineEmits<{ close: []; saved: [] }>();
 
@@ -916,6 +929,7 @@ watch(() => props.initialCardId, (id) => {
     <div class="workshop-backdrop" @click.self="emit('close')">
       <section
         class="workshop-dialog"
+        :style="{ '--workshop-editor-size': `${editorAppearance.fontSize}px`, '--workshop-editor-text': editorAppearance.text, '--workshop-editor-background': editorAppearance.background }"
         role="dialog"
         aria-modal="true"
         aria-labelledby="workshop-title"
@@ -928,6 +942,16 @@ watch(() => props.initialCardId, (id) => {
           </div>
           <button type="button" aria-label="关闭" @click="emit('close')">×</button>
         </header>
+
+        <details class="editor-appearance">
+          <summary>编辑区字号与配色</summary>
+          <div>
+            <label>字号 {{ editorAppearance.fontSize }}px<input v-model.number="editorAppearance.fontSize" aria-label="编辑区字号" type="range" min="14" max="28" /></label>
+            <label>文字颜色<input v-model="editorAppearance.text" aria-label="编辑区文字颜色" type="color" /></label>
+            <label>背景颜色<input v-model="editorAppearance.background" aria-label="编辑区背景颜色" type="color" /></label>
+            <button type="button" @click="editorAppearance = { ...defaultAppearance }">恢复默认</button>
+          </div>
+        </details>
 
         <nav class="workshop-tabs">
           <button :class="{ active: tab === 'library' }" @click="tab = 'library'">
@@ -1682,6 +1706,19 @@ watch(() => props.initialCardId, (id) => {
 </template>
 
 <style scoped>
+.editor-appearance { padding: 8px 16px; color: var(--ca-text-bright); }
+.editor-appearance summary { cursor: pointer; }
+.editor-appearance > div { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding-top: 10px; }
+.editor-appearance label { display: flex; align-items: center; gap: 8px; }
+.editor-appearance input[type="color"] { width: 40px; height: 30px; }
+.workshop-dialog :deep(textarea) {
+  color: var(--workshop-editor-text, #f5f0e8) !important;
+  -webkit-text-fill-color: var(--workshop-editor-text, #f5f0e8) !important;
+  background: var(--workshop-editor-background, #1b1712) !important;
+  font-size: var(--workshop-editor-size, 16px) !important;
+  line-height: 1.65; opacity: 1;
+}
+
 .workshop-backdrop {
   position: fixed;
   inset: 0;

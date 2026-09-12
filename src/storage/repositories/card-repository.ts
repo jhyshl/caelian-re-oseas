@@ -1,6 +1,9 @@
 import { cardRecordId, cardStar, CARD_FUSION_COST, grantCard, repairDeckAfterFusion, resolveDeckStars } from '@/battle/card-inventory';
 import { reworkCard } from '@/battle/rework/catalog';
 import { readWorkshopPacks } from '@/workshop';
+import { loadCardCatalog } from '@/content/catalogs/cards';
+import type { CardDefinition } from '@/content/types';
+import type { DeckRecord } from '@/domain/types';
 import { needsWorkshopStars } from '@/workshop-stars';
 import type { CaelianDatabase } from '@/storage/database';
 import {
@@ -10,6 +13,40 @@ import {
 
 export class CardRepository {
   constructor(private readonly db: CaelianDatabase) {}
+
+  private catalog?: Record<string, CardDefinition>;
+
+  async prepare(): Promise<void> { this.catalog = await loadCardCatalog(); }
+
+  async repairWorkshopDecks(profileId: string): Promise<void> {
+    const professions = new Set(readWorkshopPacks().flatMap(pack => pack.classes.map(item => item.id)));
+    if (!professions.size) return;
+    const catalog = await loadCardCatalog();
+    const clean = (deck: Pick<DeckRecord, 'cardIds' | 'cardStars'>) => {
+      const indices = deck.cardIds.flatMap((id, index) => catalog[id] ? [index] : []);
+      return { ...deck, cardIds: indices.map(index => deck.cardIds[index]!),
+        ...(deck.cardStars ? { cardStars: indices.map(index => deck.cardStars![index] ?? 1) } : {}) };
+    };
+    await this.db.transaction('rw', [this.db.playerStates, this.db.decks], async () => {
+      const player = await this.db.playerStates.get(profileId);
+      if (!player) return;
+      if (professions.has(player.subclass)) {
+        for (const deck of await this.db.decks.where('profileId').equals(profileId).toArray()) {
+          const next = clean(deck);
+          if (next.cardIds.length !== deck.cardIds.length) await this.db.decks.put({ ...deck, ...next, updatedAt: Date.now() });
+        }
+      }
+      let changed = false;
+      for (const [id, archive] of Object.entries(player.professionCardArchives ?? {})) {
+        if (!professions.has(id) || !archive.deck) continue;
+        const next = clean(archive.deck);
+        if (next.cardIds.length === archive.deck.cardIds.length) continue;
+        archive.deck = { ...archive.deck, ...next };
+        changed = true;
+      }
+      if (changed) await this.db.playerStates.put(player);
+    });
+  }
 
   async upgrade(profileId: string, cardId: string, requestedStars?: number): Promise<void> {
     const custom = readWorkshopPacks().flatMap(pack => pack.classes).flatMap(profession => profession.cards).find(card => card.id === cardId);
@@ -70,6 +107,9 @@ export class CardRepository {
   }
 
   async updateActiveDeck(profileId: string, cardIds: string[], cardStars?: number[]): Promise<void> {
+    const catalog = this.catalog;
+    if (!catalog) throw new Error('卡牌目录尚未就绪');
+    if (cardIds.some(id => !catalog[id])) throw new Error('构筑含已删除或未安装的卡牌，请重新选择卡牌');
     if (cardIds.length < 10 || cardIds.length > 20) {
       throw new Error('牌组构筑必须为 10–20 张');
     }

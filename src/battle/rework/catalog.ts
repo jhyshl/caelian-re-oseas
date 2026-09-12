@@ -117,7 +117,7 @@ function numeric(value: number): string {
   return Number.isFinite(value) ? formatNumber(value) : '无限';
 }
 
-export interface CardDisplayStats { attack: number; defense: number; hpMax: number; targetHpMax: number; allyHpMax?: number; ownerHpMax?: number; speed?: number }
+export interface CardDisplayStats { attack: number; defense: number; hpMax: number; targetHpMax: number; allyHpMax?: number; ownerHpMax?: number; speed?: number; critRate?: number; critDamage?: number; effectHit?: number; effectResist?: number }
 
 function number(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
@@ -238,6 +238,7 @@ function describeEffect(effect: ReworkEffect, star: number, stats?: CardDisplayS
     case 'damage': {
       const hits = Math.max(1, Math.floor(number(effect.hits, 1)));
       line = `对${who || '一名敌人'}造成${formula(effect, star, false, stats)}总伤害`;
+      if (stats) line += '（基础值，减伤前、未暴击）';
       if (hits > 1) line += `，均分为${hits}段`;
       if (effect.crit === false) line += '，不可暴击';
       break;

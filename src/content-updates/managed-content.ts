@@ -264,6 +264,19 @@ type ManagedContentOperation =
       };
     };
 
+function operationTargetLabel(operation: ManagedContentOperation): string {
+  const target = operation.target;
+  switch (target.kind) {
+    case 'character-field': return `角色卡 / ${target.field === 'description' ? '角色描述' : '作者备注'}`;
+    case 'character-first-message': return `角色卡 / 第 ${target.index + 1} 个开场白`;
+    case 'character-script': return `角色卡脚本 / ${target.scriptName ?? target.scriptId}`;
+    case 'worldbook-entry': return `世界书 / ${target.entryName}`;
+    case 'worldbook-upsert-entry': return `世界书 / ${target.entryNames.join('、')}`;
+    case 'worldbook-create-entry': return `世界书 / ${('entry' in operation ? operation.entry.name : undefined) ?? target.managedId}`;
+    case 'worldbook-delete-entry': return `世界书 / ${target.managedId}`;
+  }
+}
+
 interface ManagedContentManifest {
   schemaVersion: 1;
   channel: 'alpha';
@@ -303,6 +316,7 @@ export interface ManagedContentSyncResult {
 
 export class ManagedContentUpdater {
   private syncTask?: Promise<ManagedContentSyncResult>;
+  lastResult: ManagedContentSyncResult | null = null;
 
   constructor(
     private readonly host: Window,
@@ -327,7 +341,7 @@ export class ManagedContentUpdater {
 
   sync(options: { force?: boolean } = {}): Promise<ManagedContentSyncResult> {
     if (this.syncTask) return this.syncTask;
-    this.syncTask = this.performSync(options).finally(() => {
+    this.syncTask = this.performSync(options).then(result => { this.lastResult = result; return result; }).finally(() => {
       this.syncTask = undefined;
     });
     return this.syncTask;
@@ -405,7 +419,7 @@ export class ManagedContentUpdater {
       if (previous && previous.checksum !== checksum) {
         conflicts.push({
           operationId: operation.id,
-          reason: '管理端重复使用了已经执行过的操作编号',
+          reason: `${operationTargetLabel(operation)}：管理端重复使用了已经执行过的操作编号`,
         });
         continue;
       }
@@ -427,7 +441,7 @@ export class ManagedContentUpdater {
       } catch (error) {
         conflicts.push({
           operationId: operation.id,
-          reason: error instanceof Error ? error.message : String(error),
+          reason: `${operationTargetLabel(operation)}：${error instanceof Error ? error.message : String(error)}`,
         });
       }
     }
@@ -462,60 +476,55 @@ export class ManagedContentUpdater {
     const { default: data } = await import('../../public/managed-content/worldbook-deltas/imperial-2026-09-10.json');
     const {default: guidance} = await import('../../public/managed-content/worldbook-deltas/imperial-guidance-2026-09-11.json');
     const delta = data as WorldbookDelta;
-    const key = this.characterStorageKey(`caelian:worldbook-delta:${worldbookName}:${delta.revision}`, identity.avatar);
     let applied = 0;
+    let skipped = 0;
     const conflicts: ManagedContentSyncResult['conflicts'] = [];
-    const previous = this.host.localStorage.getItem(key);
-    if (previous) {
-      const saved = JSON.parse(previous) as { conflicts?: string[] };
-      for (const reason of saved.conflicts ?? []) conflicts.push({ operationId: delta.revision, reason });
-    } else {
-      if (!api.updateWorldbookWith) throw new Error('世界书编辑接口不可用');
-      let report: ReturnType<typeof applyWorldbookDelta> | undefined;
-      await api.updateWorldbookWith.call(api, worldbookName, entries => {
-        identity.assertCurrent();
-        // A newly imported current author card may already contain the follow-up patch.
-        const additions = delta.additions.map(addition => {
+    for (const source of [delta, guidance as WorldbookDelta]) {
+      const key = this.characterStorageKey(`caelian:worldbook-delta:${worldbookName}:${source.revision}`, identity.avatar);
+      let previous: { conflicts?: string[] } | undefined;
+      try { previous = JSON.parse(this.host.localStorage.getItem(key) ?? 'null') ?? undefined; } catch { /* Recheck a damaged receipt. */ }
+      if (previous && !previous.conflicts?.length) { skipped += 1; continue; }
+      // Successful entries remain untouched, including later player edits. Failed
+      // entries are recomputed from the live book instead of replaying old errors.
+      const pending = (entry: { name?: unknown }) => !previous || previous.conflicts?.some(reason => reason.includes(String(entry.name)));
+      const selected: WorldbookDelta = { ...source,
+        additions: source.additions.filter(pending), removals: source.removals.filter(pending),
+        changes: source.changes.filter(change => pending(change.before)),
+      };
+      const apply = (entries: ManagedWorldbookEntry[]) => {
+        const additions = selected.additions.map(addition => {
           const followup = guidance.changes.find(change => change.before.name === addition.name);
           return followup && entries.some(entry => entry.name === addition.name && entry.content === followup.after.content) ? followup.after : addition;
         });
-        report = applyWorldbookDelta(entries, {...delta, additions});
-        // Persist recovery evidence before any host mutation. Never replace from the Beta file.
-        this.host.localStorage.setItem(`${key}:backup`, JSON.stringify(entries));
-        return report.entries as ManagedWorldbookEntry[];
-      }, { render: 'debounced' });
-      if (!report) throw new Error('世界书差量更新未执行');
-      identity.assertCurrent();
-      const verified = await this.readWorldbook(api, worldbookName);
-      if (verified.length !== report.entries.length || report.entries.some(expected =>
-        !verified.some(actual => String(actual.uid) === String(expected.uid) && actual.name === expected.name && actual.content === expected.content))) {
-        throw new Error('世界书差量更新回读失败，保留备份以便重试');
-      }
-      this.host.localStorage.setItem(key, JSON.stringify({ conflicts: report.conflicts, appliedAt: Date.now() }));
-      applied += report.applied;
-      for (const reason of report.conflicts) conflicts.push({ operationId: delta.revision, reason });
-    }
-    const guidanceKey = this.characterStorageKey('caelian:worldbook-delta:' + worldbookName + ':' + guidance.revision, identity.avatar);
-    if (!this.host.localStorage.getItem(guidanceKey)) {
-      if (!api.updateWorldbookWith) throw new Error('世界书编辑接口不可用');
-      let patch: ReturnType<typeof applyWorldbookDelta> | undefined;
-      await api.updateWorldbookWith.call(api, worldbookName, entries => {
+        return applyWorldbookDelta(entries, { ...selected, additions });
+      };
+      try {
         identity.assertCurrent();
-        patch = applyWorldbookDelta(entries, guidance as WorldbookDelta);
-        this.host.localStorage.setItem(guidanceKey + ':backup', JSON.stringify(entries));
-        return patch.entries as ManagedWorldbookEntry[];
-      }, {render:'debounced'});
-      identity.assertCurrent();
-      if (!patch) throw new Error('皇权指导规则增量更新未执行');
-      const saved = await this.readWorldbook(api, worldbookName);
-      if (patch.entries.some(expected => !saved.some(actual => String(actual.uid) === String(expected.uid) && actual.content === expected.content))) throw new Error('皇权指导规则回读失败');
-      applied += patch.applied;
-      for (const reason of patch.conflicts) conflicts.push({operationId:guidance.revision, reason});
-      this.host.localStorage.setItem(guidanceKey, JSON.stringify({conflicts:patch.conflicts}));
-    } else {
-      for (const reason of (JSON.parse(this.host.localStorage.getItem(guidanceKey)!) as {conflicts:string[]}).conflicts) conflicts.push({operationId:guidance.revision, reason});
+        let report = apply(await this.readWorldbook(api, worldbookName));
+        if (report.applied > 0) {
+          if (!api.updateWorldbookWith) throw new Error('世界书编辑接口不可用');
+          await api.updateWorldbookWith.call(api, worldbookName, entries => {
+            identity.assertCurrent();
+            report = apply(entries);
+            if (!this.host.localStorage.getItem(`${key}:backup`)) this.host.localStorage.setItem(`${key}:backup`, JSON.stringify(entries));
+            return report.entries as ManagedWorldbookEntry[];
+          }, { render: 'debounced' });
+          identity.assertCurrent();
+          const verified = await this.readWorldbook(api, worldbookName);
+          if (verified.length !== report.entries.length || report.entries.some(expected =>
+            !verified.some(actual => String(actual.uid) === String(expected.uid) && actual.name === expected.name && actual.content === expected.content))) {
+            throw new Error('世界书差量更新回读失败，已保留更新前备份，请重试');
+          }
+        }
+        this.host.localStorage.setItem(key, JSON.stringify({ conflicts: report.conflicts, appliedAt: Date.now() }));
+        applied += report.applied;
+        for (const reason of report.conflicts) conflicts.push({ operationId: source.revision, reason });
+      } catch (error) {
+        conflicts.push({ operationId: source.revision, reason: `世界书「${worldbookName}」：${error instanceof Error ? error.message : String(error)}` });
+      }
     }
     // Fetch and merge only greeting fields by the actual PNG avatar identity.
+    try {
     const character = await this.readPersistedCharacter(identity);
     const greetings = character.first_messages.map(message => message.replaceAll('朱利安', '卢修斯'));
     if (greetings.some((message, index) => message !== character.first_messages[index])) {
@@ -531,8 +540,11 @@ export class ManagedContentUpdater {
       if (JSON.stringify(verified.first_messages) !== JSON.stringify(greetings)) throw new Error('角色卡开场白回读失败');
       applied += 1;
     }
+    } catch (error) {
+      conflicts.push({ operationId: 'imperial-greetings', reason: `角色卡「${identity.name}」/ 全部开场白：${error instanceof Error ? error.message : String(error)}` });
+    }
     this.writeConflicts(guidance.revision, conflicts, identity.avatar);
-    return { status: applied ? 'applied' : 'current', revision: guidance.revision, applied, skipped: previous ? 1 : 0, conflicts };
+    return { status: applied ? 'applied' : 'current', revision: guidance.revision, applied, skipped, conflicts };
   }
 
   private resolveApi(): ManagedContentApi {

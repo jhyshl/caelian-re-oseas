@@ -34,6 +34,8 @@ export function makeGame(player,enemies,options={}){
    v*=1-Math.max(0,...down.map(ratio));v=Math.max(1,v);
   }
   if(k==='res')v=clamp(v+100*g.statusRatio(a,'效果抵抗增加'),0,80);
+  if(k==='crit')v+=g.status(a,'crit_up');
+  if(k==='critDamage')v+=g.status(a,'crit_damage_up');
   if(['ehr','res'].includes(k))v=clamp(v,0,80);if(k==='crit')v=clamp(v,0,100);if(k==='critDamage')v=clamp(v,0,250);
   return Math.max(0,v);
  };
@@ -82,7 +84,7 @@ export function makeGame(player,enemies,options={}){
   target.receivedThisTurn.damage+=actual;target.receivedThisTurn.hpDamage+=hpDamage;
   const out={source,target,damage:actual,hpDamage,shieldDamage,hit,crits,crit:crits>0,dot,secondary,...rest};
   g.events.push(out);if(g.events.length>100)g.events.shift();
-  g.log('damage',{source:source.id,target:target.id,damage:actual,hpDamage,shieldDamage,dot,crits,hp:target.hp,shield:target.shield});
+  g.log('damage',{source:source.id,target:target.id,damage:actual,hpDamage,shieldDamage,dot,crits,hp:target.hp,shield:target.shield,skillName:g.action?.skill?.name,skillId:rest.skillId??g.action?.skill?.id});
   if(target.side==='enemy')g.notifyEnemyDamaged?.(g,target,source,out);if(!dot)g.afterIncomingDamage?.(out);
   if(beforeHP>0&&target.hp<=0){g.log('death',{id:target.id});g.onDeath?.(target,source);}
   return out;
@@ -145,12 +147,12 @@ export function makeGame(player,enemies,options={}){
    for(let i=0;i<count;i++)target.buffs.push({...record,status:'swift',value:1,valueUnit:'count',stacks:1,expireMode:'end',expireAtPhase:target.phaseCount+Math.max(1,record.turns)-(active?1:0)});
    g.log('buff',{source:source.id,target:target.id,status:'swift',value:count});return true;
   }
-  record.speedFlat=k==='speed_up'&&e.status==='速度增加'&&Math.abs(e.value)>1;
+  record.speedFlat=k==='speed_up'&&(e.speedFlat===true||e.status==='速度增加'&&Math.abs(e.value)>1);
   if(record.speedFlat)g.audit.statusUnitsCorrected++;
   if(isDebuff){record.expireAtPhase=target.phaseCount+Math.max(1,record.turns);record.expireMode='end';}
   else{record.expireAtPhase=target.phaseCount+Math.max(1,record.turns)+(source.side===target.side&&target!==source&&target.flags.phaseRound!==g.round?1:0);record.expireMode='start';}
   if(k==='taunt'){record.expireMode='opponent_end';record.expireSide=target.side==='enemy'?'player':'enemy';record.expireRound=g.round+(target.side==='enemy'?1:0)+Math.max(0,record.turns-1);}
-  const list=isDebuff?target.debuffs:target.buffs,idx=list.findIndex(x=>key(x)===k&&x.sourceId===record.sourceId&&x.sourceSkill===record.sourceSkill);
+  const list=isDebuff?target.debuffs:target.buffs,idx=list.findIndex(x=>key(x)===k&&x.sourceId===record.sourceId&&x.sourceSkill===record.sourceSkill&&Boolean(x.speedFlat)===Boolean(record.speedFlat));
   if(idx>=0&&ratio(list[idx])<=ratio(record))list.splice(idx,1);list.push(record);g.log(kind,{source:source.id,target:target.id,status:k,value:e.value});return true;
  };
  g.addDot=(source,target,e,opts={})=>{

@@ -12,6 +12,7 @@ interface NativeActor { phaseCount: number; buffs: NativeStatus[]; debuffs: Nati
 
 export const nativeStatusNames: Record<string, string> = {
   attack_up: '攻击提高', defense_up: '防御提高', speed_up: '速度提高', speed_down: '减速',
+  crit_up: '暴击率提高', crit_damage_up: '暴击伤害提高',
   armor_break: '破甲', direct_damage_up: '直接增伤', damage_up: '伤害提高',
   direct_damage_reduction: '直接减伤', healing_down: '治疗降低', healing_received_down: '受疗降低',
   hard_control: '行动封锁', stun: '眩晕', sleep: '沉眠', petrify: '石化', silence: '沉默',
@@ -46,13 +47,14 @@ export function nativeStatusEntries(actor: NativeActor, kind: 'buff' | 'debuff')
     entries.push({key:`${name}:${index}`,name,effect:{
       value,turns,charges:record.charges,stacks:name==='swift'?1:undefined,
       ruleLabel:record.ruleLabel,ruleData:record.ruleData,
-      displayUnit:percent?'percent':flags.has(name)||record.valueUnit==='count'?'count':'flat',dot,
+      displayUnit:percent?'percent':record.speedFlat||['strength','fortitude'].includes(name)?'flat':flags.has(name)||record.valueUnit==='count'?'count':'flat',dot,
     }});
   }
   return entries;
 }
 
 export function statusValueText(name: string, effect: StatusDisplayEffect): string {
+  if (['crit_up', 'crit_damage_up'].includes(name)) return `增加 ${formatNumber(effect.value)} 个百分点`;
   if (flags.has(name)) return '';
   if (effect.dot) return `每次结算基础伤害 ${formatNumber(effect.value)} 点`;
   const unit = effect.displayUnit ?? (percentageStatuses.has(name) ? 'percent' : 'flat');

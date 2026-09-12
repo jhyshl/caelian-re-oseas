@@ -539,6 +539,22 @@ describe('ManagedContentUpdater', () => {
     expect([...h.storage.keys()].some(key=>key.endsWith(':backup'))).toBe(true);
   });
 
+  it('重新检查会重试旧版缓存的失败条目并清除已解决的冲突', async () => {
+    const h = createHarness({ operations: [] });
+    h.manifest.revision = imperialDelta.revision;
+    const original = [...imperialDelta.removals, ...imperialDelta.changes.map(change => change.before)];
+    h.worldbook.splice(0, h.worldbook.length, ...original.map((entry, index) => ({ uid: index + 200, ...clone(entry) }) as TestWorldbookEntry));
+    const edited = h.worldbook.find(entry => entry.name === imperialDelta.removals[0]!.name)!;
+    const content = edited.content;
+    edited.content += '玩家临时内容';
+    const updater = new ManagedContentUpdater(h.host);
+    expect((await updater.sync({ force: true })).conflicts.some(item => item.reason.includes(edited.name))).toBe(true);
+    h.worldbook.find(entry => entry.name === edited.name)!.content = content;
+    expect((await updater.sync({ force: true })).conflicts).toEqual([]);
+    expect(h.worldbook.some(entry => entry.name === edited.name)).toBe(false);
+    expect((await updater.sync({ force: true })).applied).toBe(0);
+  });
+
   it.each(['凯利安_1.png', 'current.png'])('字段与开场白更新只合并实际头像 %s，不使用整卡助手写入', async (avatar) => {
     const h = createHarness({ characterAvatar: avatar, operations: [
       { id: 'exact.description', target: { kind: 'character-field', field: 'description' }, mutation: { action: 'replace-exact', before: '旧段落', after: '新段落' } },

@@ -1,3 +1,4 @@
+import { randomUuid } from '@/kernel/random-uuid';
 import { z } from 'zod';
 import type { RuntimeInfo } from '@/domain/types';
 import classSubclassesJson from '@/content/generated/professions/class-subclasses.json';
@@ -349,8 +350,8 @@ export async function submitCardSquareEntry(
 
   const status: CardSquareStatus =
     draft.kind === 'mechanism' ? 'pending' : 'published';
-  const id = sourceWindow.crypto.randomUUID();
-  const receiptToken = sourceWindow.crypto.randomUUID();
+  const id = randomUuid(sourceWindow.crypto);
+  const receiptToken = randomUuid(sourceWindow.crypto);
   const createdAt = new Date().toISOString();
   const body = {
     id,

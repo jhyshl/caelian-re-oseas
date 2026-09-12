@@ -1,4 +1,7 @@
-import { preview as previewRework } from '@/battle/rework/runtime/api.mjs';
+import { workshopBuiltinStatus } from '@/workshop-status-library';
+import { normalizeLegacyStatus } from '@/battle/rework/runtime/legacy-bridge.mjs';
+import { damageOnLiveCore } from '@/battle/rework/runtime/workshop-runtime-hooks.mjs';
+import { preview as previewRework, hydrate, syncExternal } from '@/battle/rework/runtime/api.mjs';
 import battleRulesJson from '@/content/generated/battle/rules.json';
 import type { CardDefinition, CardEffect } from '@/content/types';
 import type {
@@ -161,6 +164,7 @@ function conditionMatches(
   target: BattleEnemyState,
   card?: CardDefinition,
   availableMp = state.player.mp,
+  core?: any,
 ): boolean {
   const detail =
     typeof raw === 'object' && raw !== null
@@ -170,6 +174,23 @@ function conditionMatches(
     typeof raw === 'string'
       ? raw
       : String(detail.condition ?? detail.type ?? '');
+  const specific = /^(self|enemy)_(has|no)_(specific_buff|specific_debuff|workshop_status)$/.exec(condition);
+  if (specific) {
+    const actor = specific[1] === 'self' ? state.player : target;
+    const id = String(detail.buff ?? detail.debuff ?? '');
+    const option = workshopBuiltinStatus(id);
+    const key = specific[3] === 'workshop_status'
+      ? `workshop_status:${detail.mechanismId}:${detail.statusId}`
+      : String(option?.template?.canonicalStatus ?? normalizeLegacyStatus(id, { value: 1 }).key);
+    let present = specific[3] === 'specific_buff' ? Boolean(actor.buffs[key])
+      : specific[3] === 'specific_debuff' ? Boolean(actor.debuffs[key])
+        : Boolean(actor.buffs[key] || actor.debuffs[key]);
+    if (core && ['speed_up', 'speed_flat'].includes(id)) {
+      const native = [...core.allies, ...core.enemies].find((a: { id: string }) => a.id === (actor === state.player ? 'player' : target.id));
+      present = native?.buffs.some((e: { status: string; canonicalStatus?: string; speedFlat?: boolean }) => (e.canonicalStatus ?? e.status) === 'speed_up' && Boolean(e.speedFlat) === (id === 'speed_flat')) ?? false;
+    }
+    return specific[2] === 'no' ? !present : present;
+  }
   switch (condition) {
     case 'has_shield':
     case 'self_has_shield':
@@ -634,7 +655,15 @@ export function previewBattleCard(
   selectedTarget: number,
   allyTargetId: BattleFriendlyTargetId = 'player',
 ): BattleCardPreview {
-  if (state.rework && card.rework) return previewRework(state, String(card.id), selectedTarget, allyTargetId);
+  if (state.rework && card.rework) return previewRework(state, String(card.id), selectedTarget, allyTargetId, typeof card.previewInstanceId === 'string' ? card.previewInstanceId : undefined);
+  // Keep all speculative HP, statuses and random rolls on an isolated graph.
+  const core = state.rework ? hydrate(state.rework) : null;
+  if (core) {
+    syncExternal(core, state);
+    core.hitRng = () => 1; core.critRng = () => 1;
+    core.effectRng = core.rng = core.targetRng = () => .5;
+    state = JSON.parse(JSON.stringify(state)) as LocalBattleState;
+  }
   card = scaleWorkshopCard(card, number(card.previewStars, 1));
   const cardMpCost = effectiveCardMpCost(state, card);
   const preview: BattleCardPreview = {
@@ -665,6 +694,17 @@ export function previewBattleCard(
   ): number => {
     const enemy = state.enemies[index];
     if (!enemy || enemy.hp <= 0) return 0;
+    if (core) {
+      const result = damageOnLiveCore(core, 'player', enemy.id, rawAmount, card.name,
+        { ignoreDefense: options?.ignoreDefense, forceHit: true, crit: false });
+      const target = core.enemies.find((actor: { id: string }) => actor.id === enemy.id);
+      const hpDamage = (predictedEnemyHp[index] ?? 0) - Math.ceil(target.hp);
+      predictedEnemyHp[index] = Math.ceil(target.hp);
+      predictedEnemyShield[index] = target.shield;
+      preview.enemyDamage[index] = (preview.enemyDamage[index] ?? 0) + hpDamage;
+      playerAttributeLifesteal += Math.floor(result.hpDamage * playerAttributeLifestealRatio);
+      return result.hpDamage;
+    }
     const amount = previewDamageAmount(state, enemy, rawAmount, options);
     preview.enemyDamage[index] =
       (preview.enemyDamage[index] ?? 0) +
@@ -717,15 +757,34 @@ export function previewBattleCard(
   const previewEffects = (effects: CardEffect[]): void => {
     for (const rawEffect of effects) {
       const scaling = rawEffect.scaling as { stat?: string; percent?: number } | undefined;
-      const sourceValue = scaling?.stat === 'mp' ? availableMp : scaling?.stat ? number(state.player[scaling.stat as keyof typeof state.player]) : 0;
-      const effect = scaling ? { ...rawEffect, value: number(rawEffect.value) + sourceValue * number(scaling.percent) / 100 } : rawEffect;
+      const stat = scaling?.stat ?? '';
+      const coreStats: Record<string, string> = { attack: 'attack', defense: 'defense', speed: 'speed', critRate: 'crit', critDamage: 'critDamage', effectHit: 'ehr', effectResist: 'res' };
+      const sourceValue = stat === 'mp' ? availableMp : stat === 'lostHp' ? Math.max(0, state.player.hpMax - state.player.hp + preview.playerHpCost)
+        : stat === 'hp' ? state.player.hp - preview.playerHpCost
+          : core && coreStats[stat] ? core.stat(core.player, coreStats[stat]) : number(state.player[stat as keyof typeof state.player]);
+      const native = rawEffect.nativeStatus === true ? workshopBuiltinStatus(String(rawEffect.buff ?? rawEffect.debuff)) : undefined;
+      const scaledValue = Math.max(0, number(rawEffect.value) + sourceValue * number(scaling?.percent) / 100);
+      const effect = scaling ? { ...rawEffect, value: native?.unit === 'ratio' ? scaledValue : Math.round(scaledValue) } : rawEffect;
+      if (core && native && native.kind !== 'dot') {
+        const selector = effect.target === 'selected_allies' ? 'ally' : effect.target ?? (native.kind === 'buff' ? 'self' : 'enemy');
+        const chosen = effect.target === 'selected_allies' ? core.allies.find((a: { id: string }) => a.id === allyTargetId) : core.enemies[selectedTarget];
+        for (const recipient of core.targets(core.player, { kind: native.kind, target: selector }, chosen)) {
+          core.addStatus(core.player, recipient, { kind: native.kind, status: native.id, ...native.template,
+            value: number(effect.value, native.value), valueUnit: native.unit, turns: number(effect.turns, 1), baseChance: number(effect.baseChance, 100) });
+          const dto = recipient.id === 'player' ? state.player : state.enemies.find(a => a.id === recipient.id);
+          const bucket = native.kind === 'buff' ? 'buffs' : 'debuffs';
+          const key = String(native.template?.canonicalStatus ?? native.id);
+          if (dto && core.hasStatus(recipient, key)) dto[bucket][key] = { value: number(effect.value), turns: number(effect.turns, 1) };
+        }
+        continue;
+      }
       if (effect.type === 'conditional_group') {
         if (!target) continue;
         const conditions = Array.isArray(effect.conditions)
           ? (effect.conditions as CardEffect[])
           : [];
         const matches = conditions.map((condition) =>
-          conditionMatches(condition, state, target, card, availableMp),
+          conditionMatches(condition, state, target, card, availableMp, core),
         );
         const passed =
           effect.logic === 'or'

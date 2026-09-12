@@ -1,3 +1,4 @@
+import { randomUuid } from '@/kernel/random-uuid';
 import Dexie from 'dexie';
 import type { CaelianDatabase } from '@/storage/database';
 
@@ -9,7 +10,7 @@ export class ConcurrentReads {
   constructor(db: CaelianDatabase) {
     db.use({
       stack: 'dbcore',
-      name: `caelian-concurrent-reads-${crypto.randomUUID()}`,
+      name: `caelian-concurrent-reads-${randomUuid()}`,
       create: (core) => ({
         ...core,
         transaction: (stores, mode, options) => {
