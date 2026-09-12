@@ -1,5 +1,5 @@
 import { normalizeLegacyStatus } from '@/battle/rework/runtime/legacy-bridge.mjs';
-import { workshopBuiltinStatus } from '@/workshop-status-library';
+import { workshopBuiltinStatus, workshopMaxStacks, workshopTurns } from '@/workshop-status-library';
 import { grantCard, resolveDeckStars } from '@/battle/card-inventory';
 import { installWorkshopPrograms, type WorkshopProgramRuntime } from '@/battle/workshop-program-runtime';
 import type { RuleProgram } from '@/workshop-program';
@@ -1353,7 +1353,12 @@ export class BattleRepository {
     this.runWorkshopMechanisms(state, 'before_enemy_turn');
     core = rework.hydrate(state.rework);
     rework.syncExternal(core, state);
-    this.runReworkPhase(core,state,()=>{if (!(state.workshopTest?.opponentMode === 'dummy' && !state.workshopTest.dummyAttackEnabled)) rework.enemiesTurn(core);});
+    this.runReworkPhase(core,state,()=>{
+      if(state.workshopTest?.opponentMode==='dummy'&&!state.workshopTest.dummyAttackEnabled){
+        // Passive dummies still have phases: DOT and status timers must advance.
+        core.phase='enemy';for(const enemy of core.livingEnemies()){core.beginPhase(enemy);core.endPhase(enemy);}
+      }else rework.enemiesTurn(core);
+    });
     this.runWorkshopMechanisms(state, 'after_enemy_turn');
     this.stabilizeWorkshopTest(state);
     if(state.player.hp>0&&await this.finishReworkEscape(session))return;
@@ -2808,7 +2813,7 @@ export class BattleRepository {
   ): void {
     effect = this.resolveWorkshopScaling(state, effect);
     if(effect.nativeStatus===true&&['apply_buff','apply_debuff'].includes(effect.type)){
-      this.withProgramCore(state,(core,runtime)=>{const source=core.allies.find((a:any)=>a.id===(this.activePlayerSummon?.id??'player'))??core.player;const chosen=core.enemies[targetIndex];const rawTarget=effect.target==='selected_allies'?core.allies.find((a:any)=>a.id===allyTargetId):chosen;const kind=effect.type==='apply_buff'?'buff':'debuff';const selector=effect.target==='selected_allies'?'ally':effect.target??(kind==='buff'?'self':'enemy');const targets=core.targets(source,{kind,target:selector},rawTarget);for(const target of targets)runtime.nativeStatus(source,target,String(effect.buff??effect.debuff),this.number(effect.value,1),this.number(effect.turns,1),this.number(effect.baseChance,100));});return;
+      this.withProgramCore(state,(core,runtime)=>{const source=core.allies.find((a:any)=>a.id===(this.activePlayerSummon?.id??'player'))??core.player;const chosen=core.enemies[targetIndex];const rawTarget=effect.target==='selected_allies'?core.allies.find((a:any)=>a.id===allyTargetId):chosen;const kind=effect.type==='apply_buff'?'buff':'debuff';const selector=effect.target==='selected_allies'?'ally':effect.target??(kind==='buff'?'self':'enemy');const targets=core.targets(source,{kind,target:selector},rawTarget);for(const target of targets)runtime.nativeStatus(source,target,String(effect.buff??effect.debuff),this.number(effect.value,1),this.number(effect.turns,1),this.number(effect.baseChance,100),1,{maxStacks:effect.maxStacks});});return;
     }
     if(effect.type==='rule_program'){
       this.withProgramCore(state,(core,runtime)=>{
@@ -3261,6 +3266,7 @@ export class BattleRepository {
               charges: this.optionalPositiveNumber(effect.charges),
               uncleanseable: effect.uncleanseable === true,
               baseChance: this.number(effect.baseChance, chance),
+              ...(card.custom&&workshopBuiltinStatus(effectName)?.kind==='dot'?{workshopDot:{maxStacks:workshopMaxStacks(effect.maxStacks)}}:{}),
               sourceId: this.activePlayerSummon?.id ?? 'player',
             },
           )) continue;
@@ -7808,7 +7814,7 @@ export class BattleRepository {
     options: Pick<
       BattleTimedEffect,
       'charges' | 'undispellable' | 'uncleanseable' | 'debuff' | 'sourceId'
-    > & { baseChance?: number } = {},
+    > & { baseChance?: number; workshopDot?: { maxStacks: number } } = {},
   ): boolean {
     const sourceId = options.sourceId ?? this.activePlayerSummon?.id ?? 'player';
     const identity = this.combatantIdentity(state, target);
@@ -7847,6 +7853,11 @@ export class BattleRepository {
           this.log(state, 'system', (target.name ?? '目标') + ' 抵抗了 ' + key);
           return false;
         }
+      }
+      if(recipient&&options.workshopDot){
+        const duration=workshopTurns(turns);
+        const applied=core.addDot(source,recipient,{kind:'dot',status:key,atk:Math.max(0,value),workshopDot:true,maxStacks:options.workshopDot.maxStacks,turns:duration<0?Infinity:duration,cleanseable:options.uncleanseable!==true},{skipEffectRoll:true,star:1,sourceSnapshot:{attack:1}});
+        rework.project(core,state,{checkpoint:!live});return applied;
       }
     }
     this.addTimedEffect(target.debuffs, key, value, turns, { ...options, sourceId });

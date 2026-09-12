@@ -73,3 +73,29 @@ const entries = new Map(WORKSHOP_STATUS_LIBRARY.map(entry => [entry.id, entry]))
 export function workshopBuiltinStatus(id: string): WorkshopStatusOption | undefined {
   return entries.get(id);
 }
+
+export function workshopTurns(value: unknown, fallback = 1): number {
+  const n = Number(value ?? fallback);
+  if (!Number.isSafeInteger(n) || (n !== -1 && n < 1)) throw Error('持续回合请填写正整数，或 -1 表示整场战斗');
+  return n;
+}
+
+export function workshopMaxStacks(value: unknown, fallback = 3): number {
+  const n = Number(value ?? fallback);
+  if (!Number.isSafeInteger(n) || n < 0) throw Error('可叠加上限请填写非负整数，0 表示不设上限');
+  return n;
+}
+
+export function workshopStatusInput(id: string, unit?: WorkshopStatusOption['unit']): { label: string; hint: string } {
+  const def = workshopBuiltinStatus(id), resolved = unit ?? def?.unit;
+  if (def?.kind === 'dot') return {
+    label: resolved === 'percent' ? '每跳攻击百分数（35 = 35%）' : '每跳攻击倍率（0.35 = 35%）',
+    hint: `每层每跳伤害 = 施加时攻击力 × ${resolved === 'percent' ? '百分数 ÷ 100' : '倍率'}。攻击力 100 时，填写 ${resolved === 'percent' ? '35' : '0.35'} 得到每跳 35 点基础伤害；还会计算目标防御和护盾，DOT 不暴击。公式结果也按此单位解释。`,
+  };
+  if (resolved === 'ratio') return { label: '效果倍率（0.2 = 20%）', hint: '填写小数倍率：0.2 表示 20%，1 表示 100%。使用公式时，公式结果也是倍率。' };
+  if (resolved === 'percent') return { label: '效果百分数（20 = 20%）', hint: '填写百分数：20 表示 20%，无需写成 0.2。' };
+  if (['crit_up', 'crit_damage_up'].includes(id)) return { label: '增加百分点（10 = 10 个百分点）', hint: '填写增加的百分点，例如原本 20%，增加 10 个百分点后为 30%。' };
+  return { label: '数值', hint: '' };
+}
+
+export const WORKSHOP_DOT_STACK_HINT = '每次施加 1 层，回合内施加次数不限。上限针对目标身上的同类工坊 DOT；0 为不设上限。满层时保留每跳伤害较高的层，同伤害时优先保留剩余回合较长的层。';

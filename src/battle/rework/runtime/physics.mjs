@@ -157,6 +157,18 @@ export function makeGame(player,enemies,options={}){
  };
  g.addDot=(source,target,e,opts={})=>{
   if(!target||target.hp<=0||!opts.skipEffectRoll&&!g.effectSucceeds(source,target,e,opts))return false;
+  if(e.workshopDot){
+   g.ensureActor(source);g.ensureActor(target);
+   const k=key(e),turns=e.turns===Infinity||e.turns===-1?Infinity:e.turns??2,max=e.maxStacks??3;
+   if(!(turns===Infinity||Number.isSafeInteger(turns)&&turns>0)||!Number.isSafeInteger(max)||max<0)throw Error('Invalid Workshop DOT duration or stack limit');
+   const snapshot=(opts.sourceSnapshot?.attack??g.stat(source,'attack'))*(e.atk??0)*(1+.1*((opts.star??source.star??1)-1))*(opts.scale??1);
+   const rec={...e,canonicalStatus:k,sourceId:source.id,sourceActor:source,snapshotDamage:snapshot,sourceLevel:source.level,remaining:turns,turns,firstTickPhase:target.phaseCount+1,addedRound:g.round};
+   const same=target.dots.filter(x=>x.workshopDot&&key(x)===k&&Boolean(x.ruleParent)===Boolean(e.ruleParent));
+   const keep=max>0?[rec,...same].sort((a,b)=>b.snapshotDamage-a.snapshotDamage||b.remaining-a.remaining).slice(0,max):[...same,rec];
+   target.dots=target.dots.filter(x=>!same.includes(x)||keep.includes(x));
+   const applied=keep.includes(rec);if(applied)target.dots.push(rec);
+   g.log('dot_apply',{source:source.id,target:target.id,status:k,count:Number(applied)});return applied;
+  }
   const k=key(e),targetKey=target.id+':'+g.round;
   source.flags.dotApplications??={};let room=Math.max(0,2-(source.flags.dotApplications[g.round+':'+target.id]??0));
   if(source.side==='enemy')room=Math.min(room,3-(g.teamDotApplications[targetKey]??0));
@@ -164,7 +176,7 @@ export function makeGame(player,enemies,options={}){
   let applied=0;for(let i=0;i<count;i++){
    const snapshot=(opts.sourceSnapshot?.attack??g.stat(source,'attack'))*(e.atk??0)*(1+.1*((opts.star??source.star??1)-1))*(opts.scale??1);
    const rec={...e,canonicalStatus:k,sourceId:source.id,sourceActor:source,snapshotDamage:snapshot,sourceLevel:source.level,remaining:2,turns:2,firstTickPhase:target.phaseCount+1,addedRound:g.round};
-   const same=target.dots.filter(x=>key(x)===k);
+   const same=target.dots.filter(x=>key(x)===k&&!x.workshopDot);
    if(same.length>=3){const weak=[...same].sort((a,b)=>a.snapshotDamage-b.snapshotDamage)[0];if(snapshot>weak.snapshotDamage){target.dots.splice(target.dots.indexOf(weak),1,rec);}else continue;}else target.dots.push(rec);
    applied++;source.flags.dotApplications[g.round+':'+target.id]=(source.flags.dotApplications[g.round+':'+target.id]??0)+1;if(source.side==='enemy')g.teamDotApplications[targetKey]=(g.teamDotApplications[targetKey]??0)+1;
   }

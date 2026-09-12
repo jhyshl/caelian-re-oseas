@@ -145,6 +145,7 @@ function target(effect: ReworkEffect): string {
 
 /** Only fixed amounts and attack/defense coefficients receive the star factor. */
 function formula(value: Record<string, unknown>, star: number, dot = false, stats?: CardDisplayStats): string {
+  if(dot&&typeof value.dotFixedDamage==='number')return numeric(value.dotFixedDamage);
   const scale = starScale(star);
   if (stats) {
     const targetHp = value.target === 'self' || !value.target && ['heal', 'shield'].includes(String(value.kind)) ? stats.hpMax
@@ -244,7 +245,7 @@ function describeEffect(effect: ReworkEffect, star: number, stats?: CardDisplayS
       break;
     }
     case 'dot':
-      line = `基础命中${numeric(number(effect.baseChance, 100))}%对${who || '一名敌人'}施加${numeric(number(effect.stacks, 1))}层${text(effect.status)}，每层每跳${formula(effect, star, true, stats)}伤害，目标接下来两次行动阶段结束结算`;
+      line = `基础命中${numeric(number(effect.baseChance, 100))}%对${who || '一名敌人'}施加${numeric(number(effect.stacks, 1))}层${text(effect.status)}，每层每跳${formula(effect, star, true, stats)}伤害，${effect.workshopDot ? `目标行动阶段结束结算，${number(effect.turns,2)<0?'持续整场战斗':`持续${numeric(number(effect.turns,2))}回合`}，${number(effect.maxStacks,3)===0?'叠加不设上限':`同类最多${numeric(number(effect.maxStacks,3))}层`}` : '目标接下来两次行动阶段结束结算'}`;
       break;
     case 'heal': {
       const ticks = number(effect.ticks ?? effect.overTime);

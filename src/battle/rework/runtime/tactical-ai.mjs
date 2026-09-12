@@ -89,8 +89,14 @@ export function effectValue(g, source, target, effect, options = {}) {
     return value * gain * chance;
   }
   if (kind === 'dot') {
+    if(e.workshopDot){
+      const existing=target.dots.filter(x=>x.workshopDot&&!x.ruleParent&&key(x)===k),amount=(e.atk??0)*A*(options.scale??1),max=e.maxStacks??3,turns=e.turns<0?2:e.turns??2;
+      const weakest=existing.slice().sort((a,b)=>a.snapshotDamage-b.snapshotDamage||a.remaining-b.remaining)[0];
+      const delta=!max||existing.length<max?amount*turns:amount>=(weakest?.snapshotDamage??0)?Math.max(0,amount*turns-(weakest?.snapshotDamage??0)*Math.min(turns,weakest?.remaining??0)):0;
+      return delta*g.effectChance(source,target,e);
+    }
     if ((source.flags.dotApplications?.[g.round + ':' + target.id] ?? 0) >= 2 || source.side === 'enemy' && (g.teamDotApplications[target.id + ':' + g.round] ?? 0) >= 3) return 0;
-    const existing = target.dots.filter(x => key(x) === k), amount = (e.atk ?? 0) * A * (options.scale ?? 1);
+    const existing = target.dots.filter(x => key(x) === k && !x.workshopDot), amount = (e.atk ?? 0) * A * (options.scale ?? 1);
     const delta = existing.length < 3 ? amount : Math.max(0, amount - Math.min(...existing.map(x => x.snapshotDamage ?? 0)));
     return delta * 1.6 * g.effectChance(source, target, e);
   }

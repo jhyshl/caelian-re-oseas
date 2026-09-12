@@ -1,13 +1,13 @@
 import { randomUuid } from '@/kernel/random-uuid';
 import { formatNumber } from '@/ui/format-number';
-import { workshopBuiltinStatus } from '@/workshop-status-library';
+import { workshopBuiltinStatus, workshopTurns, workshopMaxStacks } from '@/workshop-status-library';
 
 export type RuleValue = number | string | boolean | null | RuleValue[] | { [key: string]: RuleValue };
 export type RuleExpression = number | string | boolean | { op: string; key?: string; scope?: string; target?: RuleExpression; args?: RuleExpression[]; value?: RuleExpression };
 export interface RuleStep {
   type: string; target?: RuleExpression; value?: RuleExpression; key?: string; scope?: string;
   field?: string; operation?: string; saveAs?: string; status?: string; name?: string;
-  turns?: RuleExpression; chance?: RuleExpression; hits?: RuleExpression; condition?: RuleExpression;
+  turns?: RuleExpression; maxStacks?: RuleExpression; chance?: RuleExpression; hits?: RuleExpression; condition?: RuleExpression;
   steps?: RuleStep[]; otherwise?: RuleStep[]; event?: string; stat?: string; pile?: string;
   filter?: RuleExpression; order?: string; count?: RuleExpression; program?: RuleProgram;
   inherit?: Record<string, number>; data?: Record<string, RuleExpression>;
@@ -20,7 +20,7 @@ export interface WorkshopRule {
 export interface RuleStatus {
   id: string; name: string; polarity: 'buff' | 'debuff'; turns: number;
   cleanseable: boolean; dispellable: boolean; baseChance: number;
-  stacking: 'independent' | 'add' | 'replace' | 'strongest';
+  stacking: 'independent' | 'add' | 'replace' | 'strongest'; maxStacks?: number;
   data: Record<string, RuleExpression>;
   modifiers: Array<{ status: string; value: RuleExpression; unit: 'ratio' | 'percent' | 'count'; condition?: RuleExpression }>;
   rules: WorkshopRule[];
@@ -71,7 +71,7 @@ export function normalizeRuleProgram(raw: unknown): RuleProgram {
     if(depth>16)throw new Error('规则嵌套过深');if(!Array.isArray(v))return [];
     return v.map(raw=>{const x=object(raw);if(!RULE_STEPS.some(([t])=>t===x.type)&&!['hp','shield_cost','resource_cost','discard_cost','summon_cost'].includes(x.type))throw new Error('未知效果积木：'+x.type);
       const result:RuleStep={type:x.type};
-      for(const k of ['target','value','turns','chance','hits','condition','filter','count'] as const)if(x[k]!==undefined)result[k]=expression(x[k]);
+      for(const k of ['target','value','turns','maxStacks','chance','hits','condition','filter','count'] as const)if(x[k]!==undefined)result[k]=expression(x[k]);
       for(const k of ['key','scope','field','operation','saveAs','status','name','event','stat','pile','order','mode'] as const)if(x[k]!==undefined&&x[k]!=='')result[k]=ruleKey(x[k]);
       if(x.steps)result.steps=steps(x.steps,depth+1);if(x.otherwise)result.otherwise=steps(x.otherwise,depth+1);
       if(x.data)result.data=Object.fromEntries(Object.entries(object(x.data)).map(([k,v])=>[ruleKey(k),expression(v)]));
@@ -82,15 +82,19 @@ export function normalizeRuleProgram(raw: unknown): RuleProgram {
     });
   }
   function rules(v:any,depth=0):WorkshopRule[]{return (Array.isArray(v)?v:[]).map((raw:any,index:number)=>{const x=object(raw);if(!RULE_EVENTS.some(([e])=>e===x.event))throw new Error('未知触发时机：'+x.event);return {id:ruleKey(x.id,'rule-'+index),event:x.event,priority:finite(x.priority),once:['turn','battle'].includes(x.once)?x.once:'never',...(x.condition!==undefined?{condition:expression(x.condition)}:{}),costs:steps(x.costs,depth),steps:steps(x.steps,depth),cooldown:Math.max(0,Math.floor(finite(x.cooldown)))};});}
-  function program(raw:any,depth=0):RuleProgram {if(depth>16)throw new Error('嵌套作品过深');const x=object(raw);if(x.version!==2)throw new Error('规则作品版本无效');return {version:2,id:ruleKey(x.id),name:String(x.name??'自定义规则').slice(0,80),variables:(Array.isArray(x.variables)?x.variables:[]).map((v:any)=>({name:ruleKey(v.name),scope:ruleKey(v.scope,'battle'),initial:expression(v.initial??0)})),statuses:(Array.isArray(x.statuses)?x.statuses:[]).map((v:any)=>({id:ruleKey(v.id),name:String(v.name??v.id).slice(0,80),polarity:v.polarity==='debuff'?'debuff':'buff',turns:finite(v.turns,-1),cleanseable:v.cleanseable!==false,dispellable:v.dispellable!==false,baseChance:Math.max(0,Math.min(100,finite(v.baseChance,100))),stacking:['add','replace','strongest'].includes(v.stacking)?v.stacking:'independent',data:Object.fromEntries(Object.entries(v.data??{}).map(([k,val])=>[ruleKey(k),expression(val)])),modifiers:(v.modifiers??[]).map((m:any)=>({status:ruleKey(m.status),value:expression(m.value??1),unit:['ratio','percent'].includes(m.unit)?m.unit:'count',...(m.condition!==undefined?{condition:expression(m.condition)}:{})})),rules:rules(v.rules,depth)})),rules:rules(x.rules,depth)};}
+  function program(raw:any,depth=0):RuleProgram {if(depth>16)throw new Error('嵌套作品过深');const x=object(raw);if(x.version!==2)throw new Error('规则作品版本无效');return {version:2,id:ruleKey(x.id),name:String(x.name??'自定义规则').slice(0,80),variables:(Array.isArray(x.variables)?x.variables:[]).map((v:any)=>({name:ruleKey(v.name),scope:ruleKey(v.scope,'battle'),initial:expression(v.initial??0)})),statuses:(Array.isArray(x.statuses)?x.statuses:[]).map((v:any)=>({id:ruleKey(v.id),name:String(v.name??v.id).slice(0,80),polarity:v.polarity==='debuff'?'debuff':'buff',turns:workshopTurns(v.turns,-1),maxStacks:workshopMaxStacks(v.maxStacks,0),cleanseable:v.cleanseable!==false,dispellable:v.dispellable!==false,baseChance:Math.max(0,Math.min(100,finite(v.baseChance,100))),stacking:['add','replace','strongest'].includes(v.stacking)?v.stacking:'independent',data:Object.fromEntries(Object.entries(v.data??{}).map(([k,val])=>[ruleKey(k),expression(val)])),modifiers:(v.modifiers??[]).map((m:any)=>({status:ruleKey(m.status),value:expression(m.value??1),unit:['ratio','percent'].includes(m.unit)?m.unit:'count',...(m.condition!==undefined?{condition:expression(m.condition)}:{})})),rules:rules(v.rules,depth)})),rules:rules(x.rules,depth)};}
   const result=program(raw);
   const scope=(s?:string)=>{if(s&&!RULE_SCOPES.some(([id])=>id===s))throw Error('未知数据范围：'+s);};
   function validate(p:RuleProgram):void {
     if(new Set(p.statuses.map(s=>s.id)).size!==p.statuses.length)throw new Error('状态编号重复');
     const names=new Set<string>();for(const v of p.variables){scope(v.scope);const id=v.scope+':'+v.name;if(names.has(id))throw Error('同一范围的数据名称重复');names.add(id);}
     const checkExpression=(e:RuleExpression|undefined):void=>{if(!e||typeof e!=='object')return;if(e.op==='var')scope(e.scope);e.args?.forEach(checkExpression);checkExpression(e.target);checkExpression(e.value);};
-    const checkSteps=(list:RuleStep[]):void=>{for(const s of list){scope(s.scope);for(const e of [s.value,s.target,s.condition,s.chance,s.turns,s.count,s.hits,s.filter])checkExpression(e);
-      if(s.type==='native_status'&&!workshopBuiltinStatus(s.status??''))throw Error('请选择已有状态效果');
+    const checkSteps=(list:RuleStep[]):void=>{for(const s of list){scope(s.scope);for(const e of [s.value,s.target,s.condition,s.chance,s.turns,s.maxStacks,s.count,s.hits,s.filter])checkExpression(e);
+      if(s.type==='native_status'){
+        if(!workshopBuiltinStatus(s.status??''))throw Error('请选择已有状态效果');
+        if(typeof s.turns==='number')workshopTurns(s.turns);
+        if(typeof s.maxStacks==='number')workshopMaxStacks(s.maxStacks);
+      }
       if(['apply_status','remove_status'].includes(s.type)&&s.status!=='self'&&!p.statuses.some(x=>x.id===s.status))throw Error('引用的自定义状态不存在');
       if(s.type==='event_set'&&!['amount','cancel','cardCost','count','targetId'].includes(s.field??'amount'))throw Error('不支持修改此事件字段');
       if(s.pile&&!['hand','deck','discard','exhaust'].includes(s.pile))throw Error('牌堆无效');
@@ -126,6 +130,12 @@ export function describeRuleProgram(program:RuleProgram,context?:RulePreviewCont
   const describe=(s:RuleStep):string=>{
     const label=RULE_STEPS.find(([t])=>t===s.type)?.[1]??s.type;
     let value=s.value===undefined?'':val(s.value);if(context&&['damage','heal','shield'].includes(s.type)){const raw=describeRuleExpression(s.value,context);if(typeof raw==='number')value=formatNumber(raw*(s.stars?.[Math.max(0,Math.min(2,(context.star??1)-1))]??(1+.1*((context.star??1)-1))));}
+    if(s.type==='native_status'){
+      const def=workshopBuiltinStatus(s.status??'');
+      if(def?.kind==='dot'&&context){const raw=describeRuleExpression(s.value,context);if(typeof raw==='number')value=formatNumber(raw*(1+.1*((context.star??1)-1)));}
+      if(def?.kind==='dot')return `施加「${def.name}」，每层每跳施加时攻击力 × ${value}，${val(s.turns??1)==='-1'?'持续整场战斗':`持续${val(s.turns??1)}回合`}，${val(s.maxStacks??3)==='0'?'叠加不设上限':`同类最多${val(s.maxStacks??3)}层`}`;
+      if(def?.unit==='ratio')value+=' 倍';
+    }
     return (s.name??label)+(s.status?'「'+(program.statuses.find(x=>x.id===s.status)?.name??s.status)+'」':'')+(s.type==='if'?' '+val(s.condition):value?' '+value:'')+(s.turns!==undefined?'，'+val(s.turns)+'回合':'')+(s.steps?.length?'（'+s.steps.map(describe).join('；')+'）':'')+(s.otherwise?.length?'；否则：'+s.otherwise.map(describe).join('；'):'');
   };
   return program.rules.map(r=>(RULE_EVENTS.find(([id])=>id===r.event)?.[1]??r.event)+'：'+r.steps.map(describe).join('；')).join('\n');

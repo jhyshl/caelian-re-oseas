@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { RULE_STEPS, RULE_SCOPES, RULE_EVENTS, emptyRuleProgram, type RuleStep, type RuleStatus } from '@/workshop-program';
-import { WORKSHOP_STATUS_LIBRARY } from '@/workshop-status-library';
+import { WORKSHOP_STATUS_LIBRARY, workshopBuiltinStatus, workshopStatusInput, WORKSHOP_DOT_STACK_HINT } from '@/workshop-status-library';
 import WorkshopFormulaEditor from './WorkshopFormulaEditor.vue';
 import WorkshopProgramEditor from './WorkshopProgramEditor.vue';
 const model=defineModel<RuleStep[]>({required:true});
@@ -20,15 +20,22 @@ const costOptions=[['hp','支付生命'],['shield_cost','支付护盾'],['resour
       <select v-if="['set','add'].includes(step.type)" v-model="step.scope"><option v-for="[k,n] in RULE_SCOPES" :key="k" :value="k">{{ n }}</option></select>
       <label v-if="step.type==='event_set'">事件字段<select v-model="step.field"><option value="amount">当前剩余金额</option><option value="cardCost">本次AP费用</option><option value="count">数量</option><option value="targetId">事件目标</option><option value="cancel">取消事件</option></select></label>
       <WorkshopFormulaEditor v-if="!['set','add','event_set','if','repeat','delay','stop'].includes(step.type)" v-model="step.target!" label="对象" />
-      <WorkshopFormulaEditor v-if="!['if','foreach','delay','summon','apply_status','remove_status','stop','remove_unit'].includes(step.type)" v-model="step.value!" label="数值" />
+      <WorkshopFormulaEditor v-if="!['if','foreach','delay','summon','apply_status','remove_status','stop','remove_unit'].includes(step.type)" v-model="step.value!" :label="step.type==='native_status'?workshopStatusInput(step.status??'').label:'数值'" />
       <WorkshopFormulaEditor v-if="step.type==='if'" v-model="step.condition!" label="条件" />
-      <template v-if="step.type==='native_status'"><label>复用效果<select v-model="step.status" @change="step.value=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===step.status)?.value??1"><option v-for="s in WORKSHOP_STATUS_LIBRARY" :key="s.id" :value="s.id">{{ s.name }} · {{ s.polarity }}</option></select></label><WorkshopFormulaEditor v-model="step.chance!" label="基础命中率％" /></template>
+      <template v-if="step.type==='native_status'"><label>复用效果<select v-model="step.status" @change="step.value=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===step.status)?.value??1;if(workshopBuiltinStatus(step.status??'')?.kind==='dot')step.maxStacks??=3"><option v-for="s in WORKSHOP_STATUS_LIBRARY" :key="s.id" :value="s.id">{{ s.name }} · {{ s.polarity }}</option></select></label><WorkshopFormulaEditor v-model="step.chance!" label="基础命中率％" /></template>
+      <template v-if="step.type==='native_status'">
+        <p v-if="workshopStatusInput(step.status??'').hint">{{ workshopStatusInput(step.status??'').hint }}</p>
+        <template v-if="workshopBuiltinStatus(step.status??'')?.kind==='dot'">
+          <WorkshopFormulaEditor :model-value="step.maxStacks??3" label="可叠加上限（0 为不设上限）" @update:model-value="step.maxStacks=$event" />
+          <p>{{ WORKSHOP_DOT_STACK_HINT }}</p>
+        </template>
+      </template>
       <label v-if="['apply_status','remove_status'].includes(step.type)">状态<select v-model="step.status"><option v-if="step.type==='remove_status'" value="self">此状态自身</option><option v-for="s in statuses" :key="s.id" :value="s.id">{{ s.name }}</option></select></label>
       <template v-if="step.type==='apply_status'">
         <label v-for="(_,key) in step.data" :key="key">传入 {{ key }}<WorkshopFormulaEditor v-model="step.data![key]!" /></label>
         <input v-model="parameterName" placeholder="数据名称"><button type="button" @click="addParameter(step)">＋传入数据</button>
       </template>
-      <template v-if="['native_status','delay','summon'].includes(step.type)"><WorkshopFormulaEditor v-model="step.turns!" label="回合数" /></template>
+      <template v-if="['native_status','delay','summon'].includes(step.type)"><WorkshopFormulaEditor v-model="step.turns!" :label="step.type==='native_status'?'持续回合（正整数，-1 为整场）':'回合数'" /></template>
       <template v-if="step.type==='delay'"><label><input v-model="step.snapshot" type="checkbox">锁定安排时的数值</label><select v-model="step.event"><option v-for="[k,n] in RULE_EVENTS" :key="k" :value="k">{{ n }}</option></select><select v-model="step.mode"><option value="cancel">原目标失效时取消</option><option value="retarget">原目标失效时重选</option></select></template>
       <template v-if="['damage','heal','shield'].includes(step.type)">
         <label>伤害处理<select v-model="step.mode"><option value="normal">正常结算</option><option value="recorded">使用已结算金额</option></select></label>
@@ -40,7 +47,7 @@ const costOptions=[['hp','支付生命'],['shield_cost','支付护盾'],['resour
         <select v-if="step.type==='card'" v-model="step.operation"><option value="move">移动</option><option value="copy">复制</option><option value="cost">修改费用</option><option value="transform">变形</option><option value="generate">生成指定卡</option><option value="exhaust">移出循环</option></select>
         <select v-model="step.mode"><option value="hand">放入手牌</option><option value="deck">放入抽牌堆</option><option value="discard">放入弃牌堆</option><option value="exhaust">移出循环</option></select>
       </template>
-      <template v-if="step.type==='summon'"><input v-model="step.name" placeholder="召唤物名称"><button v-if="!step.inherit" type="button" @click="step.inherit={hp:.3,attack:.7,defense:.5,speed:1}">设置继承比例</button><label v-for="(_,key) in step.inherit" :key="key">{{ key }}<input v-model.number="step.inherit![key]" type="number" step=".1"></label><WorkshopProgramEditor v-if="step.program" v-model="step.program" nested /></template>
+      <template v-if="step.type==='summon'"><input v-model="step.name" placeholder="召唤物名称"><button v-if="!step.inherit" type="button" @click="step.inherit={hp:.3,attack:.7,defense:.5,speed:1}">设置继承比例</button><label v-for="(_,key) in step.inherit" :key="key">{{ key }} 倍率（0.5 = 50%）<input v-model.number="step.inherit![key]" type="number" step=".1"></label><WorkshopProgramEditor v-if="step.program" v-model="step.program" nested /></template>
       <label v-if="!costs">保存结果为<input v-model="step.saveAs" placeholder="可留空"></label>
       <template v-if="step.steps"><WorkshopRuleSteps v-model="step.steps" :statuses="statuses" /><details v-if="step.otherwise"><summary>否则／目标失效时</summary><WorkshopRuleSteps v-model="step.otherwise" :statuses="statuses" /></details></template>
     </article>

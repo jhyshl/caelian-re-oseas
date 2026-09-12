@@ -3,7 +3,7 @@
 import { ref } from 'vue';
 import { RULE_SCOPES, normalizeRuleProgram, readRuleTemplates, saveRuleTemplate, type RuleProgram } from '@/workshop-program';
 import { WORKSHOP_RULE_EXAMPLES } from '@/workshop-program-templates';
-import { WORKSHOP_STATUS_LIBRARY } from '@/workshop-status-library';
+import { WORKSHOP_STATUS_LIBRARY, workshopBuiltinStatus, workshopStatusInput } from '@/workshop-status-library';
 import WorkshopFormulaEditor from './WorkshopFormulaEditor.vue';
 import WorkshopRulesEditor from './WorkshopRulesEditor.vue';
 const model=defineModel<RuleProgram>({required:true});
@@ -11,7 +11,7 @@ defineProps<{nested?:boolean}>();
 const templates=ref(readRuleTemplates()),notice=ref(''),newDataName=ref('remaining');
 function example(id:string):void{const p=[...WORKSHOP_RULE_EXAMPLES,...templates.value].find(x=>x.id===id);if(p)model.value={...JSON.parse(JSON.stringify(p)),id:model.value.id};}
 function save():void{try{saveRuleTemplate(model.value);templates.value=readRuleTemplates();notice.value='组合模板已保存';}catch(e){notice.value=e instanceof Error?e.message:String(e);}}
-function addStatus():void{model.value.statuses.push({id:'status-'+Date.now().toString(36),name:'自定义状态',polarity:'buff',turns:1,cleanseable:true,dispellable:true,baseChance:100,stacking:'independent',data:{},modifiers:[],rules:[]});}
+function addStatus():void{model.value.statuses.push({id:'status-'+Date.now().toString(36),name:'自定义状态',polarity:'buff',turns:1,cleanseable:true,dispellable:true,baseChance:100,stacking:'independent',maxStacks:0,data:{},modifiers:[],rules:[]});}
 function check():void{try{normalizeRuleProgram(model.value);notice.value='结构检查通过';}catch(e){notice.value=e instanceof Error?e.message:String(e);}}
 </script>
 <template>
@@ -26,9 +26,10 @@ function check():void{try{normalizeRuleProgram(model.value);notice.value='结构
         <header><input v-model="status.name" placeholder="状态名称"><button type="button" @click="model.statuses.splice(i,1)">删除状态</button></header>
         <div class="status-options"><label>显示类别<select v-model="status.polarity"><option value="buff">Buff</option><option value="debuff">Debuff</option></select></label><label>回合数（－1为整场）<input v-model.number="status.turns" type="number" min="-1"></label><label>基础命中％<input v-model.number="status.baseChance" type="number" min="0" max="100"></label></div>
         <div class="status-options"><label><input v-model="status.cleanseable" type="checkbox">可净化</label><label><input v-model="status.dispellable" type="checkbox">可驱散</label><select v-model="status.stacking"><option value="independent">各份独立</option><option value="add">合并额度</option><option value="replace">新状态覆盖</option><option value="strongest">保留更强额度</option></select></div>
+        <template v-if="status.stacking==='independent'"><label>可叠加上限（0 为不设上限）<input :value="status.maxStacks??0" type="number" min="0" step="1" @input="status.maxStacks=Number(($event.target as HTMLInputElement).value)" /></label><p>每份状态独立计时；满层时替换剩余回合最少的一份。复用的 DOT 随该份状态持续，并由此上限控制份数。</p></template>
         <label>引用编号<input :value="status.id" readonly></label><strong>自身数据</strong><div v-for="(_,key) in status.data" :key="key" class="rule-variable"><span>{{ key }}</span><WorkshopFormulaEditor v-model="status.data[key]!" label="初始值" /><button type="button" @click="delete status.data[key]">删除</button></div><div><input v-model="newDataName" placeholder="数据名称"><button type="button" @click="status.data[newDataName]=0">＋自身数据</button></div>
         <strong>存在期间复用的效果</strong>
-        <div v-for="(modifier,index) in status.modifiers" :key="index" class="rule-modifier"><select v-model="modifier.status"><option v-for="option in WORKSHOP_STATUS_LIBRARY" :key="option.id" :value="option.id">{{ option.name }} · {{ option.polarity }}</option></select><select v-model="modifier.unit"><option value="count">数值／层数</option><option value="percent">百分数（20＝20%）</option><option value="ratio">比例（0.2＝20%）</option></select><WorkshopFormulaEditor v-model="modifier.value" label="数值" /><button v-if="modifier.condition===undefined" type="button" @click="modifier.condition=true">添加生效条件</button><WorkshopFormulaEditor v-if="modifier.condition!==undefined" v-model="modifier.condition" label="生效条件" /><button type="button" @click="status.modifiers.splice(index,1)">删除效果</button></div>
+        <div v-for="(modifier,index) in status.modifiers" :key="index" class="rule-modifier"><select v-model="modifier.status" @change="modifier.unit=workshopBuiltinStatus(modifier.status)?.unit??'count';modifier.value=workshopBuiltinStatus(modifier.status)?.value??1"><option v-for="option in WORKSHOP_STATUS_LIBRARY" :key="option.id" :value="option.id">{{ option.name }} · {{ option.polarity }}</option></select><select v-model="modifier.unit"><option v-if="workshopBuiltinStatus(modifier.status)?.kind!=='dot'||modifier.unit==='count'" value="count">{{ workshopBuiltinStatus(modifier.status)?.kind==='dot'?'攻击倍率（旧配置）':'数值／层数' }}</option><option value="percent">百分数（20＝20%）</option><option value="ratio">比例（0.2＝20%）</option></select><WorkshopFormulaEditor v-model="modifier.value" :label="workshopStatusInput(modifier.status,modifier.unit).label" /><p v-if="workshopStatusInput(modifier.status,modifier.unit).hint">{{ workshopStatusInput(modifier.status,modifier.unit).hint }}</p><button v-if="modifier.condition===undefined" type="button" @click="modifier.condition=true">添加生效条件</button><WorkshopFormulaEditor v-if="modifier.condition!==undefined" v-model="modifier.condition" label="生效条件" /><button type="button" @click="status.modifiers.splice(index,1)">删除效果</button></div>
         <button type="button" @click="status.modifiers.push({status:'taunt',value:1,unit:'count'})">＋复用状态效果</button>
         <WorkshopRulesEditor v-model="status.rules" :statuses="model.statuses" />
       </article>
