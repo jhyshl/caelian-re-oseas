@@ -1,7 +1,7 @@
 <script setup lang="ts">
-/* global structuredClone */
 /* eslint-disable vue/no-mutating-props */
 import { computed } from 'vue';
+import { cloneWorkshopData } from '@/workshop-drafts';
 import WorkshopProgramEditor from './WorkshopProgramEditor.vue';
 import { WORKSHOP_STATUS_LIBRARY, workshopBuiltinStatus, workshopStatusInput, WORKSHOP_DOT_STACK_HINT } from '@/workshop-status-library';
 import {
@@ -256,7 +256,7 @@ function setScalingMode(mode: string): void {
 function cloneOption(type: string): EditableEffect {
   const option = WORKSHOP_EFFECT_OPTIONS.find((entry) => entry.type === type);
   if (!option) return { type: 'damage', value: 1, target: 'enemy' };
-  const clone = structuredClone(option) as EditableEffect;
+  const clone = cloneWorkshopData(option) as EditableEffect;
   delete clone.label;
   if (type === 'apply_workshop_status' && props.statusOptions?.[0]) {
     setStatus(clone, statusKey(props.statusOptions[0]));

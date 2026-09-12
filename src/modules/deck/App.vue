@@ -13,7 +13,7 @@ import type { CardDefinition } from '@/content/types';
 import type { GameSnapshot } from '@/domain/types';
 import { commandId } from '@/kernel/ids';
 import type { PanelContext } from '@/kernel/public-api';
-import WorkshopDialog from '@/modules/deck/WorkshopDialog.vue';
+import WorkshopDialog from '@/modules/deck/WorkshopDialogHost.vue';
 import {
   deleteSavedDeckBuild,
   readSavedDeckBuilds,
@@ -37,6 +37,8 @@ const starFilter = ref('all');
 const notice = ref('');
 const workshopOpen = ref(false);
 const workshopCardId = ref<string>();
+function openWorkshop():void {workshopCardId.value=undefined;workshopOpen.value=true;}
+function closeWorkshop():void {workshopOpen.value=false;workshopCardId.value=undefined;}
 function openRequestedStars() { const id = takeStarEditorRequest(); if (id) { workshopCardId.value = id; workshopOpen.value = true; } }
 const presetName = ref('');
 const savedDecks = ref(readSavedDeckBuilds(sourceWindow()));
@@ -304,7 +306,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="ca-button"
-              @click="workshopOpen = true"
+              @click="openWorkshop"
             >
               创意工坊
             </button>
@@ -471,7 +473,7 @@ onUnmounted(() => {
       v-if="workshopOpen"
       :initial-card-id="workshopCardId"
       :context="context"
-      @close="workshopOpen = false"
+      @close="closeWorkshop"
       @saved="workshopSaved"
     />
   </AdventurerFrame>
