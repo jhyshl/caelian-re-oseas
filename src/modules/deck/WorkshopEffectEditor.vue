@@ -59,8 +59,7 @@ const hasValue = computed(() => {
     'mp_to_ap',
     'thorns',
   ].includes(props.effect.type);
-  return !(
-    supported &&
+  return supported && !(
     props.effect.type === 'apply_buff' &&
     ['defense_reflect', 'counterattack'].includes(props.effect.buff)
   );
@@ -429,7 +428,7 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
         <input v-model.number="effect.turns" type="number" min="1" max="99" />
       </label>
       <label v-if="effect.type === 'damage_from_shield'">
-        <span>护盾比例</span>
+        <span>护盾比例（0.5 = 50%）</span>
         <input
           v-model.number="effect.ratio"
           type="number"
@@ -437,6 +436,9 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
           step="0.05"
         />
       </label>
+      <p v-if="effect.type === 'damage_from_shield'" class="effect-hint">
+        伤害为当前护盾 × 护盾比例。若要设置 x ＋ y% 当前护盾，请使用一个“造成伤害”积木并选择对应属性。多个伤害积木会分别结算、分别判定暴击。
+      </p>
       <label v-if="effect.type === 'damage'">
         <span>攻击次数（每次使用此伤害公式）</span>
         <input
@@ -736,6 +738,11 @@ function addSummonSkillEffect(skill: EditableEffect, type: string): void {
 </template>
 
 <style scoped>
+.effect-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  line-height: 1.6;
+}
 .effect-editor {
   display: grid;
   gap: 9px;

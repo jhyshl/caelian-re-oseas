@@ -5,6 +5,7 @@ import { saveWorkshopPack } from '@/workshop';
 import { DEFAULT_STAR_SCALING } from '@/workshop-stars';
 import { loadCardCatalog } from '@/content/catalogs/cards';
 import { previewBattleCard } from '@/battle/card-preview';
+import { battleCardText } from '@/battle/presentation';
 import * as rework from '@/battle/rework/runtime/api.mjs';
 import { applyWorldbookDelta } from '@/content-updates/worldbook-delta';
 import { TavernAdapter } from '@/tavern/adapter';
@@ -37,7 +38,7 @@ function pack(hits=1) {
     talent:{name:'无额外伤害',effects:[]},cards,cardPool:[...cards,...cards].map(c=>c.id),starterDeck:Array.from({length:15},(_,i)=>cards[i%9]!.id)}]};
 }
 async function initialize() {
-  assert(api?.version==='0.2.0-alpha.80','没有加载 Alpha 80');
+  assert(api?.version==='0.2.0-alpha.80'||api?.version==='0.2.0-alpha.81','没有加载支持的 Alpha 测试版本');
   saveWorkshopPack(pack());
   const state=await api.query('state');
   if(!state.player.created) await run('player.create',{name:'实机回归员',classMain:'freelance',subclass:'custom_class_real_qa'});
@@ -73,6 +74,48 @@ async function damage() {
     log({case:'伤害',crit,hits,shield,preview:preview.enemyDamage[0],hpLost,events:events.map(e=>({amount:e.amount,critical:e.critical,label:e.label})),pass:true});
   }
   await prepareDamage(0,1,60); await api.openPanel('battle');box.open=false;
+}
+// Optional local fixture: never include a player's uploaded pack in public builds.
+async function uploadedShieldDamage() {
+  const response=await fetch(root.location.origin+'/caelian-qa/uploaded-pack.json');
+  assert(response.ok,'请先在独立测试酒馆放置 uploaded-pack.json');
+  const saved=saveWorkshopPack(await response.json());
+  const profession=saved.classes[0]!;
+  const cards=profession.cards.filter(card=>card.effects.some(e=>e.type==='damage_from_shield'));
+  assert(cards.length>0,'该上传卡组没有直接护盾伤害卡');
+  const snapshot=await api.query('state');
+  async function prepare(cardId:string) {
+    await db.battleSessions.where('profileId').equals(snapshot.profile.id).modify({active:false});
+    await run('battle.start',{workshopTest:{professionId:profession.id,attributes:{hpMax:0,attack:0,defense:0,speed:0,actionPointsPerTurn:0},dummyCount:1,dummyHp:10000,dummyAttack:0,dummyDefense:0,dummyInvincible:false,dummyAttackEnabled:false,autoRespawn:false,playerInvincible:false}});
+    const session=(await db.battleSessions.where('profileId').equals(snapshot.profile.id).filter(x=>x.active).first())!;
+    const g=rework.hydrate(session.state.rework);
+    g.player.hp=g.player.maxHp=1000;g.player.shield=400;g.player.ap=10;g.player.buffs=[];g.player.debuffs=[];
+    Object.assign(g.player.stats,{attack:100,speed:10000,crit:50,critDamage:50});g.critRng.setState(1);
+    Object.assign(g.enemies[0].stats,{defense:3*(100+5*g.player.level),speed:1});
+    g.enemies[0].hp=g.enemies[0].maxHp=10000;g.enemies[0].shield=0;g.enemies[0].buffs=[];g.enemies[0].debuffs=[];
+    g.player.hand=[{id:cardId,uid:'uploaded-shield-probe',legacy:true,ap:1,star:1,effects:[]}];
+    rework.project(g,session.state);session.state.log=[];session.state.animations=[];await db.battleSessions.put(session);
+    return {session,g};
+  }
+  for(const original of cards) {
+    const {session,g}=await prepare(original.id);
+    const card=(await loadCardCatalog())[original.id]!;
+    const preview=previewBattleCard(session.state,card,0);
+    const text=battleCardText(card,1,session.state,{attack:100,defense:20,hpMax:1000,targetHpMax:10000});
+    await run('battle.play-card',{battleId:session.id,handIndex:0,targetIndex:0});
+    const result=(await db.battleSessions.get(session.id))!.state;
+    const events=result.animations!.filter(e=>e.kind==='damage'&&e.targetId===g.enemies[0].id);
+    assert(events.length===original.effects.filter(e=>['damage','damage_from_shield'].includes(e.type)).length,'伤害效果与实际命中次数不符');
+    assert(text.includes('造成200总伤害'),'卡面未按护盾比例显示伤害');
+    assert(events.at(-1)?.label?.includes('按护盾造成伤害'),'护盾伤害缺少来源');
+    log({case:'上传卡组护盾伤害',name:card.name,text,preview:preview.enemyDamage[0],hpLost:10000-result.enemies[0]!.hp,events:events.map(e=>({amount:e.amount,critical:e.critical,label:e.label})),pass:true});
+  }
+  await prepare(cards[0]!.id);await api.openPanel('battle');box.open=false;
+}
+async function inspectUploadedWorkshop() {
+  const snapshot=await api.query('state');
+  await db.battleSessions.where('profileId').equals(snapshot.profile.id).modify({active:false});
+  await api.openPanel('deck');box.open=false;
 }
 async function deletion() {
   const p=pack();const removed=p.classes[0]!.cards.pop()!.id;
@@ -174,7 +217,7 @@ async function quest() {
   finally {adapter.host.fetch=original;}
 }
 async function waitUntil(check:()=>boolean){for(let i=0;i<150;i++){if(check())return;await new Promise(r=>setTimeout(r,100));}throw new Error('等待副 API 完成超时');}
-for(const [name,action] of [['安装测试职业（首次后刷新）',()=>{saveWorkshopPack(pack());log({installed:true,next:'刷新酒馆并打开测试聊天，再初始化测试。'});}],['初始化测试',initialize],['运行伤害回归',damage],['删除技能回归',deletion],['删除状态回归',mechanisms],['属性与条件回归',attributes],['世界书回读回归',worldbook],['更新明细回归',updater],['手动剧情回归',quest],['查看设置',()=>api.openPanel('settings')],['查看工坊',()=>api.openPanel('deck')]] as const){
+for(const [name,action] of [['安装测试职业（首次后刷新）',()=>{saveWorkshopPack(pack());log({installed:true,next:'刷新酒馆并打开测试聊天，再初始化测试。'});}],['初始化测试',initialize],['运行伤害回归',damage],['上传卡组护盾伤害',uploadedShieldDamage],['结束测试并查看工坊',inspectUploadedWorkshop],['删除技能回归',deletion],['删除状态回归',mechanisms],['属性与条件回归',attributes],['世界书回读回归',worldbook],['更新明细回归',updater],['手动剧情回归',quest],['查看设置',()=>api.openPanel('settings')],['查看工坊',()=>api.openPanel('deck')]] as const){
   const button=root.document.createElement('button');button.textContent=name;button.style.cssText='margin:5px;padding:7px;background:#203f60;color:white;border:1px solid #76cfff';
   button.addEventListener('click',async()=>{log({started:name});button.disabled=true;try{await action();}catch(error){log({case:name,pass:false,error:String(error),stack:(error as Error).stack});}finally{button.disabled=false;}});
   box.querySelector('div')!.append(button);

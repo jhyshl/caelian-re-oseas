@@ -3509,7 +3509,7 @@ export class BattleRepository {
             enemy,
             Math.round(state.player.shield * this.number(effect.ratio)),
             'player',
-            card.name,
+            `${card.name} · 按护盾造成伤害`,
           );
         }
         break;

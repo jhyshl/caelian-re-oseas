@@ -44,6 +44,19 @@ describe('战斗显示规则',()=>{
     expect(describeReworkEffects(effects,1,stats)).toContain('造成60总伤害');
     expect(describeReworkEffects(effects,3,stats)).toContain('造成72总伤害');
   });
+  it('护盾伤害显示实际比例而非旧无效公式或手写说明，读取不改卡组',()=>{
+    const card={id:'custom-shield-probe',name:'护盾测试',custom:true,type:'skill',description:'过期说明',effects:[
+      {type:'damage',value:20,scaling:{stat:'hp',percent:10},target:'enemy'},
+      {type:'damage_from_shield',value:50,scaling:{stat:'shield',percent:20},ratio:.5,hits:7,target:'enemy'},
+    ],starScaling:DEFAULT_STAR_SCALING} as unknown as CardDefinition;
+    const source=JSON.stringify(card), battle={player:{hp:1000,hpMax:1000,shield:400}} as LocalBattleState;
+    const text=battleCardText(card,1,battle,stats);
+    expect(text).toBe('对一名敌人造成120总伤害（基础值，减伤前、未暴击）；对一名敌人造成200总伤害（基础值，减伤前、未暴击）');
+    expect(battleCardText(card,3,battle,stats)).toContain('造成200总伤害');
+    battle.player.shield=0;
+    expect(battleCardText(card,1,battle,stats)).toContain('造成0总伤害');
+    expect(JSON.stringify(card)).toBe(source);
+  });
   it('去除预览假设和解释性备注，保留具体技能效果',()=>{
     expect(cleanCombatCopy('造成63伤害；伤害预览按命中且不暴击计算；条件效果以实际结算为准。')).toBe('造成63伤害');
   });
