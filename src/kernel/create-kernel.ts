@@ -2155,7 +2155,7 @@ export class CaelianKernel {
       switchRegionWorldbook: (previousRegion, nextRegion) =>
         this.regionWorldbook.switchRegion(previousRegion, nextRegion),
       syncManagedContent: (options) =>
-        this.syncManagedContent(options?.force ?? true),
+        this.syncManagedContent(options?.force ?? true, options?.reviewDeletions ?? false),
       listSurveys: (options) => this.surveys.list(options),
       submitSurvey: (surveyId, draft) =>
         this.surveys.submit(surveyId, draft),
@@ -2213,7 +2213,7 @@ export class CaelianKernel {
       switchRegionWorldbook: (previousRegion, nextRegion) =>
         this.regionWorldbook.switchRegion(previousRegion, nextRegion),
       syncManagedContent: (options) =>
-        this.syncManagedContent(options?.force ?? true),
+        this.syncManagedContent(options?.force ?? true, options?.reviewDeletions ?? false),
       listSurveys: (options) => this.surveys.list(options),
       submitSurvey: (surveyId, draft) =>
         this.surveys.submit(surveyId, draft),
@@ -2597,8 +2597,15 @@ export class CaelianKernel {
 
   private async syncManagedContent(
     force: boolean,
+    reviewDeletions = false,
   ): Promise<ManagedContentSyncResult> {
-    const result = await this.managedContent.sync({ force });
+    const result = await this.managedContent.sync({ force, reviewDeletions,
+      confirmDeletion: (conflict, worldbookName) => this.notifications.confirm({
+        title: '世界书删除冲突：' + conflict.entry.name,
+        description: `新版已移除世界书「${worldbookName}」中的这条内容，但本地存在修改。差异：${conflict.differences.join('、')}。选择“保留我的条目”会保留全文与设置；选择“按新版删除”只删除这一条。其他新增内容已独立更新。当前正文：${conflict.entry.content.slice(0, 500)}${conflict.entry.content.length > 500 ? '…' : ''}`,
+        confirmText: '按新版删除', cancelText: '保留我的条目', tone: 'danger',
+      }),
+    });
     if (this.status === 'ready' && result.applied > 0) await this.syncImperialPresentation();
     if (result.conflicts.length > 0 && (force || result.applied > 0)) {
       this.notifyRuntime(
@@ -2609,7 +2616,7 @@ export class CaelianKernel {
     } else if (result.applied > 0) {
       this.notifyRuntime(
         'success',
-        `已安全更新 ${result.applied} 项角色卡/世界书内容。`,
+        `已安全更新 ${result.applied} 项角色卡/世界书内容。${result.preserved?.length ? `另有 ${result.preserved.length} 项本地内容已保留，可在设置中查看。` : ''}`,
         '凯利安内容更新完成',
       );
     }
