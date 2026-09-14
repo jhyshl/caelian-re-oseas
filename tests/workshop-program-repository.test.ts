@@ -10,14 +10,14 @@ import * as api from '@/battle/rework/runtime/api.mjs';
 const databases:CaelianDatabase[]=[];
 afterEach(async()=>{localStorage.clear();await Promise.all(databases.splice(0).map(async db=>{db.close();await db.delete();}));});
 function program(steps:RuleStep[]):RuleProgram {const p=emptyRuleProgram();p.rules[0]!.steps=steps;return p;}
-async function fixture(programs:RuleProgram[],talent?:RuleProgram){
+async function fixture(programs:RuleProgram[],talent?:RuleProgram,dummyCount=1){
  const cards=Array.from({length:8},(_,i)=>({id:'custom_card_rule_'+i,name:'组合卡'+i,type:'skill',cost:1,starScaling:DEFAULT_STAR_SCALING,effects:[{type:'rule_program',program:programs[i]??program([{type:'shield',target:'self',value:1}])}]}));
  const pack=saveWorkshopPack({format:'caelian_workshop_class_pack',version:1,packName:'通用规则验收',classes:[{id:'custom_class_program_host',main:'freelance',name:'组合师',talent:{name:'规则天赋',description:'',effects:talent?[{type:'rule_program',program:talent}]:[]},cards,cardPool:[...cards,...cards].map(c=>c.id),starterDeck:Array.from({length:15},(_,i)=>cards[i%8]!.id)}]});
  const db=new CaelianDatabase('alpha','rule-v2-'+crypto.randomUUID());databases.push(db);let game=new GameRepository(db,new EventBus());const profile=await game.ensureProfile('chat:'+crypto.randomUUID());let sequence=0;
  const command=async(type:string,payload:any)=>game.execute(profile.id,{id:'rule-command:'+sequence++,type,payload} as any);
  const run=async(type:string,payload:any)=>{const out=await command(type,payload);expect(out.status,JSON.stringify(out)).toBe('applied');};
  await run('player.create',{name:'组合测试',classMain:'knight',subclass:'holy_knight'});
- await run('battle.start',{workshopTest:{professionId:pack.classes[0]!.id,attributes:{hpMax:0,mpMax:0,attack:0,defense:0,speed:0,actionPointsPerTurn:0},dummyCount:1,dummyHp:10000,dummyAttack:0,dummyDefense:0,dummyInvincible:false,dummyAttackEnabled:false,autoRespawn:false,playerInvincible:false}});
+ await run('battle.start',{workshopTest:{professionId:pack.classes[0]!.id,attributes:{hpMax:0,mpMax:0,attack:0,defense:0,speed:0,actionPointsPerTurn:0},dummyCount,dummyHp:10000,dummyAttack:0,dummyDefense:0,dummyInvincible:false,dummyAttackEnabled:false,autoRespawn:false,playerInvincible:false}});
  const first=(await db.battleSessions.where('profileId').equals(profile.id).first())!;
  const read=async()=> (await db.battleSessions.get(first.id))!;
  const prime=async(indices:number[],stars=1)=>{const session=await read(),g=api.hydrate(session.state.rework);g.player.hp=400;g.player.maxHp=1000;g.player.ap=g.player.apMax=10;g.player.stats.attack=100;g.player.stats.defense=0;g.player.stats.speed=10000;g.player.stats.crit=0;g.player.stats.ehr=80;g.player.hand=indices.map((index,i)=>({id:pack.classes[0]!.cards[index]!.id,uid:'test-card:'+i,legacy:true,ap:1,star:stars,effects:[]}));g.player.deck=[];g.player.discard=[];g.player.exhaust=[];for(const e of g.enemies){e.hp=e.maxHp=10000;e.stats.res=0;e.stats.defense=0;e.stats.speed=0;}api.project(g,session.state);await db.battleSessions.put(session);};
@@ -25,6 +25,13 @@ async function fixture(programs:RuleProgram[],talent?:RuleProgram){
  return {db,command,run,read,prime,play,battleId:first.id,reload:()=>{game=new GameRepository(db,new EventBus());}};
 }
 describe('组合规则正式仓库接线',()=>{
+ it('通用状态组合经职业保存、正式出牌与读档执行，排除原目标并准确结算五层原伤害',async()=>{
+  const setup=program([{type:'repeat',value:3,steps:[{type:'native_status',status:'poison',target:'target',value:.3,turns:3,maxStacks:0}]},{type:'repeat',value:2,steps:[{type:'native_status',status:'burn',target:'target',value:.5,turns:3,maxStacks:0}]}]);
+  const spread=structuredClone(WORKSHOP_RULE_EXAMPLES.find(p=>p.id==='template.state_spread')!),detonate=structuredClone(WORKSHOP_RULE_EXAMPLES.find(p=>p.id==='template.state_detonate')!);
+  const f=await fixture([setup,spread,detonate],undefined,3);await f.prime([0,1,2]);await f.play();f.reload();await f.play();
+  let g=api.hydrate((await f.read()).state.rework);expect(g.enemies[0].dots).toHaveLength(5);for(const enemy of g.enemies.slice(1))expect(enemy.dots.map((d:any)=>d.status)).toEqual(['poison','burn']);
+  f.reload();await f.play();const state=(await f.read()).state;g=api.hydrate(state.rework);expect(g.enemies[0].hp).toBe(9810);expect(g.enemies[0].dots).toHaveLength(0);expect(g.enemies[1].dots).toHaveLength(2);expect(state.player.ap).toBe(7);expect(state.workshopRuleTrace?.length).toBeGreaterThan(0);
+ });
  it('天赋开场、卡牌实例 after_card、独立三星系数及读档均经真实命令执行',async()=>{
   const talent=program([{type:'resource',target:'self',key:'测试资源',value:3}]);talent.rules[0]!.event='battle_start';
   const card=program([{type:'damage',target:'target',value:{op:'add',args:[18,{op:'mul',args:[.45,{op:'stat',key:'attack',target:'self'}]}]},stars:[1,1.1,1.2],crit:false}]);
@@ -38,7 +45,7 @@ describe('组合规则正式仓库接线',()=>{
   expect(s.player.hp).toBe(400);const effect=Object.values(s.player.buffs).find(x=>x.ruleLabel==='生命之契');expect(effect?.ruleData?.remaining).toBe(50);f.reload();await f.play();s=(await f.read()).state;expect(s.player.hp).toBe(500);expect(Object.values(s.player.buffs).some(x=>x.ruleLabel==='生命之契')).toBe(false);expect(s.player.ap).toBe(7);
  });
  it('召唤物由结束回合驱动条件优先级，不依赖手动调用阶段接口',async()=>{
-  const f=await fixture([structuredClone(WORKSHOP_RULE_EXAMPLES[6]!)]);await f.prime([0]);await f.play();await f.run('battle.end-turn',{battleId:f.battleId});const s=(await f.read()).state;const g=api.hydrate(s.rework),pet=g.allies.find((a:any)=>a.ruleSummon);expect(pet.lastActionRound).toBe(1);expect(pet.flags).toBeDefined();expect(g.player.flags.workshopPrograms.trace.some((e:any)=>e.message.startsWith('native_status'))).toBe(true);
+  const f=await fixture([structuredClone(WORKSHOP_RULE_EXAMPLES[6]!)]);await f.prime([0]);await f.play();await f.run('battle.end-turn',{battleId:f.battleId});const s=(await f.read()).state;const g=api.hydrate(s.rework),pet=g.allies.find((a:any)=>a.ruleSummon);expect(pet.lastActionRound).toBe(1);expect(pet.flags).toBeDefined();expect(g.player.flags.workshopPrograms.trace.some((e:any)=>e.message.startsWith('使用已有状态效果'))).toBe(true);
  });
  it('付不起额外代价会拒绝整次出牌，AP、手牌和生命均不改变',async()=>{
   const p=program([{type:'damage',target:'target',value:999}]);p.rules[0]!.costs=[{type:'hp',target:'self',value:500}];const f=await fixture([p]);await f.prime([0]);const before=(await f.read()).state;

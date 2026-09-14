@@ -32,10 +32,10 @@ export function prepareWorkshopDraft(value:unknown):DraftObject {
   function steps(value:unknown,path:string,depth:number):DraftObject[] {
     return list(value,path).map((item,i)=>{
       const label=`${path}第${i+1}项`,step=object(item,label);visit(label,depth);
-      for(const key of ['steps','otherwise'])if(step[key]!=null||['if','foreach','repeat','delay'].includes(step.type))step[key]=steps(step[key],label+'的'+key,depth+1);
+      for(const key of ['steps','otherwise'])if(step[key]!=null||['if','foreach','foreach_item','repeat','delay'].includes(step.type))step[key]=steps(step[key],label+'的'+key,depth+1);
       if(step.type==='summon')step.program=program(step.program,label+'的召唤物规则',depth+1);
       for(const key of ['data','inherit'])if(step[key]!=null)object(step[key],label+'的'+key);
-      for(const key of ['value','target','turns','maxStacks','chance','hits','condition','count','filter'])expressions(step[key],label+'的'+key,depth+1);
+      for(const key of ['value','target','turns','maxStacks','chance','hits','condition','count','filter','source','sourceLevel','selection','statusFrom'])expressions(step[key],label+'的'+key,depth+1);
       return step;
     });
   }

@@ -31,4 +31,27 @@ export const WORKSHOP_RULE_EXAMPLES:RuleProgram[]=[
   program('contract','生命之契',contract),program('stored','蓄伤护符',stored,'self'),program('overflow','治疗转护盾',overflow,'self'),
   program('transfer','死亡传递印记',transfer),program('posture','守护姿态',posture,'self'),program('stone','石化：复用冻结效果',stone),
   {version:2,id:'template.summon',name:'守护傀儡协作',variables:[],statuses:[],rules:[rule('summon','cast',[{type:'summon',name:'守护傀儡',turns:3,inherit:{hp:.4,attack:.7,defense:.7,speed:1},program:guardian}])]},
+  {version:2,id:'template.state_spread',name:'积木组合：按种类扩散状态',variables:[],statuses:[],rules:[rule('spread','cast',[
+    {type:'foreach_item',value:{op:'unique',key:'type',args:[{op:'statuses',key:'dot',target:'selected_target'}]},steps:[
+      {type:'native_status',statusFrom:{op:'item',key:'type'},target:{op:'targets',key:'enemies',excludeSelected:true},value:.35,turns:2,maxStacks:3,chance:100},
+    ]},
+  ])]},
+  {version:2,id:'template.state_detonate',name:'积木组合：读取原伤害并移除状态',variables:[],statuses:[],rules:[rule('detonate','cast',[
+    {type:'set',scope:'local',key:'待处理状态',value:{op:'statuses',key:'dot',target:'selected_target'}},
+    {type:'foreach_item',value:variable('local','待处理状态'),steps:[
+      {type:'damage',mode:'dot',value:{op:'item',key:'damage'},source:{op:'item',key:'sourceId'},sourceLevel:{op:'item',key:'sourceLevel'},target:{op:'item',key:'targetId'}},
+    ]},
+    {type:'remove_status',selection:variable('local','待处理状态')},
+  ])]},
+  {version:2,id:'template.lowest_two',name:'积木组合：治疗生命最低的两名队友',variables:[],statuses:[],rules:[rule('heal','cast',[
+    {type:'foreach',target:{op:'take',args:[{op:'sort_list',args:[{op:'targets',key:'allies'}],scope:'asc',value:{op:'item',key:'hp'}},2]},steps:[{type:'heal',target:'target',value:50}]},
+  ])]},
+  {version:2,id:'template.shared_heat',name:'积木组合：跨卡牌共享热量',variables:[{name:'热量',scope:'shared',initial:0}],statuses:[],rules:[rule('heat','cast',[
+    {type:'add',scope:'shared',key:'热量',value:1},
+    {type:'damage',target:'target',value:math('mul',30,variable('shared','热量')),crit:false},
+  ])]},
+  {version:2,id:'template.transfer_debuff',name:'积木组合：转移自身减益',variables:[],statuses:[],rules:[rule('transfer','cast',[
+    {type:'copy_status',selection:{op:'statuses',key:'debuff',target:'self'},target:'target',operation:'move',preserveSource:true},
+    {type:'copy_status',selection:{op:'statuses',key:'dot',target:'self'},target:'target',operation:'move',preserveSource:true},
+  ])]},
 ];

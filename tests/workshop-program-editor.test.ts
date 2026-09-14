@@ -38,3 +38,15 @@ it('组合 DOT 和复用效果显示单位与可编辑上限，模板保存后�
   const saved=readRuleTemplates()[0]!;expect(saved.statuses[0]).toMatchObject({maxStacks:9,turns:5,modifiers:[{status:'burn',value:35,unit:'percent'}]});
   expect(saved.rules[0]!.steps[0]).toMatchObject({maxStacks:6,turns:5,value:.35});
 });
+
+it('通用列表公式、动态状态种类与排除选中目标可通过界面编辑并保存',async()=>{
+ const draft=ref(emptyRuleProgram()),host=document.createElement('div');document.body.append(host);mountProgram(draft,host);
+ const picker=host.querySelector<HTMLSelectElement>('.template-actions select')!;picker.value='template.state_spread';picker.dispatchEvent(new Event('change'));await nextTick();
+ expect(host.textContent).toContain('逐项执行');expect(host.textContent).toContain('列表去重');expect(host.textContent).not.toContain('引爆 DOT');
+ const filter=[...host.querySelectorAll('label')].find(l=>l.textContent?.startsWith('种类筛选'))!.querySelector('select')!;filter.value='selected';filter.dispatchEvent(new Event('change'));await nextTick();
+ const poison=host.querySelector<HTMLInputElement>('.state-types input[value="poison"]')!;poison.checked=true;poison.dispatchEvent(new Event('change'));await nextTick();
+ const exclude=[...host.querySelectorAll('label')].find(l=>l.textContent?.includes('除选中目标外'))!.querySelector('input')!;exclude.checked=false;exclude.dispatchEvent(new Event('change'));await nextTick();
+ [...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='保存组合模板')!.click();await nextTick();const saved=readRuleTemplates()[0]!;
+ expect(saved.rules[0]!.steps[0]!.value).toMatchObject({op:'unique',args:[{op:'statuses',types:['poison']}]});expect(saved.rules[0]!.steps[0]!.steps![0]).toMatchObject({statusFrom:{op:'item',key:'type'},target:{excludeSelected:false}});
+ picker.value='template.state_detonate';picker.dispatchEvent(new Event('change'));await nextTick();expect(host.textContent).toContain('待处理状态');expect(host.textContent).toContain('按持续伤害结算');expect(host.textContent).toContain('从状态列表选择实例');
+});

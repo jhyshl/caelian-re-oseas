@@ -170,7 +170,7 @@ export function project(g,state,options={}){
     animation(g,state,e,text);
     if(text)state.log.push({id:'rework:'+g.round+':'+state.log.length,turn:g.round,kind:e.source==='player'||e.type==='play_card'||e.type==='party_action'?'player':'enemy',text});
   }
-  if(state.workshopTest)state.workshopRuleTrace=structuredClone(p.flags.workshopPrograms?.trace??[]);
+  state.workshopRuleTrace=structuredClone(p.flags.workshopPrograms?.trace??[]);
   state.log=state.log.slice(-200);g.trace=[];if(options.checkpoint!==false)state.rework=snapshot(g);
 }
 export function syncExternal(g,state){
