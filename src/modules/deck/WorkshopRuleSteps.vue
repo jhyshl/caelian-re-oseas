@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue';
-import { RULE_STEPS, RULE_SCOPES, RULE_EVENTS, emptyRuleProgram, type RuleStep, type RuleStatus } from '@/workshop-program';
+import { RULE_STEPS, RULE_SCOPES, RULE_EVENTS, WORKSHOP_DOT_TYPES, emptyRuleProgram, type RuleStep, type RuleStatus } from '@/workshop-program';
 import { WORKSHOP_STATUS_LIBRARY, workshopBuiltinStatus, workshopStatusInput, WORKSHOP_DOT_STACK_HINT } from '@/workshop-status-library';
 import WorkshopFormulaEditor from './WorkshopFormulaEditor.vue';
 import WorkshopProgramEditor from './WorkshopProgramEditor.vue';
@@ -9,7 +9,7 @@ function duplicate(index:number,step:RuleStep):void {model.value.splice(index+1,
 const props=defineProps<{statuses:RuleStatus[];costs?:boolean}>();
 const parameterName=ref('remaining');
 function addParameter(step:RuleStep):void {const name=parameterName.value.trim();if(!name||['__proto__','constructor','prototype'].includes(name))return;step.data??={};step.data[name]=0;}
-function add(type:string):void {if(!type)return;model.value.push({type,target:props.costs?'self':'target',value:10,...(type==='damage'?{crit:true,mode:'normal',hits:1}:{}),...(type==='delay'?{turns:1,event:'turn_start',mode:'cancel'}:{}),...(type==='card'?{operation:'move',pile:'hand',mode:'hand',count:1}:{}),...(['if','repeat','foreach','delay'].includes(type)?{steps:[],otherwise:[],condition:true}:{}),...(type==='summon'?{program:emptyRuleProgram(),turns:3}:{}),...(type==='native_status'?{status:'taunt',value:1,turns:1,chance:100}:{}),...(type==='apply_status'?{status:'',data:{}}:{}),...(['set','add'].includes(type)?{scope:'local',key:'value'}:{})});}
+function add(type:string):void {if(!type)return;model.value.push({type,target:props.costs?'self':'target',value:10,...(type==='damage'?{crit:true,mode:'normal',hits:1}:{}),...(type==='delay'?{turns:1,event:'turn_start',mode:'cancel'}:{}),...(type==='card'?{operation:'move',pile:'hand',mode:'hand',count:1}:{}),...(['if','repeat','foreach','delay'].includes(type)?{steps:[],otherwise:[],condition:true}:{}),...(type==='summon'?{program:emptyRuleProgram(),turns:3}:{}),...(type==='native_status'?{status:'taunt',value:1,turns:1,chance:100}:{}),...(type==='dot_spread'?{source:'selected_target',target:{op:'targets',key:'enemies',excludeSelected:true},value:.35,turns:2,maxStacks:3,chance:100,count:1}:{}),...(type==='dot_detonate'?{value:1,mode:'tick',consume:true}:{}),...(type==='apply_status'?{status:'',data:{}}:{}),...(['set','add'].includes(type)?{scope:'local',key:'value'}:{})});}
 const costOptions=[['hp','支付生命'],['shield_cost','支付护盾'],['resource_cost','支付资源'],['discard_cost','弃牌代价'],['summon_cost','牺牲召唤物']];
 </script>
 <template>
@@ -22,6 +22,27 @@ const costOptions=[['hp','支付生命'],['shield_cost','支付护盾'],['resour
       <WorkshopFormulaEditor v-if="!['set','add','event_set','if','repeat','delay','stop'].includes(step.type)" v-model="step.target!" label="对象" />
       <WorkshopFormulaEditor v-if="!['if','foreach','delay','summon','apply_status','remove_status','stop','remove_unit'].includes(step.type)" v-model="step.value!" :label="step.type==='native_status'?workshopStatusInput(step.status??'').label:'数值'" />
       <WorkshopFormulaEditor v-if="step.type==='if'" v-model="step.condition!" label="条件" />
+      <template v-if="['dot_spread','dot_detonate','dot_remove'].includes(step.type)">
+        <label>DOT 筛选<select :value="step.dotTypes===undefined?'all':'selected'" @change="step.dotTypes=($event.target as HTMLSelectElement).value==='all'?undefined:[]"><option value="all">全部 DOT</option><option value="selected">指定种类</option></select></label>
+        <div v-if="step.dotTypes!==undefined" class="dot-types"><label v-for="dot in WORKSHOP_DOT_TYPES" :key="dot.id"><input v-model="step.dotTypes" type="checkbox" :value="dot.id">{{ dot.name }}</label><p v-if="!step.dotTypes.length">尚未选择种类，此积木不会处理任何 DOT。</p></div>
+      </template>
+      <template v-if="step.type==='dot_spread'">
+        <label v-if="typeof step.source!=='object'">检测来源<select :value="step.source??'selected_target'" @change="step.source=($event.target as HTMLSelectElement).value"><option value="selected_target">本次选中目标</option><option value="target">当前目标（循环中的单位）</option><option value="self">持有者</option><option value="source">施加者</option><option value="event_source">事件发起者</option><option value="event_target">事件目标</option></select></label>
+        <WorkshopFormulaEditor v-else v-model="step.source!" label="检测来源" />
+        <WorkshopFormulaEditor v-model="step.value!" label="每跳攻击倍率（0.35 = 35%）" />
+        <WorkshopFormulaEditor v-model="step.turns!" label="持续回合（正整数，-1 为整场）" />
+        <WorkshopFormulaEditor v-model="step.count!" label="每种 DOT 施加层数（正整数）" />
+        <WorkshopFormulaEditor v-model="step.maxStacks!" label="可叠加上限（0 为不设上限）" />
+        <WorkshopFormulaEditor v-model="step.chance!" label="基础命中率％" />
+        <p>只施加检测来源已有且符合筛选的 DOT 种类。按扩散者攻击力和这里的倍率、回合重新施加，各层分别判定命中；原有层保留。倍率不是固定伤害，1 层不等于复制原目标全部层数。</p>
+      </template>
+      <template v-if="step.type==='dot_detonate'">
+        <label>结算方式<select v-model="step.mode"><option value="tick">每层结算一跳</option><option value="remaining">每层结算全部剩余次数</option></select></label>
+        <WorkshopFormulaEditor v-model="step.value!" label="原伤害倍率（1 = 100%，不是固定伤害）" />
+        <label><input :checked="step.consume!==false" type="checkbox" @change="step.consume=($event.target as HTMLInputElement).checked">清除参与引爆的 DOT</label>
+        <p>使用各层保存的原伤害，逐层计算防御和护盾，不暴击、不闪避，也不再次套用卡牌星级。整场 DOT 没有有限的剩余次数，在全部剩余模式下仅结算一跳；保留 DOT 时不扣减原持续回合。</p>
+      </template>
+      <p v-if="step.type==='dot_remove'">移除符合筛选的所有 DOT 层，包括不可净化的层；其他 Buff 和 Debuff 保留。自定义状态附带的 DOT 被清除后，本份父状态不会自动补回。</p>
       <template v-if="step.type==='native_status'"><label>复用效果<select v-model="step.status" @change="step.value=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===step.status)?.value??1;if(workshopBuiltinStatus(step.status??'')?.kind==='dot')step.maxStacks??=3"><option v-for="s in WORKSHOP_STATUS_LIBRARY" :key="s.id" :value="s.id">{{ s.name }} · {{ s.polarity }}</option></select></label><WorkshopFormulaEditor v-model="step.chance!" label="基础命中率％" /></template>
       <template v-if="step.type==='native_status'">
         <p v-if="workshopStatusInput(step.status??'').hint">{{ workshopStatusInput(step.status??'').hint }}</p>
