@@ -38,20 +38,3 @@ it('组合 DOT 和复用效果显示单位与可编辑上限，模板保存后�
   const saved=readRuleTemplates()[0]!;expect(saved.statuses[0]).toMatchObject({maxStacks:9,turns:5,modifiers:[{status:'burn',value:35,unit:'percent'}]});
   expect(saved.rules[0]!.steps[0]).toMatchObject({maxStacks:6,turns:5,value:.35});
 });
-
-it('从 DOT 模板选择种类与排除原目标，保存后保留真实配置',async()=>{
-  const draft=ref(emptyRuleProgram()),host=document.createElement('div');document.body.append(host);mountProgram(draft,host);
-  const picker=host.querySelector<HTMLSelectElement>('.template-actions select')!;picker.value='template.dot_spread';picker.dispatchEvent(new Event('change'));await nextTick();
-  const step=draft.value.rules[0]!.steps[0]!;expect(step.target).toMatchObject({excludeSelected:true});expect(step.source).toBe('selected_target');
-  const filter=[...host.querySelectorAll('label')].find(l=>l.textContent?.startsWith('DOT 筛选'))!.querySelector('select')!;
-  filter.value='selected';filter.dispatchEvent(new Event('change'));await nextTick();
-  expect(host.textContent).toContain('不会处理任何 DOT');
-  const poison=host.querySelector<HTMLInputElement>('.dot-types input[value="poison"]')!;poison.checked=true;poison.dispatchEvent(new Event('change'));await nextTick();expect(step.dotTypes).toEqual(['poison']);
-  const exclude=[...host.querySelectorAll('label')].find(l=>l.textContent?.includes('除选中目标外'))!.querySelector('input')!;exclude.checked=false;exclude.dispatchEvent(new Event('change'));await nextTick();expect(step.target).toMatchObject({excludeSelected:false});
-  [...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='保存组合模板')!.click();await nextTick();
-  expect(readRuleTemplates()[0]!.rules[0]!.steps[0]).toMatchObject({type:'dot_spread',dotTypes:['poison'],target:{excludeSelected:false},count:1,turns:2,value:.35});
-  picker.value='template.dot_detonate';picker.dispatchEvent(new Event('change'));await nextTick();
-  const mode=[...host.querySelectorAll('label')].find(l=>l.textContent?.startsWith('结算方式'))!.querySelector('select')!;mode.value='remaining';mode.dispatchEvent(new Event('change'));await nextTick();
-  const consume=[...host.querySelectorAll('label')].find(l=>l.textContent?.includes('清除参与引爆'))!.querySelector('input')!;consume.checked=false;consume.dispatchEvent(new Event('change'));await nextTick();
-  expect(normalizeRuleProgram(draft.value).rules[0]!.steps[0]).toMatchObject({type:'dot_detonate',mode:'remaining',consume:false});
-});

@@ -9,14 +9,6 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
-    version: '0.2.0-alpha.84', label: 'Alpha 84', releasedAt: '2026-09-14',
-    changes: [
-      '创意工坊新增「扩散 DOT」「引爆 DOT」「清除 DOT」积木，支持全部或勾选指定种类。扩散只施加原目标已有的种类，按作者填写的倍率、回合和层数重新施加；原目标已有层保留。',
-      '引爆按各层保存的原伤害结算，可选择一跳或全部剩余次数、原伤害倍率及是否清除；逐层计算防御和护盾，不重复套用攻击、星级或暴击。整场 DOT 在全部剩余模式下仅结算一跳。清除仅作用于选中的 DOT，保留其他状态。',
-      '目标筛选新增「除选中目标外」，在循环及延迟执行中保留原目标身份；新增可直接选用的 DOT 扩散和引爆模板，并补充倍率、层数、保留与清除说明。',
-    ],
-  },
-  {
     version: '0.2.0-alpha.83', label: 'Alpha 83', releasedAt: '2026-09-12',
     changes: [
       '修复点击创意工坊草稿后面板消失、再次点击入口无反应的问题。旧草稿的组合规则、状态、代价及嵌套效果会补齐编辑结构；损坏条目在工坊内提示具体位置，其他草稿仍可打开。',
@@ -903,14 +895,6 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 ] as const;
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
-  {
-    version: '1.23.0-beta.1', label: 'Beta 1.23', releasedAt: '2026-09-14',
-    changes: [
-      '创意工坊新增「扩散 DOT」「引爆 DOT」「清除 DOT」积木，支持全部或勾选指定种类。扩散只施加原目标已有的种类，按作者填写的倍率、回合和层数重新施加；原目标已有层保留。',
-      '引爆按各层保存的原伤害结算，可选择一跳或全部剩余次数、原伤害倍率及是否清除；逐层计算防御和护盾，不重复套用攻击、星级或暴击。整场 DOT 在全部剩余模式下仅结算一跳。清除仅作用于选中的 DOT，保留其他状态。',
-      '目标筛选新增「除选中目标外」，在循环及延迟执行中保留原目标身份；新增可直接选用的 DOT 扩散和引爆模板，并补充倍率、层数、保留与清除说明。',
-    ],
-  },
   {
     version: '1.22.0-beta.1',
     label: 'Beta 1.22',

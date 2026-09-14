@@ -3,9 +3,9 @@ import { formatNumber } from '@/ui/format-number';
 import { workshopBuiltinStatus, workshopTurns, workshopMaxStacks } from '@/workshop-status-library';
 
 export type RuleValue = number | string | boolean | null | RuleValue[] | { [key: string]: RuleValue };
-export type RuleExpression = number | string | boolean | { op: string; key?: string; scope?: string; target?: RuleExpression; args?: RuleExpression[]; value?: RuleExpression; excludeSelected?: boolean };
+export type RuleExpression = number | string | boolean | { op: string; key?: string; scope?: string; target?: RuleExpression; args?: RuleExpression[]; value?: RuleExpression };
 export interface RuleStep {
-  type: string; source?: RuleExpression; dotTypes?: string[]; consume?: boolean; target?: RuleExpression; value?: RuleExpression; key?: string; scope?: string;
+  type: string; target?: RuleExpression; value?: RuleExpression; key?: string; scope?: string;
   field?: string; operation?: string; saveAs?: string; status?: string; name?: string;
   turns?: RuleExpression; maxStacks?: RuleExpression; chance?: RuleExpression; hits?: RuleExpression; condition?: RuleExpression;
   steps?: RuleStep[]; otherwise?: RuleStep[]; event?: string; stat?: string; pile?: string;
@@ -43,7 +43,6 @@ export const RULE_SCOPES = [['local','本次执行'],['card','此卡牌实例'],
 export const RULE_STEPS = [
   ['set','记录数据'],['add','增减数据'],['event_set','改写本次事件'],['if','如果／否则'],['repeat','重复'],['foreach','逐个目标执行'],['delay','延迟执行'],
   ['damage','造成伤害'],['heal','治疗'],['shield','提供护盾'],['native_status','使用已有状态效果'],['apply_status','施加自定义状态'],['remove_status','移除状态'],
-  ['dot_spread','扩散 DOT'],['dot_detonate','引爆 DOT'],['dot_remove','清除 DOT'],
   ['cleanse','净化'],['dispel','驱散'],['resource','改变资源'],['draw','抽牌'],['discard','弃牌'],['card','操作卡牌'],['summon','召唤单位'],['remove_unit','移除召唤物'],['stop','结束当前规则'],
 ] as const;
 export const RULE_OPS = [
@@ -51,10 +50,6 @@ export const RULE_OPS = [
   ['add','相加'],['sub','相减'],['mul','相乘'],['div','相除'],['min','较小值'],['max','较大值'],['floor','向下取整'],['ceil','向上取整'],
   ['eq','等于'],['ne','不等于'],['gt','大于'],['gte','大于等于'],['lt','小于'],['lte','小于等于'],['and','且'],['or','或'],['not','非'],['chance','概率成立'],
 ] as const;
-export const WORKSHOP_DOT_TYPES = [
-  {id:'poison',name:'中毒'},{id:'burn',name:'灼烧'},{id:'bleed',name:'流血'},
-  {id:'corrosion',name:'腐蚀'},{id:'curse',name:'诅咒伤害'},{id:'abyss',name:'深渊'},
-];
 const banned = new Set(['__proto__','constructor','prototype']);
 export function ruleKey(value: unknown, fallback = ''): string {
   const s = String(value ?? fallback).trim().slice(0,100);
@@ -70,16 +65,14 @@ export function normalizeRuleProgram(raw: unknown): RuleProgram {
     if(depth>24)throw new Error('公式嵌套过深');
     if(['number','string','boolean'].includes(typeof v)){if(typeof v==='number')finite(v);return v;}
     const x=object(v);if(!RULE_OPS.some(([op])=>op===x.op))throw new Error('未知公式积木：'+x.op);
-    return {op:x.op,...(x.key!==undefined?{key:ruleKey(x.key)}:{}),...(x.scope?{scope:ruleKey(x.scope)}:{}),...(x.excludeSelected!==undefined?{excludeSelected:Boolean(x.excludeSelected)}:{}),...(x.target!==undefined?{target:expression(x.target,depth+1)}:{}),...(x.value!==undefined?{value:expression(x.value,depth+1)}:{}),...(Array.isArray(x.args)?{args:x.args.map((a:any)=>expression(a,depth+1))}:{})};
+    return {op:x.op,...(x.key!==undefined?{key:ruleKey(x.key)}:{}),...(x.scope?{scope:ruleKey(x.scope)}:{}),...(x.target!==undefined?{target:expression(x.target,depth+1)}:{}),...(x.value!==undefined?{value:expression(x.value,depth+1)}:{}),...(Array.isArray(x.args)?{args:x.args.map((a:any)=>expression(a,depth+1))}:{})};
   }
   function steps(v:any,depth=0):RuleStep[]{
     if(depth>16)throw new Error('规则嵌套过深');if(!Array.isArray(v))return [];
     return v.map(raw=>{const x=object(raw);if(!RULE_STEPS.some(([t])=>t===x.type)&&!['hp','shield_cost','resource_cost','discard_cost','summon_cost'].includes(x.type))throw new Error('未知效果积木：'+x.type);
       const result:RuleStep={type:x.type};
-      for(const k of ['source','target','value','turns','maxStacks','chance','hits','condition','filter','count'] as const)if(x[k]!==undefined)result[k]=expression(x[k]);
+      for(const k of ['target','value','turns','maxStacks','chance','hits','condition','filter','count'] as const)if(x[k]!==undefined)result[k]=expression(x[k]);
       for(const k of ['key','scope','field','operation','saveAs','status','name','event','stat','pile','order','mode'] as const)if(x[k]!==undefined&&x[k]!=='')result[k]=ruleKey(x[k]);
-      if(x.dotTypes!==undefined){if(!Array.isArray(x.dotTypes))throw Error('DOT 筛选必须是种类列表');result.dotTypes=[...new Set<string>(x.dotTypes.map((v:unknown)=>ruleKey(v)))];}
-      if(x.consume!==undefined)result.consume=Boolean(x.consume);
       if(x.steps)result.steps=steps(x.steps,depth+1);if(x.otherwise)result.otherwise=steps(x.otherwise,depth+1);
       if(x.data)result.data=Object.fromEntries(Object.entries(object(x.data)).map(([k,v])=>[ruleKey(k),expression(v)]));
       if(x.inherit)result.inherit=Object.fromEntries(Object.entries(object(x.inherit)).map(([k,v])=>[ruleKey(k),finite(v)]));
@@ -96,12 +89,7 @@ export function normalizeRuleProgram(raw: unknown): RuleProgram {
     if(new Set(p.statuses.map(s=>s.id)).size!==p.statuses.length)throw new Error('状态编号重复');
     const names=new Set<string>();for(const v of p.variables){scope(v.scope);const id=v.scope+':'+v.name;if(names.has(id))throw Error('同一范围的数据名称重复');names.add(id);}
     const checkExpression=(e:RuleExpression|undefined):void=>{if(!e||typeof e!=='object')return;if(e.op==='var')scope(e.scope);e.args?.forEach(checkExpression);checkExpression(e.target);checkExpression(e.value);};
-    const checkSteps=(list:RuleStep[]):void=>{for(const s of list){scope(s.scope);for(const e of [s.value,s.source,s.target,s.condition,s.chance,s.turns,s.maxStacks,s.count,s.hits,s.filter])checkExpression(e);
-      if(['dot_spread','dot_detonate','dot_remove'].includes(s.type)){
-        if(s.dotTypes?.some(id=>!WORKSHOP_DOT_TYPES.some(d=>d.id===id)))throw Error('请选择有效的 DOT 种类');
-        if(s.type==='dot_detonate'&&s.mode&&!['tick','remaining'].includes(s.mode))throw Error('DOT 引爆结算方式无效');
-        if(s.type==='dot_spread'){if(typeof s.turns==='number')workshopTurns(s.turns);if(typeof s.maxStacks==='number')workshopMaxStacks(s.maxStacks);if(typeof s.count==='number'&&(!Number.isSafeInteger(s.count)||s.count<1))throw Error('每种 DOT 施加层数请填写正整数');}
-      }
+    const checkSteps=(list:RuleStep[]):void=>{for(const s of list){scope(s.scope);for(const e of [s.value,s.target,s.condition,s.chance,s.turns,s.maxStacks,s.count,s.hits,s.filter])checkExpression(e);
       if(s.type==='native_status'){
         if(!workshopBuiltinStatus(s.status??''))throw Error('请选择已有状态效果');
         if(typeof s.turns==='number')workshopTurns(s.turns);
@@ -131,7 +119,7 @@ export function describeRuleExpression(e:RuleExpression|undefined,context?:RuleP
   if(e.op==='literal')return describeRuleExpression(e.value,context);
   if(e.op==='stat'){const actor=e.target==='target'?context?.target:context?.self;return actor?.[e.key??'attack']??((e.target==='target'?'目标':'自身')+(statLabels[e.key??'']??e.key));}
   if(e.op==='resource')return '资源「'+e.key+'」';if(e.op==='status_data')return '状态数据「'+e.key+'」';if(e.op==='var')return '记录「'+e.key+'」';if(e.op==='event')return '本次「'+e.key+'」';if(e.op==='status')return '「'+e.key+'」层数';
-  if(e.op==='targets')return (e.key==='allies'?'友方单位':e.key==='all'?'所有单位':e.key==='summons'?'召唤物':'敌方单位')+(e.excludeSelected?'（除选中目标外）':'');
+  if(e.op==='targets')return e.key==='allies'?'友方单位':e.key==='all'?'所有单位':'敌方单位';
   const values=(e.args??[]).map(v=>describeRuleExpression(v,context));
   if(context&&values.length&&values.every(x=>typeof x==='number')){const n=values as number[];switch(e.op){case'add':return n.reduce((a,b)=>a+b,0);case'sub':return n.slice(1).reduce((a,b)=>a-b,n[0]!);case'mul':return n.reduce((a,b)=>a*b,1);case'div':return n[1]?n[0]!/n[1]:0;case'min':return Math.min(...n);case'max':return Math.max(...n);case'floor':return Math.floor(n[0]!);case'ceil':return Math.ceil(n[0]!);}}
   const symbols:Record<string,string>={add:'＋',sub:'－',mul:'×',div:'÷',eq:'＝',ne:'≠',gt:'＞',gte:'≥',lt:'＜',lte:'≤',and:'且',or:'或'};
@@ -141,11 +129,6 @@ export function describeRuleProgram(program:RuleProgram,context?:RulePreviewCont
   const val=(e:RuleExpression|undefined)=>{const v=describeRuleExpression(e,context);return typeof v==='number'?formatNumber(v):String(v);};
   const describe=(s:RuleStep):string=>{
     const label=RULE_STEPS.find(([t])=>t===s.type)?.[1]??s.type;
-    const dots=s.dotTypes===undefined?'全部 DOT':s.dotTypes.length?s.dotTypes.map(id=>WORKSHOP_DOT_TYPES.find(d=>d.id===id)?.name??id).join('、'):'未选择 DOT';
-    const unit=(e:RuleExpression|undefined)=>typeof e==='string'?({target:'当前目标',selected_target:'本次选中目标',self:'持有者',source:'施加者',event_source:'事件发起者',event_target:'事件目标'}[e]??e):val(e);
-    if(s.type==='dot_spread')return `检测${unit(s.source??'selected_target')}的${dots}，向${unit(s.target??{op:'targets',key:'enemies',excludeSelected:true})}施加已有种类各${val(s.count??1)}层，每跳攻击倍率 ${val(s.value??.35)}，${val(s.turns??2)==='-1'?'持续整场':`持续${val(s.turns??2)}回合`}，同类上限 ${val(s.maxStacks??3)}（0 为不限）`;
-    if(s.type==='dot_detonate')return `引爆${unit(s.target??'target')}的${dots}，按原伤害${s.mode==='remaining'?'结算全部剩余次数（整场 DOT 仅一跳）':'结算一跳'} × ${val(s.value??1)}，${s.consume===false?'保留 DOT':'清除参与引爆的 DOT'}，不暴击`;
-    if(s.type==='dot_remove')return `清除${unit(s.target??'target')}的${dots}全部层，保留其他状态`;
     let value=s.value===undefined?'':val(s.value);if(context&&['damage','heal','shield'].includes(s.type)){const raw=describeRuleExpression(s.value,context);if(typeof raw==='number')value=formatNumber(raw*(s.stars?.[Math.max(0,Math.min(2,(context.star??1)-1))]??(1+.1*((context.star??1)-1))));}
     if(s.type==='native_status'){
       const def=workshopBuiltinStatus(s.status??'');

@@ -4,7 +4,7 @@ import { workshopBuiltinStatus, workshopTurns, workshopMaxStacks } from '@/works
 import { normalizeLegacyStatus } from '@/battle/rework/runtime/legacy-bridge.mjs';
 import { effectValue, statusGain } from '@/battle/rework/runtime/tactical-ai.mjs';
 
-type Context={selectedTargetId?:string;area?:boolean;program:RuleProgram;owner:any;source:any;target:any;event:any;local:Record<string,any>;status?:any;card?:any;star:number};
+type Context={area?:boolean;program:RuleProgram;owner:any;source:any;target:any;event:any;local:Record<string,any>;status?:any;card?:any;star:number};
 const attached=new WeakMap<object,WorkshopProgramRuntime>();
 const clone=<T>(x:T):T=>structuredClone(x);
 const num=(v:any)=>typeof v==='number'&&Number.isFinite(v)?v:0;
@@ -23,8 +23,8 @@ export class WorkshopProgramRuntime {
   private get memory():any{return this.g.player.flags.workshopPrograms??=( {programs:{},variables:{},fired:{},delays:[],trace:[],sequence:0} );}
   register(p:RuleProgram):void{this.memory.programs[p.id]=clone(p);}
   private actors():any[]{return [...this.g.allies,...this.g.enemies];}
-  private actor(id:any,c:Context):any {if(id&&typeof id==='object'&&id.id)return id;if(id==='self'||id==='holder')return c.owner;if(id==='source')return c.source;if(id==='target')return c.target;if(id==='selected_target')return this.actors().find(a=>a.id===c.selectedTargetId);if(id==='event_source')return this.actors().find(a=>a.id===c.event.sourceId);if(id==='event_target')return this.actors().find(a=>a.id===c.event.targetId);if(id==='summoner')return this.actors().find(a=>a.id===c.owner.ownerId);return this.actors().find(a=>a.id===id);}
-  private context(program:RuleProgram,owner=this.g.player,event:any={},status?:any,card?:any):Context {return {selectedTargetId:event.targetId??this.g.enemies[this.g.selectedTarget??0]?.id,program,owner,source:this.actors().find(a=>a.id===status?.sourceId)??owner,target:this.actors().find(a=>a.id===event.targetId)??this.g.enemies[this.g.selectedTarget??0]??this.g.enemies.find((a:any)=>a.hp>0),event,local:{},status,card,star:status?.ruleStar??card?.star??1};}
+  private actor(id:any,c:Context):any {if(id&&typeof id==='object'&&id.id)return id;if(id==='self'||id==='holder')return c.owner;if(id==='source')return c.source;if(id==='target')return c.target;if(id==='event_source')return this.actors().find(a=>a.id===c.event.sourceId);if(id==='event_target')return this.actors().find(a=>a.id===c.event.targetId);if(id==='summoner')return this.actors().find(a=>a.id===c.owner.ownerId);return this.actors().find(a=>a.id===id);}
+  private context(program:RuleProgram,owner=this.g.player,event:any={},status?:any,card?:any):Context {return {program,owner,source:this.actors().find(a=>a.id===status?.sourceId)??owner,target:this.actors().find(a=>a.id===event.targetId)??this.g.enemies[this.g.selectedTarget??0]??this.g.enemies.find((a:any)=>a.hp>0),event,local:{},status,card,star:status?.ruleStar??card?.star??1};}
   private storage(c:Context,scope='local'):any {
     if(scope==='local')return c.local;if(scope==='status')return c.status?.ruleData??c.local;
     const suffix=scope==='turn'?':'+this.g.round:scope==='card'?':'+(c.card?.uid??'none'):scope==='unit'?':'+c.owner.id:'';
@@ -43,7 +43,7 @@ export class WorkshopProgramRuntime {
     if(e.op==='cards'){const pile=this.g.player[e.key??'hand']??[];return pile.map((v:any)=>v.uid);}
     if(e.op==='targets'){
       const selector=e.key??'enemies';let list=selector==='all'?this.actors():selector==='summons'?this.actors().filter(a=>a.isSummon||a.legacySummon):selector==='allies'?this.g.friendTeam(c.owner):this.g.foeTeam(c.owner);
-      list=list.filter((a:any)=>a.hp>0&&(!e.excludeSelected||a.id!==c.selectedTargetId));
+      list=list.filter((a:any)=>a.hp>0);
       if(e.value)list=list.filter((a:any)=>this.value(e.value,{...c,target:a}));
       if(e.scope==='lowest_hp')list=[...list].sort((a:any,b:any)=>a.hp/a.maxHp-b.hp/b.maxHp||a.id.localeCompare(b.id)).slice(0,1);
       return list.map((a:any)=>a.id);
@@ -114,12 +114,12 @@ export class WorkshopProgramRuntime {
     this.withBudget(()=>{
       const due=this.memory.delays.filter((d:any)=>d.event===type&&d.round<=this.g.round&&(!d.ownerTurn||event.targetId===d.ownerId));
       this.memory.delays=this.memory.delays.filter((d:any)=>!due.includes(d));
-      for(const d of due){const owner=this.actors().find(a=>a.id===d.ownerId);if(!owner||owner.hp<=0)continue;const c=this.context(d.program,owner,event,undefined,d.card);c.local=d.local;c.selectedTargetId=d.selectedTargetId??d.targetId;c.target=this.actors().find(a=>a.id===d.targetId);if(!c.target||c.target.hp<=0){if(d.mode==='retarget')c.target=this.g.foeTeam(owner)[0];else if(d.otherwise?.length){this.execute(d.otherwise,c);continue;}else continue;}this.execute(d.steps,c);}
+      for(const d of due){const owner=this.actors().find(a=>a.id===d.ownerId);if(!owner||owner.hp<=0)continue;const c=this.context(d.program,owner,event,undefined,d.card);c.local=d.local;c.target=this.actors().find(a=>a.id===d.targetId);if(!c.target||c.target.hp<=0){if(d.mode==='retarget')c.target=this.g.foeTeam(owner)[0];else if(d.otherwise?.length){this.execute(d.otherwise,c);continue;}else continue;}this.execute(d.steps,c);}
       const acted=new Set<string>();for(const {rule,c} of work.sort((a,b)=>b.rule.priority-a.rule.priority||a.rule.id.localeCompare(b.rule.id))){if(c.status&&!this.actors().some(a=>[...a.buffs,...a.debuffs].includes(c.status)))continue;if(c.owner.ruleSummon&&type==='turn_start'&&acted.has(c.owner.id))continue;if(this.run(rule,c)&&c.owner.ruleSummon&&type==='turn_start')acted.add(c.owner.id);}
     });
     this.nativeEvent(type,event);this.syncModifiers();return event;
   }
-  private freeze(steps:RuleStep[],c:Context):RuleStep[]{return steps.map(s=>{const out=clone(s);for(const field of ['source','value','chance','turns','maxStacks','hits','count'] as const)if(s[field]!==undefined)out[field]=this.value(s[field],c);if(s.steps)out.steps=this.freeze(s.steps,c);if(s.otherwise)out.otherwise=this.freeze(s.otherwise,c);return out;});}
+  private freeze(steps:RuleStep[],c:Context):RuleStep[]{return steps.map(s=>{const out=clone(s);for(const field of ['value','chance','turns','maxStacks','hits','count'] as const)if(s[field]!==undefined)out[field]=this.value(s[field],c);if(s.steps)out.steps=this.freeze(s.steps,c);if(s.otherwise)out.otherwise=this.freeze(s.otherwise,c);return out;});}
   private execute(steps:RuleStep[],c:Context):void {
     for(const s of steps){this.budget();let result:any;const value=()=>this.value(s.value??0,c),targets=()=>this.targets(s,c);const scaled=()=>num(value())*(s.stars?.[Math.max(0,Math.min(2,c.star-1))]??(1+.1*(c.star-1)));
       if(s.type==='stop')return;
@@ -128,15 +128,14 @@ export class WorkshopProgramRuntime {
       else if(s.type==='if')this.execute(this.value(s.condition??true,c)?s.steps??[]:s.otherwise??[],c);
       else if(s.type==='repeat'){for(let i=0;i<Math.max(0,Math.floor(num(this.value(s.count??s.value??1,c))));i++){this.budget();c.local.index=i;this.execute(s.steps??[],c);}}
       else if(s.type==='foreach'){for(const target of targets()){this.budget();this.execute(s.steps??[],{...c,target,area:true});}}
-      else if(s.type==='delay'){this.memory.delays.push({event:s.event??'turn_start',round:this.g.round+Math.max(1,num(this.value(s.turns??1,c))),ownerTurn:['turn_start','turn_end'].includes(s.event??'turn_start'),ownerId:c.owner.id,targetId:c.target?.id,selectedTargetId:c.selectedTargetId,program:clone(c.program),card:clone(c.card),local:clone(c.local),steps:s.snapshot?this.freeze(s.steps??[],c):clone(s.steps??[]),otherwise:clone(s.otherwise??[]),mode:s.mode??'cancel'});}
+      else if(s.type==='delay'){this.memory.delays.push({event:s.event??'turn_start',round:this.g.round+Math.max(1,num(this.value(s.turns??1,c))),ownerTurn:['turn_start','turn_end'].includes(s.event??'turn_start'),ownerId:c.owner.id,targetId:c.target?.id,program:clone(c.program),card:clone(c.card),local:clone(c.local),steps:s.snapshot?this.freeze(s.steps??[],c):clone(s.steps??[]),otherwise:clone(s.otherwise??[]),mode:s.mode??'cancel'});}
       else if(['damage','heal','shield'].includes(s.type)){
         result={damage:0,hpDamage:0,shieldDamage:0,heal:0,shield:0,overflow:0,absorbed:0};const selected=targets().filter(t=>t.hp>0),share=Math.min(1,2/Math.max(1,selected.length));
-        for(let target of selected){if(s.type==='damage'&&!c.area&&!(typeof s.target==='object'&&s.target.op==='targets')&&selected.length===1&&target.side!==c.owner.side)target=this.g.targets(c.owner,{kind:'damage',target:'enemy'},target)[0]??target;
+        for(let target of selected){if(s.type==='damage'&&!c.area&&selected.length===1&&target.side!==c.owner.side)target=this.g.targets(c.owner,{kind:'damage',target:'enemy'},target)[0]??target;
           if(s.type==='damage'){const parent=this.g.action;this.g.action=null;try{this.g.beginAction(c.owner,{id:c.program.id,name:s.name??c.program.name});const hitCount=Math.max(1,Math.floor(num(this.value(s.hits??1,c))));if(this.steps+hitCount>4096)throw Error('攻击段数超过单次执行保护范围');this.steps+=hitCount;const out=this.g.damage(c.owner,target,{kind:'damage',flat:scaled()*share,atk:0,hits:hitCount,crit:s.mode==='recorded'?false:s.crit!==false},{star:1,flatScale:1,forceHit:s.mode==='recorded'?true:undefined,ignoreDefense:s.mode==='recorded'?1:0,ignoreDirectBonuses:s.mode==='recorded',origin:'workshop'});for(const k of ['damage','hpDamage','shieldDamage'])result[k]+=num(out[k]);}finally{this.g.endAction();this.g.action=parent;}}
           else {const amount=this.g[s.type](c.owner,target,scaled()*share,{finalAmount:s.mode==='recorded'});result[s.type]+=num(amount);if(s.type==='heal'){result.overflow+=num(this.g.lastHealResult?.overflow);result.absorbed+=num(this.g.lastHealResult?.absorbed);}}
         }
       }
-      else if(['dot_spread','dot_detonate','dot_remove'].includes(s.type))result=this.dotAction(s,c);
       else if(s.type==='native_status'){result=0;for(const target of targets())result+=Number(this.nativeStatus(c.owner,target,s.status??'taunt',num(value()),num(this.value(s.turns??1,c)),num(this.value(s.chance??100,c)),c.star,{maxStacks:s.maxStacks===undefined?undefined:this.value(s.maxStacks,c)}));}
       else if(s.type==='apply_status'){result=[];for(const target of targets()){const added=this.applyStatus(c.program,s.status??'',c.owner,target,c,s);if(added)result.push(added.ruleInstance);}}
       else if(s.type==='remove_status'){result=0;for(const a of targets()){for(const status of [...a.buffs,...a.debuffs].filter(x=>x.ruleInstance&&(s.status==='self'?x===c.status:x.ruleStatus===s.status||x.ruleInstance===s.status))){this.removeStatus(a,status,'rule');result++;}}}
@@ -208,43 +207,6 @@ export class WorkshopProgramRuntime {
         for(const x of [...owner.buffs,...owner.debuffs,...owner.dots])if(!all.includes(x)){x.ruleParent=status.ruleInstance;x.ruleModifier=token;x.ruleHidden=true;if(x.kind!=='dot')x.expireAtPhase=status.expireAtPhase;}
       });}
     }}finally{this.syncing=false;}
-  }
-  private dotAction(s:RuleStep,c:Context):any {
-    const canonical=(d:any)=>String(normalizeLegacyStatus(d.canonicalStatus??d.status,{}).key);
-    const matches=(d:any)=>d.remaining>0&&(s.dotTypes===undefined||s.dotTypes.includes(canonical(d)));
-    const selected=[...new Set(this.targets({...s,target:s.target??(s.type==='dot_spread'?{op:'targets',key:'enemies',excludeSelected:true}:'target')},c))].filter(a=>a.hp>0);
-    if(s.type==='dot_spread'){
-      const source=this.actor(this.value(s.source??'selected_target',c),c);
-      // Snapshot the kinds before applying anything, even if recipients include the source.
-      const kinds=[...new Set<string>((source?.dots??[]).filter(matches).map(canonical))];
-      const count=Number(this.value(s.count??1,c)),multiplier=Number(this.value(s.value??.35,c));
-      if(!Number.isSafeInteger(count)||count<1)throw Error('每种 DOT 施加层数请填写正整数');
-      if(!Number.isFinite(multiplier)||multiplier<0)throw Error('DOT 攻击倍率请填写非负数');
-      const turns=workshopTurns(this.value(s.turns??2,c)),maxStacks=workshopMaxStacks(this.value(s.maxStacks??3,c));
-      if(this.steps+selected.length*kinds.length*count>4096)throw Error('DOT 施加次数超过单次执行保护范围');
-      let applied=0;
-      for(const target of selected)for(const status of kinds)for(let i=0;i<count;i++){
-        this.budget();
-        applied+=Number(this.g.addDot(c.owner,target,{kind:'dot',status,canonicalStatus:status,workshopDot:true,atk:multiplier,turns:turns<0?Infinity:turns,maxStacks,baseChance:num(this.value(s.chance??100,c)),cleanseable:true},{star:c.star,secondary:true}));
-      }
-      return {applied,types:kinds.length,targets:selected.length};
-    }
-    const layers=selected.flatMap(target=>target.dots.filter(matches).map((dot:any)=>({target,dot,source:dot.sourceActor??this.actors().find(a=>a.id===dot.sourceId)??c.owner,damage:dot.snapshotDamage,level:dot.sourceLevel,ticks:s.mode==='remaining'&&Number.isFinite(dot.remaining)?Math.max(1,Math.floor(dot.remaining)):1})));
-    const result={layers:layers.length,damage:0,hpDamage:0,shieldDamage:0};
-    const multiplier=Number(this.value(s.value??1,c));
-    if(s.type==='dot_detonate'){
-      if(!Number.isFinite(multiplier)||multiplier<0)throw Error('引爆原伤害倍率请填写非负数');
-      if(this.steps+layers.reduce((sum,row)=>sum+row.ticks,0)>4096)throw Error('DOT 引爆次数超过单次执行保护范围');
-    }
-    // Reserve the consumed layers before damage callbacks; a nested explosion cannot consume them twice.
-    if(s.type==='dot_remove'||s.consume!==false){const consumed=new Set(layers.map(row=>row.dot));for(const target of selected)target.dots=target.dots.filter((d:any)=>!consumed.has(d));}
-    if(s.type==='dot_remove')return result;
-    for(const row of layers)for(let i=0;i<row.ticks&&row.target.hp>0;i++){
-      this.budget();const K=100+5*row.level;
-      const out=this.g.rawHit(row.source,row.target,row.damage*multiplier*K/(K+this.g.stat(row.target,'defense')),{dot:true,skillId:c.card?.id??c.program.id});
-      for(const k of ['damage','hpDamage','shieldDamage'] as const)result[k]+=num(out[k]);
-    }
-    return result;
   }
   private nativeEvent(type:string,event:any):void {
     const g=this.g,owner=this.actors().find(a=>a.id===event.targetId);if(!owner)return;

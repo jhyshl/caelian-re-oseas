@@ -12,8 +12,8 @@ describe('release notes', () => {
     const releases = releaseNotesFor('alpha', '0.2.0-alpha.79');
 
     expect(releases[0]?.version).toBe('0.2.0-alpha.79');
-    expect(releases).toEqual(ALPHA_RELEASE_NOTES.filter(note => !['0.2.0-alpha.80', '0.2.0-alpha.81', '0.2.0-alpha.82', '0.2.0-alpha.83', '0.2.0-alpha.84'].includes(note.version)));
-    expect(releaseNotesFor('alpha', '0.2.0-alpha.84')).toEqual(ALPHA_RELEASE_NOTES);
+    expect(releases).toEqual(ALPHA_RELEASE_NOTES.filter(note => !['0.2.0-alpha.80', '0.2.0-alpha.81', '0.2.0-alpha.82', '0.2.0-alpha.83'].includes(note.version)));
+    expect(releaseNotesFor('alpha', '0.2.0-alpha.83')).toEqual(ALPHA_RELEASE_NOTES);
     expect(releaseNotesFor('alpha', '0.2.0-alpha.80')[0]?.version).toBe('0.2.0-alpha.80');
     expect(releases.length).toBeGreaterThan(5);
     expect(releases[0]?.changes.join('\n')).toContain('动荡的皇权');
@@ -176,11 +176,10 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.23.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.22.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
-      'Beta 1.23',
       'Beta 1.22',
       'Beta 1.21',
       'Beta 1.20',
@@ -307,13 +306,13 @@ describe('release notes', () => {
 
   it('手动打开未匹配版号时显示不晚于当前构建的最近历史公告', () => {
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.999')[0]?.version).toBe(
-      '0.2.0-alpha.84',
+      '0.2.0-alpha.83',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.45')[0]?.version).toBe(
       '0.2.0-alpha.44',
     );
     expect(releaseHistoryFor('alpha', '0.2.0-alpha.test')[0]?.version).toBe(
-      '0.2.0-alpha.84',
+      '0.2.0-alpha.83',
     );
     expect(releaseHistoryFor('release', '2.0.0')).toEqual([]);
   });
