@@ -2572,7 +2572,7 @@ onUnmounted(() => {
             </div>
             <button type="button" @click="showBattleInfo = false">×</button>
           </header>
-          <details v-if="state.workshopTest && state.workshopRuleTrace?.length"><summary>积木执行记录</summary><ol><li v-for="(entry,index) in state.workshopRuleTrace" :key="index">T{{ entry.turn }} · {{ entry.name }} · {{ entry.event }}：{{ entry.message }}</li></ol></details>
+          <details v-if="state.workshopRuleTrace?.length"><summary>积木执行记录</summary><ol><li v-for="(entry,index) in state.workshopRuleTrace" :key="index">T{{ entry.turn }} · {{ entry.name }} · {{ entry.event }}：{{ entry.message }}</li></ol></details>
           <p class="damage-preview-help">卡面显示基础伤害；血条预览为命中且未暴击时的预计生命损失，计入防御、减伤与护盾。随机目标、触发效果可能改变结果。</p>
           <ol>
             <li

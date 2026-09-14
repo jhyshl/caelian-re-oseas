@@ -1,6 +1,6 @@
 <script setup lang="ts">
 
-import { ref } from 'vue';
+import { computed, provide, ref } from 'vue';
 import { RULE_SCOPES, normalizeRuleProgram, readRuleTemplates, saveRuleTemplate, type RuleProgram } from '@/workshop-program';
 import { WORKSHOP_RULE_EXAMPLES } from '@/workshop-program-templates';
 import { WORKSHOP_STATUS_LIBRARY, workshopBuiltinStatus, workshopStatusInput } from '@/workshop-status-library';
@@ -8,6 +8,13 @@ import WorkshopFormulaEditor from './WorkshopFormulaEditor.vue';
 import WorkshopRulesEditor from './WorkshopRulesEditor.vue';
 const model=defineModel<RuleProgram>({required:true});
 defineProps<{nested?:boolean}>();
+provide('workshopFormulaChoices',computed(()=>{
+ const records=model.value.variables.map(v=>({scope:v.scope,key:v.name,label:v.name})),dataKeys=new Set<string>();
+ for(const status of model.value.statuses)for(const key of Object.keys(status.data)){dataKeys.add(key);records.push({scope:'status',key,label:status.name+' · '+key},{scope:'status_data',key:status.id+'.'+key,label:status.name+' · '+key});}
+ const scan=(steps:import('@/workshop-program').RuleStep[])=>{for(const s of steps){if(['set','add'].includes(s.type)&&s.key)records.push({scope:s.scope??'local',key:s.key,label:s.key});if(s.saveAs)records.push({scope:'local',key:s.saveAs,label:'执行结果 · '+s.saveAs});scan(s.steps??[]);scan(s.otherwise??[]);}};
+ for(const rules of [model.value.rules,...model.value.statuses.map(s=>s.rules)])for(const r of rules)scan(r.steps);
+ return {records:[...new Map(records.map(r=>[r.scope+':'+r.key,r])).values()],statuses:model.value.statuses.map(s=>({id:s.id,name:s.name})),dataKeys:[...dataKeys]};
+}));
 const templates=ref(readRuleTemplates()),notice=ref(''),newDataName=ref('remaining');
 function example(id:string):void{const p=[...WORKSHOP_RULE_EXAMPLES,...templates.value].find(x=>x.id===id);if(p)model.value={...JSON.parse(JSON.stringify(p)),id:model.value.id};}
 function save():void{try{saveRuleTemplate(model.value);templates.value=readRuleTemplates();notice.value='组合模板已保存';}catch(e){notice.value=e instanceof Error?e.message:String(e);}}
@@ -26,6 +33,7 @@ function check():void{try{normalizeRuleProgram(model.value);notice.value='结构
         <header><input v-model="status.name" placeholder="状态名称"><button type="button" @click="model.statuses.splice(i,1)">删除状态</button></header>
         <div class="status-options"><label>显示类别<select v-model="status.polarity"><option value="buff">Buff</option><option value="debuff">Debuff</option></select></label><label>回合数（－1为整场）<input v-model.number="status.turns" type="number" min="-1"></label><label>基础命中％<input v-model.number="status.baseChance" type="number" min="0" max="100"></label></div>
         <div class="status-options"><label><input v-model="status.cleanseable" type="checkbox">可净化</label><label><input v-model="status.dispellable" type="checkbox">可驱散</label><select v-model="status.stacking"><option value="independent">各份独立</option><option value="add">合并额度</option><option value="replace">新状态覆盖</option><option value="strongest">保留更强额度</option></select></div>
+        <label v-if="status.stacking==='add'">再次叠加时的持续时间<select v-model="status.refresh"><option value="keep">保持原到期时间</option><option value="refresh">刷新为本次持续回合</option><option value="extend">延长本次持续回合</option></select></label>
         <template v-if="status.stacking==='independent'"><label>可叠加上限（0 为不设上限）<input :value="status.maxStacks??0" type="number" min="0" step="1" @input="status.maxStacks=Number(($event.target as HTMLInputElement).value)" /></label><p>每份状态独立计时；满层时替换剩余回合最少的一份。复用的 DOT 随该份状态持续，并由此上限控制份数。</p></template>
         <label>引用编号<input :value="status.id" readonly></label><strong>自身数据</strong><div v-for="(_,key) in status.data" :key="key" class="rule-variable"><span>{{ key }}</span><WorkshopFormulaEditor v-model="status.data[key]!" label="初始值" /><button type="button" @click="delete status.data[key]">删除</button></div><div><input v-model="newDataName" placeholder="数据名称"><button type="button" @click="status.data[newDataName]=0">＋自身数据</button></div>
         <strong>存在期间复用的效果</strong>

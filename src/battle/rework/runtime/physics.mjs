@@ -106,7 +106,7 @@ export function makeGame(player,enemies,options={}){
   let amount=0,crits=0,maxHit=0;const hits=Math.max(1,e.hits??1),cr=clamp(opts.sourceSnapshot?.crit??g.stat(source,'crit'),0,100),cd=clamp(opts.sourceSnapshot?.critDamage??g.stat(source,'critDamage'),0,250);
   for(let i=0;i<hits;i++){const c=e.crit!==false&&g.critRng()<cr/100;const part=base/hits*(c?1+cd/100:1);amount+=part;maxHit=Math.max(maxHit,part);crits+=Number(c);}
   g.totals.crits+=crits;
-  return g.rawHit(source,target,Math.max(1,amount),{hit:true,crits,maxHit:Math.min(maxHit,target.hp+target.shield),secondary,dot:Boolean(e.dotConversion||opts.dotConversion),shieldBypass:e.shieldBypass??0,shieldDamageBonus:e.shieldDamageBonus??0,skillId:g.action?.skill?.id});
+  return g.rawHit(source,target,Math.max(1,amount),{hit:true,crits,maxHit:Math.min(maxHit,target.hp+target.shield),secondary,dot:Boolean(e.dotConversion||opts.dotConversion),shieldBypass:e.shieldBypass??0,shieldDamageBonus:e.shieldDamageBonus??0,skillId:g.action?.skill?.id,cardUid:g.action?.skill?.uid,origin:opts.origin});
  };
  g.healBudgetRemaining=(source,target)=>{
   if(source.side!=='enemy')return Math.max(0,target.maxHp-target.hp);
@@ -162,7 +162,7 @@ export function makeGame(player,enemies,options={}){
    const k=key(e),turns=e.turns===Infinity||e.turns===-1?Infinity:e.turns??2,max=e.maxStacks??3;
    if(!(turns===Infinity||Number.isSafeInteger(turns)&&turns>0)||!Number.isSafeInteger(max)||max<0)throw Error('Invalid Workshop DOT duration or stack limit');
    const snapshot=(opts.sourceSnapshot?.attack??g.stat(source,'attack'))*(e.atk??0)*(1+.1*((opts.star??source.star??1)-1))*(opts.scale??1);
-   const rec={...e,canonicalStatus:k,sourceId:source.id,sourceActor:source,snapshotDamage:snapshot,sourceLevel:source.level,remaining:turns,turns,firstTickPhase:target.phaseCount+1,addedRound:g.round};
+   const rec={...e,canonicalStatus:k,sourceId:source.id,sourceActor:source,workshopSnapshotAttack:(opts.sourceSnapshot?.attack??g.stat(source,'attack'))*(1+.1*((opts.star??source.star??1)-1))*(opts.scale??1),snapshotDamage:snapshot,sourceLevel:source.level,remaining:turns,turns,firstTickPhase:target.phaseCount+1,addedRound:g.round};
    const same=target.dots.filter(x=>x.workshopDot&&key(x)===k&&Boolean(x.ruleParent)===Boolean(e.ruleParent));
    const keep=max>0?[rec,...same].sort((a,b)=>b.snapshotDamage-a.snapshotDamage||b.remaining-a.remaining).slice(0,max):[...same,rec];
    target.dots=target.dots.filter(x=>!same.includes(x)||keep.includes(x));
@@ -231,7 +231,7 @@ export function makeGame(player,enemies,options={}){
   return canAct;
  };
  g.endPhase=a=>{
-  g.endAction();for(const d of [...a.dots])if(a.hp>0&&a.phaseCount>=d.firstTickPhase){const K=100+5*d.sourceLevel;g.rawHit(d.sourceActor,a,d.snapshotDamage*K/(K+g.stat(a,'defense')),{dot:true});d.remaining--;}
+  g.endAction();for(const d of [...a.dots])if(a.hp>0&&a.dots.includes(d)&&a.phaseCount>=d.firstTickPhase){const K=100+5*d.sourceLevel;g.rawHit(d.sourceActor,a,d.snapshotDamage*K/(K+g.stat(a,'defense')),{dot:true,skillId:d.sourceSkill,cardUid:d.sourceCardUid});d.remaining--;}
   a.dots=a.dots.filter(d=>d.remaining>0);a.debuffs=a.debuffs.filter(e=>e.expireMode!=='end'||e.expireAtPhase>a.phaseCount);a.buffs=a.buffs.filter(e=>e.expireMode!=='end'||e.expireAtPhase>a.phaseCount);
   a.thisTurn.endShield=a.shield;a.thisTurn.endHp=a.hp;a.thisTurn.dotsAtEnd=a.dots.length;
  };

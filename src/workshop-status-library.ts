@@ -66,6 +66,7 @@ export const WORKSHOP_STATUS_LIBRARY: readonly WorkshopStatusOption[] = [
   effect('bleed', '流血', 'dot', .35, 'ratio'),
   effect('corrosion', '腐蚀', 'dot', .35, 'ratio'),
   effect('curse', '诅咒伤害', 'dot', .35, 'ratio'),
+  effect('abyss', '深渊持续伤害', 'dot', .35, 'ratio'),
 ].sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
 
 const entries = new Map(WORKSHOP_STATUS_LIBRARY.map(entry => [entry.id, entry]));
