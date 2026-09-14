@@ -31,4 +31,6 @@ export const WORKSHOP_RULE_EXAMPLES:RuleProgram[]=[
   program('contract','生命之契',contract),program('stored','蓄伤护符',stored,'self'),program('overflow','治疗转护盾',overflow,'self'),
   program('transfer','死亡传递印记',transfer),program('posture','守护姿态',posture,'self'),program('stone','石化：复用冻结效果',stone),
   {version:2,id:'template.summon',name:'守护傀儡协作',variables:[],statuses:[],rules:[rule('summon','cast',[{type:'summon',name:'守护傀儡',turns:3,inherit:{hp:.4,attack:.7,defense:.7,speed:1},program:guardian}])]},
+  {version:2,id:'template.dot_spread',name:'DOT 扩散：排除原目标',variables:[],statuses:[],rules:[rule('spread','cast',[{type:'dot_spread',source:'selected_target',target:{op:'targets',key:'enemies',excludeSelected:true},value:.35,turns:2,count:1,maxStacks:3,chance:100}])]},
+  {version:2,id:'template.dot_detonate',name:'DOT 引爆：原伤害结算并清除',variables:[],statuses:[],rules:[rule('detonate','cast',[{type:'dot_detonate',target:'target',mode:'tick',value:1,consume:true}])]},
 ];

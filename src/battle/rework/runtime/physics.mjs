@@ -231,7 +231,7 @@ export function makeGame(player,enemies,options={}){
   return canAct;
  };
  g.endPhase=a=>{
-  g.endAction();for(const d of [...a.dots])if(a.hp>0&&a.phaseCount>=d.firstTickPhase){const K=100+5*d.sourceLevel;g.rawHit(d.sourceActor,a,d.snapshotDamage*K/(K+g.stat(a,'defense')),{dot:true});d.remaining--;}
+  g.endAction();for(const d of [...a.dots])if(a.hp>0&&a.dots.includes(d)&&a.phaseCount>=d.firstTickPhase){const K=100+5*d.sourceLevel;g.rawHit(d.sourceActor,a,d.snapshotDamage*K/(K+g.stat(a,'defense')),{dot:true});d.remaining--;}
   a.dots=a.dots.filter(d=>d.remaining>0);a.debuffs=a.debuffs.filter(e=>e.expireMode!=='end'||e.expireAtPhase>a.phaseCount);a.buffs=a.buffs.filter(e=>e.expireMode!=='end'||e.expireAtPhase>a.phaseCount);
   a.thisTurn.endShield=a.shield;a.thisTurn.endHp=a.hp;a.thisTurn.dotsAtEnd=a.dots.length;
  };
