@@ -509,6 +509,61 @@ function createHarness(options: {
 }
 
 describe('ManagedContentUpdater', () => {
+  function imperialHarness() {
+    const h = createHarness({ operations: [] });
+    h.manifest.revision = imperialDelta.revision;
+    const original = [...imperialDelta.removals, ...imperialDelta.changes.map(change => change.before)];
+    const restore = () => h.worldbook.splice(0, h.worldbook.length, ...original.map((entry, index) => ({uid:index + 200,...clone(entry)}) as TestWorldbookEntry));
+    restore();
+    return {...h, restore};
+  }
+  it('已有成功回执后重导旧世界书，手动与自动检查均重新插入缺失条目', async () => {
+    const h=imperialHarness(),updater=new ManagedContentUpdater(h.host);
+    expect((await updater.sync({force:true})).conflicts).toEqual([]);
+    const guidance=h.worldbook.find(entry=>entry.name==='皇权斗争指导规范')!.content;
+    h.restore();
+    // Old whole-batch receipts must never replace live verification.
+    for (const revision of [imperialDelta.revision,'2026-09-11.imperial-guidance.2']) h.storage.set(`caelian:worldbook-delta:孔雀开屏你说看不见:${revision}`,JSON.stringify({conflicts:[],appliedAt:1}));
+    const result=await updater.sync({force:true});expect(result.applied).toBeGreaterThan(0);expect(result.conflicts).toEqual([]);
+    expect(h.worldbook.find(entry=>entry.name==='皇权斗争指导规范')!.content).toBe(guidance);
+    for(const addition of imperialDelta.additions)expect(h.worldbook.filter(entry=>entry.name===addition.name)).toHaveLength(1);
+    h.worldbook.splice(h.worldbook.findIndex(entry=>entry.name==='瓦莱里昂家族'),1);
+    expect((await updater.sync()).applied).toBe(1);expect(h.worldbook.filter(entry=>entry.name==='瓦莱里昂家族')).toHaveLength(1);
+  });
+  it('新增条目在玩家改名或改写后保持原样，其他缺失条目仍独立补入', async () => {
+    const h=imperialHarness(),updater=new ManagedContentUpdater(h.host);await updater.sync({force:true});
+    const edited=h.worldbook.find(entry=>entry.name==='瓦莱里昂家族')!;edited.name='我的家族设定';edited.content='玩家自写内容';edited.strategy.keys=['只用我的关键词'];
+    const before=clone(edited);h.worldbook.splice(h.worldbook.findIndex(entry=>entry.name==='卡斯特兰家族'),1);
+    const result=await updater.sync({force:true});expect(result.conflicts).toEqual([]);expect(result.preserved?.length).toBeGreaterThan(0);expect(result.applied).toBe(1);
+    expect(h.worldbook.find(entry=>entry.uid===before.uid)).toEqual(before);expect(h.worldbook.some(entry=>entry.name==='瓦莱里昂家族')).toBe(false);expect(h.worldbook.filter(entry=>entry.name==='卡斯特兰家族')).toHaveLength(1);
+  });
+  it('仅改写的待删除条目请求确认，新增先插入，保留选择可记住并重新选择', async () => {
+    const h=imperialHarness(),updater=new ManagedContentUpdater(h.host),edited=h.worldbook[0]!;edited.content+='玩家修改';const before=clone(edited);
+    const confirmDeletion=vi.fn(async()=>{expect(h.worldbook.some(entry=>entry.name==='瓦莱里昂家族')).toBe(true);return false;});
+    const first=await updater.sync({force:true,confirmDeletion});expect(confirmDeletion).toHaveBeenCalledTimes(1);expect(first.conflicts).toEqual([]);expect(first.keptDeletions).toBe(1);expect(h.worldbook.find(entry=>entry.uid===before.uid)).toEqual(before);
+    await updater.sync({force:true,confirmDeletion});expect(confirmDeletion).toHaveBeenCalledTimes(1);
+    confirmDeletion.mockResolvedValue(true);const second=await updater.sync({force:true,reviewDeletions:true,confirmDeletion});expect(confirmDeletion).toHaveBeenCalledTimes(2);expect(second.conflicts).toEqual([]);expect(h.worldbook.some(entry=>entry.uid===before.uid)).toBe(false);
+    // Approval to delete is never retained for a future reimport.
+    h.worldbook.push(before);await updater.sync({force:true,confirmDeletion});expect(confirmDeletion).toHaveBeenCalledTimes(3);
+  });
+  it('删除弹窗期间条目再次变化时不使用旧批准删除', async () => {
+    const h=imperialHarness(),updater=new ManagedContentUpdater(h.host),edited=h.worldbook[0]!;edited.content+='第一次改动';const uid=edited.uid;
+    const result=await updater.sync({force:true,confirmDeletion:async()=>{h.worldbook.find(entry=>entry.uid===uid)!.content+='弹窗期间再修改';return true;}});
+    expect(h.worldbook.find(entry=>entry.uid===uid)?.content).toContain('弹窗期间再修改');expect(result.conflicts.some(item=>item.reason.includes('等待选择'))).toBe(true);
+  });
+  it('写回未真正保存时报告失败，重试仍补齐条目且不会写成功回执', async () => {
+    const h=imperialHarness(),updater=new ManagedContentUpdater(h.host),write=h.helper.updateWorldbookWith.getMockImplementation()!;
+    h.helper.updateWorldbookWith.mockImplementationOnce(async(_name,update)=>update(clone(h.worldbook)));
+    const failed=await updater.sync({force:true});expect(failed.applied).toBe(0);expect(failed.conflicts.some(item=>item.reason.includes('回读失败'))).toBe(true);
+    expect([...h.storage.keys()].filter(key=>key.includes('live-v2')&&!key.endsWith(':backup'))).toEqual([]);
+    h.helper.updateWorldbookWith.mockImplementation(write);const retried=await updater.sync({force:true});expect(retried.applied).toBeGreaterThan(0);expect(retried.conflicts).toEqual([]);
+  });
+  it('回读核对设置而不只核对正文，接口漏写设置时不会误报最新', async () => {
+    const h=imperialHarness(),updater=new ManagedContentUpdater(h.host);
+    h.helper.updateWorldbookWith.mockImplementationOnce(async(_name,update)=>{const next=update(clone(h.worldbook));next.find(entry=>entry.name==='瓦莱里昂家族')!.strategy.keys=['接口错误丢失'];h.worldbook.splice(0,h.worldbook.length,...clone(next));return clone(next);});
+    const result=await updater.sync({force:true});expect(result.conflicts.some(item=>item.reason.includes('回读失败'))).toBe(true);
+  });
+
   it('皇权迁移只合并作者差量，改写条目和新建条目保留，所有开场白只改指定姓名', async () => {
     const h = createHarness({ operations: [{ id:'old-unsafe',target:{kind:'worldbook-entry',entryName:'玩家资料'},mutation:{action:'replace-entire',content:'不应写入'} }] });
     h.manifest.revision = imperialDelta.revision;
@@ -525,7 +580,7 @@ describe('ManagedContentUpdater', () => {
     persisted.data.alternate_greetings=['第二个朱利安','玩家自写：朱利安；保留其余内容'];
     const updater=new ManagedContentUpdater(h.host);
     const result=await updater.sync({force:true});
-    expect(result.conflicts.some(conflict=>conflict.reason.includes('皇城索拉姆'))).toBe(true);
+    expect(result.preserved?.some(reason=>reason.includes('皇城索拉姆'))).toBe(true);
     expect(h.worldbook.find(e=>e.uid===custom.uid)).toEqual(custom);
     expect(h.worldbook.find(e=>e.uid===changed.uid)?.content).toBe(changed.content);
     expect(h.worldbook.some(e=>e.name==='🗡️凯利安：龙族')).toBe(true);

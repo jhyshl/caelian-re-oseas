@@ -3,7 +3,7 @@ import {
   isCaelianWorldbookName,
 } from '@/content/character-identity';
 import { readCharacterTarget } from '@/tavern/character-target';
-import { applyWorldbookDelta, type WorldbookDelta } from './worldbook-delta';
+import { applyWorldbookDelta, combineWorldbookDeltas, worldbookEntriesMatch, type WorldbookDelta, type WorldbookDeletionConflict, type WorldbookDeletionDecision } from './worldbook-delta';
 
 const CHARACTER_NAME = '凯利安';
 const APPLIED_STORAGE_KEY = 'caelian:managed-content:applied:v1';
@@ -299,6 +299,12 @@ interface AppliedOperation {
   appliedAt: number;
 }
 
+export interface ManagedContentSyncOptions {
+  force?: boolean;
+  reviewDeletions?: boolean;
+  confirmDeletion?: (conflict: WorldbookDeletionConflict, worldbookName: string) => Promise<boolean>;
+}
+
 export interface ManagedContentSyncResult {
   status:
     | 'applied'
@@ -311,6 +317,8 @@ export interface ManagedContentSyncResult {
   revision?: string;
   applied: number;
   skipped: number;
+  preserved?: string[];
+  keptDeletions?: number;
   conflicts: Array<{ operationId: string; reason: string }>;
 }
 
@@ -339,7 +347,7 @@ export class ManagedContentUpdater {
     );
   }
 
-  sync(options: { force?: boolean } = {}): Promise<ManagedContentSyncResult> {
+  sync(options: ManagedContentSyncOptions = {}): Promise<ManagedContentSyncResult> {
     if (this.syncTask) return this.syncTask;
     this.syncTask = this.performSync(options).then(result => { this.lastResult = result; return result; }).finally(() => {
       this.syncTask = undefined;
@@ -348,7 +356,7 @@ export class ManagedContentUpdater {
   }
 
   private async performSync(
-    options: { force?: boolean },
+    options: ManagedContentSyncOptions,
   ): Promise<ManagedContentSyncResult> {
     if (!options.force && !this.autoUpdateEnabled()) {
       return emptyResult('disabled');
@@ -393,7 +401,7 @@ export class ManagedContentUpdater {
     this.assertSafeManifest(manifest, worldbookName);
 
     if (['2026-09-10.imperial-worldbook.1', '2026-09-11.imperial-guidance.2'].includes(manifest.revision)) {
-      return this.syncImperialDelta(api, identity, worldbookName);
+      return this.syncImperialDelta(api, identity, worldbookName, options);
     }
 
     const appliedState = this.readAppliedState(identity.avatar);
@@ -471,57 +479,65 @@ export class ManagedContentUpdater {
   }
 
   private async syncImperialDelta(
-    api: ManagedContentApi, identity: CurrentCharacterIdentity, worldbookName: string,
+    api: ManagedContentApi, identity: CurrentCharacterIdentity, worldbookName: string, options: ManagedContentSyncOptions,
   ): Promise<ManagedContentSyncResult> {
     const { default: data } = await import('../../public/managed-content/worldbook-deltas/imperial-2026-09-10.json');
     const {default: guidance} = await import('../../public/managed-content/worldbook-deltas/imperial-guidance-2026-09-11.json');
-    const delta = data as WorldbookDelta;
+    const delta = combineWorldbookDeltas([data as WorldbookDelta, guidance as WorldbookDelta]);
     let applied = 0;
     let skipped = 0;
+    let preserved: string[] = [];
+    let keptDeletions = 0;
     const conflicts: ManagedContentSyncResult['conflicts'] = [];
-    for (const source of [delta, guidance as WorldbookDelta]) {
-      const key = this.characterStorageKey(`caelian:worldbook-delta:${worldbookName}:${source.revision}`, identity.avatar);
-      let previous: { conflicts?: string[] } | undefined;
-      try { previous = JSON.parse(this.host.localStorage.getItem(key) ?? 'null') ?? undefined; } catch { /* Recheck a damaged receipt. */ }
-      if (previous && !previous.conflicts?.length) { skipped += 1; continue; }
-      // Successful entries remain untouched, including later player edits. Failed
-      // entries are recomputed from the live book instead of replaying old errors.
-      const pending = (entry: { name?: unknown }) => !previous || previous.conflicts?.some(reason => reason.includes(String(entry.name)));
-      const selected: WorldbookDelta = { ...source,
-        additions: source.additions.filter(pending), removals: source.removals.filter(pending),
-        changes: source.changes.filter(change => pending(change.before)),
-      };
-      const apply = (entries: ManagedWorldbookEntry[]) => {
-        const additions = selected.additions.map(addition => {
-          const followup = guidance.changes.find(change => change.before.name === addition.name);
-          return followup && entries.some(entry => entry.name === addition.name && entry.content === followup.after.content) ? followup.after : addition;
-        });
-        return applyWorldbookDelta(entries, { ...selected, additions });
-      };
+    const key = this.characterStorageKey(`caelian:worldbook-delta:${worldbookName}:live-v2`, identity.avatar);
+    const choicesKey = `${key}:keep-deletions`;
+    let decisions: WorldbookDeletionDecision[] = [];
+    if (!options.reviewDeletions) {
       try {
-        identity.assertCurrent();
-        let report = apply(await this.readWorldbook(api, worldbookName));
-        if (report.applied > 0) {
-          if (!api.updateWorldbookWith) throw new Error('世界书编辑接口不可用');
-          await api.updateWorldbookWith.call(api, worldbookName, entries => {
-            identity.assertCurrent();
-            report = apply(entries);
-            if (!this.host.localStorage.getItem(`${key}:backup`)) this.host.localStorage.setItem(`${key}:backup`, JSON.stringify(entries));
-            return report.entries as ManagedWorldbookEntry[];
-          }, { render: 'debounced' });
+        const saved: unknown = JSON.parse(this.host.localStorage.getItem(choicesKey) ?? '[]');
+        if (Array.isArray(saved)) decisions = saved.filter(choice => choice?.remove === false && typeof choice.originalName === 'string' && choice.entry && typeof choice.entry.name === 'string');
+      } catch { /* A damaged choice record never authorizes deletion. */ }
+    }
+    // Receipts describe past work, never the contents of a reimported live book.
+    // Each pass rechecks all additions, author changes and proposed deletions.
+    const updateLive = async () => {
+      identity.assertCurrent();
+      let report = applyWorldbookDelta(await this.readWorldbook(api, worldbookName), delta, decisions);
+      if (report.applied > 0) {
+        if (!api.updateWorldbookWith) throw new Error('世界书编辑接口不可用');
+        await api.updateWorldbookWith.call(api, worldbookName, entries => {
           identity.assertCurrent();
-          const verified = await this.readWorldbook(api, worldbookName);
-          if (verified.length !== report.entries.length || report.entries.some(expected =>
-            !verified.some(actual => String(actual.uid) === String(expected.uid) && actual.name === expected.name && actual.content === expected.content))) {
-            throw new Error('世界书差量更新回读失败，已保留更新前备份，请重试');
-          }
-        }
-        this.host.localStorage.setItem(key, JSON.stringify({ conflicts: report.conflicts, appliedAt: Date.now() }));
+          report = applyWorldbookDelta(entries, delta, decisions);
+          if (!this.host.localStorage.getItem(`${key}:backup`)) this.host.localStorage.setItem(`${key}:backup`, JSON.stringify(entries));
+          return structuredClone(report.entries) as ManagedWorldbookEntry[];
+        }, { render: 'debounced' });
+        identity.assertCurrent();
+        if (!worldbookEntriesMatch(await this.readWorldbook(api, worldbookName), report.entries)) throw new Error('世界书增量更新回读失败，已保留更新前备份；请重试');
         applied += report.applied;
-        for (const reason of report.conflicts) conflicts.push({ operationId: source.revision, reason });
-      } catch (error) {
-        conflicts.push({ operationId: source.revision, reason: `世界书「${worldbookName}」：${error instanceof Error ? error.message : String(error)}` });
+      } else skipped += 1;
+      return report;
+    };
+    try {
+      let report = await updateLive();
+      if (options.confirmDeletion && report.deletions.length) {
+        for (const deletion of report.deletions) {
+          identity.assertCurrent();
+          const remove = await options.confirmDeletion(deletion, worldbookName);
+          identity.assertCurrent();
+          decisions = decisions.filter(choice => choice.originalName !== deletion.originalName || String(choice.entry.uid) !== String(deletion.entry.uid));
+          decisions.push({ ...deletion, remove });
+        }
+        // Re-read and match the exact approved snapshot; edits during the dialog
+        // invalidate approval and remain pending instead of being deleted.
+        report = await updateLive();
       }
+      this.host.localStorage.setItem(choicesKey, JSON.stringify(decisions.filter(choice => !choice.remove)));
+      this.host.localStorage.setItem(key, JSON.stringify({ revision: delta.revision, conflicts: report.conflicts, checkedAt: Date.now() }));
+      preserved = report.preserved;
+      keptDeletions = report.preserved.filter(reason => reason.includes('已选择保留新版拟删除')).length;
+      for (const reason of report.conflicts) conflicts.push({ operationId: delta.revision, reason });
+    } catch (error) {
+      conflicts.push({ operationId: delta.revision, reason: `世界书「${worldbookName}」：${error instanceof Error ? error.message : String(error)}` });
     }
     // Fetch and merge only greeting fields by the actual PNG avatar identity.
     try {
@@ -544,7 +560,7 @@ export class ManagedContentUpdater {
       conflicts.push({ operationId: 'imperial-greetings', reason: `角色卡「${identity.name}」/ 全部开场白：${error instanceof Error ? error.message : String(error)}` });
     }
     this.writeConflicts(guidance.revision, conflicts, identity.avatar);
-    return { status: applied ? 'applied' : 'current', revision: guidance.revision, applied, skipped, conflicts };
+    return { status: applied ? 'applied' : 'current', revision: guidance.revision, applied, skipped, conflicts, preserved, keptDeletions };
   }
 
   private resolveApi(): ManagedContentApi {

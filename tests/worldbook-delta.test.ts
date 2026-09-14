@@ -1,12 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { applyWorldbookDelta, type DeltaEntry, type WorldbookDelta } from '@/content-updates/worldbook-delta';
+import { applyWorldbookDelta, combineWorldbookDeltas, worldbookEntriesMatch, type DeltaEntry, type WorldbookDelta } from '@/content-updates/worldbook-delta';
 import source from '../public/managed-content/worldbook-deltas/imperial-2026-09-10.json';
 
 const delta=source as WorldbookDelta;
 const original=()=>[...delta.removals,...delta.changes.map(c=>c.before)].map((entry,uid)=>({uid,...structuredClone(entry)}) as DeltaEntry);
 
 describe('作者世界书差量',()=>{
+  it('多批次新增与后续修订合并，直接插入最终版并可更新已有中间版',()=>{
+    const first:WorldbookDelta={revision:'1',additions:[{name:'新条目',content:'初稿',enabled:false}],changes:[],removals:[]};
+    const second:WorldbookDelta={revision:'2',additions:[],removals:[],changes:[{before:first.additions[0]!,after:{name:'新条目',content:'最终稿',enabled:false}}]};
+    const combined=combineWorldbookDeltas([first,second]),fresh=applyWorldbookDelta([],combined);expect(fresh.entries[0]?.content).toBe('最终稿');expect(fresh.conflicts).toEqual([]);expect(fresh.preserved).toEqual([]);
+    const old=applyWorldbookDelta([],first).entries;expect(applyWorldbookDelta(old,combined).entries[0]?.content).toBe('最终稿');expect(applyWorldbookDelta(fresh.entries,combined).applied).toBe(0);
+    expect(first.additions[0]?.content).toBe('初稿');expect(second.changes[0]?.before.content).toBe('初稿');
+  });
+  it('同名玩家自建内容不会被新增操作覆盖，也不会改变开关和关键词',()=>{
+    const local:DeltaEntry={uid:9,name:'新条目',content:'玩家自己的内容',enabled:true,extra:{myOption:1},strategy:{keys:['我的关键词']}};
+    const result=applyWorldbookDelta([local],{revision:'1',additions:[{name:'新条目',content:'作者新增'}],removals:[],changes:[]});
+    expect(result.entries).toEqual([local]);expect(result.applied).toBe(0);expect(result.preserved).toHaveLength(1);expect(result.conflicts).toEqual([]);
+  });
+  it('全文与嵌套设置均核对；UID 回收后不继承旧条目的删除批准',()=>{
+    const local:DeltaEntry={uid:9,name:'旧条目',content:'玩家修改',extra:{myOption:1}};
+    const change:WorldbookDelta={revision:'1',additions:[],changes:[],removals:[{name:'旧条目',content:'作者原文'}]};
+    const pending=applyWorldbookDelta([local],change),approved={...pending.deletions[0]!,remove:true};
+    const newer={...local,extra:{myOption:2}};expect(applyWorldbookDelta([newer],change,[approved]).entries).toEqual([newer]);expect(worldbookEntriesMatch([newer],[local])).toBe(false);
+    expect(applyWorldbookDelta([local],change,[approved]).entries).toEqual([]);
+  });
+
   it('以两份实际原文件为依据，新增6条、删除2条、正文修改1条',()=>{
     const rawBeta=Object.values(JSON.parse(readFileSync('docs/imperial-succession/source/beta.json','utf8')).entries) as Array<{comment:string;content:string}>;
     expect(delta.additions).toHaveLength(6);expect(delta.removals).toHaveLength(2);expect(delta.changes.filter(c=>c.before.content!==c.after.content)).toHaveLength(1);

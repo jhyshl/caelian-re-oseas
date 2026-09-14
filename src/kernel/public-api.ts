@@ -188,6 +188,7 @@ export interface CaelianPublicApi {
   ): Promise<RegionWorldbookSyncResult>;
   syncManagedContent(options?: {
     force?: boolean;
+    reviewDeletions?: boolean;
   }): Promise<ManagedContentSyncResult>;
   listSurveys(options?: { refresh?: boolean }): Promise<SurveyListEntry[]>;
   submitSurvey(

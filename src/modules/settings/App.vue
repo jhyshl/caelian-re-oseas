@@ -29,8 +29,10 @@ const contentSyncing = ref(false);
 const initialContentResult = props.context.api.getManagedContentResult?.();
 const contentConflicts = ref<ManagedContentSyncResult['conflicts']>(initialContentResult?.conflicts ?? []);
 const contentRevision = ref(initialContentResult?.revision ?? '');
+const contentPreserved = ref<string[]>(initialContentResult?.preserved ?? []);
+const keptDeletions = ref(initialContentResult?.keptDeletions ?? 0);
 const contentReport = computed(() => [`版本：${runtime.version}`, `更新批次：${contentRevision.value}`,
-  ...contentConflicts.value.map(item => `${item.reason}（操作：${item.operationId}）`)].join('\n'));
+  ...contentConflicts.value.map(item => `${item.reason}（操作：${item.operationId}）`), ...contentPreserved.value.map(reason => `已保留：${reason}`)].join('\n'));
 const managedContentAutoUpdate = ref(
   props.context.api.getManagedContentAutoUpdate(),
 );
@@ -109,12 +111,13 @@ async function syncMvu() {
     : '当前没有可用的 MVU 接口；本地档案不受影响。';
 }
 
-async function syncManagedContent() {
+async function syncManagedContent(reviewDeletions = false) {
   contentSyncing.value = true;
   contentConflicts.value = [];
+  contentPreserved.value = [];
   let result: ManagedContentSyncResult;
   try {
-    result = await props.context.api.syncManagedContent({ force: true });
+    result = await props.context.api.syncManagedContent({ force: true, reviewDeletions });
   } catch (error) {
     notice.value = `内容更新失败：${error instanceof Error ? error.message : String(error)}`;
     return;
@@ -122,6 +125,8 @@ async function syncManagedContent() {
     contentSyncing.value = false;
   }
   contentConflicts.value = result.conflicts;
+  contentPreserved.value = result.preserved ?? [];
+  keptDeletions.value = result.keptDeletions ?? 0;
   contentRevision.value = result.revision ?? '';
   if (result.status === 'wrong-character') {
     notice.value =
@@ -145,7 +150,8 @@ async function syncManagedContent() {
       ? `已更新 ${result.applied} 项；${result.conflicts.length} 项未更新，详情见下方，可复制给作者。`
       : result.applied > 0
         ? `已安全更新 ${result.applied} 项角色卡/世界书内容。`
-        : '角色卡与绑定世界书内容已经是最新版本。';
+        : '已核对角色卡与绑定世界书的实际内容，没有待写入的更新。';
+  if (contentPreserved.value.length) notice.value += ` ${contentPreserved.value.length} 项本地内容已保留，详情见下方。`;
 }
 
 function updateManagedContentPreference() {
@@ -474,12 +480,18 @@ onBeforeUnmount(() => {
           <label>反馈给作者的更新详情<textarea :value="contentReport" readonly rows="6" @focus="($event.target as HTMLTextAreaElement).select()" /></label>
           <span>点击文本框可全选复制。修正对应条目或恢复原版后，可再次检查更新。</span>
         </section>
+        <section v-if="contentPreserved.length" class="content-conflicts" aria-label="已保留的本地内容">
+          <strong>已保留的本地内容（{{ contentPreserved.length }} 项）</strong>
+          <ul><li v-for="item in contentPreserved" :key="item">{{ item }}</li></ul>
+          <button v-if="keptDeletions" type="button" :disabled="contentSyncing" @click="syncManagedContent(true)">重新选择保留的旧条目</button>
+          <span>保留本地修改不会阻止其他新增条目插入。</span>
+        </section>
         <label class="setting-row">
           <div>
             <strong>角色卡 / 世界书安全增量更新</strong>
             <span>
-              仅允许修改“凯利安”“凯利安alpha”“凯利安beta”及其指定绑定世界书。更新只处理管理端标记的精确片段；
-              与玩家修改冲突时保留玩家版本，不会整卡覆盖。
+              仅允许修改“凯利安”“凯利安alpha”“凯利安beta”及其指定绑定世界书。每次核对实际条目，缺失的新增内容直接插入；
+              玩家自建条目及修改保留。新版需删除的条目若有本地改动，会弹窗让你选择保留或删除，不会整本覆盖。
             </span>
           </div>
           <input
@@ -539,7 +551,7 @@ onBeforeUnmount(() => {
           type="button"
           class="ca-button"
           :disabled="contentSyncing"
-          @click="syncManagedContent"
+          @click="syncManagedContent()"
         >
           {{ contentSyncing ? '正在检查内容……' : '检查角色卡 / 世界书更新' }}
         </button>
