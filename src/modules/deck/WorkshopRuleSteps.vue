@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import WorkshopObjectSelect from './WorkshopObjectSelect.vue';
 import { ref } from 'vue';
 import { RULE_STEPS, RULE_SCOPES, RULE_EVENTS, emptyRuleProgram, type RuleStep, type RuleStatus } from '@/workshop-program';
 import { WORKSHOP_STATUS_LIBRARY, workshopBuiltinStatus, workshopStatusInput, WORKSHOP_DOT_STACK_HINT } from '@/workshop-status-library';
@@ -16,13 +17,13 @@ const costOptions=[['hp','支付生命'],['shield_cost','支付护盾'],['resour
   <div class="rule-steps">
     <article v-for="(step,i) in model" :key="i">
       <header><strong>{{ (costs?costOptions:RULE_STEPS).find(([t])=>t===step.type)?.[1]??step.type }}</strong><button v-if="i" type="button" @click="model.splice(i-1,0,model.splice(i,1)[0]!)">上移</button><button type="button" @click="duplicate(i,step)">复制</button><button type="button" @click="model.splice(i,1)">删除</button></header>
-      <label v-if="['set','add','resource','resource_cost'].includes(step.type)">数据／资源名<input v-model="step.key" placeholder="例如 remaining；AP填ap"></label>
+      <label v-if="['set','add'].includes(step.type)">数据名<input v-model="step.key" placeholder="例如 remaining"></label><label v-if="['resource','resource_cost'].includes(step.type)">资源<WorkshopObjectSelect v-model="step.key" kind="resources" /></label>
       <select v-if="['set','add'].includes(step.type)" v-model="step.scope"><option v-for="[k,n] in RULE_SCOPES" :key="k" :value="k">{{ n }}</option></select>
       <label v-if="step.type==='event_set'">事件字段<select v-model="step.field"><option value="amount">当前剩余金额</option><option value="cardCost">本次AP费用</option><option value="count">数量</option><option value="targetId">事件目标</option><option value="cancel">取消事件</option></select></label>
       <WorkshopFormulaEditor v-if="!['set','add','event_set','if','repeat','foreach_item','delay','modify_status','stop'].includes(step.type)" v-model="step.target!" label="对象" />
       <WorkshopFormulaEditor v-if="!['if','foreach','delay','summon','apply_status','remove_status','stop','remove_unit','copy_status'].includes(step.type)" v-model="step.value!" :label="step.type==='foreach_item'?'遍历列表':step.type==='native_status'?(step.statusFrom===undefined?workshopStatusInput(step.status??'').label:'效果数值（DOT 为攻击倍率，例如 0.35 = 35%）'):'数值'" />
       <WorkshopFormulaEditor v-if="step.type==='if'" v-model="step.condition!" label="条件" />
-      <template v-if="step.type==='native_status'"><label><input :checked="step.statusFrom!==undefined" type="checkbox" @change="step.statusFrom=($event.target as HTMLInputElement).checked?{op:'item',key:'type'}:undefined">按公式选择效果种类</label><WorkshopFormulaEditor v-if="step.statusFrom!==undefined" v-model="step.statusFrom" label="效果种类" /><label v-else>复用效果<select v-model="step.status" @change="step.value=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===step.status)?.value??1;if(workshopBuiltinStatus(step.status??'')?.kind==='dot')step.maxStacks??=3"><option v-for="s in WORKSHOP_STATUS_LIBRARY" :key="s.id" :value="s.id">{{ s.name }} · {{ s.polarity }}</option></select></label><WorkshopFormulaEditor v-model="step.chance!" label="基础命中率％" /></template>
+      <template v-if="step.type==='native_status'"><label><input :checked="step.statusFrom!==undefined" type="checkbox" @change="step.statusFrom=($event.target as HTMLInputElement).checked?{op:'item',key:'type'}:undefined">按公式选择效果种类</label><WorkshopFormulaEditor v-if="step.statusFrom!==undefined" v-model="step.statusFrom" label="效果种类" /><label v-else>复用效果<select v-model="step.status" @change="step.value=WORKSHOP_STATUS_LIBRARY.find(s=>s.id===step.status)?.value??1;if(workshopBuiltinStatus(step.status??'')?.kind==='dot')step.maxStacks??=3"><option v-for="s in WORKSHOP_STATUS_LIBRARY" :key="s.id" :value="s.id">{{ s.name }} · {{ s.id }} · {{ s.polarity }}</option></select></label><WorkshopFormulaEditor v-model="step.chance!" label="基础命中率％" /></template>
       <template v-if="step.type==='native_status'">
         <p v-if="workshopStatusInput(step.status??'').hint">{{ workshopStatusInput(step.status??'').hint }}</p>
         <template v-if="step.statusFrom!==undefined||workshopBuiltinStatus(step.status??'')?.kind==='dot'">
@@ -30,7 +31,7 @@ const costOptions=[['hp','支付生命'],['shield_cost','支付护盾'],['resour
           <p>{{ WORKSHOP_DOT_STACK_HINT }}</p>
         </template>
       </template>
-      <label v-if="['apply_status','remove_status'].includes(step.type)&&step.selection===undefined">状态<select v-model="step.status"><option v-if="step.type==='remove_status'" value="self">此状态自身</option><option v-for="s in statuses" :key="s.id" :value="s.id">{{ s.name }}</option></select></label>
+      <label v-if="['apply_status','remove_status'].includes(step.type)&&step.selection===undefined">状态<WorkshopObjectSelect v-model="step.status" kind="statuses" :extra="[...statuses.map(s=>({...s,group:'本组合状态'})),...(step.type==='remove_status'?[{id:'self',name:'此状态自身',group:'当前状态'}]:[])]" /></label>
       <label v-if="step.type==='remove_status'"><input :checked="step.selection!==undefined" type="checkbox" @change="step.selection=($event.target as HTMLInputElement).checked?{op:'statuses',key:'dot',target:'selected_target'}:undefined">从状态列表选择实例</label>
       <WorkshopFormulaEditor v-if="['modify_status','copy_status','remove_status'].includes(step.type)&&step.selection!==undefined" v-model="step.selection" label="状态列表／当前项" />
       <template v-if="step.type==='modify_status'">
@@ -63,9 +64,10 @@ const costOptions=[['hp','支付生命'],['shield_cost','支付护盾'],['resour
         <label><input :checked="step.sourceLevel!==undefined" type="checkbox" @change="step.sourceLevel=($event.target as HTMLInputElement).checked?{op:'item',key:'sourceLevel'}:undefined">指定来源等级（默认使用伤害来源单位等级）</label><WorkshopFormulaEditor v-if="step.sourceLevel!==undefined" v-model="step.sourceLevel" label="来源等级" />
         <p>数值按基础伤害处理，计算目标防御与护盾，不暴击、不闪避、不额外乘星级。读取当前状态项的每跳原伤害即可结算该层；是否移除、重复几次由其他积木决定。</p>
       </template>
-      <template v-if="['card','discard'].includes(step.type)">
-        <WorkshopFormulaEditor v-if="step.type==='card'" v-model="step.count!" label="卡牌数量" /><label>牌堆<select v-model="step.pile"><option value="hand">手牌</option><option value="deck">抽牌堆</option><option value="discard">弃牌堆</option><option value="exhaust">移出牌</option></select></label><input v-model="step.key" placeholder="卡牌编号／标签（可留空）">
-        <select v-if="step.type==='card'" v-model="step.operation"><option value="move">移动</option><option value="copy">复制</option><option value="cost">修改费用</option><option value="transform">变形</option><option value="generate">生成指定卡</option><option value="exhaust">移出循环</option></select>
+      <template v-if="['card','discard','discard_cost'].includes(step.type)">
+        <label><input :checked="step.selection!==undefined" type="checkbox" @change="step.selection=($event.target as HTMLInputElement).checked?{op:'card_items',key:step.pile??'hand'}:undefined">从卡牌列表选择实例</label><WorkshopFormulaEditor v-if="step.selection!==undefined" v-model="step.selection" label="卡牌列表／当前项" /><WorkshopFormulaEditor :model-value="step.source??{op:'card_definition',key:step.key??''}" label="指定卡牌（未选时匹配所有牌）" @update:model-value="step.source=$event;step.key=undefined" />
+        <WorkshopFormulaEditor v-if="step.type==='card'" v-model="step.count!" label="卡牌数量" /><label>牌堆<select v-model="step.pile"><option value="hand">手牌</option><option value="deck">抽牌堆</option><option value="discard">弃牌堆</option><option value="exhaust">移出牌</option></select></label><label v-if="step.type==='card'&&step.operation==='cost'">费用修改<select v-model="step.field"><option :value="undefined">设为数值</option><option value="add">增加数值（负数为减少）</option><option value="mul">乘以倍率</option></select></label>
+        <select v-if="step.type==='card'" v-model="step.operation"><option value="move">移动</option><option value="copy">复制</option><option value="cost">修改费用</option><option value="transform">变形</option><option value="generate">生成指定卡</option><option value="exhaust">移出循环</option><option value="consume">消耗（从战斗中删除）</option><option value="draw">定向检索到手牌</option><option value="discard">定向弃牌</option></select>
         <select v-model="step.mode"><option value="hand">放入手牌</option><option value="deck">放入抽牌堆</option><option value="discard">放入弃牌堆</option><option value="exhaust">移出循环</option></select>
       </template>
       <template v-if="step.type==='summon'"><input v-model="step.name" placeholder="召唤物名称"><button v-if="!step.inherit" type="button" @click="step.inherit={hp:.3,attack:.7,defense:.5,speed:1}">设置继承比例</button><label v-for="(_,key) in step.inherit" :key="key">{{ key }} 倍率（0.5 = 50%）<input v-model.number="step.inherit![key]" type="number" step=".1"></label><WorkshopProgramEditor v-if="step.program" v-model="step.program" nested /></template>

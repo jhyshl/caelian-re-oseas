@@ -10,7 +10,7 @@ function add():void {model.value.push({id:'rule-'+Date.now().toString(36),event:
   <div class="rules-list">
     <section v-for="(rule,i) in model" :key="i">
       <header><select v-model="rule.event"><option v-for="[key,name] in RULE_EVENTS" :key="key" :value="key">{{ name }}</option></select><button type="button" @click="model.splice(i,1)">删除规则</button></header>
-      <div class="rule-settings"><label>优先级<input v-model.number="rule.priority" type="number"></label><label>冷却回合<input v-model.number="rule.cooldown" type="number" min="0"></label><select v-model="rule.once"><option value="never">每次符合时触发</option><option value="turn">每回合一次</option><option value="battle">每场战斗一次</option></select></div>
+      <div class="rule-settings"><label>监听范围<select v-model="rule.eventScope"><option :value="undefined">与持有者相关（默认）</option><option value="all">全场事件（用条件筛选来源和目标）</option></select></label><label>优先级<input v-model.number="rule.priority" type="number"></label><label>冷却回合<input v-model.number="rule.cooldown" type="number" min="0"></label><select v-model="rule.once"><option value="never">每次符合时触发</option><option value="turn">每回合一次</option><option value="battle">每场战斗一次</option></select></div>
       <button v-if="rule.condition===undefined" type="button" @click="rule.condition={op:'gt',args:[1,0]}">＋触发条件</button>
       <template v-else><WorkshopFormulaEditor v-model="rule.condition" label="触发条件" /><button type="button" @click="delete rule.condition">移除条件</button></template>
       <details :open="rule.costs.length>0"><summary>支付代价</summary><WorkshopRuleSteps v-model="rule.costs" :statuses="statuses" costs /></details>

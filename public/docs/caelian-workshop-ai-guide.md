@@ -193,9 +193,9 @@
 - `mechanisms`：可选，随包携带的声明式或代码机制。
 - `main`：`knight`、`mage`、`artisan` 或 `freelance`。
 - `id`：稳定且唯一，建议以 `custom_class_` 开头。
-- `talent.effects`：最多 4 个互不重复的天赋效果。
-- `cards`：8–16 种名称和 ID 均不重复的卡牌。
-- `cardPool`：16–32 个卡牌 ID，且每种职业卡至少出现一次。
+- `talent.effects`：最多 32 个互不重复的天赋效果；每个组合规则天赋可自由配置事件、条件、代价和嵌套积木。
+- `cards`：8–16 种普通卡牌，可额外定义战斗专用牌；总计最多48种，名称和 ID 不重复。
+- `cardPool`：16–32 个卡牌 ID，且每种普通职业卡至少出现一次，战斗专用牌不得出现。
 - `starterDeck`：正好 15 个卡牌 ID，数量不能超过 `cardPool` 中的持有数量。同名卡可放入任意份数，只要卡池持有量足够。
 - `mechanismIds`：该职业启用的机制 ID。
 
@@ -368,3 +368,44 @@
 满层时保留每跳伤害较高的层；伤害相同时优先保留剩余回合较长的层。不同层各自计时，净化仍可移除相应 DOT。旧版未标记 `nativeStatus` 的 DOT 保留原来的每跳固定值，编辑器会明确标注，其持续回合和上限也可以修改；不要直接把旧伤害值改标为倍率。
 
 组合规则的 `native_status` 积木也支持 `turns` 与 `maxStacks`，可用公式计算。自定义状态选择“各份独立”时，状态定义的 `maxStacks` 控制份数（省略或 `0` 为不设上限），满层替换剩余回合最少的一份；复用 DOT 随父状态持续、到期或移除。其他叠加模式仍按合并或覆盖规则处理。上述配置保存、导出与战斗读档后保留。
+
+## 通用指定卡牌、统计与独立状态规则
+
+职业天赋使用 `rule_program`；独立 Buff/Debuff 的 `statuses[].program` 使用同一 `RuleProgram` 结构，其中第一个状态为主状态，可加入其他辅助状态。它们与卡牌共享全部事件、条件、变量、代价和效果积木。状态规则默认监听与持有者相关的事件；设置 `eventScope: "all"` 后监听全场，再用来源、目标和事件字段筛选。
+
+### 指定卡牌与可复用实例列表
+
+`{"op":"card_definition","key":"卡牌ID"}` 选择卡牌定义；`card_items` 读取手牌 `hand`、抽牌堆 `deck`、弃牌堆 `discard`、移出牌 `exhaust` 或所有牌堆 `all`，`value` 可填写筛选条件。每项可读 `id`（实例编号）、`cardId`、`name`、`cost`、`star`、`pile` 和 `battleOnly`。
+
+```json
+{"op":"card_items","key":"deck","value":{"op":"eq","args":[{"op":"item","key":"cardId"},{"op":"card_definition","key":"th_spark_arc"}]}}
+```
+
+将列表保存为数据后，多条 `card` 积木都能通过 `selection` 引用这些实例；`source` 可以直接引用指定卡牌定义。`count` 为操作数量，0 不操作任何牌；未找到指定牌时不会改动其他牌。
+
+| `operation` | 行为 |
+| --- | --- |
+| `generate` | 从 `source` 指定的定义生成战斗卡，`mode` 选择目的牌堆 |
+| `copy` | 复制选中的实例并获得新的实例编号 |
+| `cost` | 改费；`field` 省略为设值，`add` 增减、`mul` 相乘，最低为0，保留至本场战斗结束 |
+| `draw` | 从选中的牌堆定向检索到手牌，触发抽牌事件；手牌已满则放入弃牌堆 |
+| `discard` | 定向放入弃牌堆并触发弃牌事件 |
+| `consume` | 删除指定战斗实例，不能再次洗回 |
+| `exhaust` | 移入移出牌堆，仍可由其他积木取回 |
+| `move` / `transform` | 移动实例／改变其卡牌定义 |
+
+`discard_cost` 也支持 `selection` 和 `source`，指定牌不足时拒绝整次支付。获得及消耗只修改本场战斗，不修改永久卡牌数量。
+
+### 结算统计与弹射
+
+`after_damage` 每段结算一次，`count` 为1；`damage` 是实际生命损失与护盾吸收合计，`hpDamage`、`shieldDamage` 可分别读取。`dot` 同时涵盖原生 DOT、工坊 DOT、组合伤害的 `mode: "dot"` 和旧式自定义状态持续伤害。自定义的周期伤害请明确使用持续伤害模式，系统不会仅凭卡牌名称猜测其种类。
+
+用 `add` 累计所需字段，再以 `floor`、`div`、`mul` 等公式计算数量，交给 `resource` 增加所选资源。`shared` 在同队的不同卡牌和天赋间共享，`shared_turn` 在本回合共享；需要兑换后清零时另加 `set`。
+
+弹射由 `repeat` → `foreach`（对象为 `sample(targets(enemies), 1)`）→ `damage(hits:1)` 构成。每段重新从存活目标中随机选择，可重复命中；只剩一人时全部剩余段数命中该单位。示例菜单提供这三种可拆改组合。
+
+### 战斗专用牌和对象目录
+
+在卡牌定义上设置 `battleOnly: true`。此牌保存在作品定义中，供战斗积木生成和引用；不计入普通卡的8–16种要求，不允许出现在职业卡池、基础构筑或玩家牌组，也不写入永久卡牌库。生成后可照常使用、检索、弃牌和消耗，战斗结束后消失。
+
+对象下拉框同时列出定义ID和中文显示名，包含原生内容、已安装内容及当前草稿。独立状态引用为 `workshop_status:机制ID:状态ID`，工坊资源为 `workshop_resource:机制ID:资源ID`；引用这些对象时会自动启用对应机制。跨组合状态使用 `program_status:组合ID:状态ID`；分享作品时应包含被引用的卡牌或状态定义。

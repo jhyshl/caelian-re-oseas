@@ -23,7 +23,7 @@ export class CardRepository {
     if (!professions.size) return;
     const catalog = await loadCardCatalog();
     const clean = (deck: Pick<DeckRecord, 'cardIds' | 'cardStars'>) => {
-      const indices = deck.cardIds.flatMap((id, index) => catalog[id] ? [index] : []);
+      const indices = deck.cardIds.flatMap((id, index) => catalog[id] && !catalog[id].battleOnly ? [index] : []);
       return { ...deck, cardIds: indices.map(index => deck.cardIds[index]!),
         ...(deck.cardStars ? { cardStars: indices.map(index => deck.cardStars![index] ?? 1) } : {}) };
     };
@@ -50,7 +50,7 @@ export class CardRepository {
 
   async upgrade(profileId: string, cardId: string, requestedStars?: number): Promise<void> {
     const custom = readWorkshopPacks().flatMap(pack => pack.classes).flatMap(profession => profession.cards).find(card => card.id === cardId);
-    if ((!reworkCard(cardId) && !custom) || cardId === 'mg_blank_card') throw new Error('这张卡牌不能合成');
+    if (custom?.battleOnly || (!reworkCard(cardId) && !custom) || cardId === 'mg_blank_card') throw new Error('这张卡牌不能合成');
     if (custom && needsWorkshopStars(custom)) throw new Error('这张旧版自定义卡牌没有星级数值，请到创意工坊设置一至三星数值后再合成');
     if(await this.db.battleSessions.where('profileId').equals(profileId).filter(s=>s.active).count()) throw new Error('请在战斗结束后合成卡牌');
     const cards=await this.db.ownedCards.where('profileId').equals(profileId).toArray();
@@ -110,6 +110,7 @@ export class CardRepository {
     const catalog = this.catalog;
     if (!catalog) throw new Error('卡牌目录尚未就绪');
     if (cardIds.some(id => !catalog[id])) throw new Error('构筑含已删除或未安装的卡牌，请重新选择卡牌');
+    if (cardIds.some(id => catalog[id]?.battleOnly)) throw new Error('战斗专用牌无法加入牌组');
     if (cardIds.length < 10 || cardIds.length > 20) {
       throw new Error('牌组构筑必须为 10–20 张');
     }

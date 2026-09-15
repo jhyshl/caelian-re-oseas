@@ -689,7 +689,7 @@ export class CaelianKernel {
       }
       const selected = await this.repository.selectedQuestTracker(profileId);
       const quests = await this.db.questRecords.where('profileId').equals(profileId)
-        .filter(quest => quest.status === 'active' && (quest.definitionId === IMPERIAL_QUEST_ID || quest.id === selected?.questId)).toArray();
+        .filter(quest => quest.status === 'active' && quest.id === selected?.questId).toArray();
       const candidates = quests.filter(quest => (!rerollImperial || (quest.definitionId === IMPERIAL_QUEST_ID && selected?.questId === quest.id)) && (!expected || (quest.id === expected.questId && quest.acceptedAt === expected.acceptedAt)));
       const task = this.tavernUpdateQueue.catch(() => undefined).then(async () => {
         const latest = [...(await this.adapter.chatFloors() ?? [])].reverse().find(item => item.role === 'assistant');
@@ -703,7 +703,7 @@ export class CaelianKernel {
         for (const quest of candidates) {
           const current = await this.db.questRecords.get(quest.id);
           if (current?.status !== 'active' || current.acceptedAt !== quest.acceptedAt) continue;
-          if (quest.definitionId !== IMPERIAL_QUEST_ID && (currentSelected?.questId !== quest.id || !['armed','tracking','detour','suspended'].includes(currentSelected.current.trackerState))) continue;
+          if (currentSelected?.questId !== quest.id || !['armed','tracking','detour',...(quest.definitionId === IMPERIAL_QUEST_ID ? [] : ['suspended'])].includes(currentSelected.current.trackerState)) continue;
           if (rerollImperial && (currentSelected?.questId !== quest.id || !['armed','tracking','detour'].includes(currentSelected.current.trackerState))) continue;
           if (rerollImperial || !(await this.questProgress.hasCheckpointForFloor(profileId, quest.id, floor))) pending.push(quest.id);
         }
@@ -1708,6 +1708,8 @@ export class CaelianKernel {
   private async evaluateImperialQuest(quest: QuestRecord, payload?: TavernEventPayload, reroll = false): Promise<void> {
     const profileId = this.profileId;
     if (!profileId) return;
+    const tracker = await this.questProgress.getTracker(profileId, quest.id);
+    if (!tracker?.selected || !['armed', 'tracking', 'detour'].includes(tracker.current.trackerState)) return;
     const epoch = this.generationEpoch;
     const identity = await this.adapter.identity();
     const floors = await this.adapter.chatFloors();
@@ -1735,6 +1737,8 @@ export class CaelianKernel {
         isCurrent: async () => {
           if (this.shuttingDown || profileId !== this.profileId || epoch !== this.generationEpoch || (await this.adapter.identity()).chatId !== identity.chatId) return false;
           const currentQuest = await this.db.questRecords.get(quest.id);
+          const currentTracker = await this.questProgress.getTracker(profileId, quest.id);
+          if (!currentTracker?.selected || !['armed', 'tracking', 'detour'].includes(currentTracker.current.trackerState)) return false;
           const currentFloor = (await this.adapter.chatFloors())?.find(item => item.index === floor.index);
           return currentQuest?.status === 'active' && currentQuest.acceptedAt === quest.acceptedAt && currentFloor?.id === floor.id && currentFloor.lineageHash === floor.lineageHash;
         },

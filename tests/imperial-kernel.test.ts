@@ -80,8 +80,13 @@ describe('皇权支线完整酒馆事件链',()=>{
     expect(chat[1]!.mes).toContain('手动修订阵营');
     expect(entries[0]!.enabled).toBe(false);expect(document.querySelector('.imperial-launcher')).toBeNull();
     chat.push({mes:'我暂时去别处。',is_user:true},{mes:'议会向玩家递交了正式邀请。',is_user:false});handlers.get('ended')?.();
+    const pausedDone=vi.fn();const pausedDispose=kernel.api.on('tavern.changed',pausedDone);
+    await expect.poll(()=>pausedDone.mock.calls.length).toBeGreaterThan(0);pausedDispose();
+    expect(chat[3]!.mes).not.toContain('<caelian-imperial-state>');expect(apiMessages).toHaveLength(1);
+    await kernel.api.retryQuestJudge();expect(apiMessages).toHaveLength(1);
+    await kernel.api.resumeTrackedQuest();handlers.get('ended')?.();
     await expect.poll(()=>chat[3]!.mes).toContain('<caelian-imperial-state>');
-    expect(apiMessages).toHaveLength(2);expect(entries[0]!.enabled).toBe(false);
+    expect(apiMessages).toHaveLength(2);expect(entries[0]!.enabled).toBe(true);
     expect(apiMessages[1]![1]!.content).toContain('手动修订阵营');
     const revisionBeforeDelete=(await db.questTrackerStates.toArray())[0]!.current.imperial!.revision;
     chat.splice(3,1);handlers.get('deleted')?.(3);

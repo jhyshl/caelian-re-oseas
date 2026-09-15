@@ -222,7 +222,7 @@ export class GameRepository {
       inventory,
       equipment,
       loadout,
-      cards: cards.filter(card => cardCatalog[card.cardId]),
+      cards: cards.filter(card => cardCatalog[card.cardId] && !cardCatalog[card.cardId]?.battleOnly),
       decks,
       relics,
       specialCollectibles,

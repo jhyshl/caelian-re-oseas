@@ -27,12 +27,13 @@ export async function evaluateImperialTurn(input: {
   if (input.quest.status !== 'active' || input.floor.role !== 'assistant') return null;
   if (!input.reroll && await input.progress.hasCheckpointForFloor(input.profileId, input.quest.id, input.floor)) return null;
   const tracker = await input.progress.getTracker(input.profileId, input.quest.id);
-  if (!tracker) return null;
+  if (!tracker?.selected || !['armed', 'tracking', 'detour'].includes(tracker.current.trackerState)) return null;
+  if (!(await input.isCurrent())) return null;
   const previous = tracker.current.imperial ?? initialImperialState();
   const result = await input.judge.evaluateImperial({ ...input.prompt, state: previous });
   if (!(await input.isCurrent())) return null;
   const latest = await input.progress.getTracker(input.profileId, input.quest.id);
-  if (!latest || (latest.current.imperial?.revision ?? 0) !== previous.revision) return null;
+  if (!latest?.selected || !['armed', 'tracking', 'detour'].includes(latest.current.trackerState) || (latest.current.imperial?.revision ?? 0) !== previous.revision) return null;
   const body = stripImperialContext(input.floor.text ?? '');
   const conversation = input.prompt.recentMessages.map(message => stripImperialContext(message.content)).join('\n');
   const playerWords = input.prompt.recentMessages.filter(message => message.role === 'user').map(message => message.content).join('\n');

@@ -59,6 +59,7 @@ export interface VisualWorkshopResourceDraft {
 }
 
 export interface VisualWorkshopStatusDraft {
+  program?: import('@/workshop-program').RuleProgram;
   id?: string;
   statusId?: string;
   name: string;
@@ -139,6 +140,7 @@ export function compileVisualWorkshopStatus(
         label: name.slice(0, 30) || '自定义状态',
         description: String(draft.description ?? '').trim().slice(0, 120),
         polarity: draft.polarity,
+        ...(draft.program ? { program: draft.program } : {}),
         effects: draft.effects.slice(0, 8).map((effect) => ({
           type: effect.type,
           value:

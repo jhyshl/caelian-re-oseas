@@ -140,17 +140,17 @@ describe('动荡的皇权',()=>{
     await expect(h.progress.acceptDefinition(h.profile.id,imperialQuestDefinition)).rejects.toThrow('已经');
   });
 
-  it('取消追踪仍维护已接取的局势，不恢复悬浮窗追踪状态；重复楼层不再次调用',async()=>{
+  it('取消追踪不调用副 API，也不写回局势；重复楼层保持暂停',async()=>{
     const h=await setup();await h.progress.setSelectedTrackerState(h.profile.id,'manualPaused');
     const value=h.response();value.state.currentEvent={text:'议会转向',known:true,evidence:'议会正式转向支持塞西莉亚。'};
     value.state.playerClaimingThrone=true;value.state.playerCamp='随意值';value.state.campEvidence='我选择亲自争夺皇位。';
     h.judge.evaluateImperial.mockResolvedValue(value);
     const result=await evaluateImperialTurn(h.input);
-    expect(result?.state.playerCamp).toBe('自己');
+    expect(result).toBeNull();
     expect((await h.progress.getTracker(h.profile.id,h.quest.id))?.current.trackerState).toBe('manualPaused');
-    expect(await evaluateImperialTurn(h.input)).toBeNull();expect(h.judge.evaluateImperial).toHaveBeenCalledTimes(1);
+    expect(await evaluateImperialTurn(h.input)).toBeNull();expect(h.judge.evaluateImperial).not.toHaveBeenCalled();
     const reloaded=new QuestProgressRepository(h.db);
-    expect((await reloaded.getTracker(h.profile.id,h.quest.id))?.current.imperial?.currentEvent.text).toBe('议会转向');
+    expect((await reloaded.getTracker(h.profile.id,h.quest.id))?.current.imperial?.revision ?? 0).toBe(0);
   });
 
   it('拒绝无证据的支持值和玩家知情标记，仅播报本轮可知且未重复的重大进展',async()=>{

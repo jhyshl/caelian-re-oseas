@@ -1,3 +1,4 @@
+import { programObjectReferences } from '@/workshop-program-references';
 import type { CardDefinition, CardEffect } from '@/content/types';
 import { normalizeRuleProgram, emptyRuleProgram, type RuleProgram } from '@/workshop-program';
 import { WORKSHOP_STATUS_LIBRARY, workshopTurns, workshopMaxStacks } from '@/workshop-status-library';
@@ -932,6 +933,7 @@ export function normalizeWorkshopCard(
     cat: `sub_${classId}`,
     cls: 'custom',
     custom: true,
+    ...(source.battleOnly===true?{battleOnly:true}:{}),
   };
   const starScaling = normalizeStarScaling(source.starScaling);
   if (starScaling) card.starScaling = starScaling;
@@ -959,7 +961,7 @@ export function normalizeWorkshopClass(
     ? talentSource.effects
     : []
   )
-    .slice(0, 4)
+    .slice(0, 32)
     .flatMap((entry) => {
       const normalized = normalizeTalentEffect(entry);
       return normalized ? [normalized] : [];
@@ -975,7 +977,7 @@ export function normalizeWorkshopClass(
     talentTypes.add(key);
   }
   const rawCards = Array.isArray(source.cards) ? source.cards : [];
-  if (rawCards.length < 8 || rawCards.length > 16) {
+  if (rawCards.filter(card=>record(card).battleOnly!==true).length < 8 || rawCards.filter(card=>record(card).battleOnly!==true).length > 16 || rawCards.length > 48) {
     throw new Error(`职业「${name}」需要 8–16 种不同卡牌。`);
   }
   const cards = rawCards.map(
@@ -990,7 +992,8 @@ export function normalizeWorkshopClass(
   ) {
     throw new Error(`职业「${name}」的 8–16 种卡牌必须使用不同名称。`);
   }
-  const cardIds = new Set(cards.map((card) => card.id));
+  const configurableCards=cards.filter(card=>!card.battleOnly);
+  const cardIds = new Set(configurableCards.map((card) => card.id));
   const starterDeck = (
     Array.isArray(source.starterDeck) ? source.starterDeck : []
   )
@@ -1008,7 +1011,7 @@ export function normalizeWorkshopClass(
   if (cardPool.length < 16 || cardPool.length > 32) {
     throw new Error(`职业「${name}」的可配置职业卡池必须为 16–32 张。`);
   }
-  if (new Set(cardPool).size !== cards.length) {
+  if (new Set(cardPool).size !== configurableCards.length) {
     throw new Error(`职业「${name}」的每一种卡牌都必须出现在职业卡池中。`);
   }
   const starterCounts = starterDeck.reduce<Record<string, number>>(
@@ -1129,6 +1132,13 @@ function validateWorkshopResourceReferences(
       ...workshopResourceReferences({ cards: profession.cards, talent: profession.talent.effects }),
       ...workshopStatusReferences({ cards: profession.cards, talent: profession.talent.effects }),
     ].map(reference => reference.mechanismId));
+    const programReferences=programObjectReferences(profession);
+    for(const ref of programReferences){
+      if(ref.startsWith('program_status:'))continue;
+      const manifest=[...manifests.values()].find(m=>m.statuses.some(s=>'workshop_status:'+m.id+':'+s.id===ref)||m.resources.some(r=>'workshop_resource:'+m.id+':'+r.id===ref));
+      if(!manifest)throw new Error('引用的工坊对象不存在：'+ref);
+      referenced.add(manifest.id);profession.mechanismIds=[...new Set([...(profession.mechanismIds??[]),manifest.id])];
+    }
     const previousSelections = new Set(readWorkshopStorageValues(WORKSHOP_STORAGE_KEY).flatMap(pack => {
       const classes = record(pack).classes;
       return Array.isArray(classes) ? classes.flatMap(value => {

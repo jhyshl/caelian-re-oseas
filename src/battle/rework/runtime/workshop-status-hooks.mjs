@@ -49,7 +49,7 @@ export function workshopNativeStatusValue(actor,type,manifests,activeIds){
   for(const status of manifest.statuses??[]){
    const key=`workshop_status:${manifest.id}:${status.id}`;
    const list=status.polarity==='buff'?actor.buffs:[...actor.debuffs,...actor.dots];
-   const stacks=list.filter(e=>(e.canonicalStatus??e.status)===key).reduce((sum,e)=>sum+Math.max(0,finite(e.value)),0);
+   const stacks=list.filter(e=>(e.canonicalStatus??e.status)===key).reduce((sum,e)=>sum+Math.max(0,finite(e.ruleData?.layers??e.value)),0);
    if(stacks>0)for(const effect of status.effects??[])if(effect.type===type)total+=finite(effect.value)*stacks;
   }
  }

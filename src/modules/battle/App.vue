@@ -619,6 +619,8 @@ const activePreviewCardDefinition = computed(() => {
   return card && cards.value[card.cardId] ? { ...cards.value[card.cardId]!, previewStars: card.stars ?? 1, previewInstanceId: card.instanceId } : undefined;
 });
 const friendlyEffectTypes = new Set([
+  'rule_program',
+  'apply_workshop_status',
   'shield',
   'heal',
   'heal_overflow_shield',
@@ -2267,7 +2269,14 @@ onUnmounted(() => {
                 v-for="summon in state.player.summons"
                 :key="summon.id"
                 class="player-summon"
+                role="button"
+                tabindex="0"
+                :data-ally-target="summon.id"
+                :aria-pressed="selectedAllyTarget === summon.id"
+                :aria-disabled="!canSelectAllyTarget(summon.id)"
                 :class="{
+                  selected: selectedAllyTarget === summon.id,
+                  'drag-over': dragPreviewAllyTarget === summon.id,
                   defeated:
                     summonIsAttackable(summon) &&
                     (Number(summon.hp) || 0) <= 0,
@@ -2275,6 +2284,9 @@ onUnmounted(() => {
                   hit: hitTargetKey === `summon:${summon.id}`,
                   glow: glowTargetKey === `summon:${summon.id}`,
                 }"
+                @click="selectAllyTarget(summon.id)"
+                @keydown.enter.prevent="selectAllyTarget(summon.id)"
+                @keydown.space.prevent="selectAllyTarget(summon.id)"
               >
                 <small>
                   {{ summonIsMechanical(summon) ? '机械召唤物' : '可攻击召唤物' }}
@@ -2428,7 +2440,7 @@ onUnmounted(() => {
         </section>
 
         <div
-          v-if="state.companion && selectedCardFriendlyMode !== 'none'"
+          v-if="selectedCardFriendlyMode !== 'none'"
           class="friendly-target-picker"
         >
           <template v-if="selectedCardFriendlyMode === 'all'">
@@ -2445,13 +2457,15 @@ onUnmounted(() => {
               玩家（默认）
             </button>
             <button
+              v-if="state.companion"
               type="button"
+              :disabled="!canSelectAllyTarget('caelian')"
               :class="{ selected: selectedAllyTarget === 'caelian' }"
               @click="selectAllyTarget('caelian')"
             >
               凯利安
             </button>
-            <button v-for="summon in state.companion.summons" :key="summon.id" type="button" :disabled="!canSelectAllyTarget(summon.id)" :class="{ selected: selectedAllyTarget === summon.id }" @click="selectAllyTarget(summon.id)">{{ summon.name }}</button>
+            <button v-for="summon in [...state.player.summons, ...(state.companion?.summons ?? [])]" :key="summon.id" type="button" :disabled="!canSelectAllyTarget(summon.id)" :class="{ selected: selectedAllyTarget === summon.id }" @click="selectAllyTarget(summon.id)">{{ summon.name }}</button>
           </template>
         </div>
 
@@ -3037,6 +3051,7 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
+.player-summon.selected,
 .companion-unit.selected,
 .companion-summon.selected {
   border-color: #fff2a5;

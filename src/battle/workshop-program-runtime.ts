@@ -4,6 +4,7 @@ import { workshopBuiltinStatus, workshopTurns, workshopMaxStacks } from '@/works
 import { normalizeLegacyStatus } from '@/battle/rework/runtime/legacy-bridge.mjs';
 import { effectValue, statusGain } from '@/battle/rework/runtime/tactical-ai.mjs';
 
+export interface WorkshopProgramPorts { card?:(id:string)=>any; status?:(id:string)=>RuleProgram|undefined; resource?:(key:string)=>number|undefined; changeResource?:(key:string,value:number)=>number|undefined }
 type Context={item?:any;selectedTargetId?:string;area?:boolean;program:RuleProgram;owner:any;source:any;target:any;event:any;local:Record<string,any>;status?:any;card?:any;star:number};
 const attached=new WeakMap<object,WorkshopProgramRuntime>();
 const clone=<T>(x:T):T=>structuredClone(x);
@@ -12,14 +13,14 @@ const arr=(v:any):any[]=>v==null?[]:Array.isArray(v)?v:[v];
 const key=(x:any)=>String(x??'').split('.').filter(s=>s&&!['__proto__','prototype','constructor'].includes(s));
 const read=(x:any,path:string)=>key(path).reduce((v,k)=>v?.[k],x);
 
-export function installWorkshopPrograms(g:any,roots:Array<{program:RuleProgram;card?:any}>,ports:{card?:(id:string)=>any}={}):WorkshopProgramRuntime {
+export function installWorkshopPrograms(g:any,roots:Array<{program:RuleProgram;card?:any}>,ports:WorkshopProgramPorts={}):WorkshopProgramRuntime {
   let runtime=attached.get(g);if(!runtime){runtime=new WorkshopProgramRuntime(g,ports);attached.set(g,runtime);runtime.attach();}
-  runtime.roots=roots;for(const r of roots)runtime.register(r.program);return runtime;
+  runtime.ports=ports;runtime.roots=roots;for(const r of roots)runtime.register(r.program);return runtime;
 }
 export class WorkshopProgramRuntime {
   roots:Array<{program:RuleProgram;card?:any}>=[];
   private steps=0;private depth=0;private original:any={};private syncing=false;
-  constructor(public g:any,private ports:{card?:(id:string)=>any}){}
+  constructor(public g:any,public ports:WorkshopProgramPorts){}
   private get memory():any{return this.g.player.flags.workshopPrograms??=( {programs:{},variables:{},fired:{},delays:[],trace:[],sequence:0} );}
   register(p:RuleProgram):void{this.memory.programs[p.id]=clone(p);}
   private actors():any[]{return [...this.g.allies,...this.g.enemies];}
@@ -35,10 +36,11 @@ export class WorkshopProgramRuntime {
     if(e===undefined)return 0;if(e===null||typeof e!=='object')return e;
     const args=()=>e.args?.map(a=>this.value(a,c))??[];
     if(e.op==='literal')return e.value??0;
+    if(e.op==='card_definition')return e.key??'';
     if(e.op==='var')return read(this.storage(c,e.scope),e.key??'')??0;
     if(e.op==='event')return read(c.event,e.key??'')??0;
     if(e.op==='stat'){const a=this.actor(this.value(e.target??'self',c),c);if(!a)return 0;const stat=e.key??'attack';return ['attack','defense','speed','crit','critDamage','ehr','res'].includes(stat)?this.g.stat(a,stat):stat==='hpMax'?a.maxHp:stat==='lostHp'?a.maxHp-a.hp:read(a,stat)??0;}
-    if(e.op==='resource'){const a=this.actor(this.value(e.target??'self',c),c);return e.key==='ap'?a?.ap??0:a?.resources?.[e.key??'energy']??0;}
+    if(e.op==='resource'){const external=this.ports.resource?.(e.key??'');if(external!==undefined)return external;const a=this.actor(this.value(e.target??'self',c),c);return e.key==='ap'?a?.ap??0:a?.resources?.[e.key??'energy']??0;}
     if(e.op==='status_data'){const a=this.actor(this.value(e.target??'target',c),c),[id,...path]=(e.key??'').split('.');return a?[...a.buffs,...a.debuffs].filter(s=>s.ruleStatus===id||s.ruleLabel===id).reduce((sum,s)=>sum+num(read(s.ruleData,path.join('.'))),0):0;}
     if(e.op==='status'){const a=this.actor(this.value(e.target??'self',c),c);return a?this.g.status(a,e.key):0;}
     if(e.op==='item'){if(e.key==='self')return clone(c.item??null);const item=typeof c.item==='string'?this.actor(c.item,c):c.item;if(!item)return 0;if(item.stats&&['attack','defense','speed','crit','critDamage','ehr','res'].includes(e.key??''))return this.g.stat(item,e.key);return e.key==='hpMax'?item.maxHp??item.hpMax??0:read(item,e.key??'')??0;}
@@ -51,7 +53,7 @@ export class WorkshopProgramRuntime {
       if(e.op==='take'||e.op==='sample'){const n=Number(this.value(e.args?.[1]??1,c));if(!Number.isSafeInteger(n)||n<0)throw Error('列表抽取数量请填写非负整数');if(e.op==='sample')for(let i=list.length-1;i>0;i--){const j=Math.floor(this.g.rng()*(i+1));[list[i],list[j]]=[list[j],list[i]];}return list.slice(0,n);}
       const values=list.map(item=>num(field(item)));return e.op==='sum_list'?values.reduce((a,b)=>a+b,0):!values.length?0:e.op==='min_list'?Math.min(...values):Math.max(...values);
     }
-    if(e.op==='card_items')return (this.g.player[e.key??'hand']??[]).map((card:any)=>{const def=this.ports.card?.(card.id)??card;return {id:card.uid,cardId:card.id,kind:'card',type:def.type??'',name:def.name??card.id,cost:card.ap??def.cost??0,star:card.star??1};});
+    if(e.op==='card_items'){const piles=e.key==='all'?['hand','deck','discard','exhaust']:[e.key??'hand'];let list=piles.flatMap(pile=>(this.g.player[pile]??[]).map((card:any)=>{const def=this.ports.card?.(card.id)??card;return {id:card.uid,cardId:card.id,pile,kind:'card',type:def.type??'',name:def.name??card.id,cost:card.ruleCost??card.ap??def.cost??0,star:card.star??1,battleOnly:def.battleOnly===true};}));if(e.value!==undefined)list=list.filter(item=>this.value(e.value,{...c,item}));return list;}
     if(e.op==='cards'){const pile=this.g.player[e.key??'hand']??[];return pile.map((v:any)=>v.uid);}
     if(e.op==='targets'){
       const selector=e.key??'enemies';let list=selector==='all'?this.actors():selector==='summons'?this.actors().filter(a=>a.isSummon||a.legacySummon):selector==='allies'?this.g.friendTeam(c.owner):this.g.foeTeam(c.owner);
@@ -71,12 +73,12 @@ export class WorkshopProgramRuntime {
   private pay(costs:RuleStep[],c:Context):boolean {
     const totals=new Map<string,{actor:any;field:string;value:number}>();const discards:any[]=[];const pets:any[]=[];
     for(const s of costs){const a=this.targets({...s,target:s.target??'self'},c)[0];if(!a)return false;const n=Math.max(0,num(this.value(s.value??1,c)));
-      if(s.type==='discard_cost'){const available=this.g.player.hand.filter((x:any)=>x.uid!==c.card?.uid&&!discards.includes(x));if(available.length<n)return false;discards.push(...available.slice(0,n));continue;}
+      if(s.type==='discard_cost'){const available=this.cards({...s,pile:'hand'},c).filter((x:any)=>!discards.includes(x));if(available.length<n)return false;discards.push(...available.slice(0,n));continue;}
       if(s.type==='summon_cost'){const available=this.g.allies.filter((x:any)=>x.hp>0&&(x.isSummon||x.legacySummon)&&!pets.includes(x));if(available.length<n)return false;pets.push(...available.slice(0,n));continue;}
-      const field=s.type==='hp'?'hp':s.type==='shield_cost'?'shield':s.key==='ap'?'ap':'resources.'+(s.key??'energy');const id=a.id+':'+field;const row=totals.get(id)??{actor:a,field,value:0};row.value+=n;totals.set(id,row);
+      const field=s.type==='hp'?'hp':s.type==='shield_cost'?'shield':this.ports.resource?.(s.key??'')!==undefined?'external.'+s.key:s.key==='ap'?'ap':'resources.'+(s.key??'energy');const id=a.id+':'+field;const row=totals.get(id)??{actor:a,field,value:0};row.value+=n;totals.set(id,row);
     }
-    for(const row of totals.values())if(num(read(row.actor,row.field))-row.value<(row.field==='hp'?1:0))return false;
-    let paid=0;for(const row of totals.values()){if(row.field.startsWith('resources.'))row.actor.resources[row.field.slice(10)]-=row.value;else row.actor[row.field]-=row.value;paid+=row.value;}
+    for(const row of totals.values())if(num(row.field.startsWith('external.')?this.ports.resource?.(row.field.slice(9)):read(row.actor,row.field))-row.value<(row.field==='hp'?1:0))return false;
+    let paid=0;for(const row of totals.values()){if(row.field.startsWith('external.'))this.ports.changeResource?.(row.field.slice(9),num(this.ports.resource?.(row.field.slice(9)))-row.value);else if(row.field.startsWith('resources.'))row.actor.resources[row.field.slice(10)]-=row.value;else row.actor[row.field]-=row.value;paid+=row.value;}
     for(const card of discards){this.g.player.hand.splice(this.g.player.hand.indexOf(card),1);this.g.player.discard.push(card);this.emit('discard',{sourceId:c.owner.id,targetId:c.owner.id,cardUid:card.uid,cardId:card.id});}
     for(const pet of pets){pet.hp=0;this.emit('summon_removed',{sourceId:c.owner.id,targetId:pet.id});}
     c.local.paid=paid;c.local.discarded=discards.map(x=>x.uid);c.local.sacrificed=pets.map(x=>x.id);return true;
@@ -119,7 +121,7 @@ export class WorkshopProgramRuntime {
     for(const owner of this.actors()){
       for(const status of [...owner.buffs,...owner.debuffs].filter((x:any)=>x.ruleInstance)){
         const program=this.memory.programs[status.ruleProgram],definition:RuleStatus|undefined=program?.statuses.find((s:RuleStatus)=>s.id===status.ruleStatus);if(!definition)continue;
-        const c=this.context(program,owner,event,status);for(const rule of definition.rules)if(rule.event===type&&(['before_card','after_card','draw','discard'].includes(type)?event.sourceId===owner.id:['turn_start','turn_end','before_heal','after_heal','before_shield','after_shield','before_damage','after_damage','death','dodge','shield_broken'].includes(type)?event.targetId===owner.id:true))work.push({rule,c});
+        const c=this.context(program,owner,event,status);for(const rule of definition.rules)if(rule.event===type&&(rule.eventScope==='all'||(['before_card','after_card','draw','discard'].includes(type)?event.sourceId===owner.id:['turn_start','turn_end','before_heal','after_heal','before_shield','after_shield','before_damage','after_damage','death','dodge','shield_broken'].includes(type)?event.targetId===owner.id:true)))work.push({rule,c});
       }
       if(owner.ruleSummon&&owner.hp>0){const p:RuleProgram=owner.ruleSummon,c=this.context(p,owner,event);for(const rule of p.rules)if(rule.event===type&&(!['turn_start','turn_end'].includes(type)||event.targetId===owner.id))work.push({rule,c});}
     }
@@ -156,15 +158,15 @@ export class WorkshopProgramRuntime {
         }
       }
       else if(s.type==='native_status'){result=0;for(const target of targets())result+=Number(this.nativeStatus(c.owner,target,String(s.statusFrom===undefined?s.status??'taunt':this.value(s.statusFrom,c)),num(value()),num(this.value(s.turns??1,c)),num(this.value(s.chance??100,c)),c.star,{sourceSkill:c.card?.id??c.program.id,sourceCardUid:c.card?.uid,maxStacks:s.maxStacks===undefined?undefined:this.value(s.maxStacks,c)}));}
-      else if(s.type==='apply_status'){result=[];for(const target of targets()){const added=this.applyStatus(c.program,String(s.statusFrom===undefined?s.status??'':this.value(s.statusFrom,c)),c.owner,target,c,s);if(added)result.push(added.ruleInstance);}}
+      else if(s.type==='apply_status'){result=[];for(const target of targets()){const id=String(s.statusFrom===undefined?s.status??'':this.value(s.statusFrom,c));const external=this.ports.status?.(id),program=external??c.program;const native=workshopBuiltinStatus(id);if(!external&&native){if(this.nativeStatus(c.owner,target,id,num(this.value(s.value??native.value,c)),num(this.value(s.turns??1,c)),num(this.value(s.chance??100,c))))result.push(id);continue;}const added=this.applyStatus(program,external?program.statuses[0]!.id:id,c.owner,target,c,s);if(added){if(external){added.ruleExternalId=id;added.canonicalStatus=id;}result.push(added.ruleInstance);}}}
       else if(s.type==='modify_status')result=this.modifySelection(this.value(s.selection??{op:'item',key:'self'},c),s,c);
       else if(s.type==='copy_status')result=this.copySelection(this.value(s.selection??{op:'item',key:'self'},c),targets(),s,c);
       else if(s.type==='remove_status'&&s.selection!==undefined)result=this.removeSelection(this.value(s.selection,c));
-      else if(s.type==='remove_status'){result=0;for(const a of targets()){for(const status of [...a.buffs,...a.debuffs].filter(x=>x.ruleInstance&&(s.status==='self'?x===c.status:x.ruleStatus===s.status||x.ruleInstance===s.status))){this.removeStatus(a,status,'rule');result++;}}}
-      else if(s.type==='cleanse'||s.type==='dispel'){result=targets().reduce((sum,t)=>sum+this.g[s.type](t,num(value())||1),0);}
-      else if(s.type==='resource'){for(const a of targets()){const k=s.key??'energy',before=k==='ap'?a.ap:a.resources[k]??0,after=s.operation==='set'?num(value()):before+num(value());if(after<0)throw Error('资源不足');if(k==='ap'&&a===this.g.player)this.g.controller.makeContext(this.g).resource('AP',after-before);else if(k==='ap')a.ap=after;else a.resources[k]=after;result=k==='ap'?a.ap:after;this.emit('resource_changed',{sourceId:c.owner.id,targetId:a.id,key:k,before,after});}}
+      else if(s.type==='remove_status'){result=0;for(const a of targets()){const aliases=new Set([...a.buffs,...a.debuffs].filter(x=>x.ruleStatus===s.status).map(x=>x.ruleInstance));result+=this.removeSelection(this.readStates(a).filter(x=>s.status==='self'?x.id===c.status?.ruleInstance:x.type===s.status||x.id===s.status||aliases.has(x.id)));}}
+      else if(s.type==='cleanse'||s.type==='dispel'){result=targets().reduce((sum,t)=>sum+this.g[s.type](t,num(this.value(s.value??1,c))),0);}
+      else if(s.type==='resource'){for(const a of targets()){const k=s.key??'energy',external=this.ports.resource?.(k),before=external??(k==='ap'?a.ap:a.resources[k]??0),after=s.operation==='set'?num(value()):before+num(value());if(after<0)throw Error('资源不足');if(external!==undefined){result=this.ports.changeResource?.(k,after);this.emit('resource_changed',{sourceId:c.owner.id,targetId:a.id,key:k,before,after:result});continue;}if(k==='ap'&&a===this.g.player)this.g.controller.makeContext(this.g).resource('AP',after-before);else if(k==='ap')a.ap=after;else a.resources[k]=after;result=k==='ap'?a.ap:after;this.emit('resource_changed',{sourceId:c.owner.id,targetId:a.id,key:k,before,after});}}
       else if(s.type==='draw'){const before=this.g.player.hand.map((x:any)=>x.uid);this.g.controller.draw(this.g,Math.max(0,Math.floor(num(value()))),true);result=this.g.player.hand.filter((x:any)=>!before.includes(x.uid)).map((x:any)=>x.uid);}
-      else if(s.type==='discard'){const cards=this.cards(s,c).slice(0,Math.max(0,Math.floor(num(value())||1)));for(const card of cards){this.moveCard(card,'discard');this.emit('discard',{sourceId:c.owner.id,targetId:c.owner.id,cardUid:card.uid,cardId:card.id});}result=cards.map(x=>x.uid);}
+      else if(s.type==='discard'){const cards=this.cards(s,c).slice(0,Math.max(0,Math.floor(num(this.value(s.value??1,c)))));for(const card of cards){this.moveCard(card,'discard');this.emit('discard',{sourceId:c.owner.id,targetId:c.owner.id,cardUid:card.uid,cardId:card.id});}result=cards.map(x=>x.uid);}
       else if(s.type==='card')result=this.cardAction(s,c);
       else if(s.type==='summon')result=this.summon(s,c);
       else if(s.type==='remove_unit'){result=[];for(const a of targets())if(a.isSummon||a.legacySummon){a.hp=0;result.push(a.id);this.emit('summon_removed',{sourceId:c.owner.id,targetId:a.id});}}
@@ -172,15 +174,16 @@ export class WorkshopProgramRuntime {
       if(result!==undefined){c.local.last=clone(result);if(s.saveAs)c.local[s.saveAs]=clone(result);}this.trace(c,(s.name??RULE_STEPS.find(([type])=>type===s.type)?.[1]??s.type)+(result===undefined?'':'：'+this.resultText(result).slice(0,320)));
     }
   }
-  private cards(s:RuleStep,c:Context):any[]{let list=[...(this.g.player[s.pile??'hand']??[])].filter((x:any)=>x.uid!==c.card?.uid);if(s.key)list=list.filter((x:any)=>x.id===s.key||x.uid===s.key||x.tags?.includes(s.key));if(s.filter)list=list.filter((x:any)=>this.value(s.filter,{...c,event:{...c.event,card:x}}));if(s.order==='random')for(let i=list.length-1;i>0;i--){const j=Math.floor(this.g.rng()*(i+1));[list[i],list[j]]=[list[j],list[i]];}return list;}
+  private cards(s:RuleStep,c:Context):any[]{const piles=s.selection!==undefined?['hand','deck','discard','exhaust']:[s.pile??'hand'];let list=piles.flatMap(pile=>this.g.player[pile]??[]).filter((x:any)=>x.uid!==c.card?.uid);if(s.selection!==undefined){const ids=arr(this.value(s.selection,c)).map(v=>typeof v==='string'?v:v?.id);list=list.filter((x:any)=>ids.includes(x.uid));}if(s.source!==undefined){const id=this.value(s.source,c);if(id)list=list.filter((x:any)=>x.id===id||x.uid===id);}if(s.key)list=list.filter((x:any)=>x.id===s.key||x.uid===s.key||x.tags?.includes(s.key));if(s.filter)list=list.filter((x:any)=>this.value(s.filter,{...c,item:{...x,cardId:x.id,cost:x.ruleCost??x.ap},event:{...c.event,card:x}}));if(s.order==='random')for(let i=list.length-1;i>0;i--){const j=Math.floor(this.g.rng()*(i+1));[list[i],list[j]]=[list[j],list[i]];}return list;}
   private moveCard(card:any,to:string):void{for(const pile of ['hand','deck','discard','exhaust'])this.g.player[pile]=this.g.player[pile].filter((x:any)=>x.uid!==card.uid);if(!['hand','deck','discard','exhaust'].includes(to))throw Error('无效牌堆');if(to==='hand'&&this.g.player.hand.length>=this.g.player.handLimit)to='discard';this.g.player[to].push(card);}
   private cardAction(s:RuleStep,c:Context):any {
-    const count=Math.max(1,Math.floor(num(this.value(s.count??1,c)))),cards=this.cards(s,c).slice(0,count),results=[];
-    if(s.operation==='generate'){const native=this.g.cardCatalog?.get(s.key),def=native??this.ports.card?.(s.key??'');if(!def)throw Error('卡牌不存在');for(let i=0;i<count;i++){this.budget();const card={...clone(def),id:s.key,uid:'rule-card:'+ ++this.memory.sequence,ap:def.ap??def.cost??1,star:c.star,legacy:!native};this.moveCard(card,s.mode??'hand');results.push(card.uid);}return results;}
+    const count=Math.max(0,Math.floor(num(this.value(s.count??1,c)))),cards=this.cards(s,c).slice(0,count),results=[];
+    if(s.operation==='generate'){const id=String(s.source===undefined?s.key??'':this.value(s.source,c)),native=this.g.cardCatalog?.get(id),def=native??this.ports.card?.(id);if(!def)throw Error('卡牌不存在');for(let i=0;i<count;i++){this.budget();const card={...clone(def),id,generated:true,uid:'rule-card:'+ ++this.memory.sequence,ap:def.ap??def.cost??1,star:c.star,legacy:!native};this.moveCard(card,s.mode??'hand');results.push(card.uid);}return results;}
     for(let card of cards){if(s.operation==='copy'){card={...clone(card),uid:'rule-card:'+ ++this.memory.sequence,generated:true};this.moveCard(card,s.mode??'hand');}
-      else if(s.operation==='cost'){card.ap=Math.max(0,num(this.value(s.value,c)));card.ruleCost=card.ap;}
+      else if(s.operation==='cost'){const old=card.ruleCost??card.ap??this.ports.card?.(card.id)?.cost??0,n=num(this.value(s.value,c));card.ap=Math.max(0,s.field==='add'?old+n:s.field==='mul'?old*n:n);card.ruleCost=card.ap;}
       else if(s.operation==='transform'){const native=this.g.cardCatalog?.get(String(this.value(s.value,c))),def=native??this.ports.card?.(String(this.value(s.value,c)));if(!def)throw Error('变形卡牌不存在');Object.assign(card,clone(def),{id:String(this.value(s.value,c)),ap:def.ap??def.cost??1,legacy:!native});delete card.ruleCost;}
-      else this.moveCard(card,s.operation==='exhaust'?'exhaust':s.mode??'hand');results.push(card.uid);
+      else if(s.operation==='consume'){for(const pile of ['hand','deck','discard','exhaust'])this.g.player[pile]=this.g.player[pile].filter((x:any)=>x.uid!==card.uid);}
+      else {this.moveCard(card,s.operation==='exhaust'?'exhaust':s.operation==='discard'?'discard':s.operation==='draw'?'hand':s.mode??'hand');if(s.operation==='discard'||s.operation==='draw')this.emit(s.operation,{sourceId:c.owner.id,targetId:c.owner.id,cardId:card.id,cardUid:card.uid,count:1});}results.push(card.uid);
     }return results;
   }
   private summon(s:RuleStep,c:Context):string {
@@ -201,7 +204,8 @@ export class WorkshopProgramRuntime {
     this.register(program);const def=program.statuses.find(x=>x.id===id);if(!def)throw Error('自定义状态不存在：'+id);
     const context=c??this.context(program,source,{targetId:target.id}),hostile=source.side!==target.side;
     if(hostile&&!this.g.effectSucceeds(source,target,{status:program.id+':'+id,baseChance:step?.chance===undefined?def.baseChance:num(this.value(step.chance,context))}))return null;
-    const data=Object.fromEntries(Object.entries({...def.data,...step?.data}).map(([k,v])=>[k,clone(this.value(v,context))]));
+    const definitionContext={...context,program};this.initialize(definitionContext);
+    const data={...Object.fromEntries(Object.entries(def.data).map(([k,v])=>[k,clone(this.value(v,definitionContext))])),...Object.fromEntries(Object.entries(step?.data??{}).map(([k,v])=>[k,clone(this.value(v,context))]))};
     const same=[...target.buffs,...target.debuffs].filter((x:any)=>x.ruleProgram===program.id&&x.ruleStatus===id);
     if(def.stacking==='add'&&same.length){if(def.refresh&&def.refresh!=='keep'){const extra=workshopTurns(step?.turns===undefined?def.turns:this.value(step.turns,context));same[0].expireAtPhase=extra<0?Infinity:def.refresh==='extend'?same[0].expireAtPhase+extra:target.phaseCount+extra;}for(const [k,v] of Object.entries(data))same[0].ruleData[k]=typeof v==='number'?num(same[0].ruleData[k])+v:clone(v);this.syncModifiers();return same[0];}
     if(def.stacking==='strongest'&&same.some((x:any)=>num(x.ruleData.value??x.ruleData.remaining)>=num(data.value??data.remaining)))return same[0];
@@ -209,7 +213,7 @@ export class WorkshopProgramRuntime {
     const maxStacks=workshopMaxStacks(def.maxStacks,0);
     if(def.stacking==='independent'&&maxStacks>0)for(const old of same.slice().sort((a,b)=>a.expireAtPhase-b.expireAtPhase).slice(0,Math.max(0,same.length-maxStacks+1)))this.removeStatus(target,old,'replace');
     const turns=workshopTurns(step?.turns===undefined?def.turns:this.value(step.turns,context)),instance='rule-status:'+ ++this.memory.sequence;
-    const status={kind:def.polarity,status:'workshop_rule:'+program.id+':'+id+':'+instance,canonicalStatus:'workshop_rule:'+program.id+':'+id+':'+instance,ruleProgram:program.id,ruleStatus:id,ruleInstance:instance,ruleLabel:def.name,ruleData:data,ruleStar:context.star,sourceId:source.id,sourceActor:source,value:1,valueUnit:'count',turns,expireMode:'end',expireAtPhase:turns<0?Infinity:target.phaseCount+Math.max(1,turns),cleanseable:def.cleanseable,dispellable:def.dispellable};
+    const status:any={kind:def.polarity,status:'workshop_rule:'+program.id+':'+id+':'+instance,canonicalStatus:'workshop_rule:'+program.id+':'+id+':'+instance,ruleProgram:program.id,ruleStatus:id,ruleInstance:instance,ruleLabel:def.name,ruleData:data,ruleStar:context.star,sourceId:source.id,sourceActor:source,value:1,valueUnit:'count',turns,expireMode:'end',expireAtPhase:turns<0?Infinity:target.phaseCount+Math.max(1,turns),cleanseable:def.cleanseable,dispellable:def.dispellable};
     const control=def.modifiers.find(m=>['freeze','petrify','stun','sleep','hard_control'].includes(String(workshopBuiltinStatus(m.status)?.template?.canonicalStatus??normalizeLegacyStatus(m.status,{}).key)));
     if(control&&target.phaseCount+1<=(target.flags.controlImmuneUntil??-1))return null;
     if(def.polarity==='buff'&&!control&&!def.modifiers.some(m=>workshopBuiltinStatus(m.status)?.kind==='dot')){status.expireMode='start';if(source.side===target.side&&target!==source&&target.flags.phaseRound!==this.g.round&&turns>=0)status.expireAtPhase++;}
@@ -241,7 +245,7 @@ export class WorkshopProgramRuntime {
     return entries.filter(e=>(kind==='all'||e.kind===kind)&&(kind==='dot'||!e.s.ruleParent)&&(e.kind!=='dot'||e.s.remaining>0)).map(({s,kind})=>{
       const id=s.ruleInstance??(s.workshopStateId??='workshop-state:'+ ++this.memory.sequence);
       const remaining=kind==='dot'?s.remaining:s.expireMode==='opponent_end'?Math.max(1,s.expireRound-this.g.round+(owner.side==='enemy'?0:1)):Number.isFinite(s.expireAtPhase)?Math.max(0,s.expireAtPhase-owner.phaseCount):s.turns??-1;
-      return {id,name:s.ruleLabel??workshopBuiltinStatus(s.canonicalStatus??s.status)?.name??s.status,targetId:owner.id,type:s.ruleStatus??String(normalizeLegacyStatus(s.canonicalStatus??s.status,{}).key),kind,sourceId:s.sourceId??owner.id,sourceLevel:s.sourceLevel??s.sourceActor?.level??owner.level,damage:kind==='dot'?s.snapshotDamage:0,remaining:Number.isFinite(remaining)?remaining:-1,data:clone(s.ruleData??{}),value:s.value??s.atk??0,layers:s.ruleData?.layers??s.layers??s.stacks??1};
+      return {id,name:s.ruleLabel??workshopBuiltinStatus(s.canonicalStatus??s.status)?.name??s.status,targetId:owner.id,type:s.ruleExternalId??s.ruleStatus??String(normalizeLegacyStatus(s.canonicalStatus??s.status,{}).key),kind,sourceId:s.sourceId??owner.id,sourceLevel:s.sourceLevel??s.sourceActor?.level??owner.level,damage:kind==='dot'?s.snapshotDamage:0,remaining:Number.isFinite(remaining)?remaining:-1,data:clone(s.ruleData??{}),value:s.value??s.atk??0,layers:s.ruleData?.layers??s.layers??s.stacks??1};
     });
   }
   private removeSelection(selection:any):number {
@@ -361,7 +365,7 @@ export class WorkshopProgramRuntime {
     const g=this.g;this.original={rawHit:g.rawHit,damage:g.damage,shield:g.shield,beginPhase:g.beginPhase,endPhase:g.endPhase,endSide:g.endSide,cleanse:g.cleanse,dispel:g.dispel};
     g.workshopProgramEvent=(type:string,event:any)=>this.emit(type,event);
     g.damage=(source:any,target:any,e:any,opts:any={})=>{this.syncModifiers();const before:any={sourceId:source.id,targetId:target.id,cardId:opts.skillId??g.action?.skill?.id,cardUid:opts.cardUid??g.action?.skill?.uid,skillId:opts.skillId??g.action?.skill?.id,dot:false,secondary:Boolean(e.secondary||opts.secondary),amount:g.calcBase(source,target,e,opts),originalAmount:g.calcBase(source,target,e,opts),origin:opts.origin??'attack'};this.emit('before_damage',before);if(before.cancel||num(before.amount)<=0)return {damage:0,hpDamage:0,shieldDamage:0,hit:!before.cancel,crits:0};const out=this.original.damage(source,this.actors().find(a=>a.id===before.targetId)??target,{...e,flat:num(before.amount),atk:0,def:0,maxHp:0,maxHpRatio:0,hpRatio:0},{...opts,star:1,flatScale:1,scale:1,workshopBaseOverride:num(before.amount)});if(!out.hit)this.emit('dodge',{sourceId:source.id,targetId:target.id});if(out.crits)this.emit('critical',{sourceId:source.id,targetId:target.id,cardId:opts.skillId??g.action?.skill?.id,cardUid:g.action?.skill?.uid,origin:opts.origin??'direct',...out});return out;};
-    g.rawHit=(source:any,target:any,amount:number,opts:any={})=>{const hp=target.hp,shield=target.shield;const out=this.original.rawHit(source,target,amount,opts);this.emit('after_damage',{sourceId:source.id,targetId:target.id,cardId:opts.skillId??g.action?.skill?.id,cardUid:opts.cardUid??g.action?.skill?.uid,skillId:opts.skillId??g.action?.skill?.id,origin:opts.origin??(opts.dot?'dot':opts.secondary?'secondary':'direct'),amount:out.hpDamage,...out,preHitShield:shield,dot:Boolean(opts.dot)});if(shield>0&&target.shield<=0)this.emit('shield_broken',{sourceId:source.id,targetId:target.id,amount:shield});if(hp>0&&target.hp<=0){this.emit('death',{sourceId:source.id,targetId:target.id});if(target.isSummon||target.legacySummon)this.emit('summon_removed',{sourceId:source.id,targetId:target.id});}return out;};
+    g.rawHit=(source:any,target:any,amount:number,opts:any={})=>{const hp=target.hp,shield=target.shield;const out=this.original.rawHit(source,target,amount,opts);if(hp<=0)return out;this.emit('after_damage',{sourceId:source.id,targetId:target.id,cardId:opts.skillId??g.action?.skill?.id,cardUid:opts.cardUid??g.action?.skill?.uid,skillId:opts.skillId??g.action?.skill?.id,origin:opts.origin??(opts.dot?'dot':opts.secondary?'secondary':'direct'),amount:out.hpDamage,...out,preHitShield:shield,dot:Boolean(opts.dot),secondary:Boolean(opts.secondary),count:1});if(shield>0&&target.shield<=0)this.emit('shield_broken',{sourceId:source.id,targetId:target.id,amount:shield});if(hp>0&&target.hp<=0){this.emit('death',{sourceId:source.id,targetId:target.id});if(target.isSummon||target.legacySummon)this.emit('summon_removed',{sourceId:source.id,targetId:target.id});}return out;};
     g.shield=(source:any,target:any,e:any,opts:any={})=>{const amount=typeof e==='number'?e:g.calcBase(source,target,e,opts),event=this.emit('before_shield',{sourceId:source.id,targetId:target.id,amount});if(event.cancel)return 0;const destination=this.actors().find(a=>a.id===event.targetId)??target;const shieldEffect=typeof e==='number'?Math.max(0,num(event.amount)):{...e,flat:Math.max(0,num(event.amount)),atk:0,def:0,maxHp:0,maxHpRatio:0,hpRatio:0};const got=this.original.shield(source,destination,shieldEffect,{...opts,star:1,flatScale:1,scale:1});this.emit('after_shield',{sourceId:source.id,targetId:target.id,amount:got});return got;};
     const capture=()=>this.actors().flatMap(a=>[...a.buffs,...a.debuffs].filter(s=>s.ruleInstance).map(s=>({a,s})));
     const finish=(before:any[],reason:string)=>{for(const {a,s} of before)if(![...a.buffs,...a.debuffs].includes(s))this.removeStatus(a,s,reason);this.syncModifiers();};

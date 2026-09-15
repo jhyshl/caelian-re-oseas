@@ -15,7 +15,7 @@ export interface RuleStep {
 }
 export interface WorkshopRule {
   id: string; event: string; priority: number; once: 'never' | 'turn' | 'battle';
-  condition?: RuleExpression; costs: RuleStep[]; steps: RuleStep[]; cooldown?: number;
+  eventScope?: 'holder' | 'all'; condition?: RuleExpression; costs: RuleStep[]; steps: RuleStep[]; cooldown?: number;
 }
 export interface RuleStatus {
   id: string; name: string; polarity: 'buff' | 'debuff'; turns: number;
@@ -46,7 +46,7 @@ export const RULE_STEPS = [
   ['cleanse','净化'],['dispel','驱散'],['resource','改变资源'],['draw','抽牌'],['discard','弃牌'],['card','操作卡牌'],['summon','召唤单位'],['remove_unit','移除召唤物'],['stop','结束当前规则'],
 ] as const;
 export const RULE_OPS = [
-  ['literal','常数'],['var','读取记录'],['event','读取事件'],['stat','读取属性'],['resource','读取单位资源'],['status_data','读取状态数据'],['targets','筛选目标'],['status','读取状态层数'],['count','数量'],['cards','读取牌堆'],
+  ['card_definition','指定卡牌'],['literal','常数'],['var','读取记录'],['event','读取事件'],['stat','读取属性'],['resource','读取单位资源'],['status_data','读取状态数据'],['targets','筛选目标'],['status','读取状态层数'],['count','数量'],['cards','读取牌堆'],
   ['statuses','读取状态列表'],['item','读取当前项'],['unique','列表去重'],['filter_list','筛选列表'],['sort_list','列表排序'],['take','取前 N 项'],['sample','随机取 N 项'],['sum_list','列表求和'],['min_list','列表最小值'],['max_list','列表最大值'],['card_items','读取卡牌列表'],
   ['add','相加'],['sub','相减'],['mul','相乘'],['div','相除'],['min','较小值'],['max','较大值'],['floor','向下取整'],['ceil','向上取整'],
   ['eq','等于'],['ne','不等于'],['gt','大于'],['gte','大于等于'],['lt','小于'],['lte','小于等于'],['and','且'],['or','或'],['not','非'],['chance','概率成立'],
@@ -54,7 +54,7 @@ export const RULE_OPS = [
 export const WORKSHOP_STATE_FIELDS = [
   ['self','当前项整体'],['id','状态实例编号'],['type','状态种类'],['kind','状态类别'],['targetId','状态持有者编号'],
   ['sourceId','原施加者编号'],['sourceLevel','原施加者等级'],['damage','每跳原伤害'],
-  ['remaining','剩余回合（-1 为整场）'],['value','状态数值'],['layers','层数'],['hp','当前生命'],['hpMax','生命上限'],['attack','攻击力'],['defense','防御'],['speed','速度'],['cost','卡牌费用'],['star','卡牌星级'],['cardId','卡牌编号'],['name','名称'],
+  ['remaining','剩余回合（-1 为整场）'],['value','状态数值'],['layers','层数'],['hp','当前生命'],['hpMax','生命上限'],['attack','攻击力'],['defense','防御'],['speed','速度'],['cost','卡牌费用'],['star','卡牌星级'],['cardId','卡牌编号'],['pile','所在牌堆'],['battleOnly','是否战斗专用牌'],['name','名称'],
 ] as const;
 export const WORKSHOP_EVENT_FIELDS = [
   ['type','事件类型'],['amount','本次数值'],['originalAmount','原始数值'],['damage','实际伤害合计'],['hpDamage','实际扣除生命'],['shieldDamage','护盾吸收'],['overflow','溢出治疗'],['absorbed','抵扣数值'],
@@ -63,7 +63,7 @@ export const WORKSHOP_EVENT_FIELDS = [
 ] as const;
 const banned = new Set(['__proto__','constructor','prototype']);
 export function ruleKey(value: unknown, fallback = ''): string {
-  const s = String(value ?? fallback).trim().slice(0,100);
+  const s = String(value ?? fallback).trim().slice(0,256);
   if (!s || banned.has(s) || s.split('.').some(k=>banned.has(k))) throw new Error('请填写有效的数据名称');
   return s;
 }
@@ -92,7 +92,7 @@ export function normalizeRuleProgram(raw: unknown): RuleProgram {
       if(x.preserveSource!==undefined)result.preserveSource=Boolean(x.preserveSource);if(x.snapshot!==undefined)result.snapshot=Boolean(x.snapshot);if(x.crit!==undefined)result.crit=Boolean(x.crit);return result;
     });
   }
-  function rules(v:any,depth=0):WorkshopRule[]{return (Array.isArray(v)?v:[]).map((raw:any,index:number)=>{const x=object(raw);if(!RULE_EVENTS.some(([e])=>e===x.event))throw new Error('未知触发时机：'+x.event);return {id:ruleKey(x.id,'rule-'+index),event:x.event,priority:finite(x.priority),once:['turn','battle'].includes(x.once)?x.once:'never',...(x.condition!==undefined?{condition:expression(x.condition)}:{}),costs:steps(x.costs,depth),steps:steps(x.steps,depth),cooldown:Math.max(0,Math.floor(finite(x.cooldown)))};});}
+  function rules(v:any,depth=0):WorkshopRule[]{return (Array.isArray(v)?v:[]).map((raw:any,index:number)=>{const x=object(raw);if(!RULE_EVENTS.some(([e])=>e===x.event))throw new Error('未知触发时机：'+x.event);return {id:ruleKey(x.id,'rule-'+index),event:x.event,priority:finite(x.priority),...(x.eventScope==='all'?{eventScope:'all' as const}:{}),once:['turn','battle'].includes(x.once)?x.once:'never',...(x.condition!==undefined?{condition:expression(x.condition)}:{}),costs:steps(x.costs,depth),steps:steps(x.steps,depth),cooldown:Math.max(0,Math.floor(finite(x.cooldown)))};});}
   function program(raw:any,depth=0):RuleProgram {if(depth>16)throw new Error('嵌套作品过深');const x=object(raw);if(x.version!==2)throw new Error('规则作品版本无效');return {version:2,id:ruleKey(x.id),name:String(x.name??'自定义规则').slice(0,80),variables:(Array.isArray(x.variables)?x.variables:[]).map((v:any)=>({name:ruleKey(v.name),scope:ruleKey(v.scope,'battle'),initial:expression(v.initial??0)})),statuses:(Array.isArray(x.statuses)?x.statuses:[]).map((v:any)=>({id:ruleKey(v.id),name:String(v.name??v.id).slice(0,80),polarity:v.polarity==='debuff'?'debuff':'buff',turns:workshopTurns(v.turns,-1),maxStacks:workshopMaxStacks(v.maxStacks,0),cleanseable:v.cleanseable!==false,dispellable:v.dispellable!==false,baseChance:Math.max(0,Math.min(100,finite(v.baseChance,100))),stacking:['add','replace','strongest'].includes(v.stacking)?v.stacking:'independent',refresh:['refresh','extend'].includes(v.refresh)?v.refresh:'keep',data:Object.fromEntries(Object.entries(v.data??{}).map(([k,val])=>[ruleKey(k),expression(val)])),modifiers:(v.modifiers??[]).map((m:any)=>({status:ruleKey(m.status),value:expression(m.value??1),unit:['ratio','percent'].includes(m.unit)?m.unit:'count',...(m.condition!==undefined?{condition:expression(m.condition)}:{})})),rules:rules(v.rules,depth)})),rules:rules(x.rules,depth)};}
   const result=program(raw);
   const scope=(s?:string)=>{if(s&&!RULE_SCOPES.some(([id])=>id===s))throw Error('未知数据范围：'+s);};
@@ -106,13 +106,13 @@ export function normalizeRuleProgram(raw: unknown): RuleProgram {
         if(typeof s.turns==='number')workshopTurns(s.turns);
         if(typeof s.maxStacks==='number')workshopMaxStacks(s.maxStacks);
       }
-      if(['apply_status','remove_status'].includes(s.type)&&s.selection===undefined&&s.statusFrom===undefined&&s.status!=='self'&&!p.statuses.some(x=>x.id===s.status))throw Error('引用的自定义状态不存在');
+      if(['apply_status','remove_status'].includes(s.type)&&s.selection===undefined&&s.statusFrom===undefined&&s.status!=='self'&&!workshopBuiltinStatus(s.status??'')&&!s.status?.startsWith('program_status:')&&!s.status?.startsWith('workshop_status:')&&!p.statuses.some(x=>x.id===s.status))throw Error('引用的自定义状态不存在');
       if(s.type==='modify_status'&&(!['remaining','value','layers','damage'].includes(s.field??'')&&!s.field?.startsWith('data.')))throw Error('请选择可修改的状态字段');
       if(s.type==='modify_status'&&s.operation&&!['set','add','mul'].includes(s.operation))throw Error('状态修改方式无效');
       if(s.type==='copy_status'&&s.operation&&!['copy','move'].includes(s.operation))throw Error('状态复制方式无效');
       if(s.type==='event_set'&&!['amount','cancel','cardCost','count','targetId'].includes(s.field??'amount'))throw Error('不支持修改此事件字段');
       if(s.pile&&!['hand','deck','discard','exhaust'].includes(s.pile))throw Error('牌堆无效');
-      if(s.type==='card'&&s.operation&&!['generate','copy','cost','transform','move','exhaust'].includes(s.operation))throw Error('卡牌操作无效');
+      if(s.type==='card'&&s.operation&&!['generate','copy','cost','transform','move','exhaust','consume','discard','draw'].includes(s.operation))throw Error('卡牌操作无效');
       if(s.type==='delay'&&!RULE_EVENTS.some(([id])=>id===(s.event??'turn_start')))throw Error('延迟触发事件无效');
       checkSteps(s.steps??[]);checkSteps(s.otherwise??[]);if(s.program)validate(s.program);
     }};

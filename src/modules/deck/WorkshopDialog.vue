@@ -1,12 +1,14 @@
 <script setup lang="ts">
 /* global Blob, Event, HTMLInputElement, URL, clearTimeout, document, setTimeout, window */
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, provide, ref, watch } from 'vue';
 import { refreshWorkshopPassiveCatalog } from '@/content/catalogs/battle';
 import {
   loadCardCatalog,
   refreshWorkshopCardCatalog,
 } from '@/content/catalogs/cards';
 import { refreshWorkshopProfessionCatalogs } from '@/content/catalogs/professions';
+import { workshopObjectCatalog } from '@/workshop-object-catalog';
+import type { CardDefinition } from '@/content/types';
 import type { CardEffect } from '@/content/types';
 import type { PanelContext } from '@/kernel/public-api';
 import { commandId } from '@/kernel/ids';
@@ -60,6 +62,7 @@ import WorkshopStarEditor from '@/modules/deck/WorkshopStarEditor.vue';
 import { DEFAULT_STAR_SCALING, type WorkshopStarScaling } from '@/workshop-stars';
 
 interface EditableCard {
+  battleOnly?: boolean;
   starScaling?: WorkshopStarScaling;
   id: string;
   name: string;
@@ -108,6 +111,9 @@ const drafts = ref(readWorkshopDrafts());
 const extensions = ref(readWorkshopExtensions());
 const mechanisms = ref(readWorkshopMechanisms());
 const editor = ref<EditableClass>(createEditor());
+const objectCards=ref<Record<string, CardDefinition>>({});
+void loadCardCatalog().then(cards=>{objectCards.value=cards;});
+provide('workshopObjectCatalog',computed(()=>workshopObjectCatalog(objectCards.value,mechanisms.value,editor.value)));
 const activeCardId = ref('');
 const notice = ref('');
 const error = ref('');
@@ -191,7 +197,7 @@ const workshopResourceOptions = computed(() =>
     mechanism.resources.map((resource) => ({
       mechanismId: mechanism.id,
       resourceId: resource.id,
-      label: `${mechanism.name}｜${resource.label}`,
+      label: `${mechanism.name}｜${resource.label} · ${mechanism.id}:${resource.id}`,
     })),
   ),
 );
@@ -200,7 +206,7 @@ const workshopStatusOptions = computed(() =>
     mechanism.statuses.map((status) => ({
       mechanismId: mechanism.id,
       statusId: status.id,
-      label: `${mechanism.name}｜${status.label}`,
+      label: `${mechanism.name}｜${status.label} · ${mechanism.id}:${status.id}`,
       polarity: status.polarity,
     })),
   ),
@@ -297,6 +303,7 @@ function editableFromValue(value: Partial<WorkshopClass>): EditableClass {
         tags: Array.isArray(card?.tags) ? card.tags.map(String) : [],
         effects: Array.isArray(card?.effects) ? card.effects : [],
         starScaling: card?.starScaling,
+        battleOnly: card?.battleOnly===true,
       }))
     : [];
   return {
@@ -358,7 +365,7 @@ function loadDraft(draft: WorkshopDraft): void {
 }
 
 function addTalent(type: string): void {
-  if (editor.value.talent.effects.length >= 4) return;
+  if (editor.value.talent.effects.length >= 32) return;
   const customType = [
     'rule_program',
     'apply_workshop_status',
@@ -461,7 +468,7 @@ function talentOptionDisabled(type: string): boolean {
 }
 
 function addCard(): void {
-  if (editor.value.cards.length >= 16) return;
+  if (editor.value.cards.length >= 48) return;
   const id = makeId(`custom_card_${editor.value.id}`);
   editor.value.cards.push({
     id,
@@ -624,8 +631,12 @@ function removeDeckCopy(cardId: string): void {
 }
 
 function addPoolCopy(cardId: string): void {
-  if (editor.value.cardPool.length >= 32) return;
+  if (editor.value.cards.find(card=>card.id===cardId)?.battleOnly || editor.value.cardPool.length >= 32) return;
   editor.value.cardPool.push(cardId);
+}
+
+function setBattleOnly(card: EditableCard): void {
+  if(card.battleOnly){editor.value.cardPool=editor.value.cardPool.filter(id=>id!==card.id);editor.value.starterDeck=editor.value.starterDeck.filter(id=>id!==card.id);}
 }
 
 function removePoolCopy(cardId: string): void {
@@ -652,7 +663,7 @@ async function publishProfession(): Promise<void> {
         ...collectReferencedMechanisms(editor.value.talent.effects),
       ]),
     ];
-    if (editor.value.cards.length < 8 || editor.value.cards.length > 16) {
+    if (editor.value.cards.filter(card=>!card.battleOnly).length < 8 || editor.value.cards.filter(card=>!card.battleOnly).length > 16) {
       throw new Error('职业包需要 8–16 种不同名称的可配置卡牌。');
     }
     if (editor.value.cardPool.length < 16 || editor.value.cardPool.length > 32) {
@@ -1243,7 +1254,7 @@ watch(() => props.initialCardId, (id) => {
               <span>01</span>
               <div>
                 <h3>职业与天赋</h3>
-                <p>选择职业大类，设置名称、说明与最多 4 条天赋效果。</p>
+                <p>选择职业大类，设置名称、说明与最多 32 条天赋效果；组合规则可自由添加事件与积木。</p>
               </div>
             </header>
             <div class="form-grid">
@@ -1450,7 +1461,7 @@ watch(() => props.initialCardId, (id) => {
               </div>
               <select
                 value=""
-                :disabled="editor.talent.effects.length >= 4"
+                :disabled="editor.talent.effects.length >= 32"
                 @change="
                   addTalent(($event.target as HTMLSelectElement).value);
                   ($event.target as HTMLSelectElement).value = '';
@@ -1479,7 +1490,7 @@ watch(() => props.initialCardId, (id) => {
               <button
                 type="button"
                 class="ca-button primary"
-                :disabled="editor.cards.length >= 16"
+                :disabled="editor.cards.length >= 48"
                 @click="addCard"
               >
                 + 新卡牌
@@ -1554,6 +1565,7 @@ watch(() => props.initialCardId, (id) => {
                     <small>代码机制可读取这些标签；每张牌最多 12 个。</small>
                   </label>
                 </div>
+                <label><input v-model="activeCard.battleOnly" type="checkbox" @change="setBattleOnly(activeCard)">战斗专用牌（仅通过战斗积木生成或检索，不入卡牌库与牌组）</label>
                 <WorkshopStarEditor v-model="activeCard.starScaling" />
                 <WorkshopEffectEditor
                   v-for="(effect, index) in activeCard.effects"
@@ -1623,8 +1635,8 @@ watch(() => props.initialCardId, (id) => {
                 <p>8–16 种不同名卡牌组成 16–32 张职业卡池，再从中配置正好 15 张基础构筑；同名卡数量仅受职业卡池持有量约束。</p>
               </div>
               <div class="pool-summary">
-                <output :class="{ over: editor.cards.length < 8 || editor.cards.length > 16 }">
-                  卡种 {{ editor.cards.length }} / 8–16
+                <output :class="{ over: editor.cards.filter(c=>!c.battleOnly).length < 8 || editor.cards.filter(c=>!c.battleOnly).length > 16 }">
+                  普通卡 {{ editor.cards.filter(c=>!c.battleOnly).length }} / 8–16 · 战斗专用 {{ editor.cards.filter(c=>c.battleOnly).length }}
                 </output>
                 <output :class="{ over: editor.cardPool.length < 16 || editor.cardPool.length > 32 }">
                   卡池 {{ editor.cardPool.length }} / 16–32
@@ -1635,7 +1647,7 @@ watch(() => props.initialCardId, (id) => {
               </div>
             </header>
             <div class="deck-builder">
-              <article v-for="card in editor.cards" :key="card.id">
+              <article v-for="card in editor.cards.filter(card=>!card.battleOnly)" :key="card.id">
                 <div>
                   <strong>{{ card.name }}</strong>
                   <span>{{ typeNames[card.type] }} · AP {{ card.cost }}</span>

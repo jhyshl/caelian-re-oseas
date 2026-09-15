@@ -1,3 +1,4 @@
+import { readWorkshopPacks } from '@/workshop';
 import type { DeckRecord, OwnedCardRecord } from '@/domain/types';
 import type { CaelianDatabase } from '@/storage/database';
 
@@ -18,6 +19,7 @@ export function resolveDeckStars(ids: string[], owned: OwnedCardRecord[], reques
   });
 }
 export async function grantCard(db: CaelianDatabase, profileId: string, cardId: string, quantity = 1, stars = 1, source = 'reward') {
+  if(readWorkshopPacks().some(pack=>pack.classes.some(profession=>profession.cards.some(card=>card.id===cardId&&card.battleOnly)))) return;
   const id = cardRecordId(profileId, cardId, stars), old = await db.ownedCards.get(id);
   await db.ownedCards.put({id, profileId, cardId, stars: cardStar(stars), quantity: (old?.quantity ?? 0) + quantity, source: old?.source ?? source, updatedAt: Date.now()});
 }

@@ -4,6 +4,8 @@ export interface CardEffect {
 }
 
 export interface CardDefinition {
+  /** Available only through battle effects; never owned or equipped. */
+  battleOnly?: boolean;
   name: string;
   type: string;
   cost: number;

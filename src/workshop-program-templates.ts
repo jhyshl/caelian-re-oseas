@@ -55,3 +55,27 @@ export const WORKSHOP_RULE_EXAMPLES:RuleProgram[]=[
     {type:'copy_status',selection:{op:'statuses',key:'dot',target:'self'},target:'target',operation:'move',preserveSource:true},
   ])]},
 ];
+
+WORKSHOP_RULE_EXAMPLES.push(
+  { version:2,id:'template.random_hits',name:'积木组合：每段随机弹射',variables:[],statuses:[],rules:[rule('bounce','cast',[
+    {type:'repeat',count:5,steps:[{type:'foreach',target:{op:'sample',args:[{op:'targets',key:'enemies'},1]},steps:[
+      {type:'damage',target:'target',value:math('add',10,math('mul',.3,{op:'stat',target:'self',key:'attack'})),hits:1},
+    ]}]},
+  ])]},
+  { version:2,id:'template.dot_statistics',name:'积木组合：持续伤害统计与资源换算',variables:[{name:'DOT总伤害',scope:'shared',initial:0},{name:'DOT结算次数',scope:'shared',initial:0}],statuses:[],rules:[
+    {...rule('record','after_damage',[
+      {type:'add',scope:'shared',key:'DOT总伤害',value:event('damage')},
+      {type:'add',scope:'shared',key:'DOT结算次数',value:event('count')},
+    ]),eventScope:'all',condition:event('dot')},
+    rule('convert','turn_start',[
+      {type:'resource',target:'self',key:'energy',value:math('floor',math('div',variable('shared','DOT总伤害'),100))},
+      {type:'set',scope:'shared',key:'DOT总伤害',value:0},
+    ]),
+  ]},
+  { version:2,id:'template.selected_card',name:'积木组合：指定卡牌检索与改费',variables:[],statuses:[],rules:[rule('select','cast',[
+    {type:'set',key:'指定牌',value:{op:'card_definition',key:'th_spark_arc'}},
+    {type:'set',key:'选中实例',value:{op:'card_items',key:'deck',value:math('eq',{op:'item',key:'cardId'},variable('local','指定牌'))}},
+    {type:'card',operation:'draw',selection:variable('local','选中实例'),count:1},
+    {type:'card',operation:'cost',selection:variable('local','选中实例'),field:'add',value:-1,count:1},
+  ])]},
+);

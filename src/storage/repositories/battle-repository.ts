@@ -1,6 +1,8 @@
 import { normalizeLegacyStatus } from '@/battle/rework/runtime/legacy-bridge.mjs';
 import { workshopBuiltinStatus, workshopMaxStacks, workshopTurns } from '@/workshop-status-library';
 import { grantCard, resolveDeckStars } from '@/battle/card-inventory';
+import { ruleProgramsIn } from '@/workshop-program-references';
+import { workshopStatusProgram } from '@/workshop-status-program';
 import { installWorkshopPrograms, type WorkshopProgramRuntime } from '@/battle/workshop-program-runtime';
 import type { RuleProgram } from '@/workshop-program';
 import { buildWorkshopTestAttributes, WORKSHOP_TEST_LEVEL, type WorkshopTestAttributeInput } from '@/battle/rework/workshop-attributes';
@@ -1255,7 +1257,7 @@ export class BattleRepository {
       turnDamage:(actor:any,amount:number)=>{
         rework.project(core,state,{checkpoint:false});
         const target=actor.id==='player'?state.player:actor.id==='caelian'?state.companion:[...state.enemies,...state.player.summons,...(state.companion?.summons??[])].find(a=>a.id===actor.id);
-        if(target){const combatant=state.player.summons.includes(target as BattleSummonState)?this.normalizePlayerSummon(target as BattleSummonState):target as Combatant;this.directHpLoss(state,combatant,amount,'自定义状态持续伤害');}
+        if(target){const combatant=state.player.summons.includes(target as BattleSummonState)?this.normalizePlayerSummon(target as BattleSummonState):target as Combatant;const before=combatant.hp;this.directHpLoss(state,combatant,amount,'自定义状态持续伤害');rework.syncExternal(core,state);this.programRuntime(core,state).emit('after_damage',{sourceId:actor.id,targetId:actor.id,origin:'workshop_status',dot:true,count:1,amount:before-combatant.hp,damage:before-combatant.hp,hpDamage:before-combatant.hp,shieldDamage:0});rework.project(core,state,{checkpoint:false});}
         rework.syncExternal(core,state);
       },
       afterTick:stabilize,
@@ -1271,7 +1273,15 @@ export class BattleRepository {
       const definition=this.cardDefinition(state,card.id);
       for(const effect of definition?.effects??[])if(effect.type==='rule_program')roots.push({program:effect.program as RuleProgram,card});
     }
-    return installWorkshopPrograms(core,roots,{card:id=>this.cardDefinition(state,id)});
+    const manifests=this.workshopMechanismCatalog(state).filter(m=>state.workshopMechanisms?.ids.includes(m.id));
+    const programs=ruleProgramsIn([this.cardCatalogForState(state),state.player.passiveEffects,...manifests]);
+    const resources=new Map(manifests.flatMap(m=>m.resources.map(r=>['workshop_resource:'+m.id+':'+r.id,{manifest:m,definition:r}] as const)));
+    return installWorkshopPrograms(core,roots,{
+      card:id=>this.cardDefinition(state,id),
+      status:id=>{for(const p of programs){const status=p.statuses.find(s=>'program_status:'+p.id+':'+s.id===id);if(status)return {...p,statuses:[status,...p.statuses.filter(s=>s!==status)]};}for(const m of manifests){const s=m.statuses.find(s=>workshopStatusKey(m.id,s.id)===id);if(s)return workshopStatusProgram(m,s);}return undefined;},
+      resource:key=>{const r=resources.get(key);return r?this.mechanismResourceView(state,r.manifest)[r.definition.id]:undefined;},
+      changeResource:(key,value)=>{const r=resources.get(key);if(!r)return undefined;rework.project(core,state,{checkpoint:false});try{return this.changeWorkshopResource(state,r.manifest,r.definition.id,'set',value);}finally{rework.syncExternal(core,state);}},
+    });
   }
 
   private withProgramCore<T>(state:LocalBattleState,operation:(core:any,runtime:WorkshopProgramRuntime)=>T):T {
@@ -2701,6 +2711,8 @@ export class BattleRepository {
 
   private cardUsesFriendlyTarget(card: CardDefinition): boolean {
     const friendlyTypes = new Set([
+      'rule_program',
+      'apply_workshop_status',
       'shield',
       'heal',
       'heal_overflow_shield',
@@ -7424,6 +7436,7 @@ export class BattleRepository {
   ): boolean {
     const status = manifest.statuses.find((entry) => entry.id === statusId);
     if (!status) return false;
+    if(status.program && state.rework){return this.withProgramCore(state,(core,runtime)=>{const recipient=[...core.allies,...core.enemies].find((a:any)=>a.id===(target===state.player?'player':target===state.companion?'caelian':(target as {id?:string}).id));if(!recipient)return false;const program=workshopStatusProgram(manifest,status);const added=runtime.applyStatus(program,program.statuses[0]!.id,core.player,recipient,undefined,{type:'apply_status',turns,data:{layers:stacks}});if(added){added.ruleExternalId=workshopStatusKey(manifest.id,status.id);added.canonicalStatus=added.ruleExternalId;}return Boolean(added);});}
     const key = workshopStatusKey(manifest.id, status.id);
     const duration = turns < 0 ? '本场战斗' : `${turns} 回合`;
     if (status.polarity === 'debuff') {

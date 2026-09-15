@@ -1,3 +1,4 @@
+import { normalizeRuleProgram } from '@/workshop-program';
 import type { LocalBattleState } from '@/domain/types';
 
 export const WORKSHOP_MECHANISM_FORMAT = 'caelian_workshop_mechanism';
@@ -117,6 +118,7 @@ export interface WorkshopMechanismStatusEffect {
 }
 
 export interface WorkshopMechanismStatus {
+  program?: import('@/workshop-program').RuleProgram;
   id: string;
   label: string;
   description: string;
@@ -530,7 +532,9 @@ function normalizeStatuses(value: unknown): WorkshopMechanismStatus[] {
                   ),
           };
         });
-      if (!effects.length) {
+      const program=status.program===undefined?undefined:normalizeRuleProgram(status.program);
+      if(program && !program.statuses.length) throw new Error('状态组合至少需要一个自定义状态定义');
+      if (!effects.length && !program) {
         throw new Error(`自定义状态 ${index + 1} 至少需要一个效果。`);
       }
       return {
@@ -539,6 +543,7 @@ function normalizeStatuses(value: unknown): WorkshopMechanismStatus[] {
         description: limitedText(status.description, 120),
         polarity: status.polarity === 'debuff' ? 'debuff' as const : 'buff' as const,
         effects,
+        ...(program ? { program } : {}),
       };
     });
   if (new Set(statuses.map((entry) => entry.id)).size !== statuses.length) {

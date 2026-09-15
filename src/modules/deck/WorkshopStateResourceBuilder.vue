@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import { emptyStatusProgram } from '@/workshop-status-program';
+import { normalizeRuleProgram } from '@/workshop-program';
+import WorkshopProgramEditor from './WorkshopProgramEditor.vue';
 import type {
   WorkshopMechanismManifest,
   WorkshopMechanismStatusEffect,
@@ -159,12 +162,13 @@ function saveStatus(): void {
   error.value = '';
   try {
     if (!statusDraft.value.name.trim()) throw new Error('请填写状态名称。');
-    if (!statusDraft.value.effects.length) {
+    if (!statusDraft.value.effects.length && !statusDraft.value.program) {
       throw new Error('自定义状态至少需要一个特殊效果。');
     }
     statusDraft.value.effects.forEach((effect, index) => {
       requireFinite(effect.value, `第 ${index + 1} 条状态效果数值`);
     });
+    if(statusDraft.value.program){const program=normalizeRuleProgram(statusDraft.value.program);if(!program.statuses.length)throw new Error('请至少保留一个状态定义');program.statuses[0]!.name=statusDraft.value.name;program.statuses[0]!.polarity=statusDraft.value.polarity;statusDraft.value.program=program;}
     emit('save', compileVisualWorkshopStatus(statusDraft.value));
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : String(caught);
@@ -230,6 +234,7 @@ function saveResource(): void {
         <label class="wide"><span>状态说明</span><input v-model="statusDraft.description" maxlength="120" /></label>
       </div>
       <section class="rule-section">
+        <section v-if="mode==='status'" class="advanced-status-rules"><button v-if="!statusDraft.program" type="button" @click="statusDraft.program=emptyStatusProgram()">＋使用完整组合规则定义状态</button><template v-else><p>第一个自定义状态是本作品的主状态；可配置事件、条件、代价、数据和所有通用积木。</p><WorkshopProgramEditor v-model="statusDraft.program" status-only /></template></section>
         <header>
           <div><strong>特殊状态效果</strong><small>作用于持有该状态的玩家、怪物或召唤物；最多 8 条。</small></div>
           <button type="button" @click="addStatusEffect">＋ 添加效果</button>
