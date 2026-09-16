@@ -74,7 +74,7 @@ export class GuildRepository {
     }
     const active = await this.db.questRecords
       .where('profileId')
-      .equals(profileId)
+      .equals(this.db.questProfileId(profileId))
       .filter(
         (quest) =>
           quest.kind === 'commission' &&
@@ -83,7 +83,7 @@ export class GuildRepository {
       .count();
     if (active >= 3) throw new Error('同时最多接受 3 个协会委托');
 
-    const id = `${profileId}:commission:${input.taskId}`;
+    const id = `${this.db.questProfileId(profileId)}:commission:${input.taskId}`;
     if (await this.db.questHistory.get(id)) throw new Error('该委托今日已完成，请等待零点刷新');
     if (await this.db.questRecords.get(id)) {
       throw new Error('该委托已经在任务列表中');
@@ -91,7 +91,7 @@ export class GuildRepository {
     const now = Date.now();
     const quest: QuestRecord = {
       id,
-      profileId,
+      profileId: this.db.questProfileId(profileId),
       definitionId: input.taskId,
       commissionType: input.commissionType,
       commissionTarget: input.targetName,
@@ -185,7 +185,7 @@ export class GuildRepository {
     await this.db.guildStates.put(guild);
     await this.db.questHistory.put({
       id: quest.id,
-      profileId,
+      profileId: this.db.questProfileId(profileId),
       kind: 'commission',
       title: quest.title,
       definitionId: quest.definitionId,
@@ -210,7 +210,7 @@ export class GuildRepository {
 
   async abandon(profileId: string, questId: string): Promise<void> {
     const quest = await this.db.questRecords.get(questId);
-    if (!quest || quest.profileId !== profileId) {
+    if (!quest || quest.profileId !== this.db.questProfileId(profileId)) {
       throw new Error('任务不存在');
     }
     if (quest.kind === 'main') throw new Error('主线任务不能放弃');
@@ -222,7 +222,7 @@ export class GuildRepository {
     await this.db.transaction('rw', [this.db.questRecords, this.db.regionAccess], async () => {
       const access = await this.db.regionAccess.where('profileId').equals(profileId).toArray();
       const board = commissionBoard(tasks, access);
-      const quests = await this.db.questRecords.where('profileId').equals(profileId).filter(q => q.kind === 'commission' && (q.commissionVersion !== 2 || q.commissionType === 'escort' && !q.escortDestination)).toArray();
+      const quests = await this.db.questRecords.where('profileId').equals(this.db.questProfileId(profileId)).filter(q => q.kind === 'commission' && (q.commissionVersion !== 2 || q.commissionType === 'escort' && !q.escortDestination)).toArray();
       for (const quest of quests) {
         const task = tasks.find(t => t.id === quest.definitionId || `${t.name}:${t.region}` === quest.definitionId);
         const oldType = quest.commissionType;
@@ -255,7 +255,7 @@ export class GuildRepository {
     questId: string,
   ): Promise<QuestRecord> {
     const quest = await this.db.questRecords.get(questId);
-    if (!quest || quest.profileId !== profileId || quest.kind !== 'commission') {
+    if (!quest || quest.profileId !== this.db.questProfileId(profileId) || quest.kind !== 'commission') {
       throw new Error('协会委托不存在');
     }
     return quest;

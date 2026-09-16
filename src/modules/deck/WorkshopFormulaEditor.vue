@@ -33,7 +33,7 @@ function setOp(value:string):void {
       <button v-if="typeof model!=='boolean'" type="button" @click="model=true">改用是／否</button>
     </template>
     <template v-else>
-      <WorkshopObjectSelect v-if="op==='card_definition'" v-model="formula.key" kind="cards" />
+      <WorkshopObjectSelect v-if="op==='card_definition'" :model-value="formula.key" kind="cards" allow-empty @update:model-value="model={...formula,key:$event??''}" />
       <WorkshopFormulaEditor v-if="op==='literal'" v-model="formula.value" label="常数值" />
       <select v-if="op==='var'" v-model="formula.scope"><option v-for="[key,name] in RULE_SCOPES" :key="key" :value="key">{{ name }}</option></select>
       <select v-if="op==='stat'" v-model="formula.key"><option v-for="[key,name] in stats" :key="key" :value="key">{{ name }}</option></select>
@@ -55,7 +55,7 @@ function setOp(value:string):void {
       </template>
       <template v-if="op==='targets'">
         <select v-model="formula.key"><option value="enemies">敌方存活单位</option><option value="allies">友方存活单位</option><option value="summons">召唤物</option><option value="all">全部存活单位</option></select>
-        <select v-model="formula.scope"><option value="">全部符合者</option><option value="lowest_hp">生命比例最低者</option></select>
+        <select :value="formula.scope??''" @change="model={...formula,scope:($event.target as HTMLSelectElement).value}"><option value="">全部符合者</option><option value="lowest_hp">生命比例最低者</option></select>
         <label><input v-model="formula.excludeSelected" type="checkbox">除选中目标外</label>
         <button v-if="!formula.value" type="button" @click="formula.value={op:'gt',args:[{op:'stat',target:'target',key:'hp'},0]}">添加筛选条件</button>
         <WorkshopFormulaEditor v-if="formula.value" v-model="formula.value" label="目标条件" />

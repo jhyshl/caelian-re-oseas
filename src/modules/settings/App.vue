@@ -15,8 +15,9 @@ import AdventurerFrame from '@/ui/adventurer/AdventurerFrame.vue';
 
 const props = defineProps<{ context: PanelContext }>();
 const snapshot = ref<GameSnapshot>();
-const draft = ref<Pick<SettingsRecord, 'preserveAdventureSave' | 'battleDifficulty'>>({
+const draft = ref<Pick<SettingsRecord, 'preserveAdventureSave' | 'resetQuestsOnNewChat' | 'battleDifficulty'>>({
   preserveAdventureSave: false,
+  resetQuestsOnNewChat: false,
   battleDifficulty: 'normal',
 });
 const notice = ref('');
@@ -66,7 +67,9 @@ async function save() {
   }
   snapshot.value = await props.context.api.query('state');
   notice.value = draft.value.preserveAdventureSave
-    ? '设置已保存。之后新建或切换聊天会继续使用当前冒险存档。'
+    ? draft.value.resetQuestsOnNewChat
+      ? '设置已保存。新聊天共用等级、物品等冒险数据，任务从未接取开始；已有聊天保留各自任务进度。'
+      : '设置已保存。之后新建或切换聊天会继续使用当前冒险存档。'
     : '设置已保存。之后新建聊天会创建独立冒险存档。';
 }
 
@@ -263,6 +266,7 @@ onMounted(async () => {
   snapshot.value = await props.context.api.query('state');
   draft.value = {
     preserveAdventureSave: snapshot.value.settings.preserveAdventureSave,
+    resetQuestsOnNewChat: snapshot.value.settings.resetQuestsOnNewChat === true,
     battleDifficulty: snapshot.value.settings.battleDifficulty,
   };
 });
@@ -509,6 +513,13 @@ onBeforeUnmount(() => {
             </span>
           </div>
           <input v-model="draft.preserveAdventureSave" type="checkbox" />
+        </label>
+        <label class="setting-row">
+          <div>
+            <strong>新聊天重置任务进度</strong>
+            <span>保留冒险存档时，新聊天的主线、支线和委托从未接取开始。各聊天分别保存任务进度，等级、物品、成就和藏品继续共用；已有聊天不会被清空。</span>
+          </div>
+          <input v-model="draft.resetQuestsOnNewChat" type="checkbox" :disabled="!draft.preserveAdventureSave" />
         </label>
         <div class="settings-actions">
           <button

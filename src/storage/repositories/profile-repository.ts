@@ -100,6 +100,7 @@ export class ProfileRepository {
       const shared = await this.db.profiles.get(global.sharedProfileId);
       if (shared) {
         await this.ensureSocialRows(shared.id);
+        await this.bindQuestChat(shared, chatId, global.resetQuestsOnNewChat === true);
         return shared;
       }
     }
@@ -111,7 +112,22 @@ export class ProfileRepository {
         updatedAt: Date.now(),
       });
     }
+    await this.bindQuestChat(profile, chatId, false);
     return profile;
+  }
+
+  private async bindQuestChat(profile: ProfileRecord, chatId: string, reset: boolean): Promise<void> {
+    const id = JSON.stringify([profile.id, chatId]);
+    const binding = await this.db.transaction('rw', [this.db.questChatBindings, this.db.profiles], async () => {
+      const existing = await this.db.questChatBindings.get(id);
+      if (existing) return existing;
+      const original = await this.db.profiles.where('chatId').equals(chatId).first();
+      const next = { id, profileId: profile.id, chatId,
+        questProfileId: reset ? original?.id ?? 'quest-chat:' + encodeURIComponent(id) : profile.id };
+      await this.db.questChatBindings.add(next);
+      return next;
+    });
+    this.db.setQuestProfileId(profile.id, binding.questProfileId);
   }
 
   private async ensureSocialRows(profileId: string): Promise<void> {
@@ -165,6 +181,7 @@ export class ProfileRepository {
     return {
       ...profileSettings,
       preserveAdventureSave: global.preserveAdventureSave,
+      resetQuestsOnNewChat: global.resetQuestsOnNewChat === true,
       sharedProfileId: global.sharedProfileId,
       uiTheme: profileSettings.uiTheme ?? 'default',
       caelianHeartThemeUnlocked:
@@ -189,6 +206,7 @@ export class ProfileRepository {
     profileId: string,
     changes: {
       preserveAdventureSave?: boolean;
+      resetQuestsOnNewChat?: boolean;
       battleDifficulty?: 'easy' | 'normal' | 'hard' | 'hell';
       uiTheme?: import('@/themes/types').CaelianThemeId;
     },
@@ -206,11 +224,12 @@ export class ProfileRepository {
         updatedAt: now,
       });
     }
-    if (changes.preserveAdventureSave !== undefined) {
+    if (changes.preserveAdventureSave !== undefined || changes.resetQuestsOnNewChat !== undefined) {
       const global = await this.ensureGlobalSettings();
       await this.db.settings.put({
         ...global,
-        preserveAdventureSave: changes.preserveAdventureSave,
+        preserveAdventureSave: changes.preserveAdventureSave ?? global.preserveAdventureSave,
+        resetQuestsOnNewChat: changes.resetQuestsOnNewChat ?? global.resetQuestsOnNewChat ?? false,
         sharedProfileId: changes.preserveAdventureSave
           ? profileId
           : global.sharedProfileId,
@@ -219,7 +238,8 @@ export class ProfileRepository {
       await this.db.settings
         .toCollection()
         .modify((entry) => {
-          entry.preserveAdventureSave = changes.preserveAdventureSave ?? false;
+          entry.preserveAdventureSave = changes.preserveAdventureSave ?? global.preserveAdventureSave;
+          entry.resetQuestsOnNewChat = changes.resetQuestsOnNewChat ?? global.resetQuestsOnNewChat ?? false;
           entry.updatedAt = now;
         });
     }

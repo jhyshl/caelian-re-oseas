@@ -73,3 +73,12 @@ it('包含嵌套响应式对象的草稿也能复制，编辑副本不会更改�
   const restored=prepareWorkshopDraft(source);restored.cards[0].effects[0].value=.9;
   expect(effect.value).toBe(.35);expect(restored.cards[0].effects[0]).toMatchObject({value:.9,turns:7,maxStacks:8});
 });
+
+
+it.each(['destroy','discard'])('临时牌使用后去向 %s 可在界面选择，自动保存后重新打开保留',async mode=>{
+ vi.useFakeTimers();const {errors}=await mountDrafts([draft({cards:[{id:'temporary',name:'临时牌',battleOnly:true,effects:[]}]})]);await openFirst();
+ const picker=()=>[...document.querySelectorAll<HTMLSelectElement>('select')].find(s=>[...s.options].some(o=>o.value==='destroy'))!;
+ expect(picker().value).toBe('discard');picker().value='destroy';picker().dispatchEvent(new Event('change'));await nextTick();picker().value=mode;picker().dispatchEvent(new Event('change'));await nextTick();await vi.advanceTimersByTimeAsync(500);
+ const saved=JSON.parse(localStorage.getItem(WORKSHOP_DRAFT_STORAGE_KEY)!);expect(saved[0].value.cards[0]).toMatchObject({battleOnly:true,afterUse:mode});
+ app!.unmount();await mountDrafts(saved);await openFirst();expect(picker().value).toBe(mode);expect(errors).toEqual([]);
+});

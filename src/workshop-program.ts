@@ -76,7 +76,7 @@ export function normalizeRuleProgram(raw: unknown): RuleProgram {
     if(depth>24)throw new Error('公式嵌套过深');
     if(['number','string','boolean'].includes(typeof v)){if(typeof v==='number')finite(v);return v;}
     const x=object(v);if(!RULE_OPS.some(([op])=>op===x.op))throw new Error('未知公式积木：'+x.op);
-    return {op:x.op,...(x.key!==undefined?{key:ruleKey(x.key)}:{}),...(x.scope?{scope:ruleKey(x.scope)}:{}),...(x.excludeSelected!==undefined?{excludeSelected:Boolean(x.excludeSelected)}:{}),...(Array.isArray(x.types)?{types:[...new Set<string>(x.types.map((v:unknown)=>ruleKey(v)))]}:{}),...(x.target!==undefined?{target:expression(x.target,depth+1)}:{}),...(x.value!==undefined?{value:expression(x.value,depth+1)}:{}),...(Array.isArray(x.args)?{args:x.args.map((a:any)=>expression(a,depth+1))}:{})};
+    return {op:x.op,...(x.key!==undefined?{key:x.op==='card_definition'&&x.key===''?'':ruleKey(x.key)}:{}),...(x.scope?{scope:ruleKey(x.scope)}:{}),...(x.excludeSelected!==undefined?{excludeSelected:Boolean(x.excludeSelected)}:{}),...(Array.isArray(x.types)?{types:[...new Set<string>(x.types.map((v:unknown)=>ruleKey(v)))]}:{}),...(x.target!==undefined?{target:expression(x.target,depth+1)}:{}),...(x.value!==undefined?{value:expression(x.value,depth+1)}:{}),...(Array.isArray(x.args)?{args:x.args.map((a:any)=>expression(a,depth+1))}:{})};
   }
   function steps(v:any,depth=0):RuleStep[]{
     if(depth>16)throw new Error('规则嵌套过深');if(!Array.isArray(v))return [];

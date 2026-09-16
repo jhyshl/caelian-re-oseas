@@ -740,6 +740,7 @@ export interface LocalBattleState {
 }
 
 export interface BattleSessionRecord {
+  questProfileId?: string;
   startedAt?: number;
   id: string;
   profileId: string;
@@ -1046,6 +1047,7 @@ export interface SettingsRecord {
   id: string;
   profileId: string;
   preserveAdventureSave: boolean;
+  resetQuestsOnNewChat?: boolean;
   sharedProfileId?: string;
   battleDifficulty: 'easy' | 'normal' | 'hard' | 'hell';
   uiTheme: import('@/themes/types').CaelianThemeId;

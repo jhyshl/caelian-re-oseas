@@ -122,7 +122,7 @@ export class GameRepository {
   }
 
   snapshot(profileId: string): Promise<GameSnapshot> {
-    return this.reads.read(`state:${profileId}`, () => this.readSnapshot(profileId));
+    return this.reads.read(`state:${profileId}:${this.db.questProfileId(profileId)}`, () => this.readSnapshot(profileId));
   }
 
   private async readSnapshot(profileId: string): Promise<GameSnapshot> {
@@ -167,8 +167,8 @@ export class GameRepository {
       this.db.socialProgress.get(`${profileId}:caelian`),
       this.db.socialProgress.get(`${profileId}:trelao`),
       this.db.guildStates.get(profileId),
-      this.db.questRecords.where('profileId').equals(profileId).toArray(),
-      this.db.questHistory.where('profileId').equals(profileId).toArray(),
+      this.db.questRecords.where('profileId').equals(this.db.questProfileId(profileId)).toArray(),
+      this.db.questHistory.where('profileId').equals(this.db.questProfileId(profileId)).toArray(),
       this.db.inventoryStacks.where('profileId').equals(profileId).toArray(),
       this.db.equipmentInstances.where('profileId').equals(profileId).toArray(),
       this.db.equipmentLoadouts.get(profileId),
@@ -183,7 +183,7 @@ export class GameRepository {
       this.db.battleSessions
         .where('profileId')
         .equals(profileId)
-        .filter((session) => session.active)
+        .filter((session) => session.active && this.db.battleInCurrentChat(session))
         .first(),
       this.achievements.listProgress(profileId),
       this.profiles.displaySettings(profileId),
@@ -234,7 +234,7 @@ export class GameRepository {
   }
 
   battleSnapshot(profileId: string): Promise<BattleSnapshot> {
-    return this.reads.read(`battle:${profileId}`, () => this.readBattleSnapshot(profileId));
+    return this.reads.read(`battle:${profileId}:${this.db.questProfileId(profileId)}`, () => this.readBattleSnapshot(profileId));
   }
 
   private async readBattleSnapshot(profileId: string): Promise<BattleSnapshot> {
@@ -244,7 +244,7 @@ export class GameRepository {
       this.db.decks.where('profileId').equals(profileId).toArray(),
       this.db.inventoryStacks.where('profileId').equals(profileId).toArray(),
       this.db.battleSessions.where('profileId').equals(profileId)
-        .filter((session) => session.active).first(),
+        .filter((session) => session.active && this.db.battleInCurrentChat(session)).first(),
       this.db.ownedRelics.where('profileId').equals(profileId).toArray(),
       this.profiles.displaySettings(profileId),
     ]);

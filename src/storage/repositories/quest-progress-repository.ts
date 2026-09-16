@@ -114,7 +114,7 @@ export class QuestProgressRepository {
         const now = Date.now();
         const checkpoint: QuestFloorCheckpointRecord = {
           id: this.checkpointId(trackerId, input.floor),
-          profileId,
+          profileId: this.db.questProfileId(profileId),
           questId: input.questId,
           floorId: input.floor.id,
           floorIndex: input.floor.index,
@@ -179,13 +179,13 @@ export class QuestProgressRepository {
         }
         const existing = await this.db.questRecords
           .where('profileId')
-          .equals(profileId)
+          .equals(this.db.questProfileId(profileId))
           .filter((quest) => quest.definitionId === definition.id)
           .first();
         if (existing) throw new Error('该任务已经在任务记录中');
         const completed = await this.db.questHistory
           .where('profileId')
-          .equals(profileId)
+          .equals(this.db.questProfileId(profileId))
           .filter((quest) => quest.definitionId === definition.id)
           .first();
         if (completed) throw new Error('该任务已经完成，不能重复接取');
@@ -195,8 +195,8 @@ export class QuestProgressRepository {
         const now = Date.now();
         const record: QuestRecord = {
           acceptedAt: now,
-          id: `${profileId}:${definition.kind}:${definition.id}`,
-          profileId,
+          id: `${this.db.questProfileId(profileId)}:${definition.kind}:${definition.id}`,
+          profileId: this.db.questProfileId(profileId),
           definitionId: definition.id,
           kind: definition.kind,
           title: definition.name,
@@ -235,7 +235,7 @@ export class QuestProgressRepository {
         }
         const trackers = await this.db.questTrackerStates
           .where('profileId')
-          .equals(profileId)
+          .equals(this.db.questProfileId(profileId))
           .toArray();
         if (trackers.length > 0) {
           await this.db.questTrackerStates.bulkPut(
@@ -468,7 +468,7 @@ export class QuestProgressRepository {
         if (!decision.accepted) throw new Error('本地任务跳转被状态机拒绝');
         const checkpoint: QuestFloorCheckpointRecord = {
           id: checkpointId,
-          profileId,
+          profileId: this.db.questProfileId(profileId),
           questId: quest.id,
           floorId: input.floor.id,
           floorIndex: input.floor.index,
@@ -550,7 +550,7 @@ export class QuestProgressRepository {
             fingerprint: pending.requestedFloorFingerprint,
             lineageHash: pending.requestedLineageHash,
           })}:pending-submission`,
-          profileId,
+          profileId: this.db.questProfileId(profileId),
           questId,
           floorId: floor?.id ?? pending.requestedFloorId,
           floorIndex: floor?.index ?? pending.requestedFloorIndex,
@@ -700,7 +700,7 @@ export class QuestProgressRepository {
       // must not undo that decision when a later generation reconciles history.
       // Future automatic progress still records its before snapshot and can roll
       // back to this baseline. Already confirmed local effects remain committed.
-      await this.db.questFloorCheckpoints.where('[profileId+questId]').equals([profileId, quest.id]).delete();
+      await this.db.questFloorCheckpoints.where('[profileId+questId]').equals([this.db.questProfileId(profileId), quest.id]).delete();
       tracker.baseline=structuredClone(next);tracker.floorHistoryVersion=2;
       tracker.retentionFloor=input.floor?.index ?? tracker.retentionFloor;
       tracker.manualFloor=input.floor ? {
@@ -735,7 +735,7 @@ export class QuestProgressRepository {
       async () => {
         const quest = await this.db.questRecords
           .where('profileId')
-          .equals(profileId)
+          .equals(this.db.questProfileId(profileId))
           .filter((candidate) => candidate.definitionId === definition.id)
           .first();
         if (!quest) throw new Error('待结算任务不存在');
@@ -812,7 +812,7 @@ export class QuestProgressRepository {
         await this.db.questHistory.put({
           ...(tracker?.current.imperial ? { imperial: tracker.current.imperial } : {}),
           id: quest.id,
-          profileId,
+          profileId: this.db.questProfileId(profileId),
           kind: quest.kind,
           title: quest.title,
           definitionId: definition.id,
@@ -849,7 +849,7 @@ export class QuestProgressRepository {
   ): Promise<QuestTrackerRecord | undefined> {
     return this.db.questTrackerStates
       .where('profileId')
-      .equals(profileId)
+      .equals(this.db.questProfileId(profileId))
       .filter((tracker) => tracker.selected === true)
       .first();
   }
@@ -868,7 +868,7 @@ export class QuestProgressRepository {
     // Older releases did not reconcile branches. Preserve their confirmed current
     // progress as the new baseline instead of replaying stale pre-edit checkpoints.
     await this.db.transaction('rw', [this.db.questTrackerStates, this.db.questFloorCheckpoints], async () => {
-      const trackers = await this.db.questTrackerStates.where('profileId').equals(profileId).toArray();
+      const trackers = await this.db.questTrackerStates.where('profileId').equals(this.db.questProfileId(profileId)).toArray();
       for (const tracker of trackers) {
         if (tracker.floorHistoryVersion === 2) {
           // Promote manual confirmations made in the previous release before
@@ -888,7 +888,7 @@ export class QuestProgressRepository {
           }
           continue;
         }
-        await this.db.questFloorCheckpoints.where('[profileId+questId]').equals([profileId, tracker.questId]).delete();
+        await this.db.questFloorCheckpoints.where('[profileId+questId]').equals([this.db.questProfileId(profileId), tracker.questId]).delete();
         await this.db.questTrackerStates.put({ ...tracker, floorHistoryVersion: 2,
           baseline: structuredClone(tracker.current), retentionFloor: floors.at(-1)?.index ?? 0 });
       }
@@ -939,7 +939,7 @@ export class QuestProgressRepository {
         const trackerId = this.trackerId(profileId, questId);
         const checkpoints = await this.questCheckpoints(profileId, questId);
         if (checkpoints.length > 0) {
-          await this.rollbackLocalEffects(checkpoints, Date.now());
+          await this.rollbackLocalEffects(profileId, checkpoints, Date.now());
           await this.db.questFloorCheckpoints.bulkDelete(
             checkpoints.map((checkpoint) => checkpoint.id),
           );
@@ -955,7 +955,7 @@ export class QuestProgressRepository {
   ): Promise<QuestFloorCheckpointRecord[]> {
     const checkpoints = await this.db.questFloorCheckpoints
       .where('[profileId+questId]')
-      .equals([profileId, questId])
+      .equals([this.db.questProfileId(profileId), questId])
       .toArray();
     return checkpoints.sort((left, right) => {
       const floorOrder = left.floorIndex - right.floorIndex;
@@ -976,7 +976,7 @@ export class QuestProgressRepository {
 
   private async pruneCheckpoints(profileId: string, latestFloor: number): Promise<void> {
     const cutoff = Math.max(0, latestFloor - 9);
-    const expired = await this.db.questFloorCheckpoints.where('profileId').equals(profileId)
+    const expired = await this.db.questFloorCheckpoints.where('profileId').equals(this.db.questProfileId(profileId))
       .filter(checkpoint => checkpoint.floorIndex < cutoff).toArray();
     if (!expired.length) return;
     await this.db.questFloorCheckpoints.bulkDelete(expired.map(checkpoint => checkpoint.id));
@@ -989,7 +989,7 @@ export class QuestProgressRepository {
     requestedCutoff: number): Promise<QuestFloorRollbackResult[]> {
     return this.db.transaction('rw', [this.db.questRecords, this.db.questHistory, this.db.questTrackerStates,
       this.db.questFloorCheckpoints, this.db.inventoryStacks, this.db.equipmentInstances], async () => {
-      const trackers = await this.db.questTrackerStates.where('profileId').equals(profileId).toArray();
+      const trackers = await this.db.questTrackerStates.where('profileId').equals(this.db.questProfileId(profileId)).toArray();
       const results: QuestFloorRollbackResult[] = [];
       for (const tracker of trackers) {
         const checkpoints = await this.questCheckpoints(profileId, tracker.questId);
@@ -1007,7 +1007,7 @@ export class QuestProgressRepository {
             ? restored.trackerState as 'armed'|'tracking'|'detour' : 'armed';
           restored.trackerState = tracker.current.trackerState === 'manualPaused' ? 'manualPaused' : 'idle';
         }
-        await this.rollbackLocalEffects([...removed].reverse(), now);
+        await this.rollbackLocalEffects(profileId, [...removed].reverse(), now);
         await this.db.questFloorCheckpoints.bulkDelete(removed.map(checkpoint => checkpoint.id));
         await this.db.questTrackerStates.put({ ...tracker, current: restored, selected: Boolean(selected),
           completedQuest: undefined, completedSelected: undefined, manualRevision: (tracker.manualRevision ?? 0) + 1, updatedAt: now });
@@ -1022,6 +1022,7 @@ export class QuestProgressRepository {
   }
 
   private async rollbackLocalEffects(
+    profileId: string,
     checkpoints: QuestFloorCheckpointRecord[],
     updatedAt: number,
   ): Promise<void> {
@@ -1044,7 +1045,7 @@ export class QuestProgressRepository {
             !('count' in gift) ||
             typeof gift.count !== 'number'
           ) continue;
-          const id = `${checkpoint.profileId}:${gift.itemId}`;
+          const id = `${profileId}:${gift.itemId}`;
           const stack = await this.db.inventoryStacks.get(id);
           if (!stack) continue;
           const quantity = stack.quantity - gift.count;
@@ -1067,11 +1068,11 @@ export class QuestProgressRepository {
         'count' in trigger &&
         typeof trigger.count === 'number'
       ) {
-        const id = `${checkpoint.profileId}:${trigger.itemId}`;
+        const id = `${profileId}:${trigger.itemId}`;
         const stack = await this.db.inventoryStacks.get(id);
         await this.db.inventoryStacks.put({
           id,
-          profileId: checkpoint.profileId,
+          profileId: profileId,
           itemId: trigger.itemId,
           name: stack?.name ?? trigger.itemName,
           quantity: (stack?.quantity ?? 0) + trigger.count,
@@ -1091,7 +1092,7 @@ export class QuestProgressRepository {
           ) {
             continue;
           }
-          const id = `${checkpoint.profileId}:${item.itemId}`;
+          const id = `${profileId}:${item.itemId}`;
           const stack = await this.db.inventoryStacks.get(id);
           if (!stack) continue;
           const quantity = stack.quantity - item.count;
@@ -1124,7 +1125,7 @@ export class QuestProgressRepository {
     questId: string,
   ): Promise<QuestRecord> {
     const quest = await this.db.questRecords.get(questId);
-    if (!quest || quest.profileId !== profileId) {
+    if (!quest || quest.profileId !== this.db.questProfileId(profileId)) {
       throw new Error('任务不存在或不属于当前存档');
     }
     return quest;
@@ -1148,7 +1149,7 @@ export class QuestProgressRepository {
     return {
       floorHistoryVersion: 2,
       id: this.trackerId(profileId, quest.id),
-      profileId,
+      profileId: this.db.questProfileId(profileId),
       questId: quest.id,
       selected: true,
       baseline,
@@ -1206,7 +1207,7 @@ export class QuestProgressRepository {
   }
 
   private trackerId(profileId: string, questId: string): string {
-    return `${profileId}:quest-tracker:${encodeURIComponent(questId)}`;
+    return `${this.db.questProfileId(profileId)}:quest-tracker:${encodeURIComponent(questId)}`;
   }
 
   private checkpointId(

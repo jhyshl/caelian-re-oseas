@@ -515,6 +515,7 @@ export const domainCommandSchema = z.discriminatedUnion('type', [
     payload: z
       .object({
         preserveAdventureSave: z.boolean().optional(),
+        resetQuestsOnNewChat: z.boolean().optional(),
         battleDifficulty: z
           .enum(['easy', 'normal', 'hard', 'hell'])
           .optional(),

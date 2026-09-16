@@ -13,9 +13,9 @@ import * as api from '@/battle/rework/runtime/api.mjs';
 const databases:CaelianDatabase[]=[];
 afterEach(async()=>{localStorage.clear();await Promise.all(databases.splice(0).map(async db=>{db.close();await db.delete();}));});
 function program(steps:RuleStep[]):RuleProgram {const p=emptyRuleProgram();p.rules[0]!.steps=steps;return p;}
-async function fixture(programs:RuleProgram[],talent?:RuleProgram,dummyCount=1,battleOnly=false,targets:Record<number,string>={}){
+async function fixture(programs:RuleProgram[],talent?:RuleProgram,dummyCount=1,battleOnly:boolean|'destroy'|'discard'=false,targets:Record<number,string>={}){
  const cards=Array.from({length:8},(_,i)=>({id:'custom_card_rule_'+i,name:'组合卡'+i,type:'skill',cost:1,starScaling:DEFAULT_STAR_SCALING,effects:[{type:'rule_program',target:targets[i]??'enemy',program:programs[i]??program([{type:'shield',target:'self',value:1}])}]}));
- if(battleOnly)cards.push({...cards[0]!,id:'custom_card_special',name:'战斗专用牌',battleOnly:true} as typeof cards[number]);
+ if(battleOnly)cards.push({...cards[0]!,id:'custom_card_special',name:'战斗专用牌',battleOnly:true,...(typeof battleOnly==='string'?{afterUse:battleOnly,effects:[{type:'rule_program',program:program([{type:'shield',target:'self',value:20}])}]}:{})} as typeof cards[number]);
  const ordinary=cards.filter(c=>c.id!=='custom_card_special');
  const pack=saveWorkshopPack({format:'caelian_workshop_class_pack',version:1,packName:'通用规则验收',classes:[{id:'custom_class_program_host',main:'freelance',name:'组合师',talent:{name:'规则天赋',description:'',effects:talent?[{type:'rule_program',program:talent}]:[]},cards,cardPool:[...ordinary,...ordinary].map(c=>c.id),starterDeck:Array.from({length:15},(_,i)=>cards[i%8]!.id)}]});
  const db=new CaelianDatabase('alpha','rule-v2-'+crypto.randomUUID());databases.push(db);let game=new GameRepository(db,new EventBus());const profile=await game.ensureProfile('chat:'+crypto.randomUUID());let sequence=0;
@@ -103,4 +103,15 @@ describe('组合规则正式仓库接线',()=>{
  it('复制得到独立实例，变形成另一自定义卡后正确结算',async()=>{
   const setup=program([{type:'card',operation:'copy',pile:'hand',count:1,mode:'hand'},{type:'card',operation:'transform',pile:'hand',count:1,value:'custom_card_rule_2'}]);const f=await fixture([setup,program([{type:'shield',target:'self',value:20}]),program([{type:'heal',target:'self',value:30}])]);await f.prime([0,1]);await f.play();let s=(await f.read()).state;expect(s.player.hand).toHaveLength(2);expect(new Set(s.player.hand.map(c=>c.instanceId)).size).toBe(2);expect(s.player.hand[0]!.cardId).toBe('custom_card_rule_2');await f.play();s=(await f.read()).state;expect(s.player.hp).toBe(430);
  });
+});
+
+
+it.each(['destroy','discard'] as const)('临时卡 %s 保存、读档后使用，按配置消失或进入弃牌堆再次抽取',async mode=>{
+ const generator=program([{type:'card',operation:'generate',source:{op:'card_definition',key:'custom_card_special'},count:1,mode:'hand'}]);
+ const f=await fixture([generator],undefined,1,mode);await f.prime([0]);await f.play();
+ let s=(await f.read()).state;const token=s.player.hand[0]!;expect(token.cardId).toBe('custom_card_special');
+ f.reload();await f.play();s=(await f.read()).state;expect(s.player.shield).toBe(20);
+ const core=api.hydrate(s.rework),piles=[...core.player.hand,...core.player.deck,...core.player.discard,...core.player.exhaust];
+ if(mode==='destroy')expect(piles.some(c=>String(c.uid)===token.instanceId)).toBe(false);
+ else {expect(s.player.discardPile.some(c=>c.instanceId===token.instanceId)).toBe(true);await f.run('battle.end-turn',{battleId:f.battleId});expect((await f.read()).state.player.hand.some(c=>c.instanceId===token.instanceId)).toBe(true);}
 });

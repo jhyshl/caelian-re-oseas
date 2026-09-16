@@ -9,6 +9,14 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.87', label: 'Alpha 87', releasedAt: '2026-09-16',
+    changes: [
+      '设置新增“新聊天重置任务进度”：保留冒险存档时，新聊天的主线、支线和协会委托从未接取开始。各聊天分别保存任务及追踪进度，等级、物品等冒险数据继续共用，已有成就和藏品保留；切回旧聊天可继续原任务。',
+      '创意工坊的战斗专用牌可选择使用后立即销毁，或进入弃牌堆并保留至本场战斗结束。选择会随作品和草稿保存，旧作品默认沿用弃牌及重抽规则。',
+      '修复工坊“全部符合者”“生命比例最低者”和“指定卡牌”选择后保存变空白的问题，重新打开编辑仍保留选择；指定卡牌也可清空以匹配所有牌。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.86', label: 'Alpha 86', releasedAt: '2026-09-15',
     changes: [
       '己方增益支持选择玩家召唤物；召唤物卡片可点击、键盘选择或拖牌施放，友方选择栏统一展示玩家、凯利安和双方召唤物。',
@@ -923,6 +931,14 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 ] as const;
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.25.0-beta.1', label: 'Beta 1.25', releasedAt: '2026-09-16',
+    changes: [
+      '同步 Alpha 87：设置新增“新聊天重置任务进度”：保留冒险存档时，新聊天的主线、支线和协会委托从未接取开始。各聊天分别保存任务及追踪进度，等级、物品等冒险数据继续共用，已有成就和藏品保留；切回旧聊天可继续原任务。',
+      '创意工坊的战斗专用牌可选择使用后立即销毁，或进入弃牌堆并保留至本场战斗结束。选择会随作品和草稿保存，旧作品默认沿用弃牌及重抽规则。',
+      '修复工坊“全部符合者”“生命比例最低者”和“指定卡牌”选择后保存变空白的问题，重新打开编辑仍保留选择；指定卡牌也可清空以匹配所有牌。',
+    ],
+  },
   {
     version: '1.24.0-beta.1', label: 'Beta 1.24', releasedAt: '2026-09-15',
     changes: [

@@ -65,6 +65,7 @@ import {
 } from '@/equipment-stats';
 import type {
   BattleAnimationEvent,
+  BattleCardInstance,
   BattleEnemyState,
   BattleFriendlyTargetId,
   BattleIntent,
@@ -400,7 +401,7 @@ export class BattleRepository {
     const existing = await this.db.battleSessions
       .where('profileId')
       .equals(profileId)
-      .filter((session) => session.active)
+      .filter((session) => session.active && this.db.battleInCurrentChat(session))
       .first();
     if (existing) {
       throw new Error('请先结束或关闭当前战斗');
@@ -586,6 +587,7 @@ export class BattleRepository {
       id: battleId,
       profileId,
       active: true,
+      questProfileId: this.db.questProfileId(profileId),
       source:
         input.source?.trim() ||
         `${world?.location || region} · ${enemyCount > 1 ? `混合群体遭遇（${encounterNames}）` : monster.name}`,
@@ -830,6 +832,15 @@ export class BattleRepository {
         mpCost,
       });
       rework.recordLegacyCard(state, card, cost, legacyCheckpoint);
+      if (card.battleOnly && card.afterUse === 'destroy') {
+        const keep = (entry: BattleCardInstance) => entry.instanceId !== cardInstance.instanceId;
+        state.player.hand = state.player.hand.filter(keep);
+        state.player.drawPile = state.player.drawPile.filter(keep);
+        state.player.discardPile = state.player.discardPile.filter(keep);
+        if (state.rework) this.withProgramCore(state, core => {
+          core.player.exhaust = core.player.exhaust.filter((entry: { uid: string | number }) => String(entry.uid) !== cardInstance.instanceId);
+        });
+      }
     } finally {
       this.activeMechanismCard = undefined;
       this.activeDarkPriestRedirect = false;
@@ -1002,7 +1013,7 @@ export class BattleRepository {
     const active = await this.db.battleSessions
       .where('profileId')
       .equals(profileId)
-      .filter((session) => session.active)
+      .filter((session) => session.active && this.db.battleInCurrentChat(session))
       .first();
     if (active) throw new Error('战斗进行中不能配置战前药剂');
     const stackId = `${profileId}:${itemId}`;
@@ -1429,7 +1440,7 @@ export class BattleRepository {
 
   async finish(profileId: string, battleId: string): Promise<void> {
     const session = await this.db.battleSessions.get(battleId);
-    if (!session || session.profileId !== profileId) throw new Error('战斗不存在');
+    if (!session || session.profileId !== profileId || !this.db.battleInCurrentChat(session)) throw new Error('战斗不存在');
     if (session.state.status === 'ongoing') {
       throw new Error('进行中的战斗不能直接关闭');
     }
@@ -1453,6 +1464,7 @@ export class BattleRepository {
       !session ||
       session.profileId !== profileId ||
       !session.active ||
+      !this.db.battleInCurrentChat(session) ||
       session.state.status !== 'victory'
     ) {
       throw new Error('可领取奖励的战斗不存在');
@@ -1718,6 +1730,7 @@ export class BattleRepository {
       id: `battle:${profileId}:workshop:${now}:${Math.floor(this.random() * 1_000_000)}`,
       profileId,
       active: true,
+      questProfileId: this.db.questProfileId(profileId),
       source: `创意工坊测试场 · ${profession.name}`,
       storyTriggered: false,
       relatedQuestId: '',
@@ -6934,7 +6947,7 @@ export class BattleRepository {
     }
     const quests = await this.db.questRecords
       .where('profileId')
-      .equals(profileId)
+      .equals(this.db.questProfileId(profileId))
       .filter(
         (quest) =>
           quest.kind === 'commission' &&
@@ -7619,6 +7632,7 @@ export class BattleRepository {
       !session ||
       session.profileId !== profileId ||
       !session.active ||
+      !this.db.battleInCurrentChat(session) ||
       session.state.status !== 'ongoing'
     ) {
       throw new Error('当前战斗不存在或已经结束');

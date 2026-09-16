@@ -43,10 +43,24 @@ import type {
   SurveyTokenRecord,
 } from '@/surveys/types';
 
-export const DATABASE_SCHEMA_VERSION = 11;
+export const DATABASE_SCHEMA_VERSION = 12;
 
 export class CaelianDatabase extends Dexie {
   profiles!: Table<ProfileRecord, string>;
+  questChatBindings!: Table<{ id: string; profileId: string; chatId: string; questProfileId: string }, string>;
+  private readonly questScopes = new Map<string, string>();
+
+  questProfileId(profileId: string): string {
+    return this.questScopes.get(profileId) ?? profileId;
+  }
+
+  setQuestProfileId(profileId: string, questProfileId: string): void {
+    this.questScopes.set(profileId, questProfileId);
+  }
+
+  battleInCurrentChat(session: BattleSessionRecord): boolean {
+    return (session.questProfileId ?? session.profileId) === this.questProfileId(session.profileId);
+  }
 
   playerStates!: Table<PlayerRecord, string>;
   statAllocations!: Table<StatAllocationRecord, string>;
@@ -206,6 +220,7 @@ export class CaelianDatabase extends Dexie {
     });
 
     this.version(11).stores({freightStates: 'profileId, updatedAt'});
+    this.version(12).stores({questChatBindings: 'id, profileId, chatId, questProfileId'});
 
     this.version(10)
       .stores({})

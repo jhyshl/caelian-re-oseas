@@ -43,7 +43,8 @@ describe('数据库迁移', () => {
 
     const current = new CaelianDatabase('alpha', name);
     await current.open();
-    expect(DATABASE_SCHEMA_VERSION).toBe(11);
+    expect(DATABASE_SCHEMA_VERSION).toBe(12);
+    expect(await current.questChatBindings.count()).toBe(0);
     expect(await current.inventoryStacks.toArray()).toEqual([
       expect.objectContaining({
         itemId: 'legacy_apple',
@@ -132,6 +133,37 @@ describe('数据库迁移', () => {
       affinity: 0,
       relationshipStage: '警戒',
     });
+    current.close();
+  });
+  it('v12 新增聊天任务绑定时原有冒险、任务、成就和藏品记录完整保留', async () => {
+    const name = `caelian-chat-quest-migration-${crypto.randomUUID()}`;
+    databaseNames.push(name);
+    const legacy = new Dexie(name);
+    legacy.version(11).stores({
+      playerStates: 'profileId, updatedAt',
+      questRecords: 'id, profileId',
+      questHistory: 'id, profileId',
+      questTrackerStates: 'id, profileId',
+      questFloorCheckpoints: 'id, profileId',
+      achievementProgress: 'id, profileId',
+      specialCollectibles: 'id, profileId',
+    });
+    await legacy.open();
+    const records = {
+      playerStates: {profileId:'original',level:20},
+      questRecords: {id:'active',profileId:'original',status:'active'},
+      questHistory: {id:'completed',profileId:'original',kind:'main'},
+      questTrackerStates: {id:'tracker',profileId:'original',selected:true},
+      questFloorCheckpoints: {id:'floor',profileId:'original',floorIndex:3},
+      achievementProgress: {id:'achievement',profileId:'original',unlocked:true},
+      specialCollectibles: {id:'collectible',profileId:'original',collectibleId:'memorial'},
+    };
+    for (const [table, record] of Object.entries(records)) await legacy.table(table).add(record);
+    legacy.close();
+    const current = new CaelianDatabase('alpha', name);
+    await current.open();
+    for (const [table, record] of Object.entries(records)) expect(await current.table(table).toArray()).toEqual([record]);
+    expect(await current.questChatBindings.count()).toBe(0);
     current.close();
   });
 });

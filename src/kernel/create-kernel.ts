@@ -688,7 +688,7 @@ export class CaelianKernel {
         return;
       }
       const selected = await this.repository.selectedQuestTracker(profileId);
-      const quests = await this.db.questRecords.where('profileId').equals(profileId)
+      const quests = await this.db.questRecords.where('profileId').equals(this.db.questProfileId(profileId))
         .filter(quest => quest.status === 'active' && quest.id === selected?.questId).toArray();
       const candidates = quests.filter(quest => (!rerollImperial || (quest.definitionId === IMPERIAL_QUEST_ID && selected?.questId === quest.id)) && (!expected || (quest.id === expected.questId && quest.acceptedAt === expected.acceptedAt)));
       const task = this.tavernUpdateQueue.catch(() => undefined).then(async () => {
@@ -1495,7 +1495,7 @@ export class CaelianKernel {
   ): Promise<QuestEvaluationPresentation | undefined> {
     if (!this.profileId) return undefined;
     const turnEpoch = this.generationEpoch;
-    const imperial = await this.db.questRecords.where('profileId').equals(this.profileId)
+    const imperial = await this.db.questRecords.where('profileId').equals(this.db.questProfileId(this.profileId))
       .filter(quest => quest.definitionId === IMPERIAL_QUEST_ID && quest.status === 'active').first();
     if (imperial && (!onlyQuestIds || onlyQuestIds.includes(imperial.id))) {
       await this.evaluateImperialQuest(imperial, payload);
@@ -1675,7 +1675,7 @@ export class CaelianKernel {
     const profileId = this.profileId;
     const revision = ++this.imperialPresentationRevision;
     if (!profileId) { this.imperialOverlay?.clear(); return { accepted: false, tracked: false }; }
-    const quest = await this.db.questRecords.where('profileId').equals(profileId)
+    const quest = await this.db.questRecords.where('profileId').equals(this.db.questProfileId(profileId))
       .filter(item => item.definitionId === IMPERIAL_QUEST_ID).first();
     const tracker = quest ? await this.questProgress.getTracker(profileId, quest.id) : undefined;
     const accepted = quest?.status === 'active';
@@ -1693,7 +1693,7 @@ export class CaelianKernel {
     if (profileId !== this.profileId || revision !== this.imperialPresentationRevision || this.shuttingDown) return { accepted: false, tracked: false };
     this.imperialOverlay?.update(`${this.channel}:${profileId}`, tracked, tracker?.current.imperial ?? (accepted ? initialImperialState() : null), playerName);
     // A failed host write can be retried without paying for another model call.
-    const state = tracker?.current.imperial ?? (await this.db.questHistory.where('profileId').equals(profileId)
+    const state = tracker?.current.imperial ?? (await this.db.questHistory.where('profileId').equals(this.db.questProfileId(profileId))
       .filter(item => item.definitionId === IMPERIAL_QUEST_ID).first())?.imperial;
     if (state?.lastFloor) {
       const floor = (await this.adapter.chatFloors())?.find(item => item.index === state.lastFloor?.index && item.fingerprint === state.lastFloor.fingerprint && item.lineageHash === state.lastFloor.lineageHash);

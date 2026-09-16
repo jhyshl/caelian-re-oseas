@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { createApp, h, nextTick, ref, type App, type Ref } from 'vue';
+import { computed, createApp, h, nextTick, provide, ref, type App, type Ref } from 'vue';
 import WorkshopProgramEditor from '@/modules/deck/WorkshopProgramEditor.vue';
 import { describeRuleProgram, emptyRuleProgram, normalizeRuleProgram, readRuleTemplates, type RuleProgram } from '@/workshop-program';
 import { WORKSHOP_RULE_EXAMPLES } from '@/workshop-program-templates';
 let app:App|undefined;
 afterEach(()=>{app?.unmount();document.body.replaceChildren();localStorage.clear();});
-function mountProgram(draft:Ref<RuleProgram>,host:HTMLElement):void{app=createApp({setup:()=>()=>h(WorkshopProgramEditor,{modelValue:draft.value,'onUpdate:modelValue':value=>{draft.value=value;}})});app.mount(host);}
+function mountProgram(draft:Ref<RuleProgram>,host:HTMLElement):void{app=createApp({setup:()=>{provide('workshopObjectCatalog',computed(()=>({cards:[{id:'hk_oath_of_courage',name:'勇气誓言',group:'原生卡'},{id:'hk_shield_charge',name:'圣盾冲击',group:'原生卡'}],statuses:[],resources:[]})));return()=>h(WorkshopProgramEditor,{modelValue:draft.value,'onUpdate:modelValue':value=>{draft.value=value;}});}});app.mount(host);}
 describe('通用积木编辑器交互',()=>{
  it('从示例生成独立草稿、修改状态名称、保存组合模板并完整往返',async()=>{
   const draft=ref(emptyRuleProgram()),originalId=draft.value.id,host=document.createElement('div');document.body.append(host);
@@ -49,4 +49,21 @@ it('通用列表公式、动态状态种类与排除选中目标可通过界面�
  [...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='保存组合模板')!.click();await nextTick();const saved=readRuleTemplates()[0]!;
  expect(saved.rules[0]!.steps[0]!.value).toMatchObject({op:'unique',args:[{op:'statuses',types:['poison']}]});expect(saved.rules[0]!.steps[0]!.steps![0]).toMatchObject({statusFrom:{op:'item',key:'type'},target:{excludeSelected:false}});
  picker.value='template.state_detonate';picker.dispatchEvent(new Event('change'));await nextTick();expect(host.textContent).toContain('待处理状态');expect(host.textContent).toContain('按持续伤害结算');expect(host.textContent).toContain('从状态列表选择实例');
+});
+
+
+it.each(['','lowest_hp'])('指定卡牌首次选择写回草稿，目标筛选 %s 保存并重新打开后仍显示',async scope=>{
+ const draft=ref(emptyRuleProgram()),host=document.createElement('div');document.body.append(host);
+ draft.value.rules[0]!.steps=[{type:'card',operation:'copy',pile:'hand',mode:'hand',count:{op:'targets',key:'enemies'}}];mountProgram(draft,host);
+ const cardPicker=()=>[...host.querySelectorAll<HTMLSelectElement>('select')].find(s=>[...s.options].some(o=>o.value==='hk_oath_of_courage'))!;
+ cardPicker().value='hk_oath_of_courage';cardPicker().dispatchEvent(new Event('change'));await nextTick();
+ expect(draft.value.rules[0]!.steps[0]!.source).toEqual({op:'card_definition',key:'hk_oath_of_courage'});
+ const scopePicker=()=>[...host.querySelectorAll<HTMLSelectElement>('select')].find(s=>[...s.options].some(o=>o.value==='lowest_hp'))!;
+ scopePicker().value=scope;scopePicker().dispatchEvent(new Event('change'));await nextTick();
+ [...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='保存组合模板')!.click();await nextTick();
+ const saved=readRuleTemplates()[0]!;expect(saved.rules[0]!.steps[0]!.source).toEqual({op:'card_definition',key:'hk_oath_of_courage'});
+ app!.unmount();draft.value=JSON.parse(JSON.stringify(saved));mountProgram(draft,host);await nextTick();
+ expect(cardPicker().value).toBe('hk_oath_of_courage');expect(scopePicker().value).toBe(scope);expect(scopePicker().selectedIndex).toBeGreaterThanOrEqual(0);
+ cardPicker().value='hk_shield_charge';cardPicker().dispatchEvent(new Event('change'));await nextTick();expect(normalizeRuleProgram(draft.value).rules[0]!.steps[0]!.source).toEqual({op:'card_definition',key:'hk_shield_charge'});
+ cardPicker().value='';cardPicker().dispatchEvent(new Event('change'));await nextTick();expect(normalizeRuleProgram(draft.value).rules[0]!.steps[0]!.source).toEqual({op:'card_definition',key:''});
 });

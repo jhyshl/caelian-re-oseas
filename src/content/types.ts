@@ -6,6 +6,8 @@ export interface CardEffect {
 export interface CardDefinition {
   /** Available only through battle effects; never owned or equipped. */
   battleOnly?: boolean;
+  /** Battle-only cards either disappear after use or remain in the discard cycle. */
+  afterUse?: 'destroy' | 'discard';
   name: string;
   type: string;
   cost: number;

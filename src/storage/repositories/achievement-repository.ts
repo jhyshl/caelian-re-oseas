@@ -496,8 +496,8 @@ export class AchievementRepository {
       this.db.playerStates.get(profileId),
       this.db.socialProgress.get(`${profileId}:caelian`),
       this.db.worldStates.get(profileId),
-      this.db.questRecords.where('profileId').equals(profileId).toArray(),
-      this.db.questHistory.where('profileId').equals(profileId).toArray(),
+      this.db.questRecords.where('profileId').equals(this.db.questProfileId(profileId)).toArray(),
+      this.db.questHistory.where('profileId').equals(this.db.questProfileId(profileId)).toArray(),
       this.db.ownedRelics.where('profileId').equals(profileId).toArray(),
       this.db.specialCollectibles
         .where('profileId')

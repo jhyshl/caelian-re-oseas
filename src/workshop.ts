@@ -933,7 +933,7 @@ export function normalizeWorkshopCard(
     cat: `sub_${classId}`,
     cls: 'custom',
     custom: true,
-    ...(source.battleOnly===true?{battleOnly:true}:{}),
+    ...(source.battleOnly===true?{battleOnly:true,afterUse:source.afterUse==='destroy'?'destroy' as const:'discard' as const}:{}),
   };
   const starScaling = normalizeStarScaling(source.starScaling);
   if (starScaling) card.starScaling = starScaling;

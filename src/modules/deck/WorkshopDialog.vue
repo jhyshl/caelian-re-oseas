@@ -63,6 +63,7 @@ import { DEFAULT_STAR_SCALING, type WorkshopStarScaling } from '@/workshop-stars
 
 interface EditableCard {
   battleOnly?: boolean;
+  afterUse?: 'destroy' | 'discard';
   starScaling?: WorkshopStarScaling;
   id: string;
   name: string;
@@ -304,6 +305,7 @@ function editableFromValue(value: Partial<WorkshopClass>): EditableClass {
         effects: Array.isArray(card?.effects) ? card.effects : [],
         starScaling: card?.starScaling,
         battleOnly: card?.battleOnly===true,
+        afterUse: card?.afterUse==='destroy'?'destroy' as const:'discard' as const,
       }))
     : [];
   return {
@@ -1566,6 +1568,7 @@ watch(() => props.initialCardId, (id) => {
                   </label>
                 </div>
                 <label><input v-model="activeCard.battleOnly" type="checkbox" @change="setBattleOnly(activeCard)">战斗专用牌（仅通过战斗积木生成或检索，不入卡牌库与牌组）</label>
+                <label v-if="activeCard.battleOnly">使用后去向<select :value="activeCard.afterUse??'discard'" @change="activeCard.afterUse=($event.target as HTMLSelectElement).value as 'destroy'|'discard'"><option value="discard">进入弃牌堆，保留至本场战斗结束</option><option value="destroy">立即销毁，从本场战斗删除</option></select></label>
                 <WorkshopStarEditor v-model="activeCard.starScaling" />
                 <WorkshopEffectEditor
                   v-for="(effect, index) in activeCard.effects"
