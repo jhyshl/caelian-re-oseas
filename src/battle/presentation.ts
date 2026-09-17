@@ -1,10 +1,17 @@
+import { renderCardDescription, type CardDescriptionBinding } from '@/card-description';
+import { workshopObjectCatalog } from '@/workshop-object-catalog';
+import { WORKSHOP_MECHANISM_STORAGE_KEY, readWorkshopMechanisms } from '@/workshop-mechanisms';
+import { WORKSHOP_STORAGE_KEY, readWorkshopPacks } from '@/workshop';
+import { hydrate, syncExternal } from '@/battle/rework/runtime/api.mjs';
+import { WorkshopProgramRuntime } from '@/battle/workshop-program-runtime';
+import { nativeCardDescription } from './rework/catalog';
 import type { CardDefinition, CardEffect, RelicDefinition } from '@/content/types';
 import type { BattleAnimationEvent, GameSnapshot, LocalBattleState } from '@/domain/types';
 import { describeReworkEffects, reworkCard, type ReworkEffect, type CardDisplayStats } from './rework/catalog';
 import { workshopBuiltinStatus } from '@/workshop-status-library';
 import { scaleWorkshopCard } from '@/workshop-stars';
 import { roundNumbersInText } from '@/ui/format-number';
-import { describeRuleProgram, type RuleProgram } from '@/workshop-program';
+import { describeRuleExpression, describeRuleProgram, type RuleProgram, type RuleExpression } from '@/workshop-program';
 
 function revealsIntent(raw: unknown): boolean {
   if (!raw || typeof raw !== 'object') return false;
@@ -27,9 +34,39 @@ export function cleanCombatCopy(text: string): string {
     .replace(/[，；]\s*([，；。]|$)/g, '$1').trim());
 }
 
+let objectCache:{packs:string|null;mechanisms:string|null;objects:ReturnType<typeof workshopObjectCatalog>}|undefined;
+function descriptionObjects(card:CardDefinition) {
+  const packs=localStorage.getItem(WORKSHOP_STORAGE_KEY),mechanisms=localStorage.getItem(WORKSHOP_MECHANISM_STORAGE_KEY);
+  if(!objectCache||objectCache.packs!==packs||objectCache.mechanisms!==mechanisms) {
+    const cards=Object.fromEntries(readWorkshopPacks().flatMap(pack=>pack.classes.flatMap(c=>c.cards)).map(c=>[c.id,c]));
+    objectCache={packs,mechanisms,objects:workshopObjectCatalog(cards,readWorkshopMechanisms())};
+  }
+  return objectCache.objects.cards.some(c=>c.id===card.id)?objectCache.objects:{...objectCache.objects,cards:[...objectCache.objects.cards,{id:String(card.id),name:card.name,group:'当前卡牌'}]};
+}
 export function battleCardText(card: CardDefinition, stars: number, state: LocalBattleState, stats: CardDisplayStats): string {
   const native = reworkCard(String(card.id));
-  if (native) return cleanCombatCopy(describeReworkEffects(native.effects, stars, stats));
+  if (native) return cleanCombatCopy(nativeCardDescription(native, stars, stats));
+  if(card.description?.trim() && card.description!==card.name) {
+    const objects=descriptionObjects(card);
+    let runtime:WorkshopProgramRuntime|undefined;
+    const evaluate=(binding:CardDescriptionBinding):unknown=>{
+      try {
+        if(state.rework) {
+          if(!runtime){const game=hydrate(state.rework);syncExternal(game,state);game.selectedTarget=state.selectedTarget;runtime=new WorkshopProgramRuntime(game,{resource:key=>key.startsWith('workshop_resource:')?state.workshopMechanisms?.resources[key.slice('workshop_resource:'.length)]??0:undefined});}
+          const program=(card.effects.find(e=>e.type==='rule_program'&&(e.program as RuleProgram).id===binding.programId)?.program as RuleProgram|undefined)??{version:2,id:'description',name:'说明',variables:[],statuses:[],rules:[]};
+          return runtime.previewValue(binding.expression,program,{star:stars});
+        }
+        const resolve=(e:RuleExpression|undefined):RuleExpression|undefined=>{
+          if(!e||typeof e!=='object')return e;
+          if(e.op==='resource')return state.player.classResources?.[e.key??'']??state.workshopMechanisms?.resources[(e.key??'').replace(/^workshop_resource:/,'')]??0;
+          if(e.op==='status')return state.player.buffs?.[e.key??'']?.value??state.player.debuffs?.[e.key??'']?.value??0;
+          return {...e,...(e.args?{args:e.args.map(v=>resolve(v)!)}:{}),...(e.value!==undefined?{value:resolve(e.value)}:{})};
+        };
+        return describeRuleExpression(resolve(binding.expression),{self:{...stats,hp:state.player.hp,hpMax:state.player.hpMax,shield:state.player.shield,ap:state.player.ap,speed:stats.speed??state.player.speed},target:state.enemies?.[state.selectedTarget] as unknown as Record<string,number>,star:stars});
+      } catch {return undefined;}
+    };
+    return renderCardDescription(card,objects,evaluate,stars);
+  }
   const scaled = scaleWorkshopCard(card, stars);
   const toEffect = (effect: CardEffect): ReworkEffect => {
     if(effect.type==='rule_program')return {kind:'utility',text:describeRuleProgram(effect.program as RuleProgram,{self:{...stats,hp:state.player.hp,hpMax:state.player.hpMax,shield:state.player.shield,ap:state.player.ap},target:state.enemies[state.selectedTarget] as unknown as Record<string,number>,star:stars})};

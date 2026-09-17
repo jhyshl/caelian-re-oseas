@@ -19,7 +19,7 @@ describe('职业卡牌重置目录', () => {
       expect(card, approved.id).toBeDefined();
       expect(card).toMatchObject({ id: approved.id, name: approved.name, cost: approved.ap, mpCost: 0, maxStars: 3, rework: true });
       expect(card!.effects).toHaveLength(approved.effects.length);
-      expect(card!.description).toContain('逐项效果：');
+      expect(card!.description).not.toContain('逐项效果：');
       expect(card!.description).not.toContain('卡牌最多3星');
       expect(card!.description).not.toContain('undefined');
       expect(card!.effects.map((effect) => effect.type)).toEqual(approved.effects.map((effect) => effect.kind));
@@ -69,7 +69,7 @@ describe('职业卡牌重置目录', () => {
       expect.objectContaining({ type: 'heal', flat: 10, atk: 0.25, target: 'all_allies', crit: false, overTime: 2 }),
       expect.objectContaining({ type: 'utility', action: '群体再生总量上限', flatPerTick: 30, atkPerTick: 0.75 }),
     ] });
-    expect(card.description).toContain('群体');
+    expect(card.description).toContain('我方全体');
     expect(card.description).toContain('不暴击');
   });
 
@@ -86,7 +86,7 @@ describe('职业卡牌重置目录', () => {
     const shields = skills.flatMap((skill) => skill.effects).filter((effect) => effect.type === 'shield');
     expect(shields.length).toBeGreaterThan(0);
     expect(shields.every((effect) => effect.target === shieldTarget)).toBe(true);
-    expect(card.description).toContain('逐项效果');
+    expect(card.description).not.toContain('逐项效果');
     expect(card.description).toContain('护盾');
     expect(summon.turns).toBe(3);
     expect(summon.teamLimit ?? summon.slotsForWholeTeam).toBe(2);

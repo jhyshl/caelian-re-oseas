@@ -262,6 +262,7 @@ onMounted(async () => {
   await refresh();
   disposers.push(
     props.context.api.on('state.changed', refreshState),
+    props.context.api.on('panel.opened', async ({panel})=>{if(panel==='character')await Promise.all([refreshState(),refreshAvatar(true)]);}),
     props.context.api.on('tavern.changed', async ({ event }) => {
       await refreshState();
       if (

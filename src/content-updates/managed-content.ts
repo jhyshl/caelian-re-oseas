@@ -401,7 +401,20 @@ export class ManagedContentUpdater {
     this.assertSafeManifest(manifest, worldbookName);
 
     if (['2026-09-10.imperial-worldbook.1', '2026-09-11.imperial-guidance.2'].includes(manifest.revision)) {
-      return this.syncImperialDelta(api, identity, worldbookName, options);
+      const result=await this.syncImperialDelta(api, identity, worldbookName, options);
+      // Keep the public manifest compatible with older Beta clients. Only this
+      // runtime applies the narrowly scoped script patch after the worldbook delta.
+      const operation:ManagedContentOperation={id:'2026-09-17.trelao-character-aliases.1',target:{kind:'character-script',scriptId:'a6c1f90d-1d78-4afb-8703-0cfd5cc380a9'},mutation:{action:'replace-exact',before:"match: { characterNames: ['凯利安'] }",after:"match: { characterNames: ['凯利安', '凯利安alpha', '凯利安beta'] }"}};
+      try {
+        const character=await this.readPersistedCharacter(identity);
+        const installed=flattenManagedScriptTrees(character.extensions?.tavern_helper?.scripts??[]).some(script=>script.id===operation.target.scriptId);
+        if(installed&&!isCharacterOperationApplied(character,operation)) {
+          await this.applyOperation(api,identity,worldbookName,operation);
+          result.applied+=1;result.status='applied';
+        }
+      } catch(error) {result.conflicts.push({operationId:operation.id,reason:'特莱奥角色脚本：'+(error instanceof Error?error.message:String(error))});}
+      this.writeConflicts(result.revision??manifest.revision,result.conflicts,identity.avatar);
+      return result;
     }
 
     const appliedState = this.readAppliedState(identity.avatar);

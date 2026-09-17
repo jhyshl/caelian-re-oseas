@@ -1,0 +1,5 @@
+import { DEFAULT_STAR_SCALING } from '@/workshop-stars';
+export function testPack() {
+ const cards=Array.from({length:8},(_,i)=>({id:'custom_fix_card_'+i,name:'回归牌'+i,type:'skill',cost:0,description:'造成{{伤害}}伤害，获得{{护盾名称}}。',descriptionBindings:[{kind:'formula',label:'伤害',expression:{op:'add',args:[20,{op:'mul',args:[{op:'stat',key:'attack'},1.5]}]}},{kind:'name',label:'护盾名称',objectKind:'statuses',objectId:'strength'}],starScaling:DEFAULT_STAR_SCALING,effects:[{type:'shield',value:1,target:'self'}]}));
+ return {format:'caelian_workshop_class_pack',version:1,classes:[{id:'custom_class_regression_fix',main:'freelance',name:'回归职业',talent:{name:'扩容',effects:[{type:'hand_limit_bonus',value:15}]},cards,cardPool:[...cards,...cards].map(c=>c.id),starterDeck:Array.from({length:15},(_,i)=>cards[i%8]!.id)}]};
+}

@@ -32,6 +32,11 @@ export class WorkshopProgramRuntime {
     const suffix=scope==='turn'?':'+this.g.round:scope==='card'?':'+(c.card?.uid??'none'):scope==='unit'?':'+c.owner.id:'';
     const id=c.program.id+':'+scope+suffix;return this.memory.variables[id]??={};
   }
+  /** Evaluate on a caller-owned preview game; never execute rules or attach hooks. */
+  previewValue(expression:RuleExpression|undefined,program:RuleProgram,card?:any):unknown {
+    const c=this.context(program,this.g.player,{targetId:this.g.enemies[this.g.selectedTarget??0]?.id},undefined,card);
+    this.initialize(c);return this.value(expression,c);
+  }
   value(e:RuleExpression|undefined,c:Context):any {
     if(e===undefined)return 0;if(e===null||typeof e!=='object')return e;
     const args=()=>e.args?.map(a=>this.value(a,c))??[];

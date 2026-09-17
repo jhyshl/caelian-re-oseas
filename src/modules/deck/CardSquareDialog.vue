@@ -1,5 +1,7 @@
 <script setup lang="ts">
 /* global Blob, Event, HTMLInputElement, URL, Window, document, structuredClone, window */
+import { trackSquareInstallation } from '@/card-square-updates';
+import { manageCardSquareSubmission } from '@/card-square';
 import { computed, onMounted, ref, toRaw, watch } from 'vue';
 import {
   CARD_SQUARE_TAGS,
@@ -289,7 +291,7 @@ async function refreshWorkshopCatalogs(): Promise<void> {
   emit('changed');
 }
 
-async function applyDeck(build: SquareDeckBuild): Promise<void> {
+async function applyDeck(build: SquareDeckBuild, entry:CardSquareEntry): Promise<void> {
   const player = snapshot.value?.player;
   if (!player) return;
   if (player.subclass !== build.professionId) {
@@ -324,7 +326,7 @@ async function applyDeck(build: SquareDeckBuild): Promise<void> {
     (entry) =>
       entry.name === build.name && entry.professionId === build.professionId,
   );
-  saveNamedDeckBuild(
+  const saved = saveNamedDeckBuild(
     {
       id: existing?.id ?? commandId('square-saved-deck'),
       name: build.name,
@@ -337,7 +339,8 @@ async function applyDeck(build: SquareDeckBuild): Promise<void> {
     sourceWindow(),
   );
   snapshot.value = await props.context.api.query('state');
-  notice.value = `已应用并保存构筑「${build.name}」。`;
+  trackSquareInstallation(entry,saved.id,sourceWindow());
+  notice.value = `已应用并保存构筑「${build.name}」，后续自动更新。`;
   emit('changed');
 }
 
@@ -348,6 +351,7 @@ async function installProfession(
   const normalized = normalizeWorkshopPack(entry.payload);
   if (!(await approveCodeMechanisms(normalized.mechanisms ?? []))) return;
   const pack = saveWorkshopPack(normalized);
+  trackSquareInstallation(entry,pack.classes[0]!.id,sourceWindow());
   await refreshWorkshopCatalogs();
   const profession = pack.classes[0];
   if (!profession) throw new Error('职业包中没有可用职业。');
@@ -394,13 +398,14 @@ async function useEntry(entry: CardSquareEntry, reclass = false): Promise<void> 
   notice.value = '';
   try {
     if (entry.kind === 'deck_build') {
-      await applyDeck(entry.payload as SquareDeckBuild);
+      await applyDeck(entry.payload as SquareDeckBuild, entry);
     } else if (entry.kind === 'custom_class') {
       await installProfession(entry, reclass);
     } else {
       const normalized = normalizeWorkshopMechanism(entry.payload);
       if (!(await approveCodeMechanisms([normalized]))) return;
       const mechanism = saveWorkshopMechanism(normalized);
+      trackSquareInstallation(entry,mechanism.id,sourceWindow());
       await refreshWorkshopCatalogs();
       notice.value = `底层机制「${mechanism.name}」已安装。只有声明依赖它的职业会在战斗中启用。`;
     }
@@ -477,12 +482,19 @@ function toggleSubmitTag(tag: string): void {
   submitTags.value = [...submitTags.value, tag];
 }
 
+async function manageSubmission(receipt:CardSquareSubmissionReceipt,action:'unpublish'|'republish'|'delete'):Promise<void> {
+  if(action==='delete'&&!window.confirm('永久删除《'+receipt.title+'》的数据库投稿及本机投稿回执？作者和玩家的本地职业、构筑与机制都会保留。'))return;
+  busy.value=true;error.value='';
+  try {await manageCardSquareSubmission(receipt,action,sourceWindow());receipts.value=readCardSquareReceipts(sourceWindow());await refresh();notice.value=action==='delete'?'投稿已删除，本地内容已保留。':action==='unpublish'?'已下架，仍保留在我的投稿中。':'已提交重新上架。';}
+  catch(caught){error.value=caught instanceof Error?caught.message:String(caught);}finally{busy.value=false;}
+}
 async function submit(): Promise<void> {
   busy.value = true;
   error.value = '';
   notice.value = '';
   try {
     const draft = {
+      sourceId: submitKind.value==='deck_build'?selectedSavedDeckId.value||editingReceipt.value?.sourceId:submitKind.value==='custom_class'?selectedClassId.value||editingReceipt.value?.sourceId:selectedMechanismId.value||editingReceipt.value?.sourceId,
       kind: submitKind.value,
       title: submitTitle.value,
       anonymous: anonymous.value,
@@ -609,6 +621,7 @@ watch(tab, (next) => {
               <h3>{{ selected.title }}</h3>
               <p class="author">作者：{{ selected.authorName || '匿名冒险者' }}</p>
               <p>{{ selected.summary }}</p>
+              <p class="square-work-id">作品 ID：{{ selected.id }}<br>安装后自动接收此作品的新版内容。</p>
               <div class="tag-row">
                 <button
                   v-for="tag in selected.tags"
@@ -672,6 +685,7 @@ watch(tab, (next) => {
                 </div>
                 <strong>{{ statusNames[receipt.status] }}</strong>
               </header>
+              <p class="square-work-id">作品 ID：{{ receipt.id }}</p>
               <p v-if="receipt.reviewNote" class="review-note"><b>审核说明：</b>{{ receipt.reviewNote }}</p>
               <dl>
                 <div><dt>投稿时间</dt><dd>{{ new Date(receipt.createdAt).toLocaleString('zh-CN') }}</dd></div>
@@ -694,6 +708,9 @@ watch(tab, (next) => {
                 >
                   {{ refreshingReceiptId === receipt.id ? '正在查询……' : '查询此投稿' }}
                 </button>
+                <button v-if="receipt.status!=='unpublished'" type="button" class="ca-button" :disabled="busy" @click="manageSubmission(receipt,'unpublish')">下架</button>
+                <button v-else type="button" class="ca-button" :disabled="busy" @click="manageSubmission(receipt,'republish')">重新上架</button>
+                <button type="button" class="ca-button" :disabled="busy" @click="manageSubmission(receipt,'delete')">删除投稿</button>
                 <button type="button" class="ca-button" @click="downloadJson(exportCardSquareReceipt(receipt), `${receipt.title}-投稿回执`)">下载回执</button>
               </footer>
             </article>
@@ -809,4 +826,5 @@ watch(tab, (next) => {
 .square-empty { padding: 60px 20px; color: var(--ca-muted); text-align: center; }
 .square-notice, .square-error { margin: 0; padding: 10px 16px; border-top: 1px solid #282d36; font-size: 11px; text-align: center; }.square-notice { color: #8ed4aa; }.square-error { color: #ed8d86; }
 @media (max-width: 680px) { .square-backdrop { padding: 0; }.square-dialog { width: 100%; height: 100%; border: 0; border-radius: 0; }.square-header { padding: 15px 16px; }.square-tabs { overflow-x: auto; }.square-tabs button { flex: 0 0 auto; }.square-layout { grid-template-columns: 1fr; }.square-list { display: flex; gap: 7px; overflow-x: auto; border-right: 0; border-bottom: 1px solid #282d36; }.square-list button { flex: 0 0 210px; margin: 0; }.square-detail { padding: 20px 16px 30px; }.square-toolbar { flex-wrap: wrap; }.square-toolbar input { flex-basis: 100%; }.submit-grid { grid-template-columns: 1fr; }.submit-grid .wide { grid-column: auto; }.receipt-toolbar { align-items: stretch; flex-direction: column; }.receipt-toolbar > div:last-child { flex-wrap: wrap; }.receipt-list { grid-template-columns: 1fr; } }
+.square-work-id { overflow-wrap: anywhere; font-size: 12px; opacity: .8; }
 </style>

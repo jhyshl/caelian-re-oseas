@@ -1,3 +1,4 @@
+import { readSavedDeckBuilds } from '@/saved-decks';
 import { randomUuid } from '@/kernel/random-uuid';
 import { z } from 'zod';
 import type { RuntimeInfo } from '@/domain/types';
@@ -71,6 +72,7 @@ export interface CardSquareEntry {
 }
 
 export interface CardSquareSubmission {
+  sourceId?: string;
   kind: CardSquareKind;
   title: string;
   anonymous: boolean;
@@ -85,6 +87,7 @@ export interface CardSquareEditableSubmission extends CardSquareSubmission {
 }
 
 export interface CardSquareSubmissionReceipt {
+  sourceId?: string;
   id: string;
   receiptToken: string;
   title: string;
@@ -138,6 +141,7 @@ const responseRowSchema = z.object({
 });
 
 const receiptSchema = z.object({
+  sourceId: z.string().max(160).optional(),
   id: z.string().uuid(),
   receiptToken: z.string().uuid(),
   title: z.string().trim().min(2).max(50),
@@ -306,6 +310,7 @@ async function responseMessage(response: Response): Promise<string> {
 
 export async function listCardSquareEntries(
   sourceWindow: Window,
+  ids?: string[],
 ): Promise<CardSquareEntry[]> {
   const select = [
     'id',
@@ -324,7 +329,7 @@ export async function listCardSquareEntries(
     'published_at',
   ].join(',');
   const response = await sourceWindow.fetch(
-    `${SQUARE_ENDPOINT}?select=${select}&status=eq.published&order=published_at.desc.nullslast,created_at.desc&limit=200`,
+    `${SQUARE_ENDPOINT}?select=${select}&status=eq.published&order=published_at.desc.nullslast,created_at.desc&limit=200${ids?.length ? `&id=in.(${ids.filter(id=>/^[0-9a-f-]{36}$/i.test(id)).join(',')})` : ''}`,
     {
       headers: { apikey: SUPABASE_PUBLISHABLE_KEY },
       cache: 'no-store',
@@ -347,6 +352,12 @@ export async function submitCardSquareEntry(
   sourceWindow: Window,
 ): Promise<CardSquareSubmissionReceipt> {
   const normalized = normalizeSubmissionDraft(draft);
+  const sourceId=draft.sourceId ?? (draft.kind==='deck_build' ? undefined : normalized.professionId);
+  if(sourceId) {
+    for(const old of readCardSquareReceipts(sourceWindow).filter(r=>r.kind===draft.kind&&!r.sourceId))await loadCardSquareSubmissionForEdit(old,sourceWindow);
+  }
+  const existing=sourceId ? readCardSquareReceipts(sourceWindow).find(receipt=>receipt.kind===draft.kind&&receipt.sourceId===sourceId) : undefined;
+  if(existing)return updateCardSquareSubmission(existing,draft,runtime,sourceWindow);
 
   const status: CardSquareStatus =
     draft.kind === 'mechanism' ? 'pending' : 'published';
@@ -384,6 +395,7 @@ export async function submitCardSquareEntry(
   });
   if (!response.ok) throw new Error(await responseMessage(response));
   const receipt: CardSquareSubmissionReceipt = {
+    sourceId,
     id,
     receiptToken,
     title: normalized.title,
@@ -427,6 +439,14 @@ export async function loadCardSquareSubmissionForEdit(
   if (current.kind === 'custom_class') payload = normalizeWorkshopPack(payload);
   if (current.kind === 'mechanism') {
     payload = normalizeWorkshopMechanism(payload);
+  }
+  if(!receipt.sourceId&&current.kind==='deck_build') {
+    const build=payload as SquareDeckBuild;const matches=readSavedDeckBuilds(sourceWindow).filter(d=>d.name===build.name&&d.professionId===build.professionId);
+    if(matches.length===1)saveCardSquareReceipt({...receipt,sourceId:matches[0]!.id},sourceWindow);
+  }
+  if(!receipt.sourceId&&current.kind!=='deck_build') {
+    const sourceId=current.kind==='custom_class'?normalizeWorkshopPack(payload).classes[0]?.id:normalizeWorkshopMechanism(payload).id;
+    if(sourceId)saveCardSquareReceipt({...receipt,sourceId},sourceWindow);
   }
   return {
     id: current.id,
@@ -489,6 +509,7 @@ export async function updateCardSquareSubmission(
   return saveCardSquareReceipt(
     {
       ...receipt,
+      sourceId: draft.sourceId ?? receipt.sourceId ?? (draft.kind==='deck_build' ? undefined : normalized.professionId),
       title: current.title,
       status: current.status,
       reviewNote: current.review_note,
@@ -620,4 +641,14 @@ export function toggleCardSquareFavorite(entryId: string): boolean {
     JSON.stringify([...favorites].slice(0, 500)),
   );
   return nextState;
+}
+
+export async function manageCardSquareSubmission(receipt:CardSquareSubmissionReceipt, action:'unpublish'|'republish'|'delete', sourceWindow:Window):Promise<void> {
+  const response=await sourceWindow.fetch(RECEIPT_ENDPOINT,{method:'POST',headers:{Authorization:'Receipt '+receipt.receiptToken,'Content-Type':'application/json'},body:JSON.stringify({id:receipt.id,action}),cache:'no-store'});
+  if(!response.ok)throw new Error(await responseMessage(response));
+  if(action==='delete') {
+    const result=await response.json() as {deleted?:string};
+    if(result.deleted!==receipt.id)throw new Error('删除回执不匹配，请重新查询');
+    sourceWindow.localStorage.setItem(CARD_SQUARE_RECEIPTS_KEY,JSON.stringify(readCardSquareReceipts(sourceWindow).filter(r=>r.id!==receipt.id)));
+  } else await refreshCardSquareReceipt(receipt,sourceWindow);
 }

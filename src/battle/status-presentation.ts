@@ -32,7 +32,7 @@ export function nativeStatusEntries(actor: NativeActor, kind: 'buff' | 'debuff')
   const records = kind === 'buff' ? actor.buffs : [...actor.debuffs, ...actor.dots];
   const entries: StatusDisplayEntry[] = [];
   for (const [index, record] of records.entries()) {
-    if (record.ruleHidden) continue;
+    if (record.ruleHidden || record.remaining === 0 || record.charges === 0 || record.ruleData?.layers === 0) continue;
     const name = record.canonicalStatus ?? record.status ?? '';
     const rawTurns = record.remaining ?? Math.max(1, (record.expireAtPhase ?? actor.phaseCount + 1) - actor.phaseCount);
     const turns = Number.isFinite(rawTurns) ? rawTurns : -1;

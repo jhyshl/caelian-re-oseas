@@ -1,3 +1,4 @@
+import { normalizeDescriptionBindings } from '@/card-description';
 import { programObjectReferences } from '@/workshop-program-references';
 import type { CardDefinition, CardEffect } from '@/content/types';
 import { normalizeRuleProgram, emptyRuleProgram, type RuleProgram } from '@/workshop-program';
@@ -903,7 +904,7 @@ export function normalizeWorkshopCard(
   }
   if (!effects.length) throw new Error(`卡牌「${name}」没有有效效果`);
   const description =
-    String(source.description ?? source.brief ?? '').trim().slice(0, 90) ||
+    String(source.description ?? source.brief ?? '').trim().slice(0, 2000) ||
     name;
   const requestedTags = Array.isArray(source.tags)
     ? source.tags
@@ -928,6 +929,7 @@ export function normalizeWorkshopCard(
       : 'common',
     description,
     brief: description,
+    descriptionBindings: normalizeDescriptionBindings(source.descriptionBindings),
     tags,
     effects,
     cat: `sub_${classId}`,

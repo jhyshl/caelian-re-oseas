@@ -5,5 +5,7 @@ export const HUNTING_TRAPS = [
   {id:'hunt_trap_high', name:'高级捕兽夹', basePrice:2000, failMax:20},
 ] as const;
 export const TRAP_ITEMS: Record<string, BattleItemDefinition> = Object.fromEntries(HUNTING_TRAPS.map(t => [t.id, {
-  name:t.name, desc:'每次打猎消耗1个；0～'+t.failMax+'失败，81～100触发战斗。', category:'material', rarity:'common', basePrice:t.basePrice,
+  name:t.name, desc:'不可出售，仅用于打猎。每次打猎消耗1个；0～'+t.failMax+'失败，81～100触发战斗。', category:'material', rarity:'common', basePrice:t.basePrice,
 }]));
+
+export function isHuntingTrap(id: string, name = id): boolean { return HUNTING_TRAPS.some(trap => trap.id === id || trap.name === name); }

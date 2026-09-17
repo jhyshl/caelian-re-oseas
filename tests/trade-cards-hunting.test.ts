@@ -105,7 +105,7 @@ describe('跨城货运结算',()=>{
     const input=await order(f,25);input.rows.push({key:'trap:hunt_trap_mid',quantity:25});
     const region=view.regions.find(r=>r.regionId===input.regionId)!;
     const cost=25*region.listings.filter(l=>['hunt_trap_low','hunt_trap_mid'].includes(l.itemId)).reduce((n,l)=>n+l.price,0);
-    expect(region.prices.find(p=>p.itemId==='hunt_trap_low')).toMatchObject({buy:expect.any(Number),sell:expect.any(Number)});
+    expect(region.prices.find(p=>p.itemId==='hunt_trap_low')).toMatchObject({buy:expect.any(Number),sell:null});
     await f.tx(()=>f.market.dispatchFreight(f.id,input));
     expect((await f.db.playerStates.get(f.id))!.gold).toBe(1000000-cost);
     expect(await f.db.inventoryStacks.get(f.id+':hunt_trap_low')).toBeUndefined();
@@ -137,9 +137,10 @@ describe('跨城货运结算',()=>{
   });
   it('每日买卖合并计数，费用为0/0/0/500/1000/2000/2000，设备本地零点重置',async()=>{
     const f=await setup(),fees:number[]=[];
+    await f.db.inventoryStacks.put({id:f.id+':铁矿石',profileId:f.id,itemId:'铁矿石',name:'铁矿石',quantity:10,updatedAt:Date.now()});
     for(let n=0;n<7;n++) {
       const input=await order(f);
-      if(n%2===1) {input.direction='sell';input.rows=[{key:'item:hunt_trap_low',quantity:1}];}
+      if(n%2===1) {input.direction='sell';input.rows=[{key:'item:铁矿石',quantity:1}];}
       const before=(await f.db.playerStates.get(f.id))!.gold;
       await f.tx(()=>f.market.dispatchFreight(f.id,input));
       const job=(await f.db.freightStates.get(f.id))!.jobs.at(-1)!;fees.push(job.fee);

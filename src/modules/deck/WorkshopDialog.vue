@@ -53,6 +53,8 @@ import {
   type WorkshopMainClass,
 } from '@/workshop';
 
+import WorkshopDescriptionEditor from './WorkshopDescriptionEditor.vue';
+import type { CardDescriptionBinding } from '@/card-description';
 import WorkshopProgramEditor from './WorkshopProgramEditor.vue';
 import { emptyRuleProgram } from '@/workshop-program';
 import { cloneWorkshopData as cloneData, prepareWorkshopDraft } from '@/workshop-drafts';
@@ -62,6 +64,7 @@ import WorkshopStarEditor from '@/modules/deck/WorkshopStarEditor.vue';
 import { DEFAULT_STAR_SCALING, type WorkshopStarScaling } from '@/workshop-stars';
 
 interface EditableCard {
+  descriptionBindings?: CardDescriptionBinding[];
   battleOnly?: boolean;
   afterUse?: 'destroy' | 'discard';
   starScaling?: WorkshopStarScaling;
@@ -301,6 +304,7 @@ function editableFromValue(value: Partial<WorkshopClass>): EditableClass {
           ? String(card?.rarity)
           : 'common',
         description: String(card?.description || ''),
+        descriptionBindings: card?.descriptionBindings,
         tags: Array.isArray(card?.tags) ? card.tags.map(String) : [],
         effects: Array.isArray(card?.effects) ? card.effects : [],
         starScaling: card?.starScaling,
@@ -1544,13 +1548,7 @@ watch(() => props.initialCardId, (id) => {
                       <option value="legendary">传说</option>
                     </select>
                   </label>
-                  <label class="wide">
-                    <span>卡牌说明</span>
-                    <textarea
-                      v-model="activeCard.description"
-                      maxlength="90"
-                    ></textarea>
-                  </label>
+                  <WorkshopDescriptionEditor v-model="activeCard.description" v-model:bindings="activeCard.descriptionBindings" class="wide" :effects="activeCard.effects" :card-type="activeCard.type" :star-scaling="activeCard.starScaling" />
                   <label class="wide">
                     <span>机制标签（逗号分隔）</span>
                     <input

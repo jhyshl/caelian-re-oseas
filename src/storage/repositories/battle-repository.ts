@@ -484,7 +484,7 @@ export class BattleRepository {
     const entryRegion = ['圣德里安学院', '伊拉亚城'].includes(region);
     const enemyCount = this.isBossMonster(monster)
       ? 1
-      : Math.max(1, Math.min(!input.monsterId && entryRegion && player.level <= 5 ? 1 : !input.monsterId && entryRegion && player.level <= 10 ? 2 : 3, Math.floor(requestedCount)));
+      : Math.max(1, Math.min(!input.monsterId && entryRegion && player.level <= 5 ? 1 : !input.monsterId && entryRegion && player.level <= 10 ? 2 : 4, Math.floor(requestedCount)));
     const packScale = this.packStrengthMultiplier(enemyCount);
     const encounterPack = resolvedMonsterId
       ? Array.from(

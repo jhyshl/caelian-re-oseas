@@ -104,7 +104,7 @@ export class TavernAdapter {
       'default';
     return {
       chatId: String(direct),
-      playerName: context.name1,
+      playerName: typeof context.name1 === 'string' ? context.name1.trim().slice(0,80) || undefined : undefined,
     };
   }
 

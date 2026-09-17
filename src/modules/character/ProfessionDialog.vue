@@ -23,7 +23,7 @@ const emit = defineEmits<{
 
 const selectedMain = ref('');
 const selectedSubclass = ref('');
-const playerName = ref(props.player.name);
+const playerName = computed(() => props.player.name);
 const deckNames = ref<string[]>([]);
 const busy = ref(false);
 const error = ref('');
@@ -117,8 +117,8 @@ async function submit() {
 
       <label v-if="mode === 'create'" class="name-field">
         <span>冒险者名称</span>
-        <input v-model="playerName" maxlength="80" />
-        <small>默认读取当前 User 人设，只需要选择职业即可开始冒险。</small>
+        <input :value="playerName" readonly aria-label="当前酒馆用户名" />
+        <small>直接读取当前酒馆 username；更换用户人设后自动同步，只需选择职业即可开始冒险。</small>
       </label>
 
       <div v-else class="reclass-warning">

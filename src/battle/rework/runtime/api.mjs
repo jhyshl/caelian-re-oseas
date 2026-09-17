@@ -41,7 +41,7 @@ export function regionLevel(level,region){
 }
 export function create(state,options={}){
   const p=actor('player','player',options.level??1,copyStats(state.player));
-  Object.assign(p,{hp:Math.min(p.maxHp,state.player.hp),shield:state.player.shield,apMax:state.player.apMax,ap:state.player.apMax,drawCount:Math.min(5,state.player.drawPerTurn),profession:state.player.subclass,gold:state.player.gold??0,star:1});
+  Object.assign(p,{hp:Math.min(p.maxHp,state.player.hp),shield:state.player.shield,apMax:state.player.apMax,ap:state.player.apMax,drawCount:Math.min(5,state.player.drawPerTurn),handLimit:Math.max(1,Math.floor(state.player.handLimit||10)),profession:state.player.subclass,gold:state.player.gold??0,star:1});
   const definitions=state.enemies.map(e=>monsters.get(e.definitionId)??customDefinition(e));
   const level=options.explicit?Math.max(1,Math.min(100,options.level??1)):regionLevel(options.level??1,options.region??'');
   const difficulty=({easy:.8,normal:1,hard:1.5,hell:2})[state.difficulty]??1;
@@ -175,7 +175,7 @@ export function project(g,state,options={}){
 }
 export function syncExternal(g,state){
   syncLegacyActors(g,state);
-  const p=g.player;p.ap=state.player.ap;p.gold=state.player.gold??p.gold;
+  const p=g.player;p.handLimit=Math.max(1,Math.floor(state.player.handLimit||10));p.ap=state.player.ap;p.gold=state.player.gold??p.gold;
   const all=[...p.hand,...p.deck,...p.discard,...p.exhaust];
   const restore=list=>list.map(c=>all.find(x=>String(x.uid)===c.instanceId)??{...structuredClone(cards.get(c.cardId)??{id:c.cardId,ap:1,effects:[],legacy:true}),uid:c.instanceId,star:c.stars??1});
   p.hand=restore(state.player.hand);p.deck=restore(state.player.drawPile);p.discard=restore(state.player.discardPile);

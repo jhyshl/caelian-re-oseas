@@ -42,7 +42,7 @@ export function workshopObjectCatalog(
   scan(cards); scan(draft);
   const unique = (list: WorkshopObjectChoice[]) => [...new Map(list.map(item => [item.id, item])).values()];
   return {
-    cards: unique([...Object.entries(cards).map(([id, c]) => ({ id, name: c.name, group: c.battleOnly ? '战斗专用牌' : '卡牌' })), ...(draft?.cards ?? []).map(c => ({ id: c.id, name: c.name, group: c.battleOnly ? '草稿·战斗专用牌' : '草稿卡牌' }))]),
+    cards: unique([...rawBattleCatalog.cards.map(c=>({id:c.id,name:c.name,group:'官方卡牌'})), ...Object.entries(cards).map(([id, c]) => ({ id, name: c.name, group: c.battleOnly ? '战斗专用牌' : '卡牌' })), ...(draft?.cards ?? []).map(c => ({ id: c.id, name: c.name, group: c.battleOnly ? '草稿·战斗专用牌' : '草稿卡牌' }))]),
     statuses: unique(statuses), resources: unique(resources),
   };
 }

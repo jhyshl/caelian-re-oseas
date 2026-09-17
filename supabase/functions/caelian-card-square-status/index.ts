@@ -152,7 +152,7 @@ Deno.serve(async (request: Request) => {
     if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: 'invalid_entry' }, 400);
     const { url, key } = environment();
     const action = String(body.action ?? 'status');
-    if (!['status', 'edit', 'update'].includes(action)) {
+    if (!['status', 'edit', 'update', 'unpublish', 'republish', 'delete'].includes(action)) {
       return json({ error: 'invalid_action' }, 400);
     }
     const response = await fetch(
@@ -171,8 +171,26 @@ Deno.serve(async (request: Request) => {
     if (action === 'edit') {
       return json({ ok: true, result: editableResult(current) }, 200);
     }
+    if (action === 'delete') {
+      const deletion=await fetch(url+'/rest/v1/caelian_card_square_entries?id=eq.'+encodeURIComponent(id)+'&submission_token=eq.'+encodeURIComponent(receiptToken),{method:'DELETE',headers:{apikey:key,Authorization:'Bearer '+key,Prefer:'return=representation'}});
+      if(!deletion.ok)throw new Error('删除投稿失败');
+      const deleted=await deletion.json() as Record<string,unknown>[];
+      if(deleted[0]?.id!==id)throw new Error('投稿已经变更，请重新查询');
+      return json({ok:true,deleted:id},200);
+    }
+    if (['unpublish','republish'].includes(action)) {
+      if(action==='republish'&&current.status!=='unpublished')throw new Error('只有已下架作品可以重新上架');
+      const status=action==='unpublish'?'unpublished':current.kind==='mechanism'&&!current.published_at?'pending':'published';
+      const updated=await fetch(url+'/rest/v1/caelian_card_square_entries?id=eq.'+encodeURIComponent(id)+'&submission_token=eq.'+encodeURIComponent(receiptToken),{method:'PATCH',headers:{apikey:key,Authorization:'Bearer '+key,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify({status,...(status==='published'?{published_at:new Date().toISOString()}:{} )})});
+      if(!updated.ok)throw new Error('修改上架状态失败');
+      const changed=await updated.json() as Record<string,unknown>[];
+      if(!changed[0])throw new Error('投稿已经变更，请重新查询');
+      return json({ok:true,result:statusResult(changed[0])},200);
+    }
     if (action === 'update') {
       const patch = updateFields(body, current.kind);
+      if(current.kind!=='deck_build'&&patch.profession_id!==current.profession_id)throw new Error('同一作品更新时请保留职业或机制 ID；其他作品请另行投稿');
+      if(current.status==='unpublished')patch.status='unpublished';
       const update = await fetch(
         `${url}/rest/v1/caelian_card_square_entries?id=eq.${encodeURIComponent(id)}&submission_token=eq.${encodeURIComponent(receiptToken)}`,
         {

@@ -363,7 +363,6 @@ export function applyReworkCards(legacy: Record<string, CardDefinition>): Record
   for (const card of cards.values()) {
     const old = legacy[card.id];
     const limits = text(card.limits);
-    const details = describeReworkEffects(card.effects);
     result[card.id] = {
       ...old,
       id: card.id,
@@ -374,7 +373,7 @@ export function applyReworkCards(legacy: Record<string, CardDefinition>): Record
       rarity: old?.rarity ?? 'common',
       cat: old?.cat ?? (card.profession === 'common' ? 'common' : `sub_${card.profession}`),
       cls: old?.cls ?? card.profession,
-      description: `AP ${card.ap}｜1星：${card.summary}\n逐项效果：${details}${limits ? `\n限制：${limits}` : ''}`,
+      description: `AP ${card.ap}｜${card.summary}`,
       brief: `${card.summary}${limits ? `（${limits}）` : ''}`,
       effects: card.effects.map(compatibleEffect),
       ...(old?.source !== undefined ? { source: old.source } : {}),
@@ -390,4 +389,23 @@ export function applyReworkCards(legacy: Record<string, CardDefinition>): Record
     };
   }
   return result;
+}
+
+/** Preserve reviewed prose; substitute mathematical terms without expanding rule trees. */
+export function nativeCardDescription(card: ReworkCard, star=1, stats?: CardDisplayStats): string {
+  const summon=card.effects.find(e=>e.kind==='summon');
+  const inherited=summon?.inherit as {atk?:number;def?:number;hp?:number}|undefined;
+  const resolve=(text:string,live=stats)=>text.replace(/(?:\d+(?:\.\d+)?[＋+])?\d+(?:\.\d+)?%(?:施加时攻击力|攻击力|防御|目标生命上限|最大生命)(?:[＋+]\d+(?:\.\d+)?%(?:攻击力|防御))*/g,formulaText=>{
+    const terms=formulaText.split(/[＋+]/),scale=starScale(star);
+    if(!live)return terms.map(term=>/目标生命上限|最大生命/.test(term)?term:term.replace(/^\d+(?:\.\d+)?/,number=>numeric(Number(number)*scale))).join('＋');
+    return numeric(terms.reduce((sum,term)=>{
+      const n=Number.parseFloat(term);if(!term.includes('%'))return sum+n*scale;
+      const maxHp=/目标生命上限|最大生命/.test(term);const value=term.includes('最大生命')?live.hpMax:maxHp?live.targetHpMax:term.includes('防御')?live.defense:live.attack;
+      return sum+n/100*value*(maxHp?1:scale);
+    },0));
+  });
+  // Summon skill formulas use the summon's inherited attributes.
+  const split=summon?card.summary.search(/技能：|按条件择一/):-1;
+  if(split>=0&&stats&&inherited)return resolve(card.summary.slice(0,split))+resolve(card.summary.slice(split),{...stats,attack:stats.attack*(inherited.atk??1),defense:stats.defense*(inherited.def??1),hpMax:stats.hpMax*(inherited.hp??1)});
+  return resolve(card.summary);
 }

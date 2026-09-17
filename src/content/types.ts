@@ -3,7 +3,10 @@ export interface CardEffect {
   [key: string]: unknown;
 }
 
+import type { CardDescriptionBinding } from '@/card-description';
+
 export interface CardDefinition {
+  descriptionBindings?: CardDescriptionBinding[];
   /** Available only through battle effects; never owned or equipped. */
   battleOnly?: boolean;
   /** Battle-only cards either disappear after use or remain in the discard cycle. */

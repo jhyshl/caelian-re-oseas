@@ -1,5 +1,5 @@
 import { randomUuid } from '@/kernel/random-uuid';
-import { HUNTING_TRAPS, TRAP_ITEMS } from '@/content/hunting-traps';
+import { HUNTING_TRAPS, TRAP_ITEMS, isHuntingTrap } from '@/content/hunting-traps';
 import { CARRIAGES, freightDayKey, freightFee, nextFreightReset, type CarriageTier, type FreightState, type FreightView, type FreightRegion, type FreightOrder, type FreightCargo } from '@/market-freight';
 import { grantCard } from '@/battle/card-inventory';
 import { scaleReworkEquipment } from '@/battle/rework/equipment';
@@ -118,7 +118,7 @@ export class MarketRepository {
     const localMarketItems = this.localMarketItemKeys(regionState);
     const specialtyItems = this.specialtyItemKeys(regionState);
     const sellItems = inventory
-      .filter((stack) => stack.quantity > 0)
+      .filter((stack) => stack.quantity > 0 && !isHuntingTrap(stack.itemId, stack.name))
       .map((stack) => {
         const cookingKind = isDish(stack.itemId) || isDish(stack.name)
           ? 'dish' as const
@@ -282,6 +282,7 @@ export class MarketRepository {
     ]);
     if (!player || !world) throw new Error('集市所需的冒险档案不存在');
     if (!stack || stack.quantity <= 0) throw new Error('背包中没有该物品');
+    if (isHuntingTrap(stack.itemId, stack.name)) throw new Error('捕兽夹不可出售，仅用于打猎');
     const quantity = Math.min(
       stack.quantity,
       Math.max(1, Math.floor(input.quantity)),
@@ -423,7 +424,7 @@ export class MarketRepository {
         const localItems=new Set(view.listings.filter(l=>l.kind==='item').flatMap(l=>[l.itemId,l.name]));
         const prices:FreightRegion['prices']=view.listings.map(l=>({
           key:l.key,itemId:l.itemId,name:l.name,buy:l.price,stock:l.stock,
-          sell:l.kind==='item'?this.sellItemPrice(l.itemId,l.name,regionId,view.refreshKey,this.hasMerchantTalentSellBonus(view.isMerchant,l.itemId,l.name,localItems)):null,
+          sell:l.kind==='item'&&!isHuntingTrap(l.itemId,l.name)?this.sellItemPrice(l.itemId,l.name,regionId,view.refreshKey,this.hasMerchantTalentSellBonus(view.isMerchant,l.itemId,l.name,localItems)):null,
         }));
         for(const item of view.sellItems) if(!prices.some(p=>p.itemId===item.itemId)) prices.push({key:'item:'+item.itemId,itemId:item.itemId,name:item.name,buy:null,sell:item.price,stock:0});
         for(const item of view.sellEquipment) prices.push({key:'equipment:'+item.instanceId,itemId:item.instanceId,name:item.name,buy:null,sell:item.price,stock:0});

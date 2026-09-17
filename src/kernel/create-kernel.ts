@@ -1,3 +1,4 @@
+import { startSquareUpdates } from '@/card-square-updates';
 import { manualQuestChoices } from '@/quests/manual-progress';
 import type { CommandResult } from '@/domain/commands';
 import { MEMORY_TOGETHER_ACHIEVEMENT_ID } from '@/achievements/patch-registry';
@@ -328,6 +329,7 @@ export class CaelianKernel {
       await this.presentPatchMailboxIfReady();
       this.startManagedContentUpdates();
       if (this.channel === 'alpha') this.startSurveyUpdates();
+      this.stateDisposers.push(startSquareUpdates(this.api,this.adapter.host));
       await this.events.emit('runtime.ready', this.getRuntimeInfo());
     } catch (error) {
       this.status = 'error';
@@ -361,7 +363,12 @@ export class CaelianKernel {
       };
     }
     try {
+      const username=await this.syncTavernPlayerName();
       const type = this.commandType(command);
+      if(type==='player.create'&&username&&command&&typeof command==='object') {
+        const input=command as {payload?:Record<string,unknown>};
+        command={...input,payload:{...input.payload,name:username}};
+      }
       if (type === 'quest.abandon') {
         this.cancelQuestJudge();
       }
@@ -493,6 +500,7 @@ export class CaelianKernel {
     if (!this.profileId) {
       throw new Error(this.lastError ?? '当前没有活动档案');
     }
+    if (name === 'state' || name === 'battle-state') await this.syncTavernPlayerName();
     if (name === 'events') {
       return (await this.repository.recentEvents(
         this.profileId,
@@ -2253,6 +2261,17 @@ export class CaelianKernel {
     };
   }
 
+  private async syncTavernPlayerName():Promise<string|undefined> {
+    const profileId=this.profileId;
+    const username=(await this.adapter.identity()).playerName;
+    if(!profileId||!username||this.profileId!==profileId)return username;
+    const player=await this.db.playerStates.get(profileId);
+    if(player&&player.name!==username) {
+      await this.db.playerStates.update(profileId,{name:username});
+      await this.db.battleSessions.where('profileId').equals(profileId).filter(session=>session.active).modify({'state.player.name':username});
+    }
+    return username;
+  }
   private async activateCurrentProfile(): Promise<void> {
     const identity = await this.adapter.identity();
     const profile = await this.repository.resolveProfile(
@@ -2264,6 +2283,7 @@ export class CaelianKernel {
       },
     );
     this.profileId = profile.id;
+    await this.syncTavernPlayerName();
     this.caelianHeartThemeUnlocked = false;
     const snapshot = await this.repository.snapshot(profile.id);
     if (snapshot.player.created) {

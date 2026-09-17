@@ -380,7 +380,7 @@ function weaponMasterNextComboBonus(
 const professionStatusEntries = computed<ProfessionStatusEntry[]>(() => {
   const player = battlePlayerUi.value;
   if (!player) return [];
-  if (state.value?.rework) return Object.entries(player.classResources??{}).filter(([id]) => (id !== 'hunter_prepare' || player.subclass === 'vampire_hunter') && (!Object.values(classResourceDefinitions).some(r=>r.id===id) || classResourceDefinitions[player.subclass as keyof typeof classResourceDefinitions]?.id===id)).map(([id,value])=>({id,label:classResourceDefinitionsById[id]?.label??formatClassResourceLabel(id),value:String(value),description:classResourceDefinitionsById[id]?.description??'职业资源：按本职业卡牌说明获得和消耗。'}));
+  if (state.value?.rework) return Object.entries(player.classResources??{}).filter(([id, value]) => Number.isFinite(Number(value)) && Number(value) !== 0 && (id !== 'hunter_prepare' || player.subclass === 'vampire_hunter') && (!Object.values(classResourceDefinitions).some(r=>r.id===id) || classResourceDefinitions[player.subclass as keyof typeof classResourceDefinitions]?.id===id)).map(([id,value])=>({id,label:classResourceDefinitionsById[id]?.label??formatClassResourceLabel(id),value:String(value),description:classResourceDefinitionsById[id]?.description??'职业资源：按本职业卡牌说明获得和消耗。'}));
   const subclass = player.subclass ?? snapshot.value?.player.subclass ?? '';
   const entries: ProfessionStatusEntry[] = [];
   const displayedResourceIds = new Set<string>();
@@ -564,7 +564,7 @@ const mechanismResources = computed(() => {
   );
   return manifests.flatMap((manifest) =>
     manifest.resources
-      .filter((resource) => resource.visible)
+      .filter((resource) => resource.visible && (runtime.resources[`${manifest.id}:${resource.id}`] ?? resource.initial) !== 0)
       .map((resource) => ({
         id: `${manifest.id}:${resource.id}`,
         label: resource.label,
@@ -1116,7 +1116,7 @@ function effectEntries(
   const actor = statusActors.value.get(actorId);
   if (actor) return nativeStatusEntries(actor, kind);
   return Object.entries(effects).flatMap(([name, aggregate]) => {
-    if (aggregate.ruleHidden) return [];
+    if (aggregate.ruleHidden || aggregate.turns === 0 || aggregate.stacks === 0 || aggregate.ruleData?.layers === 0) return [];
     const instances = Array.isArray(aggregate.instances)
       ? aggregate.instances
       : [];
@@ -2471,14 +2471,14 @@ onUnmounted(() => {
 
         <section
           class="hand-zone"
-          :class="{ 'card-raised': selectedHandIndex !== null }"
+          :class="{ 'card-raised': selectedHandIndex !== null, 'has-context-actions': state.contextActions?.length }"
         >
           <div class="ap-orb">
             <strong>{{ state.player.ap }}</strong>
             <span>/{{ state.player.apMax }} AP</span>
           </div>
 
-          <div v-if="state.contextActions?.length" class="hand-actions">
+          <div v-if="state.contextActions?.length" class="hand-actions context-actions">
             <button v-for="action in state.contextActions" :key="action.id" type="button" :disabled="busy || !action.available" :title="[action.description, action.reason].filter(Boolean).join('；')" @click="useContextAction(action.id)">
               {{ action.name }} · {{ action.ap }} AP
             </button>
@@ -4503,7 +4503,7 @@ onUnmounted(() => {
   .legacy-battle-shell {
     height: auto;
     min-height: 100%;
-    grid-template-rows: auto auto auto minmax(190px, 48dvh);
+    grid-template-rows: auto auto auto var(--battle-hand-height);
     gap: 4px;
     overflow: visible;
     padding: 4px;
@@ -4567,7 +4567,7 @@ onUnmounted(() => {
   }
 
   .friendly-target-picker {
-    bottom: calc(max(190px, 48dvh) + 8px);
+    bottom: calc(var(--battle-hand-height) + 8px);
   }
 
   .battle-field-row > small {
@@ -4783,5 +4783,53 @@ onUnmounted(() => {
   .status-row {
     max-height: 16px;
   }
+}
+/* Size the hand from its cards; the toolbar owns the whole reserved pointer area. */
+.legacy-battle-shell {
+  --battle-card-width: clamp(102px, min(15.5vw, 19dvh), 142px);
+  --battle-context-space: 0px;
+  --battle-hand-height: calc(var(--battle-card-width) * 16 / 9 + 54px + var(--battle-context-space));
+  grid-template-rows: auto minmax(100px, 1fr) minmax(90px, .6fr) var(--battle-hand-height);
+}
+.legacy-battle-shell:has(.has-context-actions) { --battle-context-space: 36px; }
+.fan-hand { isolation: isolate; z-index: 1; top: 50px; }
+.fan-card { width: var(--battle-card-width); }
+.hand-actions {
+  z-index: 900; left: 64px; right: 8px; top: 6px; min-height: 36px;
+  max-width: none; transform: none; justify-content: center; align-items: center;
+  background: #27323e; border-radius: 8px; padding: 3px;
+}
+.ap-orb, .pile-button { z-index: 901; }
+.hand-actions.context-actions { top: 47px; }
+.hand-zone.has-context-actions .fan-hand { top: 86px; }
+.status-row:empty { display: none; }
+@media (min-width: 760px) {
+  .enemy-layout:has(> :nth-child(4)) { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 759px) {
+  .legacy-battle-shell {
+    --battle-card-width: clamp(70px, min(25vw, 15dvh), 118px);
+    height: 100%; min-height: 0; align-content: start;
+    grid-template-rows: auto minmax(min-content, 1fr) auto var(--battle-hand-height);
+  }
+  .enemy-layout { height: 100%; }
+  .hand-actions { left: 54px; right: 4px; }
+  .hand-zone.has-context-actions { min-height: 0; }
+}
+@media (max-width: 759px) and (max-height: 700px) {
+  .legacy-battle-shell {
+    --battle-card-width: clamp(66px, min(23vw, 14dvh), 98px);
+    --battle-hand-height: calc(var(--battle-card-width) * 16 / 9 + 48px + var(--battle-context-space));
+    gap: 3px; font-size: 11px;
+  }
+  .fan-hand { top: 44px; }
+  .enemy-layout { grid-auto-rows: minmax(68px, auto); }
+  .enemy-card { padding: 4px; }
+  .enemy-card > small { max-height: 1.3em; line-height: 1.3; overflow: hidden; }
+  .enemy-card :deep(.ca-meter-header) { margin-bottom: 2px; font-size: 8px; }
+  .enemy-card :deep(.ca-meter-track) { height: 9px; }
+  .summon-strip:has(> span:only-child) { display: none; }
+  .battle-mid { grid-template-rows: auto; min-height: min-content; }
+  .hand-actions button { padding: 5px; font-size: 9px; min-height: 30px; }
 }
 </style>

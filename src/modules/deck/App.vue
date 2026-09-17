@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /* global Window, window */
-import { describeRuleProgram, type RuleProgram } from '@/workshop-program';
+import { renderCardDescription } from '@/card-description';
+import { workshopObjectCatalog } from '@/workshop-object-catalog';
+import { readWorkshopMechanisms } from '@/workshop-mechanisms';
 import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue';
-import { needsWorkshopStars, takeStarEditorRequest, workshopStarDescription } from '@/workshop-stars';
-import { reworkCard, describeReworkEffects } from '@/battle/rework/catalog';
+import { needsWorkshopStars, takeStarEditorRequest } from '@/workshop-stars';
+import { reworkCard, nativeCardDescription } from '@/battle/rework/catalog';
 import { loadCardCatalog } from '@/content/catalogs/cards';
 import {
   mainClassForSubclass,
@@ -79,9 +81,8 @@ const ownedCards = computed(() => (snapshot.value?.cards ?? []).flatMap(owned =>
 }).filter(entry => matchFilter(entry.definition, entry.stars)).sort((a,b) => a.definition.name.localeCompare(b.definition.name, 'zh-CN') || a.stars - b.stars));
 function currentDescription(id: string, stars: number, fallback: string) {
   const c = reworkCard(id);
-  const rules=catalog.value[id]?.effects.filter(e=>e.type==='rule_program')??[];
-  if(rules.length)return rules.map(e=>describeRuleProgram(e.program as RuleProgram)).join('；');
-  return c ? describeReworkEffects(c.effects, stars) : catalog.value[id]?.custom ? workshopStarDescription(catalog.value[id], stars) : fallback;
+  const card=catalog.value[id];
+  return c ? nativeCardDescription(c,stars) : card ? renderCardDescription(card,workshopObjectCatalog(catalog.value,readWorkshopMechanisms())) : fallback;
 }
 function groupCards(keys: string[]) {
   const counts = keys.reduce<Record<string, number>>((out, key) => { out[key] = (out[key] ?? 0) + 1; return out; }, {});

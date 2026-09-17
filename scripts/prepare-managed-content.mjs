@@ -69,6 +69,10 @@ const scripts = card.data?.extensions?.tavern_helper?.scripts;
 if (!Array.isArray(scripts)) {
   throw new Error('The character card does not contain Tavern Helper scripts.');
 }
+const trelaoScript=scripts.find(script=>script?.id==='a6c1f90d-1d78-4afb-8703-0cfd5cc380a9');
+if(trelaoScript) {
+  trelaoScript.content=String(trelaoScript.content).replace("match: { characterNames: ['凯利安'] }", "match: { characterNames: ['凯利安', '凯利安alpha', '凯利安beta'] }");
+}
 const schemaScript = scripts.find(
   (script) => script?.id === MVU_SCHEMA_SCRIPT_ID,
 );
