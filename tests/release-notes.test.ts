@@ -176,10 +176,11 @@ describe('release notes', () => {
   });
 
   it('Beta 只显示自己的版本公告，不混入 Alpha 历史', () => {
-    const releases = releaseNotesFor('beta', '1.25.0-beta.1');
+    const releases = releaseNotesFor('beta', '1.26.0-beta.1');
 
     expect(releases).toEqual(BETA_RELEASE_NOTES);
     expect(releases.map((release) => release.label)).toEqual([
+      'Beta 1.26',
       'Beta 1.25',
       'Beta 1.24',
       'Beta 1.23',

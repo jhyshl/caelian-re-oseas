@@ -407,8 +407,13 @@ export class ManagedContentUpdater {
       const operation:ManagedContentOperation={id:'2026-09-17.trelao-character-aliases.1',target:{kind:'character-script',scriptId:'a6c1f90d-1d78-4afb-8703-0cfd5cc380a9'},mutation:{action:'replace-exact',before:"match: { characterNames: ['凯利安'] }",after:"match: { characterNames: ['凯利安', '凯利安alpha', '凯利安beta'] }"}};
       try {
         const character=await this.readPersistedCharacter(identity);
-        const installed=flattenManagedScriptTrees(character.extensions?.tavern_helper?.scripts??[]).some(script=>script.id===operation.target.scriptId);
-        if(installed&&!isCharacterOperationApplied(character,operation)) {
+        const matches=flattenManagedScriptTrees(character.extensions?.tavern_helper?.scripts??[]).filter(script=>script.id===operation.target.scriptId||/id:\s*['"]caelian\.treao\.golden-dragon['"]/.test(String(script.content??'')));
+        if(matches.length>1)throw new Error('找到多个特莱奥宠物扩展，请仅保留一个特莱奥扩展后重试');
+        if(matches[0]) {
+          if(!matches[0].id)throw new Error('特莱奥宠物扩展缺少脚本编号');
+          operation.target.scriptId=matches[0].id;
+        }
+        if(matches.length===1&&!isCharacterOperationApplied(character,operation)) {
           await this.applyOperation(api,identity,worldbookName,operation);
           result.applied+=1;result.status='applied';
         }

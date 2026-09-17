@@ -952,6 +952,26 @@ describe('ManagedContentUpdater', () => {
     expect(result.conflicts).toEqual([]);
     expect(result.applied).toBe(0);
     expect(JSON.stringify({ character, worldbook })).toBe(before);
+
+    // Tavern Helper generates a new script ID when importing a standalone script.
+    const pet = character.extensions.tavern_helper.scripts.find(
+      (script: { id: string }) => script.id === 'a6c1f90d-1d78-4afb-8703-0cfd5cc380a9',
+    );
+    pet.id = 'imported-pet-id';
+    pet.enabled = false;
+    pet.content = pet.content.replace(
+      "['凯利安', '凯利安alpha', '凯利安beta']", "['凯利安']",
+    ) + '\n// 玩家自己的备注';
+    const updated = await new ManagedContentUpdater(host).sync({ force: true });
+    expect(updated.conflicts).toEqual([]);
+    expect(updated.applied).toBe(1);
+    const saved = character.extensions.tavern_helper.scripts.find(
+      (script: { id: string }) => script.id === 'imported-pet-id',
+    );
+    expect(saved.content).toContain("['凯利安', '凯利安alpha', '凯利安beta']");
+    expect(saved.content).toContain('// 玩家自己的备注');
+    expect(saved.enabled).toBe(false);
+    expect((await new ManagedContentUpdater(host).sync({ force: true })).applied).toBe(0);
   });
 
   it('只修改精确目标片段并保留玩家新增内容', async () => {
