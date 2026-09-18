@@ -111,6 +111,8 @@ import {
   type WorkshopScriptBattleSnapshot,
 } from '@/workshop-script-runtime';
 
+const MAX_BATTLE_GOLD_LOSS = 1_000_000;
+
 const DIFFICULTY_SCALE = {
   easy: 0.8,
   normal: 1,
@@ -1412,7 +1414,7 @@ export class BattleRepository {
     const hpLossRate = 0.15 + this.random() * 0.3;
     const goldLossRate = 0.1 + this.random() * 0.7;
     const hpLoss = Math.max(1, Math.round(session.state.player.hp * hpLossRate));
-    const goldLoss = Math.min(player.gold, Math.round(player.gold * goldLossRate));
+    const goldLoss = Math.min(MAX_BATTLE_GOLD_LOSS, player.gold, Math.round(player.gold * goldLossRate));
     session.state.player.hp = Math.max(1, session.state.player.hp - hpLoss);
     player.hp = this.clamp(
       session.state.player.hp,
@@ -4003,8 +4005,9 @@ export class BattleRepository {
       }
       case 'merchant_flee': {
         const lostPercent = 1 + Math.floor(this.random() * 99);
-        const lostGold = Math.floor(
-          ((state.player.gold ?? 0) * lostPercent) / 100,
+        const lostGold = Math.min(
+          MAX_BATTLE_GOLD_LOSS,
+          Math.floor(((state.player.gold ?? 0) * lostPercent) / 100),
         );
         state.player.gold = Math.max(0, (state.player.gold ?? 0) - lostGold);
         this.directHpLoss(
@@ -4019,7 +4022,7 @@ export class BattleRepository {
         this.log(
           state,
           'system',
-          `商人脱身：损失 ${lostPercent}% 金币（-${lostGold}）并失去一半生命`,
+          `商人脱身：损失 ${lostGold} 金币（随机比例 ${lostPercent}%，最多 ${MAX_BATTLE_GOLD_LOSS}）并失去一半生命`,
         );
         break;
       }

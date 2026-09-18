@@ -10,11 +10,13 @@ import type { BattleSessionRecord } from '@/domain/types';
 import { EventBus } from '@/kernel/event-bus';
 import { CaelianDatabase } from '@/storage/database';
 import { GameRepository } from '@/storage/repository';
+import { BattleRepository } from '@/storage/repositories/battle-repository';
 import { MarketRepository } from '@/storage/repositories/market-repository';
 
 const databases: CaelianDatabase[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
+  localStorage.clear();
   await Promise.all(databases.splice(0).map(async (db) => { db.close(); await db.delete(); }));
 });
 async function setup(subclass = 'magician') {
@@ -251,7 +253,7 @@ describe('重置成长与战斗保存集成', () => {
     expect(item.stats).toEqual(scaleReworkEquipment(definition.stats, after.stars!, 60, definition.rarity));
   });
 
-  it('死亡结算保持 ended 阶段、保留外部金币并只结算一次30%安慰奖励', async () => {
+  it.each([9_500, 20_000_000])('死亡结算保持 ended 阶段、保留外部金币 %s 并只结算一次30%安慰奖励', async (gold) => {
     const f = await setup();
     const session = await start(f);
     const core = hydrate(session.state.rework);
@@ -263,18 +265,43 @@ describe('重置成长与战斗保存集成', () => {
     for (const enemy of core.enemies) { enemy.stats.speed = 1_000; enemy.stats.crit = 0; }
     project(core, session.state);
     await f.db.battleSessions.put(session);
-    await f.game.execute(f.profile.id, { id: 'defeat-wallet-change', type: 'player.update', payload: { gold: 9_500 } });
+    await f.game.execute(f.profile.id, { id: 'defeat-wallet-change', type: 'player.update', payload: { gold } });
     await endTurn(f, session, 'defeat-round');
     const after = await current(f, session);
     expect(after.state).toMatchObject({ status: 'defeat', phase: 'ended', rewards: { gold: 15, experience: 0, items: [] } });
     expect(after.phase).toBe('ended');
     const player = (await f.db.playerStates.get(f.profile.id))!;
-    expect(player.gold).toBe(9_515);
+    expect(player.gold).toBe(gold + 15);
     expect(player.hp).toBe(Math.max(1, Math.round(player.hpMax * 0.3)));
     expect((await endTurn(f, session, 'defeat-round')).status).toBe('duplicate');
     await expect(endTurn(f, session, 'defeat-round-repeat')).rejects.toThrow(/结束/);
-    expect((await f.db.playerStates.get(f.profile.id))!.gold).toBe(9_515);
+    expect((await f.db.playerStates.get(f.profile.id))!.gold).toBe(gold + 15);
     expect(await f.db.battleRewards.where('battleId').equals(session.id).count()).toBe(1);
   });
 
+});
+
+
+describe('战斗逃跑金币损失上限',()=>{
+ it.each([[0,0],[1_000_000,100_000],[9_999_990,999_999],[10_000_000,1_000_000],[20_000_000,1_000_000]])('金币 %s 时普通逃跑扣除 %s，保存和重试不会再次扣款',async(gold,loss)=>{
+  const f=await setup();await f.db.playerStates.update(f.profile.id,{gold});const session=await start(f);
+  const command={id:'capped-retreat',type:'battle.surrender' as const,payload:{battleId:session.id}};
+  expect((await f.game.execute(f.profile.id,command)).status).toBe('applied');
+  const after=await current(f,session);expect(after.state.status).toBe('surrendered');expect(after.state.player.gold).toBe(gold!-loss!);
+  expect((await f.db.playerStates.get(f.profile.id))!.gold).toBe(gold!-loss!);
+  expect(after.state.log.some(entry=>entry.text.includes(loss+' 金币'))).toBe(true);
+  expect((await f.game.execute(f.profile.id,command)).status).toBe('duplicate');
+  await expect(f.game.execute(f.profile.id,{...command,id:'repeat-retreat'})).rejects.toThrow(/结束/);
+  expect((await f.db.playerStates.get(f.profile.id))!.gold).toBe(gold!-loss!);
+ });
+});
+
+
+it.each([[1_000_000,10_000],[200_000_000,1_000_000]])('旧版商人脱身效果的实际扣款封顶：金币 %s 扣除 %s',async(gold,loss)=>{
+ const f=await setup('merchant');await f.db.playerStates.update(f.profile.id,{gold});const session=await start(f,'me_panic_escape');
+ const battle=new BattleRepository(f.db,()=>0);await battle.prepare();
+ // The current official card has a new effect; exercise the retained old effect directly.
+ battle['applyCardEffect'](session.state,{id:'legacy_escape',name:'旧版脱身',type:'skill',cost:0,rarity:'common',description:'旧版脱身验证',effects:[]},{type:'merchant_flee'},0);
+ expect(session.state.status).toBe('surrendered');expect(session.state.player.gold).toBe(gold!-loss!);
+ expect(session.state.log.some(entry=>entry.text.includes('商人脱身：损失 '+loss+' 金币'))).toBe(true);
 });

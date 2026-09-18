@@ -7,9 +7,9 @@ export function actor(id,side,level,stats,definition=null){return {id,side,level
 const hard=new Set(['hard_control','freeze','sleep','stun','petrify']);
 const aliases={...catalog.rules.statusFamilies.dotAliases,'易伤':'vulnerable','虚弱':'weak','速度降低%':'speed_down','速度增加':'speed_up','攻击力增加':'attack_up','防御增加':'defense_up','嘲讽':'taunt','冻结':'freeze','眩晕':'stun','沉眠':'sleep','光缚':'hard_control','石化':'petrify','禁疗':'healing_down','受到直接伤害降低':'direct_damage_reduction'};
 export const canonical=s=>['agility','敏捷','迅捷'].includes(s)?'swift':aliases[s]??s;
-export function ratio(e){if(e.valueUnit==='count')return e.value??1;if(e.valueUnit==='percent')return (e.value??0)/100;if(e.valueUnit==='ratio')return e.value??0;return Math.abs(e.value??0)>1?(e.value??0)/100:e.value??0;}
+export function ratio(e){const value=e.value??(e.valueUnit==='count'?1:0);if(typeof value!=='number'||!Number.isFinite(value))return 0;if(e.valueUnit==='count')return value;if(e.valueUnit==='percent')return value/100;if(e.valueUnit==='ratio')return value;return Math.abs(value)>1?value/100:value;}
 const key=e=>canonical(e.canonicalStatus??e.status??'');
-const uniqueStrong=(items)=>{const m=new Map();for(const e of items){const k=e.stackKey??key(e);if(!m.has(k)||ratio(e)>ratio(m.get(k)))m.set(k,e);}return [...m.values()];};
+const uniqueStrong=(items,value=ratio)=>{const m=new Map();for(const e of items){const k=e.stackKey??key(e);if(!m.has(k)||value(e)>value(m.get(k)))m.set(k,e);}return [...m.values()];};
 export function makeGame(player,enemies,options={}){
  const g={player,enemies,allies:[player],round:0,phase:'init',events:[],trace:options.trace?[]:null,seed:options.seed??1,rng:seeded((options.seed??1)^0x824234),hitRng:seeded((options.seed??1)^0x889aad),effectRng:seeded((options.seed??1)^0x775399),critRng:seeded((options.seed??1)^0x237aab),options,action:null,teamTauntUntil:{player:0,enemy:0},teamDotApplications:{},audit:{effects:{},statusUnitsCorrected:0},totals:{playerDamage:0,playerHpDamage:0,enemyDamage:0,enemyHpDamage:0,playerShield:0,playerHealing:0,enemyHealing:0,enemyShield:0,dotDamage:0,cards:0,crits:0,controls:0,enemyActions:0,maxPlayerHitFraction:0,maxPlayerTurnLossFraction:0}};
  g.ensureActor=a=>{a.phaseCount??=0;a.flags??={};a.buffs??=[];a.debuffs??=[];a.dots??=[];a.thisTurn??=makeTurnMetrics();a.lastTurn??=makeTurnMetrics();a.receivedThisTurn??=makeTurnMetrics();a.receivedLastTurn??=makeTurnMetrics();a.healingGiven??=0;a.healingReceived??=0;return a;};
@@ -19,25 +19,42 @@ export function makeGame(player,enemies,options={}){
  g.log=(type,detail={})=>{if(g.trace)g.trace.push({round:g.round,...detail,detailType:detail.type,type});};
  g.endAction=()=>{if(g.action?.chargeUsed)for(const e of g.action.chargeUsed){if(e.charges>0)e.charges--;for(const a of [...g.allies,...g.enemies]){a.buffs=a.buffs.filter(x=>x.charges!==0);a.debuffs=a.debuffs.filter(x=>x.charges!==0);}}g.action=null;};
  g.beginAction=(source,skill={})=>{g.endAction();g.action={source,skill,hitCache:new Map(),effectHitCache:new Map(),chargeUsed:new Set()};g.log('action_start',{source:source.id,name:skill.name??skill.id,uid:skill.uid});};
- g.status=(a,name)=>{const k=canonical(name);if(k==='swift')return a.buffs.filter(e=>key(e)===k).length;const dots=a.dots.filter(e=>key(e)===k);if(dots.length)return dots.length;return Math.max(0,...[...a.buffs,...a.debuffs].filter(e=>key(e)===k||e.status===name).map(e=>e.value??1));};
+ // Cached legal values travel with battle snapshots. Invalid imported values may
+ // not turn a later enemy action into NaN; infinite duration fields are unrelated.
+ const statNames={attack:'攻击力',defense:'防御',speed:'速度',crit:'暴击率',critDamage:'暴击伤害',ehr:'效果命中',res:'效果抵抗'};
+ const finite=value=>typeof value==='number'&&Number.isFinite(value);
+ const recoveries=new Set();
+ const recover=(a,field,value,fallback)=>{const key=g.round+':'+a.id+':'+field+':'+String(value)+':'+fallback;if(!recoveries.has(key)){recoveries.add(key);g.log('numeric_recovery',{actor:a.id,field,invalid:String(value),restored:fallback});}return fallback;};
+ const statusValue=(a,e,fallback=0)=>{
+  const value=e.value===undefined?fallback:e.value;
+  if(finite(value)){e.lastFiniteValue=value;return value;}
+  e.value=recover(a,'状态 '+(e.ruleLabel??key(e)),value,finite(e.lastFiniteValue)?e.lastFiniteValue:0);
+  return e.value;
+ };
+ const statusRatio=(a,e)=>ratio({...e,value:statusValue(a,e,e.valueUnit==='count'?1:0)});
+ g.status=(a,name)=>{const k=canonical(name);if(k==='swift')return a.buffs.filter(e=>key(e)===k).length;const dots=a.dots.filter(e=>key(e)===k);if(dots.length)return dots.length;return Math.max(0,...[...a.buffs,...a.debuffs].filter(e=>key(e)===k||e.status===name).map(e=>statusValue(a,e,1)));};
  g.hasStatus=(a,name)=>{if(!a)return false;const k=canonical(name);return [...a.buffs,...a.debuffs,...a.dots].some(e=>key(e)===k||e.status===name);};
- g.statusRatio=(a,name)=>Math.max(0,...[...a.buffs,...a.debuffs].filter(e=>key(e)===canonical(name)).map(ratio));
+ g.statusRatio=(a,name)=>Math.max(0,...[...a.buffs,...a.debuffs].filter(e=>key(e)===canonical(name)).map(e=>statusRatio(a,e)));
  g.stat=(a,k)=>{
-  g.ensureActor(a);let v=a.stats[k]??0;
+  g.ensureActor(a);const memory=a.flags.numericStats??={base:{},effective:{}};
+  let base=a.stats[k]===undefined?0:a.stats[k];
+  if(!finite(base)){base=recover(a,'基础'+(statNames[k]??k),base,finite(memory.base[k])?memory.base[k]:0);a.stats[k]=base;}
+  memory.base[k]=base;let v=base;
   if(k==='attack'){v+=g.status(a,'strength');v*=1+g.statusRatio(a,'attack_up');}
   if(k==='defense')v+=g.status(a,'fortitude');
   if(k==='defense')v*=Math.max(0,(1+g.statusRatio(a,'defense_up'))*(1-g.statusRatio(a,'armor_break')));
   if(k==='speed'){
    const up=a.buffs.filter(e=>key(e)==='speed_up'),down=a.debuffs.filter(e=>key(e)==='speed_down');
-   const flat=up.filter(e=>e.speedFlat).map(e=>e.value);
-   v=v*(1+.2*g.status(a,'swift')+Math.max(0,...up.filter(e=>!e.speedFlat).map(ratio)))+Math.max(0,...flat);
-   v*=1-Math.max(0,...down.map(ratio));v=Math.max(1,v);
+   const flat=up.filter(e=>e.speedFlat).map(e=>statusValue(a,e));
+   v=v*(1+.2*g.status(a,'swift')+Math.max(0,...up.filter(e=>!e.speedFlat).map(e=>statusRatio(a,e))))+Math.max(0,...flat);
+   v*=1-Math.max(0,...down.map(e=>statusRatio(a,e)));v=Math.max(1,v);
   }
   if(k==='res')v=clamp(v+100*g.statusRatio(a,'效果抵抗增加'),0,80);
   if(k==='crit')v+=g.status(a,'crit_up');
   if(k==='critDamage')v+=g.status(a,'crit_damage_up');
   if(['ehr','res'].includes(k))v=clamp(v,0,80);if(k==='crit')v=clamp(v,0,100);if(k==='critDamage')v=clamp(v,0,250);
-  return Math.max(0,v);
+  v=Math.max(0,v);if(!finite(v))return recover(a,'当前'+(statNames[k]??k),v,finite(memory.effective[k])?memory.effective[k]:base);
+  memory.effective[k]=v;return v;
  };
  g.friendTeam=s=>s.side==='enemy'?g.livingEnemies():g.livingAllies();
  g.foeTeam=s=>(s.side==='enemy'?g.livingAllies():g.livingEnemies()).filter(a=>a.attackable!==false);
@@ -56,15 +73,15 @@ export function makeGame(player,enemies,options={}){
  g.evasion=(source,target)=>clamp(.05+.5*(g.stat(target,'speed')-g.stat(source,'speed'))/Math.max(1,g.stat(target,'speed')+g.stat(source,'speed'))+g.statusRatio(target,'evasion_up')-g.statusRatio(target,'evasion_down'),0,.9);
  g.effectSucceeds=(source,target,e,opts={})=>{const cache=opts.secondary?null:g.action?.effectHitCache;const k=source.id+'>'+target.id+':'+key(e);if(cache?.has(k))return cache.get(k);const success=g.effectRng()<g.effectChance(source,target,e);cache?.set(k,success);return success;};
  g.directBonus=(source,target)=>{
-  let v=0;for(const e of uniqueStrong(source.buffs)){
+  let v=0;for(const e of uniqueStrong(source.buffs,e=>statusRatio(source,e))){
    const s=key(e);if(/下张|下一|本卡|同名连击|理智献祭/.test(s))continue;
-   if(['直接增伤','直接伤害提高%','direct_damage_up','damage_up'].includes(s))v+=ratio(e);
+   if(['直接增伤','直接伤害提高%','direct_damage_up','damage_up'].includes(s))v+=statusRatio(source,e);
    if(s==='血月猎杀')v+=.2;
-   if(s==='召唤直接伤害提高%'&&source.isSummon)v+=ratio(e);
-   if(s==='对吸血鬼或不死直接增伤'&&target.definition?.tags?.some(t=>/undead|vampire|不死|吸血鬼/.test(t)))v+=ratio(e);
+   if(s==='召唤直接伤害提高%'&&source.isSummon)v+=statusRatio(source,e);
+   if(s==='对吸血鬼或不死直接增伤'&&target.definition?.tags?.some(t=>/undead|vampire|不死|吸血鬼/.test(t)))v+=statusRatio(source,e);
   }return v;
  };
- g.incomingReduction=target=>clamp(uniqueStrong(target.buffs).filter(e=>key(e)==='direct_damage_reduction'||key(e)==='下一次直接受伤降低%').reduce((a,e)=>a+ratio(e),0),0,.6);
+ g.incomingReduction=target=>clamp(uniqueStrong(target.buffs.filter(e=>key(e)==='direct_damage_reduction'||key(e)==='下一次直接受伤降低%'),e=>statusRatio(target,e)).reduce((sum,e)=>sum+statusRatio(target,e),0),0,.6);
  g.calcBase=(source,target,e,opts={})=>{
   const sf=1+.1*((opts.star??source.star??1)-1),flat=(e.flat??0)*(opts.flatScale??(source.side==='enemy'?(20+2*source.level)/60:1)),atk=opts.attackOverride??opts.sourceSnapshot?.attack??g.stat(source,'attack');
   const h=(e.maxHp??e.maxHpRatio??e.hpRatio??0)*target.maxHp;

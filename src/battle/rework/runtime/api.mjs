@@ -164,6 +164,7 @@ export function project(g,state,options={}){
     if(e.type==='heal'||e.type==='shield')text=name(e.source)+'为'+name(e.target)+(e.type==='heal'?'恢复':'提供护盾')+Math.round(e.amount);
     if(e.type==='play_card')text='使用「'+(cards.get(e.card)?.name??e.card)+'」，消耗'+e.ap+'AP';
     if(e.type==='party_action')text=name(e.source)+'消耗 '+e.ap+' AP，施放「'+e.name+'」';
+    if(e.type==='numeric_recovery')text='已恢复异常数值：'+name(e.actor)+' · '+e.field+'（'+e.invalid+' → '+e.restored+'）';
     if(e.type==='enemy_action')text=name(e.actor)+'使用「'+(g.enemies.find(a=>a.id===e.actor)?.definition?.skills?.find(s=>s.id===e.executed)?.name??e.executed)+'」'+(e.fallback?'（按预告回退）':'');
     if(e.type==='miss')text=name(e.target)+'闪避了'+name(e.source)+'的攻击';
     if(e.type.startsWith('boss_'))text=describeBossEvent(g,e)||e.text||e.message||'';

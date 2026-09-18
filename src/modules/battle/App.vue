@@ -2586,17 +2586,19 @@ onUnmounted(() => {
             </div>
             <button type="button" @click="showBattleInfo = false">×</button>
           </header>
-          <details v-if="state.workshopRuleTrace?.length"><summary>积木执行记录</summary><ol><li v-for="(entry,index) in state.workshopRuleTrace" :key="index">T{{ entry.turn }} · {{ entry.name }} · {{ entry.event }}：{{ entry.message }}</li></ol></details>
-          <p class="damage-preview-help">卡面显示基础伤害；血条预览为命中且未暴击时的预计生命损失，计入防御、减伤与护盾。随机目标、触发效果可能改变结果。</p>
-          <ol>
-            <li
-              v-for="entry in recentLog"
-              :key="entry.id"
-              :data-kind="entry.kind"
-            >
-              <span>T{{ entry.turn }}</span>{{ entry.text }}
-            </li>
-          </ol>
+          <div class="battle-info-content">
+            <details v-if="state.workshopRuleTrace?.length" class="battle-rule-trace"><summary>积木执行记录</summary><ol><li v-for="(entry,index) in state.workshopRuleTrace" :key="index">T{{ entry.turn }} · {{ entry.name }} · {{ entry.event }}：{{ entry.message }}</li></ol></details>
+            <p class="damage-preview-help">卡面显示基础伤害；血条预览为命中且未暴击时的预计生命损失，计入防御、减伤与护盾。随机目标、触发效果可能改变结果。</p>
+            <ol>
+              <li
+                v-for="entry in recentLog"
+                :key="entry.id"
+                :data-kind="entry.kind"
+              >
+                <span>T{{ entry.turn }}</span>{{ entry.text }}
+              </li>
+            </ol>
+          </div>
         </aside>
 
         <aside v-if="showPileDetails" class="battle-pile-details">
@@ -3996,10 +3998,18 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
+.battle-info-content {
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.battle-rule-trace summary { padding: 9px 12px; cursor: pointer; }
+.battle-rule-trace[open] { border-bottom: 1px solid rgba(217, 180, 98, 0.25); }
+.damage-preview-help { margin: 0; padding: 9px 12px; font-size: 10px; line-height: 1.5; }
+
 .battle-info ol {
   margin: 0;
   padding: 9px 12px;
-  overflow: auto;
   list-style: none;
 }
 

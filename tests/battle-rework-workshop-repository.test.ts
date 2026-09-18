@@ -74,3 +74,24 @@ describe('GameRepository 新战斗真实工坊兼容',()=>{
   expect(session.state.player.hp).toBe(54);expect(session.state.enemies[0]!.hp).toBe(9828);
  });
 });
+
+
+it('自定义职业的异常减伤读档后仍能结束回合，怪物行动与下一回合正常推进',async()=>{
+ const f=await fixture('custom_class_native_runtime_host');await f.prime('hk_shield_charge');
+ const session=await f.read(),g=api.hydrate(session.state.rework),p=g.player,e=g.enemies[0];
+ p.hp=p.maxHp=10000;p.stats.defense=120;p.stats.speed=1;
+ e.definition=structuredClone(catalog.monsters.find((m:any)=>m.id==='mon_potion_slime'));e.level=18;e.stats.attack=212.51;e.stats.speed=1000;api.planActor(g,e);
+ session.state.workshopTest!.dummyAttackEnabled=true;
+ g.addStatus(p,p,{kind:'buff',status:'direct_damage_reduction',value:.2,valueUnit:'ratio',turns:3});
+ g.addStatus(p,p,{kind:'buff',status:'defense_up',value:.2,valueUnit:'ratio',turns:3});
+ expect(g.incomingReduction(p)).toBe(.2);expect(g.stat(p,'defense')).toBe(144);
+ api.project(g,session.state);api.syncExternal(g,session.state);
+ for(const status of p.buffs)status.value=NaN;
+ session.state.rework=api.snapshot(g);await f.db.battleSessions.put(json(session));
+ await f.run('battle.end-turn',{battleId:f.battleId});
+ const next=(await f.read()).state,core=api.hydrate(next.rework);
+ expect(core.round).toBe(g.round+1);expect(core.phase).toBe('player');
+ expect(core.player.hp).toBeGreaterThan(0);expect(core.player.hp).toBeLessThan(10000);
+ expect(core.stat(core.player,'defense')).toBe(144);expect(core.incomingReduction(core.player)).toBe(.2);
+ expect(next.log.some(entry=>entry.text.includes('已恢复异常数值'))).toBe(true);
+});

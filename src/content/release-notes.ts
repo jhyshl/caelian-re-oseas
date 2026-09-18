@@ -9,6 +9,14 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.89', label: 'Alpha 89', releasedAt: '2026-09-18',
+    changes: [
+      '普通逃跑及旧版商人脱身的金币损失每次最多 100 万，低于上限仍按原比例计算，结算记录显示实际扣款。普通战败继续保留原有 30% 安慰奖励，不新增金币罚款。',
+      '补充战斗属性与状态数值校验：异常值优先恢复最近合法值，避免防御、减伤等异常传入伤害结算而中断结束回合；恢复情况写入战斗记录。',
+      '修复展开积木执行记录后与伤害说明、战斗记录文字重叠的问题，统一滚动并自动换行。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.88', label: 'Alpha 88', releasedAt: '2026-09-17',
     changes: [
       '卡牌优先展示作者说明，官方卡保留简洁说明与实时数值。工坊新增快捷插入本卡伤害、治疗、护盾公式和中文名称引用；公式随战斗属性、资源及星级计算，显示减伤与暴击前的基础值，不再展开大段积木或内部 ID。',
@@ -943,6 +951,14 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 ] as const;
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.27.0-beta.1', label: 'Beta 1.27', releasedAt: '2026-09-18',
+    changes: [
+      '普通逃跑及旧版商人脱身的金币损失每次最多 100 万，低于上限仍按原比例计算，结算记录显示实际扣款。普通战败继续保留原有 30% 安慰奖励，不新增金币罚款。',
+      '补充战斗属性与状态数值校验：异常值优先恢复最近合法值，避免防御、减伤等异常传入伤害结算而中断结束回合；恢复情况写入战斗记录。',
+      '修复展开积木执行记录后与伤害说明、战斗记录文字重叠的问题，统一滚动并自动换行。',
+    ],
+  },
   {
     version: '1.26.0-beta.1', label: 'Beta 1.26', releasedAt: '2026-09-17',
     changes: [
