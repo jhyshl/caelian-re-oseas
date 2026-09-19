@@ -71,7 +71,9 @@ function patchExisting(actor,key,entry,bucket){
  const strongest=list.slice().sort((a,b)=>display(b)-display(a))[0];
  if(!cleanable(strongest,bucket))return true;
  const desired=number(entry.value);
- if(strongest.snapshotDamage!==undefined)strongest.snapshotDamage=Math.max(0,desired);
+ // A stale DTO may still contain the NaN/null projection from a repaired save.
+ // Only an explicit finite value may replace a DOT snapshot; zero remains valid.
+ if(strongest.snapshotDamage!==undefined){if(typeof entry.value==='number'&&Number.isFinite(entry.value))strongest.snapshotDamage=Math.max(0,desired);}
  else strongest.value=strongest.valueUnit==='ratio'?desired/100:desired;
  const currentTurns=strongest.remaining??Math.max(1,(strongest.expireAtPhase??actor.phaseCount+1)-actor.phaseCount);
  if(number(entry.turns,1)!==currentTurns){if(strongest.remaining!==undefined)strongest.remaining=strongest.workshopDot?(entry.turns<0?Infinity:Math.max(1,number(entry.turns,1))):Math.min(2,Math.max(1,number(entry.turns,1)));else strongest.expireAtPhase=entry.turns<0?Infinity:actor.phaseCount+Math.max(1,number(entry.turns,1));}

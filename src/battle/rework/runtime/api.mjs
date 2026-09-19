@@ -1,6 +1,6 @@
 /* global structuredClone */
 import {catalog,actor,makeGame,makeTurnMetrics} from './physics.mjs';
-import {encounter} from './model.mjs';
+import {encounter,encounterDamageScale} from './model.mjs';
 import {BALANCE_PATCH} from './balance.mjs';
 import {createMageController,MAGE_IDS} from './players-mages.mjs';
 import {createOtherController,OTHER_PROFESSIONS} from './players-other.mjs';
@@ -25,11 +25,46 @@ function wire(g){
   g.notifyEnemyDamaged=notifyEnemyDamaged;
   return g;
 }
+function recoverFourEnemyEncounter(g){
+  const count=g.enemyAI?.entranceCount??g.enemies.length;
+  if(count<4||g.enemies.some(a=>a.definition?.tier==='boss'))return;
+  const scale=encounterDamageScale(count),repaired=new Set();
+  const valid=n=>typeof n==='number'&&Number.isFinite(n)&&n>=0;
+  for(const a of g.enemies){
+    // Only the old four-unit construction bug: do not rescale valid actors or summons.
+    if(valid(a.offenseGroupFactor)||a.flags?.bossHelper)continue;
+    for(const field of ['damageScale','encounterScale','skillScale'])if(!valid(a[field]))a[field]=scale;
+    a.flags??={};if(!valid(a.flags.entryScale))a.flags.entryScale=a.damageScale;
+    const invalid=a.offenseGroupFactor;
+    a.offenseGroupFactor=(g.options.patch?.groupOffense?.[count]??a.damageScale)/a.damageScale;
+    repaired.add(a.id);
+    g.log('numeric_recovery',{actor:a.id,field:'四敌遭遇伤害系数',invalid:String(invalid),restored:a.offenseGroupFactor});
+    if(a.intent){
+      if(!valid(a.intent.scale))a.intent.scale=a.damageScale;
+      if(a.intent.damageEstimate?.some(n=>!valid(n))){
+        // Keep the locked skill and targets; only rebuild the invalid display estimate.
+        const effects=a.intent.effectTargets?.map(row=>row.effect)??a.intent.skill?.effects??[];
+        const raw=effects.filter(e=>(e.kind??e.type)==='damage').reduce((sum,e)=>sum+(e.flat??0)*(20+2*a.level)/60+(e.atk??0)*g.stat(a,'attack'),0)*a.intent.scale*a.offenseGroupFactor;
+        a.intent.damageEstimate=[raw,raw*(1+g.stat(a,'critDamage')/100)];
+      }
+    }
+  }
+  for(const target of [...g.allies,...g.enemies])for(const d of target.dots){
+    if(valid(d.snapshotDamage)||!repaired.has(d.sourceId))continue;
+    const source=d.sourceActor??g.enemies.find(a=>a.id===d.sourceId);
+    // Old NaN snapshots have no recoverable original attack. Reconstruct once from
+    // their source's current attack, retaining source identity, duration and layers.
+    const damage=g.stat(source,'attack')*(d.atk??0)*(1+.1*((source.star??1)-1))*source.damageScale*source.offenseGroupFactor;
+    if(!valid(damage))continue;
+    g.log('numeric_recovery',{actor:target.id,field:'持续伤害快照（按来源当前攻击恢复）',invalid:String(d.snapshotDamage),restored:damage});
+    d.snapshotDamage=damage;
+  }
+}
 export function hydrate(data){
   const saved=decode(data),g=makeGame(saved.player,saved.enemies,{seed:saved.seed,trace:true,patch});
   for(const [k,v] of Object.entries(saved))if(!RNG.includes(k)&&k!=='rngStates')g[k]=v;
   for(const key of RNG)if(saved.rngStates[key]!==undefined)g[key].setState(saved.rngStates[key]);
-  g.trace=[];g.events=[];wire(g);initBosses(g);return g;
+  g.trace=[];g.events=[];wire(g);recoverFourEnemyEncounter(g);initBosses(g);return g;
 }
 export function snapshot(g){g.endAction();g.action=null;return encode({...g,rngStates:Object.fromEntries(RNG.map(k=>[k,g[k].getState()]))});}
 function copyStats(p){return {hp:p.hpMax,attack:p.attack,defense:p.defense,speed:p.speed,crit:p.critRate??5,critDamage:p.critDamage??50,ehr:p.effectHit??0,res:p.effectResist??0};}

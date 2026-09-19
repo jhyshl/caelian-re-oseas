@@ -9,6 +9,13 @@ export interface ReleaseNote {
 
 export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
   {
+    version: '0.2.0-alpha.90', label: 'Alpha 90', releasedAt: '2026-09-19',
+    changes: [
+      '修复四敌遭遇的伤害系数缺失，避免敌方直伤失效，以及巨鼠、魔药史莱姆等施加的持续伤害在下一回合触发 Invalid damage。此修复适用于原生与自定义职业，无需修改吟游诗人配置。',
+      '兼容已卡住的四敌战斗：读取时修复异常系数，损坏的持续伤害快照按来源当前攻击重建并记入战斗记录；保留合法伤害、当前回合、锁定技能和目标、状态份数及剩余持续时间。',
+    ],
+  },
+  {
     version: '0.2.0-alpha.89', label: 'Alpha 89', releasedAt: '2026-09-18',
     changes: [
       '普通逃跑及旧版商人脱身的金币损失每次最多 100 万，低于上限仍按原比例计算，结算记录显示实际扣款。普通战败继续保留原有 30% 安慰奖励，不新增金币罚款。',
@@ -951,6 +958,13 @@ export const ALPHA_RELEASE_NOTES: readonly ReleaseNote[] = [
 ] as const;
 
 export const BETA_RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '1.28.0-beta.1', label: 'Beta 1.28', releasedAt: '2026-09-19',
+    changes: [
+      '修复四敌遭遇的伤害系数缺失，避免敌方直伤失效，以及巨鼠、魔药史莱姆等施加的持续伤害在下一回合触发 Invalid damage。此修复适用于原生与自定义职业，无需修改吟游诗人配置。',
+      '兼容已卡住的四敌战斗：读取时修复异常系数，损坏的持续伤害快照按来源当前攻击重建并记入战斗记录；保留合法伤害、当前回合、锁定技能和目标、状态份数及剩余持续时间。',
+    ],
+  },
   {
     version: '1.27.0-beta.1', label: 'Beta 1.27', releasedAt: '2026-09-18',
     changes: [
